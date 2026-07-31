@@ -189,6 +189,8 @@ func (s *Servidor) borrar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.contadores.borrados.Add(1)
+
 	// RF-19. Es WARN y no INFO a propósito: sin papelera ni segunda copia,
 	// un borrado es el suceso más grave que registra este servicio y debe
 	// destacar al mirar el diario.

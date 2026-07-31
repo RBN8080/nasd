@@ -74,6 +74,7 @@ func ejecutar() error {
 		PlazoInactividad: cfg.PlazoInactividad,
 		Credencial:       credencial,
 		DuracionSesion:   cfg.DuracionSesion,
+		Volumen:          cfg.Volumen,
 	})
 	if err != nil {
 		return err

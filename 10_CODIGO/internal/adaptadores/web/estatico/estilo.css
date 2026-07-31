@@ -49,3 +49,18 @@ a.destructivo, button.destructivo { color: #c00; font-weight: 600; }
 button.destructivo { border: 2px solid #c00; padding: .5rem 1rem; background: #c0000010; }
 .peligro { border: 2px solid #c00; border-radius: .5rem; padding: .75rem 1rem; margin: 1rem 0; background: #c0000010; }
 .ruta-destacada { font-family: ui-monospace, monospace; word-break: break-all; font-size: 1.1em; }
+
+/* Estado — Fase 4, RF-24.
+   El color NO es el único portador del veredicto: la columna «Estado» lleva
+   la palabra escrita. Un semáforo que solo distingue por color no lo lee
+   quien no distingue esos colores, ni se ve en una captura en blanco y negro. */
+.resumen { padding: .75rem 1rem; border-radius: .35rem; border: 2px solid var(--borde); font-weight: 600; }
+.v-ok          { border-color: #0a06; background: #0a01; }
+.v-atencion    { border-color: #e908; background: #e901; }
+.v-fallo       { border-color: #c00;  background: #c0000010; }
+.v-desconocido { border-color: #8886; background: #8880c; }
+tr.v-atencion td:first-child, tr.v-fallo td:first-child { font-weight: 600; }
+tr.v-fallo td { border-bottom-color: #c006; }
+.accion { display: inline-block; margin-top: .25rem; font-size: .85em; opacity: .85; text-align: left; }
+.avisos { font-size: .9em; opacity: .8; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }

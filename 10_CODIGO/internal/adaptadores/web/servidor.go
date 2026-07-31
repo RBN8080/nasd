@@ -38,6 +38,17 @@ type Servidor struct {
 	sesiones       *autenticacion.Sesiones
 	limitador      *limitadorAcceso
 	duracionSesion time.Duration
+
+	// Observabilidad — Fase 4, charter §8.
+	contadores *contadores
+	// veredictosPrevios recuerda el último veredicto de cada indicador para
+	// alertar solo en los CAMBIOS. Lo toca únicamente la goroutine de
+	// mantenimiento: ver anunciar().
+	veredictosPrevios map[string]veredicto
+	// volumen es el punto de montaje del disco de datos. Se guarda para poder
+	// medirlo; el adaptador NUNCA lo usa para construir rutas —esa puerta es
+	// almacen.NuevaRuta y no hay otra (ADR-0014)—.
+	volumen string
 }
 
 type Opciones struct {
@@ -48,6 +59,9 @@ type Opciones struct {
 	// Si está vacía, Nuevo falla: NO existe un modo sin autenticar (RF-15).
 	Credencial     string
 	DuracionSesion time.Duration
+	// Volumen es el punto de montaje del disco de datos (ADR-0019), necesario
+	// para informar de su ocupación y su salud en /estado.
+	Volumen string
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -73,15 +87,18 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	}
 
 	s := &Servidor{
-		almacen:          o.Almacen,
-		reg:              o.Registro,
-		plantillas:       t,
-		plazoInactividad: o.PlazoInactividad,
-		subidas:          nuevoRegistroDeSubidas(),
-		credencial:       o.Credencial,
-		sesiones:         autenticacion.NuevasSesiones(o.DuracionSesion),
-		limitador:        nuevoLimitador(),
-		duracionSesion:   o.DuracionSesion,
+		almacen:           o.Almacen,
+		reg:               o.Registro,
+		plantillas:        t,
+		plazoInactividad:  o.PlazoInactividad,
+		subidas:           nuevoRegistroDeSubidas(),
+		credencial:        o.Credencial,
+		sesiones:          autenticacion.NuevasSesiones(o.DuracionSesion),
+		limitador:         nuevoLimitador(),
+		duracionSesion:    o.DuracionSesion,
+		contadores:        nuevosContadores(),
+		veredictosPrevios: make(map[string]veredicto),
+		volumen:           o.Volumen,
 	}
 
 	// Al arrancar se mira qué subidas dejó a medias el proceso anterior.
@@ -124,6 +141,9 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("POST /renombrar", s.renombrar)              // RF-16 y RF-17
 	protegido.HandleFunc("GET /borrar/{ruta...}", s.confirmarBorrado) // RF-18, paso 1
 	protegido.HandleFunc("POST /borrar", s.borrar)                    // RF-18, paso 2
+
+	// Observabilidad — Fase 4, RF-24. Va DENTRO de lo protegido: ver estado.go.
+	protegido.HandleFunc("GET /estado", s.verEstado)
 
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.tusCrear)
@@ -168,12 +188,20 @@ func (s *Servidor) conRegistro(siguiente http.Handler) http.Handler {
 		inicio := time.Now()
 		cap := &capturaDeEstado{ResponseWriter: w, estado: http.StatusOK}
 		siguiente.ServeHTTP(cap, r)
+		duracion := time.Since(inicio)
+
+		// Los indicadores se anotan AQUÍ y no en cada manejador, a propósito:
+		// así ninguna ruta futura puede quedarse fuera de la medición por
+		// olvido. Es el mismo motivo por el que el registro vive aquí.
+		s.contadores.anotarRespuesta(cap.estado, cap.bytes, duracion,
+			clasificar(r.Method, r.URL.Path))
+
 		s.reg.Info("peticion",
 			"metodo", r.Method,
 			"ruta", r.URL.Path,
 			"estado", cap.estado,
 			"bytes", cap.bytes,
-			"ms", time.Since(inicio).Milliseconds(),
+			"ms", duracion.Milliseconds(),
 		)
 	})
 }

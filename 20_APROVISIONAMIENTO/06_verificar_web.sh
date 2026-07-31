@@ -13,9 +13,14 @@ set -uo pipefail
 # ADR-0018: el servicio se enlaza a la IP de la LAN, NO a 0.0.0.0 ni a
 # localhost. Apuntar a 127.0.0.1 aquí hacía que TODOS los curl devolvieran
 # 000 —sin conectar— y el script lo interpretaba como fallos del servicio.
-BASE="http://$(hostname -I | awk '{print $1}'):8080"
+#
+# PUERTO 80 desde ADR-0032. Este script se quedó apuntando al 8080 al cerrar
+# la Fase 3 y habría devuelto 000 en todo, exactamente el mismo defecto que ya
+# se corrigió una vez con 127.0.0.1. Encontrado al abrir la Fase 4.
+BASE="http://$(hostname -I | awk '{print $1}')"
 PUNTO=/srv/nas
 TRABAJO=/srv/nas/estado/.verificacion
+GALLETAS=$(mktemp)
 ok=0; mal=0
 
 si()   { printf '  \033[32mOK\033[0m    %s\n' "$1"; ok=$((ok+1)); }
@@ -25,10 +30,28 @@ dato() { printf '  \033[36mDATO\033[0m  %s\n' "$1"; }
 [ "$(id -u)" -eq 0 ] || { echo "Ejecute con sudo."; exit 1; }
 systemctl is-active --quiet nasd || { echo "nasd no está activo."; exit 1; }
 
+# Desde RF-15 (Fase 3) NADA responde sin sesión, así que sin esto el script
+# recibiría un 401 en cada petición y reportaría un muro de fallos falsos.
+# La contraseña se teclea; no se guarda ni se pasa por argumento (P4).
+echo "Contraseña de la WEB (D-14, distinta de la de Samba):"
+read -rs -p "  > " CLAVE; echo
+COD=$(curl -s -o /dev/null -w '%{http_code}' -c "$GALLETAS" \
+      --data-urlencode "clave=$CLAVE" "$BASE/acceso")
+unset CLAVE
+if [ "$COD" != "303" ]; then
+  echo "No se pudo abrir sesión (HTTP $COD). Sin sesión no se puede verificar NADA."
+  rm -f "$GALLETAS"
+  exit 1
+fi
+# A partir de aquí, todo curl lleva la sesión y el testigo CSRF.
+CSRF=$(curl -s -b "$GALLETAS" "$BASE/" | grep -o 'name="csrf" value="[^"]*"' | head -1 | cut -d'"' -f4)
+web() { curl -s -b "$GALLETAS" -H "Nas-Csrf: $CSRF" "$@"; }
+
 PID=$(systemctl show nasd -p MainPID --value)
 rss() { awk '/VmRSS/{print $2}' "/proc/$PID/status" 2>/dev/null || echo 0; }
 
 limpiar() {
+  rm -f "$GALLETAS"
   rm -rf "$TRABAJO"
   find "$PUNTO/datos" -mindepth 1 -name 'v_*' -exec rm -rf {} + 2>/dev/null
   find "$PUNTO/estado/parciales" -mindepth 1 -delete 2>/dev/null
@@ -61,8 +84,11 @@ for MB in 100 400 800; do
   VIGIA=$!
 
   T0=$(date +%s.%N)
-  COD=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-        -F "destino=" -F "archivo=@$TRABAJO/f_$MB;filename=v_$MB.bin" "$BASE/subir")
+  # El orden de los -F IMPORTA: subirMultipart recorre el cuerpo una sola vez
+  # y valida el testigo ANTES de aceptar ningún archivo (ADR-0025).
+  COD=$(web -o /dev/null -w '%{http_code}' -X POST \
+        -F "csrf=$CSRF" -F "destino=" \
+        -F "archivo=@$TRABAJO/f_$MB;filename=v_$MB.bin" "$BASE/subir")
   T1=$(date +%s.%N)
   kill $VIGIA 2>/dev/null; wait $VIGIA 2>/dev/null
 
@@ -99,22 +125,23 @@ fi
 
 echo
 echo "-- RF-23: no sobrescribir sin decisión explícita --"
-COD=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-      -F "destino=" -F "archivo=@$TRABAJO/base;filename=v_100.bin" "$BASE/subir")
+COD=$(web -o /dev/null -w '%{http_code}' -X POST \
+      -F "csrf=$CSRF" -F "destino=" \
+      -F "archivo=@$TRABAJO/base;filename=v_100.bin" "$BASE/subir")
 if [ "$COD" = "409" ]; then si "segunda subida al mismo nombre → 409"; else no "se esperaba 409, llegó $COD"; fi
 
 echo
 echo "-- RF-09 y RF-10: descarga completa y por rangos --"
-COD=$(curl -s -o /dev/null -w '%{http_code}' -r 0-999 "$BASE/descargar/v_100.bin")
-N=$(curl -s -r 0-999 "$BASE/descargar/v_100.bin" | wc -c)
+COD=$(web -o /dev/null -w '%{http_code}' -r 0-999 "$BASE/descargar/v_100.bin")
+N=$(web -r 0-999 "$BASE/descargar/v_100.bin" | wc -c)
 if [ "$COD" = "206" ] && [ "$N" = "1000" ]; then si "rango → 206 con 1000 bytes exactos"; else no "rango: HTTP $COD, $N bytes"; fi
 
 echo
 echo "-- RNF-06: contención de rutas (CWE-22) --"
 FUGAS=0
 for P in '..%2f..%2fetc%2fpasswd' '%2e%2e%2f%2e%2e%2fetc%2fpasswd' '..%5c..%5cetc'; do
-  C=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/descargar/$P")
-  [ "$C" = "400" ] || { FUGAS=$((FUGAS+1)); dato "  $P devolvió $C"; }
+  C=$(web -o /dev/null -w '%{http_code}' "$BASE/descargar/$P")
+  if [ "$C" != "400" ]; then FUGAS=$((FUGAS+1)); dato "  $P devolvió $C"; fi
 done
 if [ "$FUGAS" = "0" ]; then si "las tres formas de salto de ruta rechazadas con 400"; else no "$FUGAS variantes no devolvieron 400"; fi
 
@@ -124,7 +151,7 @@ mkdir -p "$PUNTO/datos/v_muchos"
 for i in $(seq 1 3000); do : > "$PUNTO/datos/v_muchos/a_$i.txt"; done
 chown -R nas:nas "$PUNTO/datos/v_muchos"
 L0=$(date +%s.%N)
-CL=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/ver/v_muchos")
+CL=$(web -o /dev/null -w '%{http_code}' "$BASE/ver/v_muchos")
 L1=$(date +%s.%N)
 T=$(awk -v a="$L0" -v b="$L1" 'BEGIN{printf "%.2f", b-a}')
 if [ "$CL" = "200" ]; then

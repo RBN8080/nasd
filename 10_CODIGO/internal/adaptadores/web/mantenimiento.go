@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"nasd/internal/adaptadores/sistema"
 	"nasd/internal/almacen"
 )
 
@@ -94,6 +95,75 @@ func (s *Servidor) mantener(ctx context.Context) {
 	}
 	s.limitador.purgar()
 	s.expirarParciales(ctx, s.almacen)
+	s.vigilar(ctx)
+}
+
+// vigilar es el ÚNICO canal de alerta que tiene este producto.
+//
+// El charter §8 pide alertas «sobre síntomas observables por el usuario» y
+// «accionables». Aquí no hay nada a lo que empujar una notificación —ni correo,
+// ni Telegram, ni un sistema de monitorización; el charter §9.2 fija tres nodos
+// y gestión artesanal—, así que el canal es el diario, que es donde el
+// responsable ya mira cuando algo va mal, y la pantalla de /estado.
+//
+// Se apoya en la MISMA función evaluar() que la pantalla. Si algún día la
+// alerta y la pantalla discreparan, sería un defecto de este proyecto, no una
+// diferencia de criterio: no hay dos criterios.
+func (s *Servidor) vigilar(ctx context.Context) {
+	n := sistema.Leer(ctx, s.volumen)
+	inst := s.contadores.instantanea()
+	inst.SubidasEnCurso = s.subidas.cuantas()
+	inst.SesionesAbiertas = s.sesiones.Abiertas()
+	s.anunciar(evaluar(n, inst))
+}
+
+// anunciar emite SOLO LOS CAMBIOS de veredicto.
+//
+// Repetir la misma alerta cada cinco minutos tiene dos costes, y ninguno es
+// teórico:
+//
+//  1. 288 líneas idénticas al día no informan de nada; el aviso deja de leerse
+//     justo cuando aparece uno nuevo. Es la ceguera al banner que D-16 ya
+//     razonó en otro contexto.
+//  2. Cada línea se escribe en el medio de arranque, que por P9 es CONSUMIBLE.
+//     Este proyecto ya gastó ciclos de escritura una vez por dejar la traza de
+//     Samba subida (rector v1.6.0). No se repite.
+//
+// El mapa lo toca únicamente la goroutine de Mantener, que es una sola: NO es
+// estado compartido y por eso no lleva cerrojo. Si alguna vez se llama a esto
+// desde otro sitio, hará falta uno.
+func (s *Servidor) anunciar(indicadores []indicador) {
+	for _, ind := range indicadores {
+		anterior, visto := s.veredictosPrevios[ind.Nombre]
+		if visto && anterior == ind.Veredicto {
+			continue
+		}
+		s.veredictosPrevios[ind.Nombre] = ind.Veredicto
+
+		switch ind.Veredicto {
+		case vFallo:
+			// Nivel Error incluso en la primera pasada: un fallo al arrancar es
+			// exactamente lo que hay que ver.
+			s.reg.Error("ALERTA", "indicador", ind.Nombre,
+				"valor", ind.Valor, "accion", ind.Accion)
+		case vAtencion:
+			s.reg.Warn("atención", "indicador", ind.Nombre,
+				"valor", ind.Valor, "accion", ind.Accion)
+		case vDesconocido:
+			// En la primera pasada casi todo está sin medir —los SLI no tienen
+			// muestras y el nodo puede no publicar la limitación—. Eso no es
+			// una novedad que anunciar; degradarse a «no se sabe» después, sí.
+			if visto {
+				s.reg.Warn("indicador sin medida", "indicador", ind.Nombre, "valor", ind.Valor)
+			}
+		default:
+			// Tampoco se anuncia que todo va bien al arrancar: solo la
+			// recuperación, que es la que cierra una alerta previa.
+			if visto {
+				s.reg.Info("indicador recuperado", "indicador", ind.Nombre, "valor", ind.Valor)
+			}
+		}
+	}
 }
 
 // expirarParciales borra del disco lo que lleva demasiado tiempo parado.
@@ -137,7 +207,9 @@ func (s *Servidor) expirarParciales(ctx context.Context, a almacenDeParciales) {
 		)
 		if err := a.BorrarParcial(ctx, p.ID); err != nil {
 			s.reg.Error("no se pudo borrar el parcial expirado", "id", p.ID, "error", err)
+			continue
 		}
+		s.contadores.subidasExpiradas.Add(1)
 	}
 
 	// Métrica que pedía ADR-0029: el tamaño acumulado es el síntoma

@@ -51,6 +51,10 @@ func TestSinSesionTodoResponde401(t *testing.T) {
 		{"POST", "/subidas"},
 		{"HEAD", "/subidas/0123456789abcdef0123456789abcdef"},
 		{"PATCH", "/subidas/0123456789abcdef0123456789abcdef"},
+		// Fase 4: /estado también, y no es un extra. Publica capacidad del
+		// disco, temperatura y ritmo de uso; sin TLS (ADR-0018) eso sería
+		// reconocimiento gratis para cualquiera en la LAN (ADR-0034).
+		{"GET", "/estado"},
 	}
 	for _, c := range rutas {
 		w := httptest.NewRecorder()

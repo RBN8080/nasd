@@ -23,10 +23,31 @@ verificar:
 	gofmt -l . | tee /dev/stderr | (! read)
 	go vet ./...
 	@echo ">> comprobando ADR-0025: ParseMultipartForm / FormFile prohibidos"
+	@# Se descartan los COMENTARIOS de línea completa antes de buscar.
+	@#
+	@# Sin esto la puerta daba un falso positivo y el proyecto se quedó con
+	@# «make verificar» roto: el arreglo de CSRF del 2026-07-31 documentó en
+	@# administracion.go POR QUÉ no se usa PostFormValue —que llama por dentro
+	@# a ParseMultipartForm— y la propia explicación disparaba la alarma.
+	@#
+	@# Un verificador que grita sin motivo se acaba ignorando o borrando, que
+	@# es la otra cara del defecto que 00_RECTOR.md §12.5 lleva persiguiendo.
+	@#
+	@# LÍMITE CONOCIDO: solo se filtran los comentarios de línea completa, así
+	@# que una llamada real con comentario al final SÍ se detecta. Es el lado
+	@# por el que conviene equivocarse.
 	@! grep -rn "ParseMultipartForm\|\.FormFile(" --include="*.go" . \
 	  | grep -v "_test.go" | grep -v "PROHIBIDO" \
+	  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
 	  || (echo "ERROR: uso prohibido — vuelca a tmpfs, es decir a RAM (ADR-0025)"; exit 1)
 	go test ./...
+
+# El detector de carreras. Se separa de «verificar» porque tarda bastante más,
+# pero NO es opcional al cerrar un bloque: el programa tiene tres puntos de
+# estado compartido y dos de los peores defectos de este proyecto fueron
+# carreras (rector v1.11.0).
+carreras:
+	go test -race ./...
 
 prueba:
 	go test -v ./...

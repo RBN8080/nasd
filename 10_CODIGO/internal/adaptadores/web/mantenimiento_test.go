@@ -124,7 +124,7 @@ func TestExpiraPorInactividadYNoTocaLoVivo(t *testing.T) {
 		{ID: "enmemoria", Escrito: 300, Modificado: ahora.Add(-30 * 24 * time.Hour)},
 	}}
 
-	s := &Servidor{reg: registroSilencioso(), subidas: nuevoRegistroDeSubidas()}
+	s := servidorDePrueba()
 	s.subidas.guardar("enmemoria", &subidaEnCurso{escritor: &escritorFalso{}})
 
 	s.expirarParciales(context.Background(), af)
@@ -136,6 +136,22 @@ func TestExpiraPorInactividadYNoTocaLoVivo(t *testing.T) {
 
 func registroSilencioso() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
+// servidorDePrueba arma el mínimo de un Servidor sin pasar por Nuevo, que
+// exige credencial y plantillas.
+//
+// Existe para que las piezas obligatorias se monten en UN SOLO SITIO. Al
+// añadir los contadores de la Fase 4, la prueba de expiración empezó a
+// reventar con un pánico de puntero nulo porque construía el Servidor a mano:
+// un literal de prueba no se entera de que la estructura ha crecido.
+func servidorDePrueba() *Servidor {
+	return &Servidor{
+		reg:               registroSilencioso(),
+		subidas:           nuevoRegistroDeSubidas(),
+		contadores:        nuevosContadores(),
+		veredictosPrevios: make(map[string]veredicto),
+	}
 }
 
 // Regresión del defecto A, detectado en la SEGUNDA iteración de revisión.

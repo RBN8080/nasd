@@ -246,11 +246,23 @@ func (s *Servidor) escribir(w http.ResponseWriter, r *http.Request, ruta almacen
 		return err
 	}
 	// Plazo por actividad sobre la lectura del cuerpo (ADR-0026).
-	if _, err := io.Copy(ea, lecturaConPlazo(w, origen, s.plazoInactividad)); err != nil {
+	n, err := io.Copy(ea, lecturaConPlazo(w, origen, s.plazoInactividad))
+	if n > 0 {
+		s.contadores.bytesSubidos.Add(n)
+	}
+	if err != nil {
 		ea.Descartar() // en datos/ no queda nada — RNF-05
 		return err
 	}
-	return ea.Confirmar()
+	// El camino sin JavaScript comparte los indicadores con el de tus: los dos
+	// publican por el mismo EscrituraAtomica, así que el SLI-2 mide la
+	// durabilidad del producto y no la de una de sus dos puertas.
+	if err := ea.Confirmar(); err != nil {
+		s.contadores.subidasFallidas.Add(1)
+		return err
+	}
+	s.contadores.subidasConfirmadas.Add(1)
+	return nil
 }
 
 func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request) {
