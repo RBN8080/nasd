@@ -14,7 +14,7 @@ PID=$!
 sleep 1
 
 echo "== RF-06/RF-07 listado =="
-c=$(curl -s -o /dev/null -w '%{http_code}' $B/)
+c=$(curl -s -o /dev/null -w '%{http_code}' "$B/")
 comprobar "GET / " 200 "$c"
 
 echo "== RF-13 crear directorio =="
@@ -26,17 +26,17 @@ head -c 3000000 /dev/urandom > /tmp/prueba.bin
 split -b 1500000 /tmp/prueba.bin /tmp/trozo.
 LOC=$(curl -s -D- -o /dev/null -X POST \
   -H 'Upload-Length: 3000000' -H 'Nas-Destino: fotos' -H 'Nas-Nombre: prueba.bin' \
-  $B/subidas | awk 'tolower($1)=="location:"{gsub(/\r/,"");print $2}')
+  "$B/subidas" | awk 'tolower($1)=="location:"{gsub(/\r/,"");print $2}')
 echo "  Location: $LOC"
 c=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H 'Upload-Offset: 0' \
-  --data-binary @/tmp/trozo.aa $B$LOC)
+  --data-binary @/tmp/trozo.aa "$B$LOC")
 comprobar "PATCH bloque 1" 204 "$c"
 
-off=$(curl -s -D- -o /dev/null --head $B$LOC | awk 'tolower($1)=="upload-offset:"{gsub(/\r/,"");print $2}')
+off=$(curl -s -D- -o /dev/null --head "$B$LOC" | awk 'tolower($1)=="upload-offset:"{gsub(/\r/,"");print $2}')
 comprobar "HEAD Upload-Offset tras bloque 1" 1500000 "$off"
 
 c=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H "Upload-Offset: $off" \
-  --data-binary @/tmp/trozo.ab $B$LOC)
+  --data-binary @/tmp/trozo.ab "$B$LOC")
 comprobar "PATCH bloque 2" 204 "$c"
 
 a=$(md5sum /tmp/prueba.bin | cut -c1-32)
@@ -45,13 +45,13 @@ comprobar "suma de verificacion identica" "$a" "$b"
 
 echo "== ADR-0027 desplazamiento incoherente =="
 LOC2=$(curl -s -D- -o /dev/null -X POST -H 'Upload-Length: 10' -H 'Nas-Destino: fotos' \
-  -H 'Nas-Nombre: otro.bin' $B/subidas | awk 'tolower($1)=="location:"{gsub(/\r/,"");print $2}')
-c=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H 'Upload-Offset: 999' -d 'x' $B$LOC2)
+  -H 'Nas-Nombre: otro.bin' "$B/subidas" | awk 'tolower($1)=="location:"{gsub(/\r/,"");print $2}')
+c=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H 'Upload-Offset: 999' -d 'x' "$B$LOC2")
 comprobar "PATCH con offset mentido" 409 "$c"
 
 echo "== RF-23 no sobrescribir =="
 c=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Upload-Length: 10' \
-  -H 'Nas-Destino: fotos' -H 'Nas-Nombre: prueba.bin' $B/subidas)
+  -H 'Nas-Destino: fotos' -H 'Nas-Nombre: prueba.bin' "$B/subidas")
 comprobar "segunda subida al mismo nombre" 409 "$c"
 
 echo "== RNF-06 salto de ruta (CWE-22) =="
@@ -77,12 +77,12 @@ comprobar "bytes devueltos" 1000 "$n"
 
 echo "== 04_SEGURIDAD §4 cabeceras de descarga =="
 h=$(curl -s -D- -o /dev/null $B/descargar/fotos/prueba.bin | tr -d '\r')
-echo "$h" | grep -qi 'X-Content-Type-Options: nosniff' && comprobar "nosniff" si si || comprobar "nosniff" si no
-echo "$h" | grep -qi 'Content-Disposition: attachment' && comprobar "attachment" si si || comprobar "attachment" si no
+if echo "$h" | grep -qi 'X-Content-Type-Options: nosniff'; then comprobar "nosniff" si si; else comprobar "nosniff" si no; fi
+if echo "$h" | grep -qi 'Content-Disposition: attachment'; then comprobar "attachment" si si; else comprobar "attachment" si no; fi
 
 echo "== ADR-0029 sin basura en parciales =="
 # Queda 1 esperado: la subida de otro.bin sigue abierta y es reanudable (RF-12).
-n=$(ls -1 ~/volnas/estado/parciales | wc -l)
+n=$(find ~/volnas/estado/parciales -mindepth 1 | wc -l)
 comprobar "parciales abiertos" 1 "$n"
 
 echo "== RNF-13 registro estructurado =="
