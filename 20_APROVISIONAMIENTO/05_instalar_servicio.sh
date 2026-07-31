@@ -22,7 +22,7 @@ CONFIG_DIR=/etc/nasd
 CONFIG="$CONFIG_DIR/nasd.toml"
 PUNTO=/srv/nas
 USUARIO=nas
-PUERTO=8080
+PUERTO=80   # ADR-0032: se entra con la IP a secas, sin puerto
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -137,6 +137,14 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_UNIX
+
+# ADR-0032 — puerto 80 sin elevar el proceso.
+#
+# Enlazar un puerto <1024 exige CAP_NET_BIND_SERVICE. systemd se la concede
+# al proceso, que SIGUE siendo el usuario nas sin shell. El bounding set la
+# deja como UNICA capacidad posible: no puede adquirir ninguna otra.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 # Tercera capa de contención de rutas (04_SEGURIDAD §2).
 ReadWritePaths=/srv/nas

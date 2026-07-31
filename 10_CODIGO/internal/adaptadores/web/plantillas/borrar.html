@@ -1,0 +1,39 @@
+{{define "borrar.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — Confirmar borrado</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+<main class="acceso">
+  <h1>Confirmar borrado</h1>
+
+  <p>Se va a borrar:</p>
+  <p class="ruta-destacada">{{.Ruta.Rel}}</p>
+
+  <div class="peligro">
+    {{if .Conteo.EsDirectorio}}
+      <p><strong>Es una carpeta con {{.Conteo.Archivos}} archivo(s)
+      y {{.Conteo.Directorios}} subcarpeta(s)</strong>, {{tamano .Conteo.Bytes}} en total.</p>
+    {{else}}
+      <p><strong>Archivo de {{tamano .Conteo.Bytes}}.</strong></p>
+    {{end}}
+    <p><strong>Esto no se puede deshacer.</strong> No hay papelera, y este
+    disco no tiene copia: lo que se borre aquí desaparece. Si el archivo solo
+    existe en este NAS, se pierde.</p>
+  </div>
+
+  <form method="post" action="/borrar">
+    <input type="hidden" name="csrf" value="{{.Csrf}}">
+    <input type="hidden" name="ruta" value="{{.Ruta.Rel}}">
+    <input type="hidden" name="confirmado" value="si">
+    <button type="submit" class="destructivo">Sí, borrar definitivamente</button>
+  </form>
+
+  <p><a href="{{with .Ruta.Padre}}{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}{{end}}">Cancelar y volver</a></p>
+</main>
+</body>
+</html>
+{{end}}

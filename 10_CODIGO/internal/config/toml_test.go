@@ -50,10 +50,28 @@ func TestLeerTOMLRechaza(t *testing.T) {
 	}
 }
 
+// Esta prueba CAMBIÓ el 2026-07-31 con ADR-0032, que supersede a ADR-0018
+// en lo del puerto.
+//
+// Antes exigía rechazar el 80 porque «necesitaría privilegio elevado». Ya
+// no es cierto: systemd concede CAP_NET_BIND_SERVICE por AmbientCapabilities
+// sin elevar el proceso, que sigue corriendo como el usuario nas.
+//
+// Se conserva la prueba —cambiada, no borrada— porque el rango sigue
+// teniendo que validarse.
 func TestValidarPuerto(t *testing.T) {
 	c := porDefecto()
-	c.Puerto = 80 // exigiría privilegio elevado — ADR-0018
-	if err := c.validar(); err == nil {
-		t.Error("el puerto 80 debía rechazarse")
+
+	// El 80 es ahora legítimo: ADR-0032.
+	c.Puerto = 80
+	if err := c.validar(); err != nil {
+		t.Errorf("el puerto 80 debe aceptarse desde ADR-0032: %v", err)
+	}
+
+	for _, p := range []int{0, -1, 65536, 99999} {
+		c.Puerto = p
+		if err := c.validar(); err == nil {
+			t.Errorf("el puerto %d está fuera de rango y debía rechazarse", p)
+		}
 	}
 }

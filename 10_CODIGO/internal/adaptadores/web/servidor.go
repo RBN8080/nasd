@@ -120,6 +120,11 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("POST /subir", s.subirMultipart)
 	protegido.HandleFunc("POST /directorio", s.crearDirectorio)
 
+	// Administración — Fase 3. Después de RF-15, por RN-06.
+	protegido.HandleFunc("POST /renombrar", s.renombrar)              // RF-16 y RF-17
+	protegido.HandleFunc("GET /borrar/{ruta...}", s.confirmarBorrado) // RF-18, paso 1
+	protegido.HandleFunc("POST /borrar", s.borrar)                    // RF-18, paso 2
+
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.tusCrear)
 	protegido.HandleFunc("HEAD /subidas/{id}", s.tusEstado)

@@ -35,6 +35,14 @@ var (
 	// ErrEsDirectorio — se pidió como archivo algo que es un directorio.
 	ErrEsDirectorio = errors.New("es un directorio")
 
+	// ErrNoVacio — se intentó borrar un directorio con contenido usando la
+	// operación no recursiva. Destruir un árbol exige pedirlo por su nombre.
+	ErrNoVacio = errors.New("el directorio no está vacío")
+
+	// ErrDentroDeSiMismo — mover un directorio dentro de su propio subárbol.
+	// El sistema lo rechazaría, pero conviene un error del dominio claro.
+	ErrDentroDeSiMismo = errors.New("no se puede mover un directorio dentro de sí mismo")
+
 	// ErrOcupado — otro escritor tiene el destino tomado. ADR-0028, capa 3.
 	ErrOcupado = errors.New("ocupado por otro escritor")
 

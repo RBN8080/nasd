@@ -10,7 +10,7 @@
 set -euo pipefail
 
 RED=192.168.1.0/24
-PUERTO_WEB=8080
+PUERTO_WEB=80   # ADR-0032
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -45,7 +45,10 @@ table inet filter {
     # SMB — D-01. Solo la LAN.
     ip saddr $RED tcp dport 445 accept
 
-    # Web — ADR-0018. Solo la LAN.
+    # Web — ADR-0032. Solo la LAN.
+    #
+    # El 8080 se RETIRA a propósito: desde ADR-0032 no hay servicio detrás, y
+    # una regla abierta sin nada escuchando es superficie regalada (P8).
     ip saddr $RED tcp dport $PUERTO_WEB accept
 
     # Todo lo demás cae en silencio.

@@ -31,6 +31,30 @@ type Almacen interface {
 	Crear(ctx context.Context, r RutaSegura) (EscrituraAtomica, error)
 
 	CrearDirectorio(ctx context.Context, r RutaSegura) error
+
+	// Renombrar cubre RF-16 y RF-17: renombrar y mover son la MISMA
+	// operación —un rename()— y dentro del volumen es atómica.
+	//
+	// Devuelve ErrYaExiste si el destino está ocupado: RF-23 vale igual aquí
+	// que al subir. Mover algo encima de otra cosa la destruiría, y con
+	// copia única (D-12) no habría de dónde recuperarla.
+	Renombrar(ctx context.Context, origen, destino RutaSegura) error
+
+	// Borrar elimina un archivo, o un directorio SI ESTÁ VACÍO.
+	// Sobre un directorio con contenido devuelve ErrNoVacio.
+	Borrar(ctx context.Context, r RutaSegura) error
+
+	// BorrarArbol elimina un directorio CON TODO SU CONTENIDO.
+	//
+	// Tiene nombre propio a propósito: es la operación más destructiva del
+	// producto y no debe poder invocarse por descuido al escribir Borrar.
+	// Sin papelera (D-15) y con copia única (D-12), esto no se deshace.
+	BorrarArbol(ctx context.Context, r RutaSegura) error
+
+	// Resumen cuenta lo que hay bajo una ruta: cuántas entradas y cuántos
+	// bytes. Existe para que la confirmación de RF-18 pueda decir QUÉ se va
+	// a destruir en lugar de un «¿seguro?» a ciegas.
+	Resumen(ctx context.Context, r RutaSegura) (Conteo, error)
 	// Estado() se RETIRÓ del puerto el 2026-07-31: no lo usaba ningún
 	// adaptador. P8 — ante la duda, se omite. Sigue existiendo como método
 	// del adaptador POSIX, donde lo usan las pruebas.

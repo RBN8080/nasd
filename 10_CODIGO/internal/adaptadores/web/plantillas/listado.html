@@ -27,10 +27,10 @@
 
 <main>
 <table>
-  <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th></tr></thead>
+  <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th><th></th></tr></thead>
   <tbody>
   {{if not .Ruta.EsRaiz}}
-    <tr><td colspan="3"><a href="{{with .Ruta.Padre}}{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}{{end}}">.. subir</a></td></tr>
+    <tr><td colspan="4"><a href="{{with .Ruta.Padre}}{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}{{end}}">.. subir</a></td></tr>
   {{end}}
   {{range .Entradas}}
     <tr>
@@ -38,9 +38,19 @@
           {{else}}<a href="/descargar/{{.Ruta.Rel}}">{{.Nombre}}</a>{{end}}</td>
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>
+      <td class="num acciones-fila">
+        <form method="post" action="/renombrar">
+          <input type="hidden" name="csrf" value="{{$.Csrf}}">
+          <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
+          <input type="text" name="destino" value="{{.Nombre}}" size="14"
+                 title="Nombre nuevo, o ruta completa para mover">
+          <button type="submit">Renombrar</button>
+        </form>
+        <a class="destructivo" href="/borrar/{{.Ruta.Rel}}">Borrar</a>
+      </td>
     </tr>
   {{else}}
-    <tr><td colspan="3" class="vacio">Carpeta vacía</td></tr>
+    <tr><td colspan="4" class="vacio">Carpeta vacía</td></tr>
   {{end}}
   </tbody>
 </table>
@@ -50,6 +60,7 @@
 
 <section class="acciones">
   <form method="post" action="/directorio">
+    <input type="hidden" name="csrf" value="{{.Csrf}}">
     <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
     <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
     <button type="submit">Crear carpeta</button>

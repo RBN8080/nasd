@@ -31,3 +31,13 @@ type Parcial struct {
 	// durar días con pausas, y la antigüedad castigaría justo ese caso.
 	Modificado time.Time
 }
+
+// Conteo describe lo que cuelga de una ruta. Alimenta la confirmación de
+// RF-18: sin papelera (D-15), lo mínimo es decirle al usuario qué va a
+// perder antes de que pulse.
+type Conteo struct {
+	Archivos     int
+	Directorios  int
+	Bytes        int64
+	EsDirectorio bool
+}

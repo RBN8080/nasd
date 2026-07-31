@@ -17,6 +17,9 @@ type vistaListado struct {
 	Ocultas  int
 	Mensaje  string
 	EsError  bool
+	// Csrf viaja en cada formulario del listado. Sin él, las acciones
+	// destructivas quedarían solo tras SameSite=Lax.
+	Csrf string
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -38,6 +41,7 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 		Migas:   ruta.Ascendencia(),
 		Mensaje: r.URL.Query().Get("msg"),
 		EsError: r.URL.Query().Get("err") != "",
+		Csrf:    s.csrfDe(r),
 	}
 
 	n := 0
@@ -220,6 +224,9 @@ func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request) {
 		s.fallo(w, r, err)
 		return
 	}
+	if !s.exigirCSRF(w, r) {
+		return
+	}
 	padre, err := almacen.NuevaRuta(r.PostFormValue("destino"))
 	if err != nil {
 		s.fallo(w, r, err)
@@ -263,6 +270,12 @@ func (s *Servidor) fallo(w http.ResponseWriter, r *http.Request, err error) {
 		// El cliente se fue: no hay a quién responder, y no es un fallo
 		// nuestro. Se anota a nivel informativo y se sale.
 		s.reg.Info("cliente desconectado", "ruta", r.URL.Path)
+		return
+	}
+
+	if c, m, ok := mensajeAdministracion(err); ok {
+		s.reg.Warn("fallo", "ruta", r.URL.Path, "estado", c, "error", err)
+		http.Error(w, m, c)
 		return
 	}
 
