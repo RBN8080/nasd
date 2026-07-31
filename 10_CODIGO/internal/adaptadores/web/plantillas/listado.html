@@ -44,6 +44,7 @@
   </tbody>
 </table>
 {{if .Truncado}}<p class="mensaje error">Listado recortado: hay más entradas de las que se muestran.</p>{{end}}
+{{if .Ocultas}}<p class="oculto">{{.Ocultas}} elemento(s) oculto(s) — nombres que empiezan por punto, normalmente temporales del sistema o del iPhone.</p>{{end}}
 </main>
 
 <section class="acciones">
