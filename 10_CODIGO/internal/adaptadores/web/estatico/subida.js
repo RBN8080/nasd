@@ -54,7 +54,14 @@ async function subirArchivo(archivo, destino, estado) {
     headers: {
       'Tus-Resumable': '1.0.0',
       'Upload-Length': String(archivo.size),
-      'Nas-Destino': destino,
+      // AMBAS van codificadas, y no es opcional: las cabeceras HTTP solo
+      // admiten Latin-1, así que un acento en la ruta o en el nombre hace
+      // que fetch() lance «String contains non ISO-8859-1 code point» y la
+      // subida ni siquiera se intente.
+      //
+      // El destino se enviaba en crudo y rompía al subir desde cualquier
+      // carpeta con acentos. El servidor decodifica ambas (ver tus.go).
+      'Nas-Destino': encodeURIComponent(destino),
       'Nas-Nombre': encodeURIComponent(archivo.name),
     },
   });

@@ -80,7 +80,7 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Upload-Length ausente o inválido", http.StatusBadRequest)
 		return
 	}
-	destino, err := almacen.NuevaRuta(r.Header.Get("Nas-Destino"))
+	destino, err := almacen.NuevaRuta(decodificar(r.Header.Get("Nas-Destino")))
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -186,8 +186,14 @@ func identificadorDeSubida() (string, error) {
 	return generarID()
 }
 
+// decodificar deshace el encodeURIComponent del cliente.
+//
+// Se usa PathUnescape y NO QueryUnescape: este último convierte «+» en
+// espacio, con lo que un archivo llamado «a+b.jpg» se habría guardado como
+// «a b.jpg». encodeURIComponent nunca produce «+» para el espacio —usa
+// %20—, así que PathUnescape es el inverso correcto.
 func decodificar(s string) string {
-	if v, err := url.QueryUnescape(s); err == nil {
+	if v, err := url.PathUnescape(s); err == nil {
 		return v
 	}
 	return s
