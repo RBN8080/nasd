@@ -163,6 +163,19 @@ LoadCredential=web:/etc/nasd/credencial
 StandardOutput=journal
 StandardError=journal
 
+# Fase 4 / ADR-0035 — límite de tasa del diario POR UNIDAD.
+#
+# journald descarta mensajes cuando una unidad supera su cupo, y lo hace en
+# silencio. Con el valor por omisión, una ráfaga de peticiones —el servicio
+# anota una línea por cada una— podría llevarse por delante justo lo que no
+# puede perderse: los BORRADOS de RF-19, único rastro de lo destruido con
+# D-15 (sin papelera) y D-12 (copia única).
+#
+# No se pone a 0 —sería una puerta para llenar el medio de arranque, que por
+# P9 es consumible—: el tamaño total lo acota SystemMaxUse en journald.conf.
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=20000
+
 [Install]
 WantedBy=multi-user.target
 EOF

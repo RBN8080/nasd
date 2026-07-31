@@ -203,6 +203,7 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 
 	id := parcial.ID
 	s.subidas.guardar(id, &subidaEnCurso{escritor: escritor, ruta: ruta, total: total})
+	s.contadores.subidasCreadas.Add(1)
 	s.reg.Info("subida creada", "id", id, "ruta", ruta.Rel(), "bytes", total)
 
 	w.Header().Set("Location", "/subidas/"+id)
@@ -273,6 +274,12 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n, err := io.Copy(sub.escritor, lecturaConPlazo(w, r.Body, s.plazoInactividad))
+	// Se contabiliza lo transferido AUNQUE la subida se corte: los bytes
+	// cruzaron la red igual, y RF-12 hace que el siguiente PATCH continúe.
+	// Contarlos solo al confirmar escondería el trabajo de las reanudaciones.
+	if n > 0 {
+		s.contadores.bytesSubidos.Add(n)
+	}
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		// NO se descarta: el parcial se conserva para poder reanudar. Eso es
 		// precisamente RF-12.
@@ -287,11 +294,16 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 
 	if escrito >= sub.total {
 		if err := sub.escritor.Confirmar(); err != nil {
+			// SLI-2. Una publicación que falla es lo más grave que puede
+			// contar este servicio: el usuario transfirió el archivo entero y
+			// no quedó publicado. Su SLO es 100 % — ver 05_OPERACION.md.
+			s.contadores.subidasFallidas.Add(1)
 			s.subidas.borrar(id)
 			s.fallo(w, r, err)
 			return
 		}
 		s.subidas.borrar(id)
+		s.contadores.subidasConfirmadas.Add(1)
 		s.reg.Info("subida confirmada", "id", id, "ruta", sub.ruta.Rel(), "bytes", escrito)
 		w.Header().Set("Nas-Completada", "1")
 	}
@@ -330,6 +342,7 @@ func (s *Servidor) tusDescartar(w http.ResponseWriter, r *http.Request) {
 		s.fallo(w, r, err)
 		return
 	}
+	s.contadores.subidasDescartadas.Add(1)
 	s.reg.Info("subida descartada por el usuario",
 		"id", id, "ruta", sub.ruta.Rel(), "remoto", origenDe(r))
 	w.WriteHeader(http.StatusNoContent)

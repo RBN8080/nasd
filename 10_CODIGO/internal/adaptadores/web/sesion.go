@@ -196,6 +196,7 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 
 	if !valida {
 		s.limitador.fallo(origen)
+		s.contadores.accesosFallidos.Add(1)
 		// NUNCA se registra la contraseña ni parte de ella (04_SEGURIDAD §6).
 		s.reg.Warn("intento de acceso fallido", "origen", origen)
 		s.pedirAcceso(w, r, "Contraseña incorrecta.")
