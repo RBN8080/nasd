@@ -14,6 +14,7 @@ type vistaListado struct {
 	Migas    []almacen.RutaSegura
 	Entradas []almacen.Entrada
 	Truncado bool
+	Ocultas  int
 	Mensaje  string
 	EsError  bool
 }
@@ -49,11 +50,35 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 			v.Truncado = true
 			break
 		}
+		// Las entradas que empiezan por punto se ocultan, como hace cualquier
+		// gestor de archivos. Aquí importa por un motivo concreto: iOS deja
+		// directorios temporales «.sb-XXXX» al copiar o descomprimir, y los
+		// esconde de su propia interfaz. Mostrarlos solo en la web hacía que
+		// el iPhone y el navegador pareciesen discrepar.
+		//
+		// NO se ocultan en silencio: se cuentan y la vista lo dice.
+		if strings.HasPrefix(e.Nombre, ".") {
+			v.Ocultas++
+			continue
+		}
 		v.Entradas = append(v.Entradas, e)
 		n++
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	// SIN CACHÉ, y no es opcional.
+	//
+	// El listado ES el sistema de archivos (regla R1, ADR-0015): no hay
+	// índice ni caché del lado del servidor, precisamente para que un cambio
+	// hecho por SMB se vea al instante en la web (RF-21). Dejar que el
+	// navegador cachee la página tira por tierra esa garantía: se borra un
+	// archivo desde el iPhone y la web sigue mostrándolo.
+	//
+	// Defecto encontrado en uso real el 2026-07-31.
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+
 	if err := s.plantillas.ExecuteTemplate(w, "listado.html", v); err != nil {
 		s.reg.Error("render del listado", "error", err)
 	}
