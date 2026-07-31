@@ -106,12 +106,34 @@ verde "smb.conf válido."
 echo
 echo "== Contraseña de Samba para '$USUARIO' =="
 echo "D-14: esta credencial es SOLO para SMB. La web tendrá la suya, distinta."
-smbpasswd -a "$USUARIO"
-smbpasswd -e "$USUARIO"
+
+# P4 del charter: cero secretos en el repositorio. La contraseña NO se pasa
+# por parámetro, ni por variable de entorno, ni queda en el historial del
+# shell: se teclea aquí y solo aquí.
+if pdbedit -L 2>/dev/null | cut -d: -f1 | grep -qx "$USUARIO"; then
+  echo "El usuario '$USUARIO' ya existe en la base de Samba; no se toca la contraseña."
+  echo "Para cambiarla: sudo smbpasswd '$USUARIO'"
+elif [ -t 0 ]; then
+  smbpasswd -a "$USUARIO"
+  smbpasswd -e "$USUARIO"
+else
+  # Sin terminal interactiva no se puede pedir la contraseña. Se avisa de
+  # forma ruidosa en lugar de continuar como si nada (P5).
+  rojo "SIN TERMINAL INTERACTIVA: la contraseña de Samba NO se ha fijado."
+  rojo "El recurso quedará inaccesible hasta que la establezca usted:"
+  echo
+  echo "    sudo smbpasswd -a $USUARIO && sudo smbpasswd -e $USUARIO"
+  echo
+  FALTA_CONTRASENA=1
+fi
 
 systemctl restart smbd nmbd
 systemctl enable smbd nmbd
 
 echo
-verde "Paso 2 completado."
+if [ "${FALTA_CONTRASENA:-0}" = "1" ]; then
+  verde "Paso 2 completado, PERO FALTA LA CONTRASEÑA (ver arriba)."
+else
+  verde "Paso 2 completado."
+fi
 echo "Siguiente: sudo ./03_cortafuegos.sh"

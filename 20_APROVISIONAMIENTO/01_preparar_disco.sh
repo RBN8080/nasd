@@ -37,11 +37,18 @@ lsblk -o NAME,SIZE,MODEL,SERIAL,FSTYPE,MOUNTPOINT "$DISCO"
 echo
 
 MODELO=$(lsblk -ndo MODEL "$DISCO" | tr -d ' ')
-if [ "$MODELO" != "$MODELO_ESPERADO" ]; then
-  rojo "El modelo es '$MODELO' y se esperaba '$MODELO_ESPERADO' (charter §3.6)."
-  rojo "Si de verdad quiere continuar, edite MODELO_ESPERADO en este script."
-  exit 1
-fi
+# Comparación por PREFIJO, no por igualdad: lsblk devuelve el modelo completo
+# con su sufijo de revisión —«ST1000LM035-1RK172»— mientras que el charter
+# §3.6 nombra la familia, «ST1000LM035». Lo que hay que comprobar es que sea
+# ESE disco, no que la cadena coincida carácter a carácter.
+case "$MODELO" in
+  "$MODELO_ESPERADO"*) ;;
+  *)
+    rojo "El modelo es '$MODELO' y se esperaba uno que empiece por '$MODELO_ESPERADO' (charter §3.6)."
+    rojo "Si de verdad quiere continuar, edite MODELO_ESPERADO en este script."
+    exit 1
+    ;;
+esac
 
 # Un disco que es el medio de arranque no se toca jamás.
 RAIZ_DEV=$(findmnt -no SOURCE / | sed 's/[0-9]*$//')
