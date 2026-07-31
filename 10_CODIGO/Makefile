@@ -4,8 +4,13 @@
 # Nunca se compila en la Pi: 592 MB y cuatro A53 compitiendo con el propio
 # servicio que se está probando.
 
-NODO    ?= 192.168.1.38
-USUARIO ?= usuario
+# Alias de ~/.ssh/config, NO "usuario@ip".
+#
+# VERIFICADO 2026-07-30: «ssh usuario@192.168.1.38» FALLA con
+# «Permission denied (publickey)», porque la clave del nodo es
+# id_ed25519_rpi y solo se selecciona a traves del alias, que ademas
+# lleva IdentitiesOnly=yes. Usar la IP directa rompe el despliegue.
+NODO    ?= rpi
 BINARIO := nasd
 
 .PHONY: todo verificar prueba compilar desplegar registro limpiar
@@ -33,11 +38,11 @@ compilar:
 	@ls -lh $(BINARIO)
 
 desplegar: compilar
-	scp $(BINARIO) $(USUARIO)@$(NODO):/tmp/$(BINARIO)
-	ssh $(USUARIO)@$(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'
+	scp $(BINARIO) $(NODO):/tmp/$(BINARIO)
+	ssh $(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'
 
 registro:
-	ssh $(USUARIO)@$(NODO) 'journalctl -u nasd -n 50 --no-pager -o cat'
+	ssh $(NODO) 'journalctl -u nasd -n 50 --no-pager -o cat'
 
 limpiar:
 	rm -f $(BINARIO)
