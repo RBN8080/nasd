@@ -52,10 +52,10 @@ else
 fi
 dato "ocupación actual del diario: ${USO:-desconocida}"
 
-# Lo que de verdad importa de RF-19: que el rastro de un borrado sobreviva a un
-# reinicio. Raspberry Pi OS trae Storage=volatile y lo perdía TODO al arrancar.
+# Storage=persistent es CONDICIÓN NECESARIA Y NO SUFICIENTE, y confundir las dos
+# cosas es exactamente lo que dejó pasar el defecto de ADR-0039. Se dice así.
 if [ "$ALMACEN" = "persistent" ]; then
-  si "diario PERSISTENTE: los borrados de RF-19 sobreviven a un reinicio"
+  si "diario configurado como PERSISTENTE (necesario; la prueba está más abajo)"
 else
   no "diario con Storage=${ALMACEN:-por omisión}: se PIERDE al reiniciar, y con él el rastro de los borrados (RF-19)"
 fi
@@ -67,6 +67,37 @@ case "$DESTINO" in
   "")         no "no existe /var/log/journal" ;;
   *)          no "el diario está en $DESTINO, no en el disco de datos (ADR-0037)" ;;
 esac
+
+# ---------------------------------------------------------------------------
+# LA COMPROBACIÓN QUE FALTABA (ADR-0039), y la única que habría detectado el
+# defecto. Las TRES de arriba daban OK con el diario entero en RAM:
+#
+#   - Storage=persistent estaba escrito y journald lo había leído;
+#   - el enlace apuntaba al disco de datos;
+#   - y --list-boots contaba arranques, porque LEE el archivo del disco.
+#
+# Ninguna preguntaba dónde se ESCRIBE ahora. Si systemd-journal-flush volcó bien,
+# /run/log/journal deja de existir; si sigue ahí, journald está en RAM y este
+# arranque se perderá entero en el próximo reinicio.
+MAQUINA=$(cat /etc/machine-id 2>/dev/null)
+if [ -n "$MAQUINA" ] && [ -e "/run/log/journal/$MAQUINA/system.journal" ]; then
+  no "journald ESCRIBE EN RAM (/run/log/journal): este arranque se perderá al reiniciar, con los borrados de RF-19 dentro"
+elif [ -n "$MAQUINA" ] && [ -e "$DESTINO/$MAQUINA/system.journal" ]; then
+  si "journald ESCRIBE en el diario persistente y /run/log/journal ha desaparecido"
+else
+  no "no se pudo determinar dónde escribe journald: se cuenta como fallo (regla de este script)"
+fi
+
+# La causa era de ORDEN: el volcado corría antes de montar el disco. Se comprueba
+# la ordenación además del efecto, porque el efecto de arriba también sale bien
+# si alguien volcó a mano tras arrancar — y eso no sobrevive al siguiente inicio.
+UNIDAD_MONTAJE=$(systemd-escape -p --suffix=mount /srv/nas)
+N=$(systemctl show systemd-journal-flush.service -p After --value 2>/dev/null | tr ' ' '\n' | grep -c "^$UNIDAD_MONTAJE$")
+if [ "${N:-0}" -gt 0 ]; then
+  si "el volcado del diario está ordenado tras $UNIDAD_MONTAJE (ADR-0039)"
+else
+  no "systemd-journal-flush NO espera a $UNIDAD_MONTAJE: volcará antes de montar y el diario quedará en RAM. Ejecute 08_observabilidad.sh"
+fi
 
 # Un solo arranque en la lista significa que el diario no sobrevivió al último
 # reinicio. Ese fue el síntoma que destapó el problema.

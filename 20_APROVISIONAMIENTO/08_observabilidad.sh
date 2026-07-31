@@ -19,6 +19,13 @@
 #     systemd. ADR-0035 afirmaba que «no existía» y era FALSO. Este script no
 #     lo activa: lo APRIETA a 30s y comprueba que sigue en pie.
 #
+#  3. AÑADIDO tras el primer reinicio real (ADR-0039). Poner Storage=persistent
+#     NO bastaba: en el arranque, systemd-journal-flush corría 4 SEGUNDOS ANTES
+#     de montar /srv/nas, así que el enlace /var/log/journal colgaba en el vacío
+#     y journald se quedaba en /run —RAM— TODO el arranque. El diario sobrevivía
+#     una vez, el del aprovisionamiento, y a partir de ahí cada reinicio se
+#     llevaba el arranque entero. Se ordena el volcado DESPUÉS del montaje.
+#
 # Idempotente: se puede volver a ejecutar. P1: si un cambio no está en un
 # script, no existe.
 #
@@ -27,7 +34,10 @@
 set -euo pipefail
 
 CONF_DIARIO=/etc/systemd/journald.conf.d/50-nas.conf
+CONF_SYSLOG=/etc/systemd/journald.conf.d/syslog.conf
 CONF_WATCHDOG=/etc/systemd/system.conf.d/nas-watchdog.conf
+DIR_VOLCADO=/etc/systemd/system/systemd-journal-flush.service.d
+CONF_VOLCADO="$DIR_VOLCADO/50-nas-espera-al-disco.conf"
 
 # El diario va al DISCO DE DATOS, no al medio de arranque. Decisión del
 # responsable (ADR-0037): conserva la auditoría de borrados sin gastar el medio
@@ -125,6 +135,61 @@ ForwardToSyslog=no
 EOF
 verde "$CONF_DIARIO escrito."
 
+# El 50 gana al 40 de la distribución, pero NO a «syslog.conf»: los drop-in se
+# ordenan por NOMBRE DE ARCHIVO, y «syslog» va después de «50» en ese orden. Así
+# que /usr/lib/systemd/journald.conf.d/syslog.conf reponía ForwardToSyslog=yes y
+# la línea razonada de arriba no surtía efecto. Un archivo del MISMO NOMBRE en
+# /etc sustituye al del proveedor: es la forma que systemd da para esto.
+cat > "$CONF_SYSLOG" <<EOF
+# Generado por 20_APROVISIONAMIENTO/08_observabilidad.sh — proyecto NAS.
+# P1: si un cambio no está en el script, no existe. NO editar a mano.
+#
+# ADR-0039. Este archivo existe SOLO para anular al del proveedor
+# (/usr/lib/systemd/journald.conf.d/syslog.conf), que repone ForwardToSyslog=yes
+# y ordena DESPUÉS de 50-nas.conf. Deliberadamente no fija nada: al vaciarlo,
+# quien decide vuelve a ser 50-nas.conf.
+EOF
+verde "$CONF_SYSLOG escrito (anula el del proveedor)."
+
+# ---------------------------------------------------------------------------
+# 1.bis  El volcado a disco tiene que esperar al montaje (ADR-0039)
+# ---------------------------------------------------------------------------
+# MEDIDO en el primer reinicio real del nodo:
+#
+#   15:45:18  systemd-journal-flush.service   <- vuelca aquí
+#   15:45:22  srv-nas.mount                   <- el disco monta 4 s DESPUÉS
+#
+# Dos causas independientes, y CADA UNA bastaría por sí sola:
+#
+#   a) systemd-journal-flush trae RequiresMountsFor=/var/log/journal, que
+#      resuelve a «-.mount» —la raíz— y NO a srv-nas.mount: /var/log/journal es
+#      un ENLACE, y systemd resuelve los montajes del PREFIJO DE LA RUTA, no el
+#      destino del enlace. La dependencia que parece existir mira a otro disco.
+#   b) el «nofail» del fstab quita la ordenación Before=local-fs.target del
+#      montaje. Medido: srv-nas.mount solo declara Before=umount.target.
+#
+# Se arregla (b) sin tocar el fstab, porque «nofail» es justo lo que impide que
+# un disco ausente cuelgue el arranque de un nodo sin teclado. Se ordena, no se
+# exige: si el disco no está, el trabajo de montaje falla, el After= se da por
+# cumplido y el arranque sigue — journald degrada a /run como antes.
+UNIDAD_MONTAJE=$(systemd-escape -p --suffix=mount "$PUNTO")
+mkdir -p "$DIR_VOLCADO"
+cat > "$CONF_VOLCADO" <<EOF
+# Generado por 20_APROVISIONAMIENTO/08_observabilidad.sh — proyecto NAS.
+# P1: si un cambio no está en el script, no existe. NO editar a mano.
+#
+# ADR-0039. Sin esto, journald vuelca antes de que $PUNTO esté montado, no
+# vuelve a intentarlo, y el diario del arranque entero se queda en RAM.
+#
+# ORDENACIÓN, NO EXIGENCIA: nada de Requires= ni RequiresMountsFor=. Si el disco
+# falta, el arranque debe seguir (el fstab lleva nofail a propósito).
+
+[Unit]
+After=$UNIDAD_MONTAJE
+EOF
+verde "$CONF_VOLCADO escrito (volcado tras $UNIDAD_MONTAJE)."
+systemctl daemon-reload
+
 systemctl restart systemd-journald
 # Empuja lo que haya en /run hacia el diario persistente.
 journalctl --flush >/dev/null 2>&1 || true
@@ -138,14 +203,26 @@ sleep 1
 # ACIERTO en fallo. Es un falso negativo que depende del tamaño de la salida —
 # con pocas líneas cuela y con muchas miente—, y en 09_verificar_operacion.sh
 # ya hizo reportar que los registros de nasd no eran JSON cuando sí lo eran.
-N=$(journalctl --header 2>/dev/null | grep -c "$DIARIO\|/var/log/journal")
-if [ "${N:-0}" -gt 0 ]; then
-  verde "journald está escribiendo en el diario persistente."
-else
-  rojo "journald NO parece estar usando $ENLACE. El archivo está escrito y NO surte efecto."
-  rojo "Diagnóstico:  journalctl --header | head -20"
+# OJO CON LO QUE SE PREGUNTA. La versión anterior contaba las apariciones de
+# /var/log/journal en «journalctl --header», y eso da VERDE con el diario en RAM:
+# tras un reinicio, --header lista LOS DOS archivos, el de /run que está vivo y
+# el del disco que solo se lee. Contaba el que se lee y no el que se escribe.
+# Es ADR-0038 otra vez: el verificador no se parecía a lo que se quería saber.
+#
+# La pregunta correcta es dónde está el diario del sistema que journald usa
+# AHORA. Si systemd-journal-flush volcó bien, /run/log/journal deja de existir.
+MAQUINA=$(cat /etc/machine-id)
+if [ -e "/run/log/journal/$MAQUINA/system.journal" ]; then
+  rojo "journald SIGUE escribiendo en RAM (/run/log/journal). El volcado no ocurrió."
+  rojo "Diagnóstico:  journalctl --header | grep 'File path'"
   exit 1
 fi
+if [ ! -e "$DIARIO/$MAQUINA/system.journal" ]; then
+  rojo "No hay diario del sistema en $DIARIO. El archivo está escrito y NO surte efecto."
+  rojo "Diagnóstico:  journalctl --header | grep 'File path'"
+  exit 1
+fi
+verde "journald escribe en $DIARIO y /run/log/journal ha desaparecido."
 
 # ---------------------------------------------------------------------------
 # 2. Watchdog de hardware — ya existía; aquí se aprieta y se comprueba
