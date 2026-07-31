@@ -96,20 +96,17 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// RF-23 se comprueba ya al crear, para fallar pronto en lugar de tras
-	// transferir 4 GB.
-	escritor, err := s.almacen.Crear(r.Context(), ruta)
+	// CrearReanudable anota el destino EN DISCO junto al parcial, de modo que
+	// la subida sobreviva a un reinicio del servicio (ADR-0027).
+	// RF-23 se comprueba ya aquí, para fallar pronto en lugar de tras
+	// transferir 5 GB.
+	parcial, escritor, err := s.almacen.CrearReanudable(r.Context(), ruta, total)
 	if err != nil {
 		s.fallo(w, r, err)
 		return
 	}
 
-	id, err := identificadorDeSubida()
-	if err != nil {
-		escritor.Descartar()
-		s.fallo(w, r, err)
-		return
-	}
+	id := parcial.ID
 	s.subidas.guardar(id, &subidaEnCurso{escritor: escritor, ruta: ruta, total: total})
 	s.reg.Info("subida creada", "id", id, "ruta", ruta.Rel(), "bytes", total)
 
@@ -118,9 +115,29 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+// recuperar busca una subida en memoria y, si no está, intenta reabrirla
+// desde el disco.
+//
+// Esto es lo que hace que una subida sobreviva a un reinicio del servicio:
+// el .meta dice adónde iba y el tamaño del parcial dice por dónde iba.
+func (s *Servidor) recuperar(r *http.Request, id string) (*subidaEnCurso, bool) {
+	if sub, ok := s.subidas.buscar(id); ok {
+		return sub, true
+	}
+	parcial, escritor, err := s.almacen.ReabrirParcial(r.Context(), id)
+	if err != nil {
+		return nil, false
+	}
+	sub := &subidaEnCurso{escritor: escritor, ruta: parcial.Ruta, total: parcial.Total}
+	s.subidas.guardar(id, sub)
+	s.reg.Info("subida recuperada del disco",
+		"id", id, "ruta", parcial.Ruta.Rel(), "desplazamiento", parcial.Escrito)
+	return sub, true
+}
+
 func (s *Servidor) tusEstado(w http.ResponseWriter, r *http.Request) {
 	cabecerasTus(w)
-	sub, ok := s.subidas.buscar(r.PathValue("id"))
+	sub, ok := s.recuperar(r, r.PathValue("id"))
 	if !ok {
 		http.Error(w, "no existe", http.StatusNotFound)
 		return
@@ -135,7 +152,7 @@ func (s *Servidor) tusEstado(w http.ResponseWriter, r *http.Request) {
 func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 	cabecerasTus(w)
 	id := r.PathValue("id")
-	sub, ok := s.subidas.buscar(id)
+	sub, ok := s.recuperar(r, id)
 	if !ok {
 		http.Error(w, "no existe", http.StatusNotFound)
 		return
@@ -180,10 +197,6 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Nas-Completada", "1")
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func identificadorDeSubida() (string, error) {
-	return generarID()
 }
 
 // decodificar deshace el encodeURIComponent del cliente.

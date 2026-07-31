@@ -32,6 +32,21 @@ type Almacen interface {
 
 	CrearDirectorio(ctx context.Context, r RutaSegura) error
 	Estado(ctx context.Context, r RutaSegura) (Entrada, error)
+
+	// CrearReanudable abre una escritura cuyo DESTINO queda anotado en disco
+	// junto al parcial, de modo que sobreviva al reinicio del servicio.
+	//
+	// Sin esto, el destino vive solo en memoria y un reinicio deja el parcial
+	// huérfano: los bytes siguen ahí, pero nadie sabe adónde iban.
+	CrearReanudable(ctx context.Context, r RutaSegura, total int64) (Parcial, EscrituraAtomica, error)
+
+	// Reanudables devuelve las subidas incompletas que hay en disco. Se llama
+	// al arrancar, para reconstruir lo que el proceso anterior sabía.
+	Reanudables(ctx context.Context) ([]Parcial, error)
+
+	// ReabrirParcial recupera una escritura por su identificador, con el
+	// desplazamiento situado al final de lo ya escrito.
+	ReabrirParcial(ctx context.Context, id string) (Parcial, EscrituraAtomica, error)
 }
 
 // EscrituraAtomica: o el archivo existe completo, o no existe. RNF-05, RNF-08.
