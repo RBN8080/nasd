@@ -130,6 +130,13 @@ ReadWritePaths=/srv/nas
 MemoryMax=192M
 Environment=GOMEMLIMIT=160MiB
 
+# P4 — el secreto NO vive en el repositorio ni en el TOML. systemd copia el
+# archivo a un tmpfs privado del servicio, legible solo por él, y expone su
+# ruta en $CREDENTIALS_DIRECTORY. RF-15 y D-14 / ADR-0021.
+#
+# Sin esto el servicio NO ARRANCA: no existe un modo sin autenticar.
+LoadCredential=web:/etc/nasd/credencial
+
 StandardOutput=journal
 StandardError=journal
 

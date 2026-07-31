@@ -8,16 +8,21 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"nasd/internal/adaptadores/fsposix"
 	"nasd/internal/adaptadores/operacion"
 	"nasd/internal/adaptadores/web"
+	"nasd/internal/autenticacion"
 	"nasd/internal/config"
 )
 
@@ -31,7 +36,13 @@ func main() {
 
 func ejecutar() error {
 	rutaConfig := flag.String("config", "", "ruta del archivo TOML de configuración")
+	generar := flag.Bool("generar-credencial", false,
+		"lee una contraseña de la entrada estándar y escribe su línea derivada")
 	flag.Parse()
+
+	if *generar {
+		return generarCredencial()
+	}
 
 	// RNF-13: registro estructurado en JSON hacia journald por la salida
 	// estándar, que es como systemd lo recoge.
@@ -51,10 +62,18 @@ func ejecutar() error {
 	}
 	defer alm.Close()
 
+	credencial, origen, err := leerCredencial()
+	if err != nil {
+		return err
+	}
+	reg.Info("credencial de la web cargada", "origen", origen)
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen:          alm,
 		Registro:         reg,
 		PlazoInactividad: cfg.PlazoInactividad,
+		Credencial:       credencial,
+		DuracionSesion:   cfg.DuracionSesion,
 	})
 	if err != nil {
 		return err
@@ -102,4 +121,56 @@ func ejecutar() error {
 	ctxApagado, cancelar := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelar()
 	return srv.Shutdown(ctxApagado)
+}
+
+// leerCredencial obtiene la línea derivada de la contraseña de la web.
+//
+// P4 del charter: el secreto NO vive en el repositorio ni en el TOML. El
+// mecanismo declarado es LoadCredential= de systemd, que deja el archivo en
+// un tmpfs privado del servicio, legible solo por él.
+//
+// Si no hay credencial, el servicio NO ARRANCA. No existe un modo sin
+// autenticar: dejarlo abierto pondría el disco entero al alcance de
+// cualquiera en la LAN, que es justo lo que RN-06 ordena evitar (P5).
+func leerCredencial() (string, string, error) {
+	if dir := os.Getenv("CREDENTIALS_DIRECTORY"); dir != "" {
+		ruta := filepath.Join(dir, "web")
+		if b, err := os.ReadFile(ruta); err == nil {
+			return strings.TrimSpace(string(b)), "systemd LoadCredential", nil
+		}
+	}
+	// Camino alternativo, para desarrollo y para las pruebas del nodo.
+	if ruta := os.Getenv("NASD_CREDENCIAL"); ruta != "" {
+		b, err := os.ReadFile(ruta)
+		if err != nil {
+			return "", "", fmt.Errorf("leer NASD_CREDENCIAL %q: %w", ruta, err)
+		}
+		return strings.TrimSpace(string(b)), "NASD_CREDENCIAL=" + ruta, nil
+	}
+	return "", "", errors.New(
+		"no hay credencial de la web configurada. " +
+			"Genérela con «nasd --generar-credencial» y entréguesela por " +
+			"LoadCredential=web:/etc/nasd/credencial en la unidad systemd")
+}
+
+// generarCredencial lee la contraseña de la ENTRADA ESTÁNDAR y escribe su
+// línea derivada por la salida estándar.
+//
+// Se lee de stdin y no de un argumento a propósito: un argumento quedaría en
+// el historial del intérprete y en la lista de procesos, visible para
+// cualquier usuario del sistema (P4).
+func generarCredencial() error {
+	b, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
+	if err != nil {
+		return fmt.Errorf("leer la contraseña de la entrada estándar: %w", err)
+	}
+	// Se recortan solo los saltos finales que añade el intérprete al leer una
+	// línea. Los espacios NO se tocan: pueden ser parte de la contraseña.
+	clave := strings.TrimRight(string(b), "\r\n")
+	linea, err := autenticacion.Derivar(clave, web.IteracionesPBKDF2)
+	if err != nil {
+		return err
+	}
+	fmt.Println(linea)
+	return nil
 }

@@ -1,0 +1,25 @@
+{{define "acceso.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — Acceso</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+<main class="acceso">
+  <h1>NAS</h1>
+  {{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
+  <form method="post" action="/acceso">
+    <label for="clave">Contraseña</label>
+    <input type="password" id="clave" name="clave" autocomplete="current-password" autofocus required>
+    <button type="submit">Entrar</button>
+  </form>
+  <p class="oculto">
+    La comprobación tarda unos segundos a propósito: la derivación de clave
+    está deliberadamente calculada para ser lenta.
+  </p>
+</main>
+</body>
+</html>
+{{end}}

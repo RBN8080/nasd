@@ -48,13 +48,16 @@ ReadWritePaths=/srv/nas
 MemoryMax=192M
 Environment=GOMEMLIMIT=160MiB
 
+# P4 — el secreto NO vive en el repositorio ni en el TOML. systemd copia el
+# archivo a un tmpfs privado del servicio, legible solo por el, y expone su
+# ruta en $CREDENTIALS_DIRECTORY. RF-15 y D-14 / ADR-0021.
+#
+# Sin esto el servicio NO ARRANCA: no existe un modo sin autenticar.
+LoadCredential=web:/etc/nasd/credencial
+
 # RNF-13: registro estructurado JSON por stdout hacia journald.
 StandardOutput=journal
 StandardError=journal
-
-# P4: cero secretos en el repositorio. Cuando exista la credencial web
-# (D-14, Fase 3), se carga así y no desde el TOML:
-# LoadCredential=web:/etc/nasd/credencial
 
 [Install]
 WantedBy=multi-user.target

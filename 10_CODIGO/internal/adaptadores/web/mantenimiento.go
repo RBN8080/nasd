@@ -89,6 +89,10 @@ func (s *Servidor) mantener(ctx context.Context) {
 		s.reg.Info("subidas desalojadas de memoria",
 			"cuantas", n, "siguen_reanudables", true)
 	}
+	if n := s.sesiones.Purgar(); n > 0 {
+		s.reg.Info("sesiones caducadas purgadas", "cuantas", n)
+	}
+	s.limitador.purgar()
 	s.expirarParciales(ctx, s.almacen)
 }
 
