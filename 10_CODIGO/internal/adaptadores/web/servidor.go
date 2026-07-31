@@ -8,6 +8,7 @@ package web
 import (
 	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"nasd/internal/almacen"
+	"nasd/internal/autenticacion"
 )
 
 //go:embed plantillas/*.html estatico/*
@@ -28,12 +30,24 @@ type Servidor struct {
 	plantillas       *template.Template
 	plazoInactividad time.Duration
 	subidas          *registroDeSubidas
+
+	// Autenticación — RF-15. credencial es la línea derivada, NUNCA la
+	// contraseña en claro: esta nunca entra en el proceso más allá del
+	// instante de verificarla.
+	credencial     string
+	sesiones       *autenticacion.Sesiones
+	limitador      *limitadorAcceso
+	duracionSesion time.Duration
 }
 
 type Opciones struct {
 	Almacen          almacen.Almacen
 	Registro         *slog.Logger
 	PlazoInactividad time.Duration
+	// Credencial es la línea derivada que produce «nasd --generar-credencial».
+	// Si está vacía, Nuevo falla: NO existe un modo sin autenticar (RF-15).
+	Credencial     string
+	DuracionSesion time.Duration
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -41,12 +55,33 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if err != nil {
 		return nil, err
 	}
+	// P5: las dependencias obligatorias se comprueban al construir, no se
+	// desreferencian a ciegas. Un almacén nulo reventaba más abajo con un
+	// pánico opaco; lo destapó una prueba, no producción.
+	if o.Almacen == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta el almacén")
+	}
+	if o.Registro == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta el registro")
+	}
+
+	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
+	// disco entero administrable por cualquiera en la LAN, que es justo lo
+	// que RN-06 ordena evitar. Mejor no arrancar que arrancar inseguro.
+	if err := autenticacion.Valida(o.Credencial); err != nil {
+		return nil, fmt.Errorf("credencial de la web: %w", err)
+	}
+
 	s := &Servidor{
 		almacen:          o.Almacen,
 		reg:              o.Registro,
 		plantillas:       t,
 		plazoInactividad: o.PlazoInactividad,
 		subidas:          nuevoRegistroDeSubidas(),
+		credencial:       o.Credencial,
+		sesiones:         autenticacion.NuevasSesiones(o.DuracionSesion),
+		limitador:        nuevoLimitador(),
+		duracionSesion:   o.DuracionSesion,
 	}
 
 	// Al arrancar se mira qué subidas dejó a medias el proceso anterior.
@@ -68,20 +103,27 @@ func Nuevo(o Opciones) (*Servidor, error) {
 }
 
 func (s *Servidor) Rutas() http.Handler {
+	// Lo protegido: TODO menos el formulario de acceso y los assets que ese
+	// formulario necesita para dibujarse.
+	protegido := http.NewServeMux()
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /{$}", s.verListado)
-	mux.HandleFunc("GET /ver/{ruta...}", s.verListado)
-	mux.HandleFunc("GET /descargar/{ruta...}", s.descargar)
-	mux.HandleFunc("POST /subir", s.subirMultipart)
-	mux.HandleFunc("POST /directorio", s.crearDirectorio)
+	mux.HandleFunc("GET /acceso", s.mostrarAcceso)
+	mux.HandleFunc("POST /acceso", s.procesarAcceso)
+	mux.HandleFunc("POST /salir", s.salir)
+	mux.Handle("GET /estatico/", http.FileServerFS(recursos))
+	mux.Handle("/", s.exigirSesion(protegido))
+
+	protegido.HandleFunc("GET /{$}", s.verListado)
+	protegido.HandleFunc("GET /ver/{ruta...}", s.verListado)
+	protegido.HandleFunc("GET /descargar/{ruta...}", s.descargar)
+	protegido.HandleFunc("POST /subir", s.subirMultipart)
+	protegido.HandleFunc("POST /directorio", s.crearDirectorio)
 
 	// Núcleo del protocolo tus — ADR-0027.
-	mux.HandleFunc("POST /subidas", s.tusCrear)
-	mux.HandleFunc("HEAD /subidas/{id}", s.tusEstado)
-	mux.HandleFunc("PATCH /subidas/{id}", s.tusEnviar)
-
-	mux.Handle("GET /estatico/", http.FileServerFS(recursos))
+	protegido.HandleFunc("POST /subidas", s.tusCrear)
+	protegido.HandleFunc("HEAD /subidas/{id}", s.tusEstado)
+	protegido.HandleFunc("PATCH /subidas/{id}", s.tusEnviar)
 
 	return s.conRegistro(mux)
 }

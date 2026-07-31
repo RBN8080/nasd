@@ -28,6 +28,11 @@ type Config struct {
 	PlazoCabeceras   time.Duration
 	PlazoOcioso      time.Duration
 	PlazoInactividad time.Duration
+
+	// DuracionSesion — RF-15. Sin TLS (ADR-0018) una cookie robada vale lo
+	// que dure, así que no se pone eterna. Siete días equilibra comodidad y
+	// exposición para un uso doméstico. [R]
+	DuracionSesion time.Duration
 }
 
 // Valores de referencia [R] — no son criterio de aceptación (01_REQUISITOS §2).
@@ -40,6 +45,7 @@ func porDefecto() Config {
 		PlazoCabeceras:   10 * time.Second,
 		PlazoOcioso:      120 * time.Second,
 		PlazoInactividad: 60 * time.Second,
+		DuracionSesion:   7 * 24 * time.Hour,
 	}
 }
 
@@ -71,6 +77,13 @@ func Cargar(ruta string) (Config, error) {
 				return c, fmt.Errorf("red.puerto: %w", err)
 			}
 			c.Puerto = n
+		}
+		if s, ok := v["sesion.duracion_horas"]; ok {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 {
+				return c, fmt.Errorf("sesion.duracion_horas: debe ser un entero positivo")
+			}
+			c.DuracionSesion = time.Duration(n) * time.Hour
 		}
 		if s, ok := v["plazos.inactividad_s"]; ok {
 			n, err := strconv.Atoi(s)

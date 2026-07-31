@@ -27,3 +27,12 @@ input, button { font: inherit; padding: .35rem .6rem; }
 
 /* El ancho de la tabla nunca debe empujar la página en un teléfono. */
 main { overflow-x: auto; }
+
+/* Formulario de acceso — RF-15 */
+.acceso { max-width: 22rem; margin: 4rem auto; }
+.acceso h1 { margin-bottom: 1.5rem; }
+.acceso form { display: grid; gap: .6rem; }
+.acceso label { font-weight: 600; }
+
+.salir { float: right; }
+.salir button { font-size: .85em; padding: .2rem .5rem; }
