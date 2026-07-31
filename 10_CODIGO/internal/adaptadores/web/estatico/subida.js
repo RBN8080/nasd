@@ -14,6 +14,42 @@ const BLOQUE = 8 * 1024 * 1024;
 // RN-01 y RN-02 siguen vigentes: este producto no es un respaldo, y nada aquí
 // puede ofrecer, sugerir ni automatizar el borrado del origen tras subir.
 
+// Subidas a medias, recordadas entre visitas — RF-12.
+//
+// EL DEFECTO QUE ESTO CORRIGE (encontrado en uso real el 2026-07-31):
+// la URL de la subida vivía en una variable local. Al cerrar la pestaña se
+// perdía, y el siguiente intento creaba una subida NUEVA que empezaba de
+// cero, dejando además el parcial anterior huérfano en el servidor.
+//
+// El servidor SÍ conservaba el desplazamiento —ADR-0027 acertaba: el
+// desplazamiento ES el tamaño del parcial— pero el cliente no sabía volver.
+const CLAVE_SUBIDAS = 'nas.subidas';
+
+function claveDe(archivo, destino) {
+  return destino + '|' + archivo.name + '|' + archivo.size;
+}
+
+function subidasRecordadas() {
+  try { return JSON.parse(localStorage.getItem(CLAVE_SUBIDAS) || '{}'); }
+  catch (e) { return {}; }
+}
+
+function recordar(clave, url) {
+  try {
+    const m = subidasRecordadas();
+    m[clave] = url;
+    localStorage.setItem(CLAVE_SUBIDAS, JSON.stringify(m));
+  } catch (e) { /* modo privado: se sigue sin recordar */ }
+}
+
+function olvidar(clave) {
+  try {
+    const m = subidasRecordadas();
+    delete m[clave];
+    localStorage.setItem(CLAVE_SUBIDAS, JSON.stringify(m));
+  } catch (e) { /* ignorado */ }
+}
+
 function fila(nombre) {
   const li = document.createElement('li');
   const n = document.createElement('span');
@@ -48,7 +84,32 @@ async function iniciarSubida() {
 }
 
 async function subirArchivo(archivo, destino, estado) {
-  // 1. Crear la subida.
+  const clave = claveDe(archivo, destino);
+  let url = null;
+  let offset = 0;
+
+  // 1. ¿Había una subida a medias de ESTE mismo archivo a ESTE destino?
+  //    Se pregunta al servidor, que es quien tiene la verdad: el
+  //    desplazamiento es el tamaño del parcial, no un dato que guardemos.
+  const recordada = subidasRecordadas()[clave];
+  if (recordada) {
+    try {
+      const r = await fetch(recordada, { method: 'HEAD', headers: { 'Tus-Resumable': '1.0.0' } });
+      if (r.ok) {
+        url = recordada;
+        offset = parseInt(r.headers.get('Upload-Offset') || '0', 10);
+        estado.textContent = 'reanudando desde ' + Math.floor((offset / archivo.size) * 100) + ' %';
+      } else {
+        // El servidor ya no la conoce (p. ej. se reinició el servicio).
+        olvidar(clave);
+      }
+    } catch (e) {
+      olvidar(clave);
+    }
+  }
+
+  // 2. Si no hay nada que reanudar, se crea.
+  if (!url) {
   const creacion = await fetch('/subidas', {
     method: 'POST',
     headers: {
@@ -68,10 +129,11 @@ async function subirArchivo(archivo, destino, estado) {
   if (creacion.status === 409) throw new Error('ya existe (no se sobrescribe)');
   if (!creacion.ok) throw new Error('no se pudo crear (' + creacion.status + ')');
 
-  const url = creacion.headers.get('Location');
-  let offset = 0;
+    url = creacion.headers.get('Location');
+    recordar(clave, url);
+  }
 
-  // 2. Enviar por bloques, reanudando desde el desplazamiento que diga el
+  // 3. Enviar por bloques, reanudando desde el desplazamiento que diga el
   //    servidor. Nunca desde el que creamos nosotros: la fuente de verdad es
   //    el tamaño del archivo parcial en el servidor (ADR-0027).
   while (offset < archivo.size) {
@@ -101,6 +163,9 @@ async function subirArchivo(archivo, destino, estado) {
     offset = parseInt(r.headers.get('Upload-Offset') || '0', 10);
     estado.textContent = Math.floor((offset / archivo.size) * 100) + ' %';
   }
+
+  // Completada: se deja de recordar para no reanudar algo ya terminado.
+  olvidar(clave);
 }
 
 async function consultarDesplazamiento(url) {
