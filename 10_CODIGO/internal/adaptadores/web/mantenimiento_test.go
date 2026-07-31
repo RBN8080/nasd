@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,4 +136,69 @@ func TestExpiraPorInactividadYNoTocaLoVivo(t *testing.T) {
 
 func registroSilencioso() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
+// Regresión del defecto A, detectado en la SEGUNDA iteración de revisión.
+//
+// El barrido llamaba a buscar() para saber si un parcial estaba vivo, y
+// buscar() refresca el uso. Cada pasada rejuvenecía las entradas, así que el
+// desalojo no se disparaba NUNCA: la fuga seguía existiendo, solo que topada
+// por el límite de concurrencia. El propio control que protege lo vivo
+// mataba la limpieza.
+func TestExisteNoRefrescaElUso(t *testing.T) {
+	r := nuevoRegistroDeSubidas()
+	r.guardar("x", &subidaEnCurso{escritor: &escritorFalso{}})
+
+	r.mu.Lock()
+	r.m["x"].ultimoUso = time.Now().Add(-time.Hour)
+	r.mu.Unlock()
+
+	if !r.existe("x") {
+		t.Fatal("existe() debía encontrarla")
+	}
+	// Tras consultarla con existe(), debe seguir siendo desalojable.
+	if n := r.desalojarInactivas(10 * time.Minute); n != 1 {
+		t.Fatalf("desalojadas = %d; existe() rejuveneció la entrada y "+
+			"el desalojo no se dispararía nunca", n)
+	}
+}
+
+// Regresión del defecto B: dos PATCH simultáneos sobre una subida
+// desalojada abrían DOS descriptores en O_APPEND sobre el mismo archivo.
+func TestRecuperacionConcurrenteAbreUnaSolaVez(t *testing.T) {
+	r := nuevoRegistroDeSubidas()
+
+	var aperturas atomic.Int32
+	abrir := func() (*subidaEnCurso, error) {
+		aperturas.Add(1)
+		time.Sleep(2 * time.Millisecond) // simula el coste de abrir el archivo
+		return &subidaEnCurso{escritor: &escritorFalso{}}, nil
+	}
+
+	var wg sync.WaitGroup
+	vistos := make([]*subidaEnCurso, 20)
+	for i := range vistos {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s, err := r.obtenerOAbrir("mismo", abrir)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			vistos[i] = s
+		}(i)
+	}
+	wg.Wait()
+
+	if n := aperturas.Load(); n != 1 {
+		t.Fatalf("el parcial se abrió %d veces; debía abrirse UNA. "+
+			"Varios descriptores en O_APPEND sobre el mismo archivo "+
+			"entrelazarían los bytes", n)
+	}
+	for i, v := range vistos {
+		if v != vistos[0] {
+			t.Fatalf("la goroutine %d obtuvo una subida distinta", i)
+		}
+	}
 }

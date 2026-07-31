@@ -31,8 +31,13 @@ const versionTus = "1.0.0"
 // archivo y cómo se llama.
 //
 // Charter §6.1 exige documentar todo estado compartido entre goroutines.
-// Este es uno de los dos del programa: lo protege un mutex y ninguna
-// operación de disco se hace con el mutex tomado.
+// Este es uno de los dos del programa, y lo protege un mutex.
+//
+// MATIZ que antes se afirmaba mal: obtenerOAbrir SÍ hace una operación de
+// disco con el mutex tomado —abrir un archivo—, y es deliberado. Comprobar
+// y luego actuar sin cerrojo permitía que dos PATCH simultáneos abrieran
+// DOS descriptores en O_APPEND sobre el mismo parcial, entrelazando bytes.
+// Una apertura dura microsegundos; la corrupción es para siempre.
 type registroDeSubidas struct {
 	mu sync.Mutex
 	m  map[string]*subidaEnCurso
@@ -67,6 +72,40 @@ func (r *registroDeSubidas) buscar(id string) (*subidaEnCurso, bool) {
 		s.ultimoUso = time.Now()
 	}
 	return s, ok
+}
+
+// existe indica si la subida está en memoria SIN refrescar su uso.
+//
+// El barrido de mantenimiento DEBE usar esta y no buscar(): al inspeccionar
+// cada parcial para ver si está vivo, buscar() rejuvenecía la entrada, con
+// lo que el desalojo no se disparaba NUNCA y la fuga seguía existiendo,
+// solo que topada por el límite de concurrencia.
+func (r *registroDeSubidas) existe(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.m[id]
+	return ok
+}
+
+// obtenerOAbrir devuelve la subida en memoria o la reabre, DE FORMA ATÓMICA.
+//
+// Sin esto, dos PATCH concurrentes sobre una subida desalojada fallaban los
+// dos en la búsqueda, la reabrían los dos, y acababan con dos descriptores
+// escribiendo por el final del mismo archivo.
+func (r *registroDeSubidas) obtenerOAbrir(id string, abrir func() (*subidaEnCurso, error)) (*subidaEnCurso, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s, ok := r.m[id]; ok {
+		s.ultimoUso = time.Now()
+		return s, nil
+	}
+	s, err := abrir()
+	if err != nil {
+		return nil, err
+	}
+	s.ultimoUso = time.Now()
+	r.m[id] = s
+	return s, nil
 }
 
 func (r *registroDeSubidas) cuantas() int {
@@ -174,17 +213,18 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 // Esto es lo que hace que una subida sobreviva a un reinicio del servicio:
 // el .meta dice adónde iba y el tamaño del parcial dice por dónde iba.
 func (s *Servidor) recuperar(r *http.Request, id string) (*subidaEnCurso, bool) {
-	if sub, ok := s.subidas.buscar(id); ok {
-		return sub, true
-	}
-	parcial, escritor, err := s.almacen.ReabrirParcial(r.Context(), id)
+	sub, err := s.subidas.obtenerOAbrir(id, func() (*subidaEnCurso, error) {
+		parcial, escritor, err := s.almacen.ReabrirParcial(r.Context(), id)
+		if err != nil {
+			return nil, err
+		}
+		s.reg.Info("subida recuperada del disco",
+			"id", id, "ruta", parcial.Ruta.Rel(), "desplazamiento", parcial.Escrito)
+		return &subidaEnCurso{escritor: escritor, ruta: parcial.Ruta, total: parcial.Total}, nil
+	})
 	if err != nil {
 		return nil, false
 	}
-	sub := &subidaEnCurso{escritor: escritor, ruta: parcial.Ruta, total: parcial.Total}
-	s.subidas.guardar(id, sub)
-	s.reg.Info("subida recuperada del disco",
-		"id", id, "ruta", parcial.Ruta.Rel(), "desplazamiento", parcial.Escrito)
 	return sub, true
 }
 

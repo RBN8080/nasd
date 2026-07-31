@@ -6,7 +6,6 @@
 package almacen
 
 import (
-	"errors"
 	"path"
 	"strings"
 )
@@ -187,5 +186,3 @@ func tieneUnidadWindows(s string) bool {
 	c := s[0]
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
-
-var _ = errors.Is // el paquete errores usa errors; mantiene la intención explícita
