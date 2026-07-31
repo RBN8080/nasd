@@ -62,6 +62,11 @@ func ejecutar() error {
 
 	srv := s.HTTPServer(cfg.Direccion, cfg.Puerto)
 
+	// Ciclo de limpieza de subidas abandonadas (ADR-0029). Fuera del camino
+	// de las peticiones, para no bloquear listados ni calentar la CPU.
+	pararMantenimiento := s.Mantener(context.Background())
+	defer pararMantenimiento()
+
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
 

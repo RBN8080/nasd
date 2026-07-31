@@ -131,7 +131,10 @@ func (a *Almacen) ReabrirParcial(ctx context.Context, id string) (almacen.Parcia
 		// metadato. Es la garantía de ADR-0027.
 		escrito: fi.Size(),
 	}
-	return almacen.Parcial{ID: id, Ruta: ruta, Total: m.Total, Escrito: fi.Size()}, e, nil
+	return almacen.Parcial{
+		ID: id, Ruta: ruta, Total: m.Total,
+		Escrito: fi.Size(), Modificado: fi.ModTime(),
+	}, e, nil
 }
 
 // Reanudables recorre estado/parciales/ y devuelve lo que sobrevivió.
@@ -172,7 +175,8 @@ func (a *Almacen) Reanudables(ctx context.Context) ([]almacen.Parcial, error) {
 			continue // .meta huérfano sin datos
 		}
 		out = append(out, almacen.Parcial{
-			ID: id, Ruta: ruta, Total: m.Total, Escrito: fi.Size(),
+			ID: id, Ruta: ruta, Total: m.Total,
+			Escrito: fi.Size(), Modificado: fi.ModTime(),
 		})
 	}
 	return out, nil
@@ -231,4 +235,24 @@ func idValido(id string) bool {
 		}
 	}
 	return true
+}
+
+// BorrarParcial elimina un parcial y su metadato. Lo usa la expiración de
+// ADR-0029, y SOLO ella: nunca se borra un parcial sin dejar constancia.
+func (a *Almacen) BorrarParcial(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !idValido(id) {
+		return almacen.ErrRutaInvalida
+	}
+	err1 := a.raiz.Remove(a.rutaParte(id))
+	err2 := a.raiz.Remove(a.rutaMeta(id))
+	if err1 != nil && !errors.Is(err1, fs.ErrNotExist) {
+		return traducir(err1)
+	}
+	if err2 != nil && !errors.Is(err2, fs.ErrNotExist) {
+		return traducir(err2)
+	}
+	return nil
 }

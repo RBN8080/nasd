@@ -26,4 +26,8 @@ type Parcial struct {
 	// Escrito es el tamaño REAL del archivo parcial. Es el Upload-Offset:
 	// no hay metadato de progreso que pueda desincronizarse (ADR-0027).
 	Escrito int64
+	// Modificado es la última vez que se recibieron bytes. ADR-0029 expira
+	// por INACTIVIDAD, no por antigüedad: una subida legítima de 5 GB puede
+	// durar días con pausas, y la antigüedad castigaría justo ese caso.
+	Modificado time.Time
 }
