@@ -60,10 +60,19 @@ if testparm -s --parameter-name='server min protocol' 2>/dev/null | grep -qi 'SM
 else
   no "SMB1 podría estar activo"
 fi
-if smbclient -L localhost -N 2>&1 | grep -qi 'NT_STATUS_ACCESS_DENIED\|NT_STATUS_LOGON_FAILURE'; then
-  si "la sesión nula es rechazada"
+# Lo que hay que comprobar NO es si el login anónimo se rechaza —Samba lo
+# permite a nivel de protocolo aunque «restrict anonymous = 2»— sino si un
+# cliente anónimo puede ACCEDER AL RECURSO. Eso es lo que dice RNF-09.
+#
+# Y si la herramienta no está, hay que decirlo: un script de verificación que
+# confunde «control verificado» con «no se pudo verificar» es peor que no
+# tenerlo, porque se le cree.
+if ! command -v smbclient >/dev/null 2>&1; then
+  no "NO SE PUDO VERIFICAR: falta smbclient. Instale: sudo apt install smbclient"
+elif smbclient //localhost/datos -N -c ls 2>&1 | grep -qi 'NT_STATUS_ACCESS_DENIED\|NT_STATUS_LOGON_FAILURE\|NT_STATUS_CONNECTION_DISCONNECTED'; then
+  si "un cliente anónimo NO puede acceder al recurso"
 else
-  no "una sesión nula obtuvo respuesta: revise map to guest / restrict anonymous"
+  no "UN CLIENTE ANÓNIMO ACCEDIÓ AL RECURSO: revise valid users / map to guest"
 fi
 
 echo
@@ -80,14 +89,22 @@ echo "===== MEDICIONES DE SUPUESTOS (03_ESTUDIO_TECNICO.md §10) ====="
 
 echo
 echo "-- S-02: coste de fsync en este disco --"
-if [ -w "$PUNTO/estado" ]; then
-  T=$( { time -p ( for _ in $(seq 1 50); do
-          echo x > "$PUNTO/estado/.fsync_prueba"; sync -d "$PUNTO/estado/.fsync_prueba" 2>/dev/null || sync
-        done ) ; } 2>&1 | awk '/^real/{print $2}')
+if [ -w "$PUNTO/estado" ] && command -v python3 >/dev/null 2>&1; then
+  # fsync PURO sobre un descriptor ya abierto: sin incluir open ni truncate,
+  # que falsearían la cifra a la baja.
+  MS=$(python3 -c '
+import os, time
+f = os.open("'"$PUNTO"'/estado/.fsync_prueba", os.O_CREAT | os.O_WRONLY, 0o600)
+t0 = time.perf_counter()
+for _ in range(30):
+    os.write(f, b"x"); os.fsync(f)
+print("%.1f" % ((time.perf_counter() - t0) * 1000 / 30))
+os.close(f)
+')
   rm -f "$PUNTO/estado/.fsync_prueba"
-  dato "50 fsync en ${T}s  →  $(awk -v t="$T" 'BEGIN{printf "%.1f", t*1000/50}') ms por fsync (se estimó 10–15 ms [R])"
+  dato "coste de fsync: ${MS} ms  (ADR-0024 estimaba 10-15 ms [R] — MEDIDO MUY SUPERIOR)"
 else
-  dato "sin permiso de escritura en $PUNTO/estado; ejecute con sudo para medir S-02"
+  dato "no se pudo medir S-02 (hace falta permiso de escritura y python3)"
 fi
 
 echo

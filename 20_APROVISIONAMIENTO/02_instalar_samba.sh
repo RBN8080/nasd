@@ -59,7 +59,11 @@ cat > "$CONF" <<EOF
    hosts allow = $RED 127.0.0.1
    hosts deny = 0.0.0.0/0
 
-   smb encryption = desired
+   # OJO: el parámetro es «server smb encrypt», NO «smb encryption».
+   # Ese último NO EXISTE, y Samba lo ignora con un aviso fácil de pasar por
+   # alto en la salida de testparm: el cifrado no se activa y nadie se entera.
+   # Verificado contra Samba 4.22.10 en el nodo (2026-07-30).
+   server smb encrypt = desired
 
    # ADR-0028 — los bloqueos de rango se proyectan a POSIX para que la web
    # pueda verlos. Es "cortesía", no garantía: un copiar y pegar del
