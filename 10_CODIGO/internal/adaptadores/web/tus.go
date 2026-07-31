@@ -292,6 +292,40 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// tusDescartar — verbo DELETE del protocolo tus.
+//
+// Distingue dos cosas que el usuario vive distinto:
+//
+//   - PAUSAR es del lado del cliente: deja de enviar y ya está. El parcial
+//     sigue en disco y la subida se reanuda después (RF-12). No pasa por aquí.
+//   - DESCARTAR es esto: el usuario dice que ya no quiere ese archivo, y el
+//     parcial se destruye ahora en lugar de esperar a que expire.
+//
+// Sin este verbo, cancelar dejaba basura en estado/parciales/ hasta que el
+// barrido de ADR-0029 la recogiera, días después.
+func (s *Servidor) tusDescartar(w http.ResponseWriter, r *http.Request) {
+	cabecerasTus(w)
+	id := r.PathValue("id")
+	sub, ok := s.recuperar(r, id)
+	if !ok {
+		http.Error(w, "no existe", http.StatusNotFound)
+		return
+	}
+	sub.mu.Lock()
+	err := sub.escritor.Descartar()
+	sub.mu.Unlock()
+	s.subidas.borrar(id)
+
+	if err != nil {
+		s.reg.Warn("no se pudo descartar el parcial", "id", id, "error", err)
+		s.fallo(w, r, err)
+		return
+	}
+	s.reg.Info("subida descartada por el usuario",
+		"id", id, "ruta", sub.ruta.Rel(), "remoto", origenDe(r))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // decodificar deshace el encodeURIComponent del cliente.
 //
 // Se usa PathUnescape y NO QueryUnescape: este último convierte «+» en

@@ -129,6 +129,7 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("POST /subidas", s.tusCrear)
 	protegido.HandleFunc("HEAD /subidas/{id}", s.tusEstado)
 	protegido.HandleFunc("PATCH /subidas/{id}", s.tusEnviar)
+	protegido.HandleFunc("DELETE /subidas/{id}", s.tusDescartar)
 
 	return s.conRegistro(mux)
 }
