@@ -53,7 +53,21 @@ echo
 echo "== Configuración (P4: sin secretos) =="
 mkdir -p "$CONFIG_DIR"
 if [ -f "$CONFIG" ]; then
-  echo "Ya existe $CONFIG; no se toca."
+  # La IP puede haber cambiado: al mover el nodo de sitio, al cambiar de
+  # router, o si se pierde la reserva DHCP. ADR-0018 enlaza el servicio a la
+  # IP declarada, NO a 0.0.0.0, asi que una IP obsoleta impide arrancar.
+  #
+  # Dejarlo en «no se toca» convertia este script en inutil justo cuando mas
+  # falta hace. Se detecta y se corrige, avisando.
+  ANTERIOR=$(awk -F\" '/^direccion/{print $2}' "$CONFIG")
+  if [ "$ANTERIOR" != "$IP" ]; then
+    rojo "La IP del nodo cambio: $ANTERIOR -> $IP"
+    cp "$CONFIG" "$CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+    sed -i "s/^direccion = .*/direccion = \"$IP\"/" "$CONFIG"
+    verde "Configuracion actualizada a $IP (copia de seguridad hecha)."
+  else
+    echo "Ya existe $CONFIG y la IP coincide ($IP); no se toca."
+  fi
 else
   cat > "$CONFIG" <<EOF
 # Generado por 20_APROVISIONAMIENTO/05_instalar_servicio.sh
