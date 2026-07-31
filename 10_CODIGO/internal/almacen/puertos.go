@@ -31,7 +31,9 @@ type Almacen interface {
 	Crear(ctx context.Context, r RutaSegura) (EscrituraAtomica, error)
 
 	CrearDirectorio(ctx context.Context, r RutaSegura) error
-	Estado(ctx context.Context, r RutaSegura) (Entrada, error)
+	// Estado() se RETIRÓ del puerto el 2026-07-31: no lo usaba ningún
+	// adaptador. P8 — ante la duda, se omite. Sigue existiendo como método
+	// del adaptador POSIX, donde lo usan las pruebas.
 
 	// CrearReanudable abre una escritura cuyo DESTINO queda anotado en disco
 	// junto al parcial, de modo que sobreviva al reinicio del servicio.
@@ -47,6 +49,10 @@ type Almacen interface {
 	// ReabrirParcial recupera una escritura por su identificador, con el
 	// desplazamiento situado al final de lo ya escrito.
 	ReabrirParcial(ctx context.Context, id string) (Parcial, EscrituraAtomica, error)
+
+	// BorrarParcial elimina un parcial abandonado. Lo usa la expiración de
+	// ADR-0029, que NUNCA borra en silencio: quien llame debe registrarlo.
+	BorrarParcial(ctx context.Context, id string) error
 }
 
 // EscrituraAtomica: o el archivo existe completo, o no existe. RNF-05, RNF-08.
@@ -64,6 +70,17 @@ type EscrituraAtomica interface {
 
 	// Descartar cierra y elimina el temporal. Idempotente.
 	Descartar() error
+
+	// Soltar cierra el descriptor PERO CONSERVA el parcial y su metadato.
+	//
+	// Es lo que permite desalojar de memoria una subida abandonada sin
+	// destruirla: se libera el descriptor —que es un recurso finito— y la
+	// subida sigue siendo reanudable con ReabrirParcial.
+	//
+	// La diferencia con Descartar no es un matiz: confundirlas destruiría
+	// datos que el usuario esperaba reanudar, que es justo lo que ADR-0029
+	// advierte que no se haga.
+	Soltar() error
 
 	// Escrito devuelve los bytes ya confirmados en el temporal.
 	// Es el Upload-Offset de ADR-0027: no hay metadato de progreso que

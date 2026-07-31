@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"time"
 
 	"nasd/internal/almacen"
 )
@@ -42,6 +43,9 @@ type subidaEnCurso struct {
 	escritor almacen.EscrituraAtomica
 	ruta     almacen.RutaSegura
 	total    int64
+	// ultimoUso lo protege el mutex del REGISTRO, no el de esta estructura.
+	// Sirve para desalojar de memoria lo que lleva rato parado.
+	ultimoUso time.Time
 }
 
 func nuevoRegistroDeSubidas() *registroDeSubidas {
@@ -51,6 +55,7 @@ func nuevoRegistroDeSubidas() *registroDeSubidas {
 func (r *registroDeSubidas) guardar(id string, s *subidaEnCurso) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	s.ultimoUso = time.Now()
 	r.m[id] = s
 }
 
@@ -58,7 +63,43 @@ func (r *registroDeSubidas) buscar(id string) (*subidaEnCurso, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s, ok := r.m[id]
+	if ok {
+		s.ultimoUso = time.Now()
+	}
 	return s, ok
+}
+
+func (r *registroDeSubidas) cuantas() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.m)
+}
+
+// desalojarInactivas libera los descriptores de las subidas paradas.
+//
+// NO BORRA NADA DEL DISCO: llama a Soltar, no a Descartar. El parcial y su
+// .meta siguen ahí y la subida es reanudable; solo se deja de ocupar un
+// recurso finito mientras nadie la usa.
+func (r *registroDeSubidas) desalojarInactivas(d time.Duration) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limite := time.Now().Add(-d)
+	n := 0
+	for id, s := range r.m {
+		if s.ultimoUso.After(limite) {
+			continue
+		}
+		// Si hay un PATCH en curso, el mutex está tomado: no se desaloja.
+		if !s.mu.TryLock() {
+			continue
+		}
+		s.escritor.Soltar()
+		s.mu.Unlock()
+		delete(r.m, id)
+		n++
+	}
+	return n
 }
 
 func (r *registroDeSubidas) borrar(id string) {
@@ -74,6 +115,18 @@ func cabecerasTus(w http.ResponseWriter) {
 
 func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 	cabecerasTus(w)
+
+	// Techo de subidas simultáneas. Sin autenticación en la Fase 2 (RN-06),
+	// cualquiera en la LAN podía crear subidas en bucle hasta agotar los
+	// descriptores del proceso. 04_SEGURIDAD.md §7 lo señalaba y no estaba.
+	if s.subidas.cuantas() >= maxSubidasEnCurso {
+		s.reg.Warn("límite de subidas simultáneas alcanzado",
+			"limite", maxSubidasEnCurso, "remoto", r.RemoteAddr)
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "demasiadas subidas en curso; inténtelo en un minuto",
+			http.StatusServiceUnavailable)
+		return
+	}
 
 	total, err := strconv.ParseInt(r.Header.Get("Upload-Length"), 10, 64)
 	if err != nil || total < 0 {

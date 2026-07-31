@@ -106,7 +106,20 @@ func (s *Servidor) descargar(w http.ResponseWriter, r *http.Request) {
 
 	// ServeContent implementa RFC 7233 por sí solo: 206, rangos múltiples e
 	// If-Range. RF-10 sale de aquí, sin escribirlo (ADR-0025).
-	// El ResponseWriter se envuelve para el plazo por actividad de ADR-0026.
+	//
+	// SOBRE sendfile(2) — corrección del 2026-07-31.
+	// ADR-0025 presumía de que Go usaría sendfile en las descargas. NO OCURRE,
+	// y es culpa de esta línea: envolver el ResponseWriter rompe la detección
+	// de io.ReaderFrom que activa esa optimización.
+	//
+	// SE MANTIENE EL ENVOLTORIO A PROPÓSITO. El plazo por actividad de
+	// ADR-0026 es un requisito (RNF-12) y sendfile es una optimización; y en
+	// este nodo la optimización no compra nada, porque el techo lo pone el
+	// bus USB 2.0 compartido con la Ethernet (RES-02), no las copias de
+	// memoria. Medido: 19.9 MB/s en una descarga de 5 GB, con el proceso en
+	// 10 MB de RSS.
+	//
+	// Lo que se corrige es la AFIRMACIÓN del documento, no el código.
 	http.ServeContent(escrituraDelegada{w, escrituraConPlazo(w, s.plazoInactividad)},
 		r, entrada.Nombre, entrada.Modificado, lector)
 }
@@ -239,6 +252,20 @@ func (s *Servidor) redirigir(w http.ResponseWriter, r *http.Request, a almacen.R
 // fallo traduce errores del dominio a códigos de estado.
 // El núcleo no sabe que existen los códigos de estado; esta es la frontera.
 func (s *Servidor) fallo(w http.ResponseWriter, r *http.Request, err error) {
+	// La cancelación del cliente se comprueba LA PRIMERA y sin rodeos.
+	//
+	// Antes iba al final del switch, con un «errors.Is(err, r.Context().Err())»
+	// que funcionaba de milagro por la guarda que llevaba al lado: si el
+	// contexto no estaba cancelado, errors.Is(err, nil) es falso salvo que
+	// err fuese nil. Frágil, y colocado donde una cancelación podía acabar
+	// registrada como error interno.
+	if r.Context().Err() != nil {
+		// El cliente se fue: no hay a quién responder, y no es un fallo
+		// nuestro. Se anota a nivel informativo y se sale.
+		s.reg.Info("cliente desconectado", "ruta", r.URL.Path)
+		return
+	}
+
 	estado := http.StatusInternalServerError
 	mensaje := "error interno"
 
@@ -263,9 +290,6 @@ func (s *Servidor) fallo(w http.ResponseWriter, r *http.Request, err error) {
 		estado, mensaje = http.StatusConflict, "otro cliente está escribiendo ese archivo"
 	case errors.Is(err, almacen.ErrDesplazamiento):
 		estado, mensaje = http.StatusConflict, "desplazamiento incoherente"
-	case errors.Is(err, r.Context().Err()) && r.Context().Err() != nil:
-		// El cliente se fue: no hay a quién responder.
-		return
 	}
 
 	// P5 y P7: el fallo se registra siempre, aunque el usuario vea poco.

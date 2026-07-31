@@ -306,6 +306,15 @@ func (e *escritura) Descartar() error {
 	return nil
 }
 
+// Soltar cierra el descriptor conservando el parcial y su .meta.
+func (e *escritura) Soltar() error {
+	if e.cerrada {
+		return nil
+	}
+	e.cerrada = true
+	return e.f.Close()
+}
+
 // sincronizarDirectorio fuerza la escritura de la entrada de directorio.
 // La implementación depende del sistema: ver sincronizar_unix.go.
 func (a *Almacen) sincronizarDirectorio(dir string) error {
