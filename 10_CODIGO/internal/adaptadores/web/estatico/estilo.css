@@ -1,0 +1,28 @@
+:root { color-scheme: light dark; --borde: #8883; }
+* { box-sizing: border-box; }
+body {
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0 auto; padding: 1rem; max-width: 60rem;
+}
+header { border-bottom: 1px solid var(--borde); padding-bottom: .5rem; }
+.migas a { text-decoration: none; }
+.migas a::after { content: " / "; opacity: .5; }
+.migas a:last-child::after { content: ""; }
+
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--borde); }
+td.num, th:not(:first-child) { text-align: right; white-space: nowrap; }
+a.dir { font-weight: 600; }
+.vacio { opacity: .6; font-style: italic; text-align: center; }
+
+.mensaje { padding: .5rem .75rem; border-radius: .35rem; background: #0a01; border: 1px solid #0a04; }
+.mensaje.error { background: #d001; border-color: #d004; }
+
+.acciones { display: grid; gap: 1rem; border-top: 1px solid var(--borde); padding-top: 1rem; }
+.acciones form, #zona-subida { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+input, button { font: inherit; padding: .35rem .6rem; }
+#progreso { list-style: none; padding: 0; width: 100%; }
+#progreso li { display: flex; justify-content: space-between; gap: 1rem; padding: .2rem 0; }
+
+/* El ancho de la tabla nunca debe empujar la página en un teléfono. */
+main { overflow-x: auto; }

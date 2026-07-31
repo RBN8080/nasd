@@ -1,0 +1,77 @@
+{{define "listado.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — {{.Ruta.Nombre}}</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+
+<!-- RF-14 RETIRADO por D-17 (2026-07-30), a petición del responsable.
+     El aviso de durabilidad ya NO aparece en la interfaz.
+
+     NO SE VUELVA A AÑADIR sin enmendar antes 00_RECTOR.md §5 y emitir un ADR
+     que supersede a ADR-0030. La regla sigue viva en RN-01 y RN-02: este
+     producto NO es un respaldo, y ni la interfaz ni la documentación pueden
+     ofrecer, sugerir ni automatizar el borrado del origen tras subir. -->
+
+<header>
+  <nav class="migas">
+    {{range .Migas}}<a href="{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}">{{.Nombre}}</a>{{end}}
+  </nav>
+</header>
+
+{{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{end}}">{{.Mensaje}}</p>{{end}}
+
+<main>
+<table>
+  <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th></tr></thead>
+  <tbody>
+  {{if not .Ruta.EsRaiz}}
+    <tr><td colspan="3"><a href="{{with .Ruta.Padre}}{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}{{end}}">.. subir</a></td></tr>
+  {{end}}
+  {{range .Entradas}}
+    <tr>
+      <td>{{if .EsDirectori}}<a class="dir" href="/ver/{{.Ruta.Rel}}">{{.Nombre}}/</a>
+          {{else}}<a href="/descargar/{{.Ruta.Rel}}">{{.Nombre}}</a>{{end}}</td>
+      <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
+      <td class="num">{{fecha .Modificado}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="3" class="vacio">Carpeta vacía</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{if .Truncado}}<p class="mensaje error">Listado recortado: hay más entradas de las que se muestran.</p>{{end}}
+</main>
+
+<section class="acciones">
+  <form method="post" action="/directorio">
+    <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
+    <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
+    <button type="submit">Crear carpeta</button>
+  </form>
+
+  <!-- Camino normal: tus, reanudable (RF-12). -->
+  <div id="zona-subida" data-destino="{{.Ruta.Rel}}">
+    <label for="archivos">Archivos a subir:</label>
+    <input type="file" id="archivos" multiple>
+    <button type="button" onclick="iniciarSubida()">Subir</button>
+    <ul id="progreso"></ul>
+  </div>
+
+  <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
+  <noscript>
+    <form method="post" action="/subir" enctype="multipart/form-data">
+      <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
+      <input type="file" name="archivo" required>
+      <button type="submit">Subir (sin JavaScript)</button>
+    </form>
+  </noscript>
+</section>
+
+<script src="/estatico/subida.js"></script>
+</body>
+</html>
+{{end}}
