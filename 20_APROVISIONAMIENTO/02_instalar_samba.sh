@@ -77,6 +77,48 @@ cat > "$CONF" <<EOF
    #  y Samba lo ignora en silencio; ese error ya nos costó una tarde.)
    server smb encrypt = off
 
+   # FIRMA SMB — OBLIGATORIA. Sin esta línea, Windows 11 no entra.
+   #
+   # No es endurecimiento opcional: es la consecuencia no prevista de D-18.
+   # Hasta el 30/07 la sesión iba cifrada (SMB3_11 con AES-128-GCM, medido), y
+   # el cifrado SMB3 lleva integridad implícita. Al desactivar el cifrado por
+   # rendimiento, el recurso se quedó SIN NINGÚN mecanismo de integridad,
+   # porque «server signing = default» en un servidor autónomo NO firma.
+   #
+   # Windows 11 exige firma en el cliente (RequireSecuritySignature, medido en
+   # el host). El resultado era un fallo desconcertante: la contraseña se
+   # aceptaba y acto seguido el servidor cerraba la conexión — error 64,
+   # «el nombre de red ya no está disponible», que parece un problema de red.
+   #
+   # MS-SMB2 §3.3.5.2.4: el servidor debe rechazar la sesión si el cliente pide
+   # firma y el servidor no la ofrece. Referencia: Microsoft, [MS-SMB2] Server
+   # Message Block (SMB) Protocol Versions 2 and 3, y el endurecimiento por
+   # omisión introducido en Windows 11 24H2.
+   #
+   # Coste: HMAC por paquete en un A53 sin aceleración criptográfica. Es menor
+   # que cifrar —solo firma la cabecera y el resumen, no el contenido— pero no
+   # es cero y NO está medido todavía.
+   server signing = mandatory
+
+   # SMB MULTICANAL DESACTIVADO. Sin esta línea, Windows no monta el recurso.
+   #
+   # Samba lo trae activo por omisión. Al recibir el tree connect, responde al
+   # FSCTL_QUERY_NETWORK_INTERFACE_INFO anunciando SUS interfaces, y el cliente
+   # abre canales adicionales por ellas ([MS-SMB2] §3.2.4.1.8). Este nodo expone
+   # eth0 y wlan0; wlan0 no es utilizable, así que Windows esperaba ~10 s y
+   # cerraba la conexión ENTERA con un RST. El síntoma era desconcertante:
+   # autenticación correcta, tree connect correcto, y acto seguido error 64
+   # «el nombre de red ya no está disponible». Capturado con tcpdump: todos los
+   # estados SMB2 en 0x00000000 y el RST viniendo del cliente, no del servidor.
+   #
+   # No se pierde nada al apagarlo: multicanal agrega ancho de banda usando
+   # varias rutas de red, y aquí hay UNA sola NIC utilizable, colgada del bus
+   # USB 2.0 que ya comparte con el disco (RES-02). No hay segundo camino.
+   #
+   # Por qué no se vio antes: hasta D-18 la sesión iba cifrada, y smbclient
+   # —con el que se probaba desde el nodo— no negocia multicanal.
+   server multi channel support = no
+
    # ADR-0028 — los bloqueos de rango se proyectan a POSIX para que la web
    # pueda verlos. Es "cortesía", no garantía: un copiar y pegar del
    # Explorador usa share modes, que Samba gestiona en su base de datos
