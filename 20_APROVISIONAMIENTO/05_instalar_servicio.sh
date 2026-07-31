@@ -28,26 +28,41 @@ rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
-[ -f "$ORIGEN" ]     || { rojo "No está el binario en $ORIGEN. Cópielo desde el host."; exit 1; }
+# El binario nuevo es OPCIONAL: este script también sirve para actualizar la
+# unidad o la configuración sobre una instalación que ya funciona. Exigirlo
+# siempre lo volvía inútil justo en ese caso —el mismo error que ya se
+# corrigió con la configuración—.
+if [ -f "$ORIGEN" ]; then
+  INSTALAR_BINARIO=1
+elif [ -x "$DESTINO" ]; then
+  INSTALAR_BINARIO=0
+  echo "No hay binario nuevo en $ORIGEN; se conserva el instalado en $DESTINO."
+else
+  rojo "No hay binario ni en $ORIGEN ni en $DESTINO. Cópielo desde el host."
+  exit 1
+fi
 mountpoint -q "$PUNTO" || { rojo "$PUNTO no está montado. Ejecute antes 01_preparar_disco.sh"; exit 1; }
 id -u "$USUARIO" >/dev/null 2>&1 || { rojo "Falta el usuario '$USUARIO'."; exit 1; }
 
 # P2: comprobar que el binario es para ESTA arquitectura antes de instalarlo.
-ARCO=$(file -b "$ORIGEN" 2>/dev/null || echo desconocido)
-case "$ARCO" in
-  *aarch64*) ;;
-  *) rojo "El binario no parece ARM64: $ARCO"; exit 1 ;;
-esac
+if [ "$INSTALAR_BINARIO" = "1" ]; then
+  ARCO=$(file -b "$ORIGEN" 2>/dev/null || echo desconocido)
+  case "$ARCO" in
+    *aarch64*) ;;
+    *) rojo "El binario no parece ARM64: $ARCO"; exit 1 ;;
+  esac
+fi
 
 # La IP de la LAN, para ADR-0018: se enlaza a la interfaz declarada, no a
 # 0.0.0.0. El cortafuegos es el segundo control, no el único.
 IP=$(hostname -I | awk '{print $1}')
 [ -n "$IP" ] || { rojo "No se pudo determinar la IP de la LAN."; exit 1; }
 
-echo "== Instalando el binario =="
-install -m 0755 -o root -g root "$ORIGEN" "$DESTINO"
-"$DESTINO" --help >/dev/null 2>&1 || true
-verde "$DESTINO instalado."
+if [ "$INSTALAR_BINARIO" = "1" ]; then
+  echo "== Instalando el binario =="
+  install -m 0755 -o root -g root "$ORIGEN" "$DESTINO"
+  verde "$DESTINO instalado."
+fi
 
 echo
 echo "== Configuración (P4: sin secretos) =="
@@ -144,6 +159,16 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 verde "$UNIDAD escrita."
+
+echo
+echo "== Credencial de la web (RF-15) =="
+if [ -f /etc/nasd/credencial ]; then
+  verde "Presente. Se entrega por LoadCredential= en un tmpfs privado."
+else
+  rojo "FALTA /etc/nasd/credencial. El servicio NO arrancará: no existe modo sin autenticar."
+  rojo "Ejecute antes: sudo ./07_credencial_web.sh"
+  exit 1
+fi
 
 echo
 echo "== Arrancando =="
