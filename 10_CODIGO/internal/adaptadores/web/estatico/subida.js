@@ -50,40 +50,94 @@ function olvidar(clave) {
   } catch (e) { /* ignorado */ }
 }
 
+// Estado de la sesión de subida en curso.
+//
+// EL DEFECTO QUE ESTO CORRIGE (reportado en uso real el 2026-07-31): pulsar
+// «Subir» otra vez mientras ya estaba subiendo arrancaba un SEGUNDO bucle
+// sobre los mismos archivos. No corrompía nada —el servidor rechaza los
+// desplazamientos que no cuadran con un 409— pero duplicaba la transferencia
+// y mostraba dos progresos.
+let subiendoAhora = false;
+
 function fila(nombre) {
   const li = document.createElement('li');
   const n = document.createElement('span');
   const e = document.createElement('span');
+  const acciones = document.createElement('span');
   n.textContent = nombre;
-  e.textContent = '0 %';
-  li.append(n, e);
+  e.textContent = 'en cola';
+  li.append(n, e, acciones);
   document.getElementById('progreso').append(li);
-  return e;
+  return { estado: e, acciones: acciones };
+}
+
+// Botón que detiene esta subida concreta.
+//
+// PAUSAR y DESCARTAR son cosas distintas y se ofrecen por separado:
+//   - Pausar deja el parcial en el servidor: se reanuda desde donde iba.
+//   - Descartar lo destruye ahora, en lugar de dejar basura hasta que
+//     expire dentro de días (ADR-0029).
+function botonesDeControl(contenedor, control) {
+  const pausar = document.createElement('button');
+  pausar.type = 'button';
+  pausar.textContent = 'Pausar';
+  pausar.onclick = () => { control.motivo = 'pausa'; control.abortar.abort(); };
+
+  const descartar = document.createElement('button');
+  descartar.type = 'button';
+  descartar.textContent = 'Descartar';
+  descartar.onclick = () => { control.motivo = 'descartar'; control.abortar.abort(); };
+
+  contenedor.append(pausar, descartar);
+  return () => { pausar.remove(); descartar.remove(); };
 }
 
 async function iniciarSubida() {
+  // Guarda contra reentrada: sin esto, pulsar otra vez duplicaba el bucle.
+  if (subiendoAhora) return;
+
   const zona = document.getElementById('zona-subida');
   const entrada = document.getElementById('archivos');
+  const boton = document.getElementById('boton-subir');
   if (!entrada.files.length) return;
 
-  const destino = zona.dataset.destino || '';
-  let algunFallo = false;
+  subiendoAhora = true;
+  if (boton) { boton.disabled = true; boton.textContent = 'Subiendo...'; }
 
-  for (const archivo of entrada.files) {
-    const estado = fila(archivo.name);
-    try {
-      await subirArchivo(archivo, destino, estado);
-      estado.textContent = 'completado';
-    } catch (err) {
-      algunFallo = true;
-      estado.textContent = 'error: ' + err.message;
+  const destino = zona.dataset.destino || '';
+  let algunFallo = false, algunaPausa = false;
+
+  try {
+    for (const archivo of entrada.files) {
+      const f = fila(archivo.name);
+      const control = { abortar: new AbortController(), motivo: null };
+      const quitarBotones = botonesDeControl(f.acciones, control);
+      try {
+        await subirArchivo(archivo, destino, f.estado, control);
+        f.estado.textContent = 'completado';
+      } catch (err) {
+        if (control.motivo === 'pausa') {
+          algunaPausa = true;
+          f.estado.textContent = 'pausada — se reanuda al volver a subirla';
+        } else if (control.motivo === 'descartar') {
+          f.estado.textContent = 'descartada';
+        } else {
+          algunFallo = true;
+          f.estado.textContent = 'error: ' + err.message;
+        }
+      } finally {
+        quitarBotones();
+      }
     }
+  } finally {
+    subiendoAhora = false;
+    if (boton) { boton.disabled = false; boton.textContent = 'Subir'; }
   }
 
-  if (!algunFallo) location.reload();
+  if (!algunFallo && !algunaPausa) location.reload();
 }
 
-async function subirArchivo(archivo, destino, estado) {
+async function subirArchivo(archivo, destino, estado, control) {
   const clave = claveDe(archivo, destino);
   let url = null;
   let offset = 0;
@@ -148,8 +202,19 @@ async function subirArchivo(archivo, destino, estado) {
           'Content-Type': 'application/offset+octet-stream',
         },
         body: trozo,
+        signal: control.abortar.signal,
       });
     } catch (err) {
+      // Detenida por el usuario: no es un corte de red, no se reintenta.
+      if (control.motivo === 'pausa') {
+        throw new Error('pausada');
+      }
+      if (control.motivo === 'descartar') {
+        await fetch(url, { method: 'DELETE', headers: { 'Tus-Resumable': '1.0.0' } })
+          .catch(() => {});
+        olvidar(clave);
+        throw new Error('descartada');
+      }
       // Corte de red: se consulta el estado y se reanuda. RF-12.
       offset = await consultarDesplazamiento(url);
       continue;

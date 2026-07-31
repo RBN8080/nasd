@@ -23,7 +23,10 @@ a.dir { font-weight: 600; }
 .acciones form, #zona-subida { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 input, button { font: inherit; padding: .35rem .6rem; }
 #progreso { list-style: none; padding: 0; width: 100%; }
-#progreso li { display: flex; justify-content: space-between; gap: 1rem; padding: .2rem 0; }
+#progreso li { display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;
+  align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--borde); }
+#progreso button { font-size: .8em; padding: .15rem .4rem; margin-left: .3rem; }
+#boton-subir:disabled { opacity: .5; cursor: progress; }
 
 /* El ancho de la tabla nunca debe empujar la página en un teléfono. */
 main { overflow-x: auto; }
