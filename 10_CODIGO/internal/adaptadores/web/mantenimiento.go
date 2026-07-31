@@ -109,7 +109,10 @@ func (s *Servidor) expirarParciales(ctx context.Context, a almacenDeParciales) {
 	limite := time.Now().Add(-inactividadParaExpirar)
 
 	for _, p := range ps {
-		if _, enUso := s.subidas.buscar(p.ID); enUso {
+		// existe() y NO buscar(): buscar refresca el uso, y al inspeccionar
+		// cada parcial rejuvenecía las entradas, impidiendo el desalojo para
+		// siempre. El propio control que protege lo vivo mataba la limpieza.
+		if s.subidas.existe(p.ID) {
 			vivos++
 			bytesVivos += p.Escrito
 			continue
