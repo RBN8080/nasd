@@ -6,17 +6,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
 
-// rutasThrottled son los sitios donde el firmware de Raspberry publica el
-// estado de limitación, en orden de preferencia.
+// rutasThrottled son los sitios donde ALGUNOS kernels de Raspberry publican el
+// estado de limitación.
 //
-// SE PRUEBAN TODAS Y SI NINGUNA EXISTE SE DICE QUE NO ESTÁ DISPONIBLE.
-// No se devuelve 0x0, que se leería como «el nodo nunca se ha limitado» —
-// exactamente lo contrario de la verdad conocida: 00_RECTOR.md §12.3 tiene
-// medido 0x80000, el límite térmico blando ya alcanzado.
+// MEDIDO EN EL NODO el 2026-07-31: **ninguna de las tres existe aquí**, y una
+// búsqueda amplia por /sys no encuentra nada. Se conservan porque probarlas no
+// cuesta nada y un kernel futuro podría traerlas; la fuente real hoy es
+// vcgencmd (ADR-0036). Si fallan todas las vías, se dice que no se sabe: no se
+// devuelve 0x0, que se leería como «el nodo nunca se ha limitado».
 var rutasThrottled = []string{
 	"/sys/devices/platform/soc/soc:firmware/get_throttled",
 	"/sys/devices/platform/soc/soc:firmware/get_throttled/get_throttled",
@@ -77,7 +80,7 @@ func Leer(ctx context.Context, puntoDatos string) Nodo {
 	}
 
 	n.medirFrecuencia()
-	n.medirThrottled()
+	n.medirThrottled(ctx)
 
 	// /proc/1/mounts y no /proc/mounts, a propósito: ver el comentario de
 	// Volumen.SoloLecturaOK. Dentro del espacio de nombres del servicio,
@@ -160,7 +163,11 @@ func (n *Nodo) medirFrecuencia() {
 	n.FrecuenciaMHz, n.FrecuenciaMaxMHz, n.FrecuenciaOK = a, m, true
 }
 
-func (n *Nodo) medirThrottled() {
+// medirThrottled recorre las tres fuentes de ADR-0036, de mejor a peor.
+func (n *Nodo) medirThrottled(ctx context.Context) {
+	// 1. sysfs. En este nodo NO existe —medido el 2026-07-31— pero se intenta
+	//    igual: es la única fuente que no lanza un proceso, y cuesta tres
+	//    llamadas a open() que fallan.
 	for _, ruta := range rutasThrottled {
 		b, err := os.ReadFile(ruta)
 		if err != nil {
@@ -175,10 +182,90 @@ func (n *Nodo) medirThrottled() {
 		n.Throttled = t
 		return
 	}
-	// Ni un cero ni un silencio: consta que este nodo no lo publica.
-	n.avisar("limitación del SoC no disponible: ninguna de las rutas de sysfs " +
-		"existe en este kernel. NO se asume 0x0. Se comprueba a mano con " +
-		"«vcgencmd get_throttled» por SSH (RNF-11)")
+
+	// 2. vcgencmd. ADR-0036 lo autoriza con SupplementaryGroups=video,
+	//    DeviceAllow=/dev/vcio_gencmd y BindPaths=/dev/vcio_gencmd. Si falta
+	//    cualquiera de las tres, esto falla con «Can't open device file», que
+	//    es exactamente lo que hay que ver en el registro si alguien las
+	//    retira creyendo que endurece gratis.
+	if t, err := throttledPorVcgencmd(ctx); err == nil {
+		n.Throttled = t
+		return
+	} else {
+		n.avisar("vcgencmd: %v", err)
+	}
+
+	// 3. Respaldo PARCIAL: la alarma de subtensión del driver rpi_volt. Es
+	//    world-readable y no necesita ni grupo ni proceso hijo. Solo cubre la
+	//    subtensión, y por eso el Throttled queda marcado como parcial.
+	if t, ok := throttledPorHwmon(); ok {
+		n.Throttled = t
+		n.avisar("limitación del SoC PARCIAL: sin vcgencmd solo se conoce la " +
+			"subtensión. Los bits térmicos NO se están midiendo (RNF-11)")
+		return
+	}
+
+	// Ni un cero ni un silencio: consta que no se pudo saber.
+	n.avisar("limitación del SoC no disponible por ninguna vía. NO se asume " +
+		"0x0. Se comprueba a mano con «vcgencmd get_throttled» por SSH (RNF-11)")
+}
+
+// rutaVcgencmd es absoluta a propósito: el PATH de un servicio systemd no es
+// el de un intérprete interactivo, y depender de él sería una sorpresa.
+const rutaVcgencmd = "/usr/bin/vcgencmd"
+
+// plazoVcgencmd acota el proceso hijo. Es una consulta al firmware que tarda
+// milisegundos; si no ha respondido en dos segundos, algo va mal y NO se
+// bloquea el extremo de estado por ello (RNF-12: toda E/S con plazo).
+const plazoVcgencmd = 2 * time.Second
+
+func throttledPorVcgencmd(ctx context.Context) (Throttled, error) {
+	ctx, cancelar := context.WithTimeout(ctx, plazoVcgencmd)
+	defer cancelar()
+
+	// Sin argumentos que vengan de fuera: el comando es una constante y no hay
+	// intérprete de por medio, así que no hay nada que inyectar.
+	salida, err := exec.CommandContext(ctx, rutaVcgencmd, "get_throttled").Output()
+	if err != nil {
+		return Throttled{}, err
+	}
+	t, err := analizarThrottled(string(salida))
+	if err != nil {
+		return Throttled{}, err
+	}
+	t.Origen = rutaVcgencmd + " get_throttled"
+	return t, nil
+}
+
+// rutaAlarmaSubtension se busca por el NOMBRE del driver y no por un hwmonN
+// fijo: la numeración de /sys/class/hwmon depende del orden de sondeo y puede
+// cambiar entre arranques. En este nodo hoy es hwmon1, y mañana podría no.
+const nombreDriverVoltaje = "rpi_volt"
+
+func throttledPorHwmon() (Throttled, bool) {
+	entradas, err := os.ReadDir("/sys/class/hwmon")
+	if err != nil {
+		return Throttled{}, false
+	}
+	for _, e := range entradas {
+		base := "/sys/class/hwmon/" + e.Name() + "/"
+		nombre, err := os.ReadFile(base + "name")
+		if err != nil || strings.TrimSpace(string(nombre)) != nombreDriverVoltaje {
+			continue
+		}
+		b, err := os.ReadFile(base + "in0_lcrit_alarm")
+		if err != nil {
+			continue
+		}
+		v, err := analizarEntero(string(b))
+		if err != nil {
+			continue
+		}
+		t := throttledDeAlarma(v)
+		t.Origen = base + "in0_lcrit_alarm"
+		return t, true
+	}
+	return Throttled{}, false
 }
 
 // leerVolumen reúne capacidad, E/S, desgaste y salud de un punto de montaje.

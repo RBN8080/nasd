@@ -136,6 +136,47 @@ func TestThrottledNoDisponibleNoEsCero(t *testing.T) {
 	}
 }
 
+// vcgencmd imprime «throttled=0x0», sysfs imprime «0x0» a secas. Un solo
+// analizador para las dos fuentes, y aquí se prueba que de verdad lo es: si
+// alguna quedara sin cubrir, se descubriría en el nodo y no en el host.
+func TestAnalizarThrottledAdmiteLasDosFormas(t *testing.T) {
+	casos := []string{"0x80008", "throttled=0x80008", "  throttled=0x80008 \n"}
+	for _, c := range casos {
+		th, err := analizarThrottled(c)
+		if err != nil {
+			t.Fatalf("%q: %v", c, err)
+		}
+		if th.Bruto != 0x80008 || !th.TermicoBlandoAhora || !th.TermicoBlandoOcurrida {
+			t.Fatalf("%q dio %+v", c, th)
+		}
+		if th.Parcial {
+			t.Fatalf("%q: la palabra completa del firmware no es parcial", c)
+		}
+	}
+}
+
+// El respaldo del hwmon solo sabe de subtensión. Lo peligroso sería que sus
+// bits térmicos —siempre falsos— se leyeran como «no ha habido limitación
+// térmica», que es afirmar algo que esa fuente no puede saber.
+func TestElRespaldoDeHwmonSeDeclaraParcialYNoImprimeCero(t *testing.T) {
+	sin := throttledDeAlarma(0)
+	if !sin.Disponible || !sin.Parcial {
+		t.Fatalf("debería estar disponible y marcado parcial: %+v", sin)
+	}
+	if sin.SubtensionAhora || sin.SubtensionOcurrida {
+		t.Fatalf("alarma a 0 no debe encender subtensión: %+v", sin)
+	}
+	if sin.Hex() == "0x0" {
+		t.Fatal("un respaldo parcial NO puede imprimirse como 0x0: se leería como " +
+			"la palabra completa del firmware diciendo que no hubo limitación alguna")
+	}
+
+	con := throttledDeAlarma(1)
+	if !con.SubtensionAhora || !con.SubtensionOcurrida {
+		t.Fatalf("alarma a 1 debe encender subtensión: %+v", con)
+	}
+}
+
 func TestAnalizarMontaje(t *testing.T) {
 	const muestra = `/dev/sda2 / ext4 rw,noatime 0 0
 /dev/sdb1 /srv/nas ext4 rw,relatime 0 0

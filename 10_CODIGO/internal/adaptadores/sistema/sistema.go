@@ -5,23 +5,42 @@
 // indicadores del propio servicio— vive en el adaptador web, porque son cosas
 // distintas: aquí se mide la máquina, allí se mide el producto.
 //
-// # POR QUÉ NO SE USA vcgencmd
+// # CÓMO SE LEE LA LIMITACIÓN DEL SoC — corregido contra el nodo real
 //
-// La forma habitual de leer la limitación en una Raspberry es
-// «vcgencmd get_throttled», y este paquete NO la usa. Tres motivos, en orden
-// de peso:
+// ADR-0034 apostó por sysfs y se equivocó. MEDIDO en el nodo el 2026-07-31:
+// ninguna de las tres rutas candidatas existe, y «find /sys -name '*throttled*'»
+// no devuelve nada. Este kernel simplemente no lo publica.
 //
-//  1. No podría. vcgencmd habla con el firmware por /dev/vcio, y la unidad
-//     lleva PrivateDevices=yes (charter §7), que da al servicio un /dev
-//     privado y mínimo donde ese nodo no existe. Habilitarlo exigiría
-//     DeviceAllow=/dev/vcio y SupplementaryGroups=video, es decir, aflojar el
-//     endurecimiento para imprimir un número.
-//  2. Obligaría a lanzar un proceso hijo desde un servicio endurecido, con
-//     todo lo que eso arrastra.
-//  3. Añadiría una dependencia de un binario externo, contra P8 y contra el
-//     «cero dependencias» de ADR-0013.
+// ADR-0036 rehace la decisión y permite «vcgencmd», con el coste medido y no
+// supuesto. También corrige de qué dispositivo se trata: strace sobre el
+// binario real muestra que abre
 //
-// Se lee de sysfs, y si el archivo no está, SE DICE. Ver Throttled.Disponible:
+//	/dev/vcio_gencmd   0660 root:video
+//
+// y NO /dev/vcio (0600 root:root, inalcanzable), que es lo que suponía
+// ADR-0034. La distribución ya abre ese nodo al grupo «video» con su propia
+// regla de udev, así que no hace falta ninguna nueva.
+//
+// En la unidad hacen falta TRES líneas, y cada una hace algo distinto —se
+// probó quitando cada una y falla—: SupplementaryGroups=video da el permiso
+// de grupo, DeviceAllow abre la política de cgroup que PrivateDevices cierra,
+// y BindPaths HACE APARECER el nodo dentro del /dev privado. DeviceAllow por
+// sí solo NO lo crea.
+//
+// PrivateDevices=yes SE MANTIENE: verificado que el /dev del servicio queda
+// con los nodos mínimos más vcio_gencmd, y nada más.
+//
+// Orden de intentos, de mejor a peor:
+//
+//  1. sysfs — se conserva aunque hoy no exista: no cuesta nada y un kernel
+//     futuro podría traerlo. Es la única fuente que no lanza procesos.
+//  2. vcgencmd — completo, y lo que ADR-0036 autoriza.
+//  3. hwmon «in0_lcrit_alarm» del driver rpi_volt — PARCIAL: solo dice si hay
+//     subtensión, que es el único bit de nivel «fallo». Existe como red de
+//     seguridad para que, si alguien vuelve a endurecer la unidad y quita el
+//     grupo video, el servicio NO se quede ciego ante lo más grave.
+//
+// Si no hay ninguna, SE DICE. Ver Throttled.Disponible y Throttled.Parcial:
 // este paquete nunca inventa un cero. Un indicador que miente es peor que no
 // tenerlo (00_RECTOR.md §12.5).
 //
@@ -106,7 +125,11 @@ const VentanaCPU = 250 * time.Millisecond
 // Confundirlos es la lectura errónea más fácil de este dato.
 type Throttled struct {
 	Disponible bool
-	// Origen es el archivo del que salió, para poder comprobarlo a mano.
+	// Parcial indica que SOLO se conoce la subtensión, porque el valor vino
+	// del hwmon de respaldo y no de la palabra completa del firmware. Los
+	// campos térmicos de esta estructura NO significan nada cuando es cierto.
+	Parcial bool
+	// Origen es de dónde salió, para poder comprobarlo a mano.
 	Origen string
 	Bruto  uint64
 
@@ -309,15 +332,37 @@ func analizarKiloHercios(s string) (int, error) {
 	return int(n / 1000), nil
 }
 
-// analizarThrottled lee el valor hexadecimal del firmware: «0x80000».
+// analizarThrottled lee el valor hexadecimal del firmware.
+//
+// Admite las dos formas que existen: la de sysfs, «0x80000» a secas, y la de
+// vcgencmd, «throttled=0x80000». Un solo analizador para las dos fuentes evita
+// que una se quede sin probar.
 func analizarThrottled(s string) (Throttled, error) {
 	t := strings.TrimSpace(s)
+	if _, resto, ok := strings.Cut(t, "="); ok {
+		t = strings.TrimSpace(resto)
+	}
 	// Algunos kernels lo publican con el prefijo y otros sin él.
 	n, err := strconv.ParseUint(strings.TrimPrefix(t, "0x"), 16, 64)
 	if err != nil {
 		return Throttled{}, fmt.Errorf("throttled %q: %w", t, err)
 	}
 	return descomponerThrottled(n), nil
+}
+
+// throttledDeAlarma construye un Throttled PARCIAL a partir de la alarma de
+// subtensión del hwmon rpi_volt, que es lo único que ese driver expone.
+//
+// Se marca Parcial para que nadie lea los bits térmicos —que aquí valen
+// siempre falso— como «no ha habido limitación térmica». Eso sería justo la
+// mentira que este paquete existe para no contar.
+func throttledDeAlarma(valor uint64) Throttled {
+	return Throttled{
+		Disponible:         true,
+		Parcial:            true,
+		SubtensionAhora:    valor != 0,
+		SubtensionOcurrida: valor != 0,
+	}
 }
 
 func descomponerThrottled(n uint64) Throttled {
@@ -341,8 +386,17 @@ func descomponerThrottled(n uint64) Throttled {
 // Hex devuelve el valor tal como lo imprimiría vcgencmd, para poder cotejarlo
 // a mano contra las mediciones que ya constan en la documentación.
 func (t Throttled) Hex() string {
-	if !t.Disponible {
+	switch {
+	case !t.Disponible:
 		return "no disponible"
+	case t.Parcial:
+		// NO se imprime «0x0»: se leería como la palabra completa del firmware
+		// diciendo que no ha habido ninguna limitación, y esta fuente no sabe
+		// nada de lo térmico.
+		if t.SubtensionAhora {
+			return "solo subtensión: SÍ"
+		}
+		return "solo subtensión: no"
 	}
 	return "0x" + strconv.FormatUint(t.Bruto, 16)
 }

@@ -57,7 +57,12 @@ if [ "$DISCO" = "$RAIZ_DEV" ]; then
   exit 1
 fi
 
-if mount | grep -q "^$DISCO"; then
+# NO se usa «mount | grep -q»: grep -q sale al PRIMER acierto, mount recibe
+# SIGPIPE y muere con estado != 0, y «set -o pipefail» convierte el ACIERTO en
+# fallo. Aquí ese falso negativo saltaría el desmontaje y llegaría a mkfs con
+# el disco montado. Encontrado en la Fase 4, donde el mismo patrón hacía
+# mentir a 09_verificar_operacion.sh.
+if [ "$(mount | grep -c "^$DISCO")" -gt 0 ]; then
   echo "Hay particiones montadas; se desmontan:"
   mount | grep "^$DISCO" | awk '{print $3}' | while read -r m; do
     echo "  umount $m"; umount "$m"

@@ -149,7 +149,12 @@ echo "D-14: esta credencial es SOLO para SMB. La web tendrá la suya, distinta."
 # P4 del charter: cero secretos en el repositorio. La contraseña NO se pasa
 # por parámetro, ni por variable de entorno, ni queda en el historial del
 # shell: se teclea aquí y solo aquí.
-if pdbedit -L 2>/dev/null | cut -d: -f1 | grep -qx "$USUARIO"; then
+# NO se usa «... | grep -qx»: grep -q sale al primer acierto, el productor
+# recibe SIGPIPE, y «set -o pipefail» convierte el ACIERTO en fallo. Ese falso
+# negativo se llevaría por delante justo la idempotencia que se añadió aquí a
+# propósito (rector v1.4.0): volvería a pedir y cambiar la contraseña de Samba
+# de un usuario que ya existe.
+if [ "$(pdbedit -L 2>/dev/null | cut -d: -f1 | grep -cx "$USUARIO")" -gt 0 ]; then
   echo "El usuario '$USUARIO' ya existe en la base de Samba; no se toca la contraseña."
   echo "Para cambiarla: sudo smbpasswd '$USUARIO'"
 elif [ -t 0 ]; then

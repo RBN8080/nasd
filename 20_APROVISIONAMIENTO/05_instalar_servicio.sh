@@ -146,6 +146,24 @@ RestrictAddressFamilies=AF_INET AF_UNIX
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
+# ADR-0036 — acceso al firmware para leer la limitacion del SoC (RNF-11).
+#
+# MEDIDO con systemd-run, no supuesto: este kernel no publica get_throttled en
+# sysfs, y vcgencmd abre /dev/vcio_gencmd (0660 root:video) — comprobado con
+# strace—, no /dev/vcio ni /dev/vchiq.
+#
+# Las TRES lineas hacen falta y cada una hace algo distinto:
+#   SupplementaryGroups  permiso de grupo sobre el nodo
+#   DeviceAllow          abre la politica de cgroup que PrivateDevices cierra
+#   BindPaths            HACE APARECER el nodo en el /dev privado; DeviceAllow
+#                        por si solo NO lo crea (probado)
+#
+# PrivateDevices=yes SE MANTIENE: el /dev del servicio queda con los nodos
+# minimos mas vcio_gencmd y nada mas.
+SupplementaryGroups=video
+DeviceAllow=/dev/vcio_gencmd rw
+BindPaths=/dev/vcio_gencmd
+
 # Tercera capa de contención de rutas (04_SEGURIDAD §2).
 ReadWritePaths=/srv/nas
 
