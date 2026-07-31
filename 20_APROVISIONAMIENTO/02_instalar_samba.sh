@@ -72,6 +72,23 @@ cat > "$CONF" <<EOF
    # atómico, no esta línea.
    posix locking = yes
 
+   # Clientes Apple (iOS y macOS) — línea base recomendada por el propio
+   # proyecto Samba. NO es cosmético: sin estos módulos el iPhone puede
+   # presentar el recurso como de SOLO LECTURA y ni siquiera intentar
+   # escribir, que es justo lo observado el 2026-07-30.
+   #
+   # RF-03 exige que el iPhone suba una foto, así que esto es requisito,
+   # no comodidad. «fruit» traduce los metadatos de Apple a atributos
+   # extendidos en lugar de a archivos ._ sueltos por todo el árbol.
+   vfs objects = catia fruit streams_xattr
+   fruit:metadata = stream
+   fruit:model = MacSamba
+   fruit:posix_rename = yes
+   fruit:veto_appledouble = no
+   fruit:wipe_intentionally_left_blank_rfork = yes
+   fruit:delete_empty_adfiles = yes
+   ea support = yes
+
    # No se anuncia ni se sirve nada más que el recurso declarado (P8).
    load printers = no
    printing = bsd
