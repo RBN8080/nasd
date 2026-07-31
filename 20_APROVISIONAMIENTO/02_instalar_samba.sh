@@ -59,11 +59,23 @@ cat > "$CONF" <<EOF
    hosts allow = $RED 127.0.0.1
    hosts deny = 0.0.0.0/0
 
-   # OJO: el parámetro es «server smb encrypt», NO «smb encryption».
-   # Ese último NO EXISTE, y Samba lo ignora con un aviso fácil de pasar por
-   # alto en la salida de testparm: el cifrado no se activa y nadie se entera.
-   # Verificado contra Samba 4.22.10 en el nodo (2026-07-30).
-   server smb encrypt = desired
+   # CIFRADO DESACTIVADO — D-18 / ADR-0031, decisión del responsable.
+   #
+   # Medido con el mismo archivo de 5 GB en el nodo real: con AES-128-GCM,
+   # 9.7 MB/s; sin cifrar, ~20 MB/s. El A53 del 3B+ NO tiene aceleración
+   # criptográfica (charter §3.2), así que cifrar cuesta la mitad del ancho
+   # de banda y no es un parámetro afinable.
+   #
+   # Lo que se pierde: el CONTENIDO viaja en claro por la LAN.
+   # Lo que NO se pierde: la autenticación sigue siendo NTLMv2 —la contraseña
+   # no viaja en claro— y RNF-09 sigue intacto.
+   #
+   # Detonante para revertirlo: que la LAN deje de ser solo de equipos de
+   # confianza. Volver a activarlo es poner «desired» y reiniciar smbd.
+   #
+   # (El parámetro se llama «server smb encrypt». «smb encryption» NO existe
+   #  y Samba lo ignora en silencio; ese error ya nos costó una tarde.)
+   server smb encrypt = off
 
    # ADR-0028 — los bloqueos de rango se proyectan a POSIX para que la web
    # pueda verlos. Es "cortesía", no garantía: un copiar y pegar del
