@@ -34,7 +34,13 @@ const (
 // Almacen implementa almacen.Almacen sobre un volumen POSIX.
 type Almacen struct {
 	raiz *os.Root // anclado en el punto de montaje, p. ej. /srv/nas
+	// residuo acumula identificadores cuyo .meta no se pudo retirar. No es
+	// crítico —el archivo ya se publicó— pero no se calla (P5).
+	residuo []string
 }
+
+// Residuo devuelve los identificadores cuyo metadato quedó sin retirar.
+func (a *Almacen) Residuo() []string { return a.residuo }
 
 var _ almacen.Almacen = (*Almacen)(nil)
 
@@ -204,6 +210,7 @@ func (a *Almacen) Crear(ctx context.Context, r almacen.RutaSegura) (almacen.Escr
 type escritura struct {
 	a        *Almacen
 	f        *os.File
+	id       string // vacío si la escritura no es reanudable
 	temporal string
 	destino  string
 	escrito  int64
@@ -264,7 +271,26 @@ func (e *escritura) Confirmar() error {
 	}
 
 	// 4. fsync del directorio destino: la ENTRADA llega al disco.
-	return e.a.sincronizarDirectorio(path.Dir(e.destino))
+	if err := e.a.sincronizarDirectorio(path.Dir(e.destino)); err != nil {
+		return err
+	}
+
+	// 5. El .meta ya no describe nada: se retira. Dejarlo haría que el
+	//    servicio creyera al arrancar que hay una subida a medias.
+	e.retirarMeta()
+	return nil
+}
+
+// retirarMeta elimina el metadato de reanudación, si lo había.
+func (e *escritura) retirarMeta() {
+	if e.id == "" {
+		return
+	}
+	if err := e.a.raiz.Remove(e.a.rutaMeta(e.id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		// No es motivo para fallar la publicación —el archivo ya está—, pero
+		// tampoco se calla: quedaría un .meta huérfano.
+		e.a.residuo = append(e.a.residuo, e.id)
+	}
 }
 
 func (e *escritura) Descartar() error {
@@ -272,6 +298,7 @@ func (e *escritura) Descartar() error {
 		e.f.Close()
 		e.cerrada = true
 	}
+	e.retirarMeta()
 	err := e.a.raiz.Remove(e.temporal)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

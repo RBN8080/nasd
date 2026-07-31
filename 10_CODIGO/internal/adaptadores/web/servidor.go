@@ -6,6 +6,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"html/template"
 	"log/slog"
@@ -40,13 +41,30 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Servidor{
+	s := &Servidor{
 		almacen:          o.Almacen,
 		reg:              o.Registro,
 		plantillas:       t,
 		plazoInactividad: o.PlazoInactividad,
 		subidas:          nuevoRegistroDeSubidas(),
-	}, nil
+	}
+
+	// Al arrancar se mira qué subidas dejó a medias el proceso anterior.
+	// No se reabren aquí —eso ocurre al primer HEAD o PATCH— pero se informa,
+	// porque un montón de parciales acumulados es el síntoma de ADR-0029 y
+	// debe verse en el registro sin tener que ir a mirar el disco (P7).
+	if ps, err := s.almacen.Reanudables(context.Background()); err != nil {
+		o.Registro.Warn("no se pudo revisar las subidas a medias", "error", err)
+	} else if len(ps) > 0 {
+		var bytes int64
+		for _, p := range ps {
+			bytes += p.Escrito
+		}
+		o.Registro.Info("subidas a medias encontradas al arrancar",
+			"cuantas", len(ps), "bytes", bytes)
+	}
+
+	return s, nil
 }
 
 func (s *Servidor) Rutas() http.Handler {
