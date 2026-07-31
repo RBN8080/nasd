@@ -154,6 +154,9 @@ func cabecerasTus(w http.ResponseWriter) {
 
 func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 	cabecerasTus(w)
+	if !s.exigirCSRF(w, r) {
+		return
+	}
 
 	// Techo de subidas simultáneas. Sin autenticación en la Fase 2 (RN-06),
 	// cualquiera en la LAN podía crear subidas en bucle hasta agotar los
@@ -244,6 +247,9 @@ func (s *Servidor) tusEstado(w http.ResponseWriter, r *http.Request) {
 
 func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 	cabecerasTus(w)
+	if !s.exigirCSRF(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	sub, ok := s.recuperar(r, id)
 	if !ok {
@@ -305,6 +311,9 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 // barrido de ADR-0029 la recogiera, días después.
 func (s *Servidor) tusDescartar(w http.ResponseWriter, r *http.Request) {
 	cabecerasTus(w)
+	if !s.exigirCSRF(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	sub, ok := s.recuperar(r, id)
 	if !ok {

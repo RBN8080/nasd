@@ -14,6 +14,31 @@ import (
 // Entregar el borrado antes habría dejado el disco entero administrable por
 // cualquiera en la LAN durante todo el intervalo.
 
+// csrfRecibido saca el testigo de donde venga: cabecera o campo del
+// formulario.
+//
+// NO se usa r.PostFormValue, y el motivo importa: esa función llama por
+// dentro a ParseMultipartForm si el formulario no está parseado —justo lo
+// que ADR-0025 prohíbe, porque vuelca a os.TempDir(), que con PrivateTmp=yes
+// es RAM—. Hoy no ocurre porque todos los manejadores llaman antes a
+// ParseForm, pero eso es una trampa esperando a que alguien añada uno nuevo
+// sin acordarse.
+//
+// r.PostForm.Get() lee lo ya parseado y NUNCA dispara el análisis multipart.
+//
+// La cabecera «Nas-Csrf» además aporta protección por sí misma: un
+// formulario de otro sitio no puede fijar cabeceras propias, así que las
+// peticiones del cliente JavaScript quedan cubiertas dos veces.
+func csrfRecibido(r *http.Request) string {
+	if v := r.Header.Get("Nas-Csrf"); v != "" {
+		return v
+	}
+	// ParseForm es idempotente y, sobre una petición multipart, NO consume
+	// el cuerpo: deja ese trabajo a ParseMultipartForm, que aquí no se llama.
+	_ = r.ParseForm()
+	return r.PostForm.Get("csrf")
+}
+
 // csrfDe extrae el testigo CSRF de la sesión de esta petición.
 func (s *Servidor) csrfDe(r *http.Request) string {
 	c, err := r.Cookie(nombreCookie)
@@ -35,7 +60,7 @@ func (s *Servidor) exigirCSRF(w http.ResponseWriter, r *http.Request) bool {
 		s.pedirAcceso(w, r, "")
 		return false
 	}
-	if !s.sesiones.CsrfValido(c.Value, r.PostFormValue("csrf")) {
+	if !s.sesiones.CsrfValido(c.Value, csrfRecibido(r)) {
 		s.reg.Warn("testigo CSRF inválido",
 			"origen", origenDe(r), "ruta", r.URL.Path, "metodo", r.Method)
 		http.Error(w, "petición no autorizada", http.StatusForbidden)
