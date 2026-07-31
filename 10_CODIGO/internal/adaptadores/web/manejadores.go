@@ -153,6 +153,20 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request) {
 
 	destino := almacen.Raiz()
 	subidos := 0
+
+	// El testigo CSRF llega como una parte más del flujo multipart, y hay que
+	// validarlo ANTES de aceptar ningún archivo.
+	//
+	// No se puede usar exigirCSRF aquí: leería el formulario, y con
+	// MultipartReader el cuerpo se recorre una sola vez y en orden (ADR-0025).
+	// Por eso el formulario pone «csrf» antes que «archivo».
+	csrfOK := false
+	cookie, errC := r.Cookie(nombreCookie)
+	if errC != nil {
+		s.pedirAcceso(w, r, "")
+		return
+	}
+
 	for {
 		parte, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -164,6 +178,19 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch parte.FormName() {
+		case "csrf":
+			b, err := io.ReadAll(io.LimitReader(parte, 1024))
+			if err != nil {
+				s.fallo(w, r, err)
+				return
+			}
+			csrfOK = s.sesiones.CsrfValido(cookie.Value, strings.TrimSpace(string(b)))
+			if !csrfOK {
+				s.reg.Warn("testigo CSRF inválido en subida multipart", "origen", origenDe(r))
+				http.Error(w, "petición no autorizada", http.StatusForbidden)
+				return
+			}
+
 		case "destino":
 			// El destino debe llegar ANTES que el archivo: con
 			// MultipartReader las partes se recorren en orden (ADR-0025).
@@ -179,6 +206,13 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "archivo":
+			// Sin testigo validado no se toca el disco. El formulario lo
+			// envía primero; si no llegó, la petición no viene de aquí.
+			if !csrfOK {
+				s.reg.Warn("subida multipart sin testigo CSRF previo", "origen", origenDe(r))
+				http.Error(w, "petición no autorizada", http.StatusForbidden)
+				return
+			}
 			nombre, err := almacen.NombreDeArchivo(parte.FileName())
 			if err != nil {
 				s.fallo(w, r, err)

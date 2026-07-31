@@ -100,3 +100,60 @@ func TestNoSePuedeBorrarLaRaiz(t *testing.T) {
 		}
 	}
 }
+
+// Ahora TODO lo que cambia algo exige testigo, incluidas las subidas.
+// Antes solo lo hacían renombrar, borrar y crear carpeta.
+func TestLasSubidasTambienExigenCSRF(t *testing.T) {
+	s := servidorConAuth(t)
+	h := s.Rutas()
+	cookie, _ := sesionAbierta(t, s)
+
+	for _, c := range []struct{ metodo, ruta string }{
+		{"POST", "/subidas"},
+		{"PATCH", "/subidas/0123456789abcdef0123456789abcdef"},
+		{"DELETE", "/subidas/0123456789abcdef0123456789abcdef"},
+	} {
+		r := httptest.NewRequest(c.metodo, c.ruta, nil)
+		r.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s %s sin CSRF -> %d; se esperaba 403", c.metodo, c.ruta, w.Code)
+		}
+	}
+}
+
+// El testigo se acepta por cabecera, que es como lo manda el cliente
+// JavaScript, y ademas es una barrera en si misma: un formulario de otro
+// sitio no puede fijar cabeceras propias.
+func TestElTestigoValePorCabecera(t *testing.T) {
+	s := servidorConAuth(t)
+	h := s.Rutas()
+	cookie, csrf := sesionAbierta(t, s)
+
+	r := httptest.NewRequest("POST", "/subidas", nil)
+	r.AddCookie(cookie)
+	r.Header.Set("Nas-Csrf", csrf)
+	r.Header.Set("Upload-Length", "10")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code == http.StatusForbidden {
+		t.Fatal("rechazó un testigo válido enviado por cabecera")
+	}
+}
+
+// Regresión de la trampa de ADR-0025: csrfRecibido NO debe disparar el
+// análisis multipart, que vuelca a tmpfs, es decir a RAM.
+func TestCsrfNoDisparaElAnalisisMultipart(t *testing.T) {
+	cuerpo := "--x\r\nContent-Disposition: form-data; name=\"csrf\"\r\n\r\nvalor\r\n--x--\r\n"
+	r := httptest.NewRequest("POST", "/borrar", strings.NewReader(cuerpo))
+	r.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+
+	_ = csrfRecibido(r)
+
+	if r.MultipartForm != nil {
+		t.Fatal("csrfRecibido analizó el multipart: eso vuelca a os.TempDir(), " +
+			"que con PrivateTmp=yes es RAM (ADR-0025)")
+	}
+}

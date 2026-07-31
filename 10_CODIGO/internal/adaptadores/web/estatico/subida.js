@@ -25,6 +25,15 @@ const BLOQUE = 8 * 1024 * 1024;
 // desplazamiento ES el tamaño del parcial— pero el cliente no sabía volver.
 const CLAVE_SUBIDAS = 'nas.subidas';
 
+// Testigo CSRF de la sesión, que la página deja en el DOM.
+//
+// Va en una cabecera propia y no en el cuerpo: un formulario de otro sitio
+// no puede fijar cabeceras, así que exigirla es en sí misma una barrera.
+function csrf() {
+  const z = document.getElementById('zona-subida');
+  return (z && z.dataset.csrf) || '';
+}
+
 function claveDe(archivo, destino) {
   return destino + '|' + archivo.name + '|' + archivo.size;
 }
@@ -168,6 +177,7 @@ async function subirArchivo(archivo, destino, estado, control) {
     method: 'POST',
     headers: {
       'Tus-Resumable': '1.0.0',
+      'Nas-Csrf': csrf(),
       'Upload-Length': String(archivo.size),
       // AMBAS van codificadas, y no es opcional: las cabeceras HTTP solo
       // admiten Latin-1, así que un acento en la ruta o en el nombre hace
@@ -198,6 +208,7 @@ async function subirArchivo(archivo, destino, estado, control) {
         method: 'PATCH',
         headers: {
           'Tus-Resumable': '1.0.0',
+          'Nas-Csrf': csrf(),
           'Upload-Offset': String(offset),
           'Content-Type': 'application/offset+octet-stream',
         },
@@ -210,7 +221,7 @@ async function subirArchivo(archivo, destino, estado, control) {
         throw new Error('pausada');
       }
       if (control.motivo === 'descartar') {
-        await fetch(url, { method: 'DELETE', headers: { 'Tus-Resumable': '1.0.0' } })
+        await fetch(url, { method: 'DELETE', headers: { 'Tus-Resumable': '1.0.0', 'Nas-Csrf': csrf() } })
           .catch(() => {});
         olvidar(clave);
         throw new Error('descartada');

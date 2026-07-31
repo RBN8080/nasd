@@ -67,7 +67,7 @@
   </form>
 
   <!-- Camino normal: tus, reanudable (RF-12). -->
-  <div id="zona-subida" data-destino="{{.Ruta.Rel}}">
+  <div id="zona-subida" data-destino="{{.Ruta.Rel}}" data-csrf="{{.Csrf}}">
     <label for="archivos">Archivos a subir:</label>
     <input type="file" id="archivos" multiple>
     <button type="button" id="boton-subir" onclick="iniciarSubida()">Subir</button>
@@ -77,6 +77,9 @@
   <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
   <noscript>
     <form method="post" action="/subir" enctype="multipart/form-data">
+      <!-- El ORDEN importa: el servidor recorre el flujo una sola vez y
+           valida el testigo antes de aceptar ningún archivo. -->
+      <input type="hidden" name="csrf" value="{{.Csrf}}">
       <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
       <input type="file" name="archivo" required>
       <button type="submit">Subir (sin JavaScript)</button>
