@@ -27,6 +27,7 @@ si()    { printf '  \033[32mOK\033[0m    %s\n' "$1"; ok=$((ok+1)); }
 no()    { printf '  \033[31mFALLO\033[0m %s\n' "$1"; mal=$((mal+1)); }
 dato()  { printf '  \033[36mDATO\033[0m  %s\n' "$1"; }
 
+# shellcheck disable=SC2329  # se invoca desde el trap de abajo, que shellcheck no sigue
 limpiar() { rm -f "$GALLETAS"; }
 trap limpiar EXIT
 
@@ -42,6 +43,8 @@ echo "-- Charter §8: diario estructurado y ROTADO con límite (RNF-13) --"
 USO=$(journalctl --disk-usage 2>/dev/null | grep -oE '[0-9.]+[KMG]' | head -1)
 TOPE=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null \
        | awk -F= '/^SystemMaxUse=/{v=$2} END{print v}')
+ALMACEN=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null \
+       | awk -F= '/^Storage=/{v=$2} END{print v}')
 if [ -n "$TOPE" ]; then
   si "límite de tamaño configurado: SystemMaxUse=$TOPE"
 else
@@ -49,10 +52,41 @@ else
 fi
 dato "ocupación actual del diario: ${USO:-desconocida}"
 
+# Lo que de verdad importa de RF-19: que el rastro de un borrado sobreviva a un
+# reinicio. Raspberry Pi OS trae Storage=volatile y lo perdía TODO al arrancar.
+if [ "$ALMACEN" = "persistent" ]; then
+  si "diario PERSISTENTE: los borrados de RF-19 sobreviven a un reinicio"
+else
+  no "diario con Storage=${ALMACEN:-por omisión}: se PIERDE al reiniciar, y con él el rastro de los borrados (RF-19)"
+fi
+
+# Y que esté en el disco de datos y no en el medio de arranque (ADR-0037).
+DESTINO=$(readlink -f /var/log/journal 2>/dev/null)
+case "$DESTINO" in
+  /srv/nas/*) si "el diario vive en el disco de datos: $DESTINO (no gasta el medio de arranque)" ;;
+  "")         no "no existe /var/log/journal" ;;
+  *)          no "el diario está en $DESTINO, no en el disco de datos (ADR-0037)" ;;
+esac
+
+# Un solo arranque en la lista significa que el diario no sobrevivió al último
+# reinicio. Ese fue el síntoma que destapó el problema.
+ARRANQUES=$(journalctl --list-boots 2>/dev/null | grep -cE '^ *-?[0-9]+ ')
+dato "arranques conservados en el diario: ${ARRANQUES:-0}"
+
 # Que la línea esté escrita no basta: journald tiene que haberla tomado. Este
 # proyecto ya se encontró con «server smb encrypt», un parámetro que Samba
 # ignoraba EN SILENCIO porque estaba mal escrito (rector v1.3.0).
-if journalctl -u nasd -n 1 --no-pager -o json 2>/dev/null | grep -q '"MESSAGE"'; then
+# NO se usa «productor | grep -q»: grep -q sale al PRIMER acierto, el productor
+# recibe SIGPIPE y muere con estado != 0, y «set -o pipefail» convierte el
+# ACIERTO en fallo. Da un FALSO NEGATIVO que depende del tamaño de la salida:
+# con pocas líneas cuela, con muchas miente. Aquí lo hizo: reportaba que los
+# registros de nasd no eran JSON cuando 44 de las 50 líneas lo eran.
+#
+# Es el mismo defecto que este proyecto lleva persiguiendo (00_RECTOR.md §12.5),
+# en su versión ruidosa: un verificador que grita sin motivo se acaba ignorando.
+# Se cuenta primero y se decide después.
+N=$(journalctl -u nasd -n 1 --no-pager -o json 2>/dev/null | grep -c '"MESSAGE"')
+if [ "${N:-0}" -gt 0 ]; then
   si "el diario de nasd es legible y estructurado en JSON"
 else
   no "no se pudo leer el diario de nasd en formato estructurado"
@@ -60,8 +94,9 @@ fi
 
 # El registro del servicio va en JSON por stdout (RNF-13). Se comprueba que lo
 # que llega a journald es JSON de verdad, no texto suelto.
-if journalctl -u nasd -n 50 --no-pager -o cat 2>/dev/null | grep -q '^{.*"level":'; then
-  si "las líneas de nasd llegan como JSON con nivel (RNF-13)"
+N=$(journalctl -u nasd -n 50 --no-pager -o cat 2>/dev/null | grep -c '^{.*"level":')
+if [ "${N:-0}" -gt 0 ]; then
+  si "las líneas de nasd llegan como JSON con nivel: $N de las últimas 50 (RNF-13)"
 else
   no "las líneas de nasd no parecen JSON estructurado"
 fi
@@ -77,6 +112,9 @@ else
   no "nasd sin WatchdogSec: nadie vigila que el servicio siga respondiendo"
 fi
 
+# OJO: este ya venia activo de fabrica a 1min en este systemd. ADR-0035 decia
+# que «no existia» y era FALSO; ADR-0037 lo corrige. Aqui se comprueba que
+# sigue en pie y que 08_observabilidad.sh lo apreto.
 WD_HW=$(systemctl show -p RuntimeWatchdogUSec --value)
 if [ "${WD_HW:-0}" != "0" ] && [ -n "$WD_HW" ]; then
   si "watchdog de HARDWARE activo: RuntimeWatchdogUSec=$WD_HW"
@@ -136,7 +174,7 @@ else
   else
     JSON=$(curl -s -b "$GALLETAS" "$BASE/estado?formato=json")
 
-    if printf '%s' "$JSON" | grep -q '"veredicto"'; then
+    if [ "$(printf '%s' "$JSON" | grep -c '"veredicto"')" -gt 0 ]; then
       si "/estado con sesión devuelve JSON con veredicto global"
     else
       no "/estado no devolvió el JSON esperado"
@@ -163,11 +201,11 @@ else
     if [ -n "$TH" ] && [ "$TH" != "null" ]; then
       si "métrica throttled leída de sysfs por el servicio: $TH"
     else
-      no "throttled NO disponible por sysfs (ADR-0034 lo daba por probable)"
+      no "throttled NO disponible para el servicio"
       dato "  comprobación manual: $(vcgencmd get_throttled 2>/dev/null || echo 'vcgencmd no disponible')"
-      dato "  si el valor manual existe, hay que añadir su ruta a rutasThrottled en"
-      dato "  internal/adaptadores/sistema/lector_linux.go. Búsquela con:"
-      dato "    find /sys -name '*throttled*' 2>/dev/null"
+      dato "  si a mano funciona y el servicio no lo ve, le falta a la unidad"
+      dato "  SupplementaryGroups=video y DeviceAllow=/dev/vchiq (ADR-0036)."
+      dato "  Grupos actuales: $(systemctl show nasd -p SupplementaryGroups --value)"
     fi
 
     # Salud del medio de arranque: la parte que depende de poder leer el

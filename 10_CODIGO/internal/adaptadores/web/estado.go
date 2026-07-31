@@ -217,9 +217,24 @@ func evaluarVolumen(nombre string, v sistema.Volumen, accionEspacio string) indi
 func evaluarThrottled(t sistema.Throttled) indicador {
 	const nombre = "Limitación del SoC"
 	if !t.Disponible {
-		return indicador{nombre, "no disponible en este kernel", vDesconocido,
-			"Comprobar a mano por SSH: «vcgencmd get_throttled». El servicio no puede leerlo " +
-				"porque PrivateDevices=yes le oculta /dev/vcio (ADR-0034)"}
+		return indicador{nombre, "no disponible por ninguna vía", vDesconocido,
+			"Comprobar a mano por SSH: «vcgencmd get_throttled». Si eso funciona y el " +
+				"servicio no lo ve, le falta SupplementaryGroups=video en la unidad (ADR-0036)"}
+	}
+
+	// La fuente parcial solo sabe de subtensión. Se dice, en vez de dejar que
+	// los bits térmicos —que ahí valen siempre falso— se lean como «no ha
+	// habido limitación térmica».
+	if t.Parcial {
+		if t.SubtensionAhora {
+			return indicador{nombre, t.Hex(), vFallo,
+				"La alimentación no da. El charter §3.6 midió cero subtensión: esto es NUEVO. " +
+					"Revisar fuente y cable antes de seguir escribiendo en el disco"}
+		}
+		return indicador{nombre, t.Hex() + " · lo térmico SIN MEDIR", vDesconocido,
+			"Solo se está leyendo la alarma de subtensión del hwmon. Para la palabra completa " +
+				"hace falta que la unidad lleve SupplementaryGroups=video (ADR-0036); " +
+				"mientras tanto RNF-11 no se está midiendo desde el servicio"}
 	}
 
 	switch {

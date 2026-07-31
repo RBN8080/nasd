@@ -45,6 +45,31 @@ RestrictAddressFamilies=AF_INET AF_UNIX
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
+# ADR-0036 — acceso al firmware para leer la limitación del SoC (RNF-11).
+#
+# MEDIDO en el nodo con systemd-run, no supuesto:
+#   - Este kernel NO publica get_throttled en sysfs. Ninguna ruta, y una
+#     búsqueda amplia por /sys no encuentra nada.
+#   - vcgencmd abre /dev/vcio_gencmd (0660 root:video), comprobado con strace.
+#     NO /dev/vcio (0600 root:root) ni /dev/vchiq.
+#   - HACEN FALTA LAS TRES LÍNEAS, y cada una hace algo distinto:
+#       SupplementaryGroups   da el permiso del grupo sobre el nodo
+#       DeviceAllow           abre la política de cgroup, que PrivateDevices
+#                             deja cerrada
+#       BindPaths             HACE APARECER el nodo dentro del /dev privado.
+#                             DeviceAllow por sí solo NO lo crea: se probó, y
+#                             el dispositivo sencillamente no existía dentro.
+#
+# PrivateDevices=yes SE MANTIENE. Verificado: el /dev del servicio queda con
+# los nodos mínimos más vcio_gencmd, y nada más. Y sin el grupo video, la
+# misma configuración vuelve a fallar — o sea, no sobra ninguna línea.
+#
+# SI SE RETIRAN, el servicio no se rompe: degrada a la alarma de subtensión
+# del hwmon y lo DICE en /estado. Pero RNF-11 deja de medirse.
+SupplementaryGroups=video
+DeviceAllow=/dev/vcio_gencmd rw
+BindPaths=/dev/vcio_gencmd
+
 # Tercera capa de contención de rutas (04_SEGURIDAD.md §2): aunque
 # RutaSegura y os.Root fallaran, el proceso no puede escribir fuera de aquí.
 ReadWritePaths=/srv/nas

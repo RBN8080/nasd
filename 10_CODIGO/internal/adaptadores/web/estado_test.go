@@ -87,6 +87,32 @@ func TestSubtensionEsFallo(t *testing.T) {
 	}
 }
 
+// El respaldo parcial NO puede pintarse en verde: no sabe nada de lo térmico,
+// y un «ok» ahí afirmaría que RNF-11 se está midiendo cuando no lo está.
+func TestElThrottledParcialNoSeDaPorBueno(t *testing.T) {
+	n := nodoSano()
+	n.Throttled = sistema.Throttled{Disponible: true, Parcial: true}
+	ind := buscarIndicador(t, evaluar(n, Instantanea{}), "Limitación")
+	if ind.Veredicto != vDesconocido {
+		t.Fatalf("un throttled parcial dio %q; debería ser desconocido", ind.Veredicto)
+	}
+	if !strings.Contains(ind.Accion, "SupplementaryGroups=video") {
+		t.Fatalf("la acción debe decir qué falta en la unidad: %q", ind.Accion)
+	}
+}
+
+// Pero la subtensión sí se conoce por esa vía, y sigue siendo un fallo.
+func TestLaSubtensionSeDetectaTambienConLaFuenteParcial(t *testing.T) {
+	n := nodoSano()
+	n.Throttled = sistema.Throttled{
+		Disponible: true, Parcial: true,
+		SubtensionAhora: true, SubtensionOcurrida: true,
+	}
+	if got := buscarIndicador(t, evaluar(n, Instantanea{}), "Limitación").Veredicto; got != vFallo {
+		t.Fatalf("veredicto = %q; la subtensión es fallo venga de donde venga", got)
+	}
+}
+
 func TestThrottledNoLeidoEsDesconocidoYNoOk(t *testing.T) {
 	n := nodoSano()
 	n.Throttled = sistema.Throttled{} // no disponible
