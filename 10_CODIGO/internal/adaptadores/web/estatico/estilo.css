@@ -36,3 +36,13 @@ main { overflow-x: auto; }
 
 .salir { float: right; }
 .salir button { font-size: .85em; padding: .2rem .5rem; }
+
+/* Administración — Fase 3 */
+.acciones-fila { display: flex; gap: .4rem; align-items: center; justify-content: flex-end; }
+.acciones-fila form { display: flex; gap: .25rem; }
+.acciones-fila input[type=text] { padding: .15rem .3rem; font-size: .85em; }
+.acciones-fila button { padding: .15rem .4rem; font-size: .8em; }
+a.destructivo, button.destructivo { color: #c00; font-weight: 600; }
+button.destructivo { border: 2px solid #c00; padding: .5rem 1rem; background: #c0000010; }
+.peligro { border: 2px solid #c00; border-radius: .5rem; padding: .75rem 1rem; margin: 1rem 0; background: #c0000010; }
+.ruta-destacada { font-family: ui-monospace, monospace; word-break: break-all; font-size: 1.1em; }

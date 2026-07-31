@@ -2,6 +2,7 @@ package autenticacion
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"sync"
@@ -19,12 +20,23 @@ import (
 // documentado aquí.
 type Sesiones struct {
 	mu       sync.Mutex
-	m        map[string]time.Time // testigo -> instante de caducidad
+	m        map[string]sesion
 	duracion time.Duration
 }
 
+type sesion struct {
+	caduca time.Time
+	// csrf acompaña a la sesión y se exige en TODA petición que cambie algo.
+	//
+	// SameSite=Lax ya frena el POST entre sitios en navegadores modernos,
+	// pero con operaciones que borran de forma irreversible y sin papelera
+	// (D-15) una sola capa no basta: un navegador viejo o una configuración
+	// rara bastarían para destruir datos que no se pueden recuperar.
+	csrf string
+}
+
 func NuevasSesiones(duracion time.Duration) *Sesiones {
-	return &Sesiones{m: make(map[string]time.Time), duracion: duracion}
+	return &Sesiones{m: make(map[string]sesion), duracion: duracion}
 }
 
 // Abrir crea una sesión y devuelve su testigo.
@@ -39,10 +51,39 @@ func (s *Sesiones) Abrir() (string, error) {
 	}
 	testigo := base64.RawURLEncoding.EncodeToString(b)
 
+	c := make([]byte, 32)
+	if _, err := rand.Read(c); err != nil {
+		return "", fmt.Errorf("generar el testigo CSRF: %w", err)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.m[testigo] = time.Now().Add(s.duracion)
+	s.m[testigo] = sesion{
+		caduca: time.Now().Add(s.duracion),
+		csrf:   base64.RawURLEncoding.EncodeToString(c),
+	}
 	return testigo, nil
+}
+
+// Csrf devuelve el testigo CSRF de una sesión vigente.
+func (s *Sesiones) Csrf(testigo string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	se, ok := s.m[testigo]
+	if !ok || time.Now().After(se.caduca) {
+		return "", false
+	}
+	return se.csrf, true
+}
+
+// CsrfValido compara en TIEMPO CONSTANTE el testigo recibido con el de la
+// sesión. Comparar con == filtraría por tiempo cuántos bytes se acertaron.
+func (s *Sesiones) CsrfValido(testigo, recibido string) bool {
+	esperado, ok := s.Csrf(testigo)
+	if !ok || recibido == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(esperado), []byte(recibido)) == 1
 }
 
 // Valida indica si el testigo sigue vigente. Caducidad ABSOLUTA, no
@@ -53,11 +94,11 @@ func (s *Sesiones) Valida(testigo string) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	caduca, ok := s.m[testigo]
+	se, ok := s.m[testigo]
 	if !ok {
 		return false
 	}
-	if time.Now().After(caduca) {
+	if time.Now().After(se.caduca) {
 		delete(s.m, testigo)
 		return false
 	}
@@ -79,8 +120,8 @@ func (s *Sesiones) Purgar() int {
 	defer s.mu.Unlock()
 	ahora := time.Now()
 	n := 0
-	for t, caduca := range s.m {
-		if ahora.After(caduca) {
+	for t, se := range s.m {
+		if ahora.After(se.caduca) {
 			delete(s.m, t)
 			n++
 		}

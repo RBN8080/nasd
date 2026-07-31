@@ -16,8 +16,9 @@ volumen = "/srv/nas"
 # segundo control independiente, no el único.
 direccion = "192.168.1.38"
 
-# Puerto >1024 para no necesitar privilegio elevado ni CAP_NET_BIND_SERVICE.
-puerto = 8080
+# ADR-0032: puerto 80, para entrar tecleando solo la IP. systemd concede
+# CAP_NET_BIND_SERVICE por AmbientCapabilities; el proceso NO se eleva.
+puerto = 80
 
 [sesion]
 # Cuánto dura una sesión de la web antes de tener que volver a entrar.

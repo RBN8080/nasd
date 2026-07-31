@@ -117,10 +117,13 @@ func (c Config) validar() error {
 	if c.Volumen == "" {
 		return fmt.Errorf("volumen: no puede estar vacío")
 	}
-	if c.Puerto < 1024 || c.Puerto > 65535 {
-		// <1024 exigiría privilegio elevado, que ADR-0018 descarta.
-		return fmt.Errorf("puerto %d: debe estar entre 1024 y 65535", c.Puerto)
+	if c.Puerto < 1 || c.Puerto > 65535 {
+		return fmt.Errorf("puerto %d: fuera de rango", c.Puerto)
 	}
+	// Los puertos <1024 exigen CAP_NET_BIND_SERVICE. ADR-0032 la concede por
+	// AmbientCapabilities en la unidad systemd, SIN elevar el proceso: sigue
+	// corriendo como el usuario nas. Si falta esa línea, el enlace falla al
+	// arrancar y se ve de inmediato.
 	if c.Direccion == "" {
 		return fmt.Errorf("direccion: no puede estar vacía; use la IP de la LAN (ADR-0018)")
 	}

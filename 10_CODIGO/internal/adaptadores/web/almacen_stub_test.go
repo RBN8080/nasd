@@ -40,3 +40,17 @@ func (almacenVacio) ReabrirParcial(context.Context, string) (almacen.Parcial, al
 }
 
 func (almacenVacio) BorrarParcial(context.Context, string) error { return nil }
+
+func (almacenVacio) Renombrar(context.Context, almacen.RutaSegura, almacen.RutaSegura) error {
+	return almacen.ErrNoExiste
+}
+
+func (almacenVacio) Borrar(context.Context, almacen.RutaSegura) error { return almacen.ErrNoExiste }
+
+func (almacenVacio) BorrarArbol(context.Context, almacen.RutaSegura) error {
+	return almacen.ErrNoExiste
+}
+
+func (almacenVacio) Resumen(context.Context, almacen.RutaSegura) (almacen.Conteo, error) {
+	return almacen.Conteo{}, almacen.ErrNoExiste
+}
