@@ -1,0 +1,24 @@
+# Los finales de linea los fija el repositorio, no la maquina que clona.
+#
+# NO ES COSMETICA. Sin esta linea, un clon en Windows con core.autocrlf=true
+# —el valor por omision alli— convierte todo a CRLF al hacer checkout, y
+# entonces:
+#
+#   - los 23 scripts de 20_APROVISIONAMIENTO/ fallan en el nodo con
+#     "bash: \r: command not found", que es la unica maquina para la que
+#     se escribieron;
+#   - "gofmt -l" senala TODOS los archivos .go, asi que "make verificar"
+#     —la puerta canonica de este proyecto— no pasa en un clon recien
+#     hecho.
+#
+# Medido el 2026-09-15: clonando sin este archivo, los 165 archivos .go
+# salieron con formato invalido. Con el, ninguno.
+* text=auto eol=lf
+
+# Binarios: que git no los toque.
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.gz binary
+*.zip binary

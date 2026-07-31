@@ -1,0 +1,60 @@
+[Unit]
+Description=nasd — servidor de archivos del proyecto NAS
+Documentation=file:///home/usuario/01_NAS/00_RECTOR.md
+# Sin volumen no hay nada que servir. Ajustar al UUID real tras la Fase 1.
+RequiresMountsFor=/srv/nas
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Charter §6.2 y 02_ARQUITECTURA.md §11.1. Ninguna de estas líneas es opcional.
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/local/bin/nasd --config /etc/nasd/nasd.toml
+Restart=on-failure
+RestartSec=5s
+WatchdogSec=30s
+
+# ADR-0020: un único UID escribe en el almacén, venga por SMB o por la web.
+# Un archivo subido por una vía es indistinguible de uno subido por la otra.
+User=nas
+Group=nas
+
+# Endurecimiento (charter §7).
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+# Tercera capa de contención de rutas (04_SEGURIDAD.md §2): aunque
+# RutaSegura y os.Root fallaran, el proceso no puede escribir fuera de aquí.
+ReadWritePaths=/srv/nas
+
+# ADR-0025 / RES-01: límite duro de memoria. El kernel mata el proceso y
+# Restart=on-failure lo levanta — fallo ruidoso, nunca degradación silenciosa.
+# VALOR PROVISIONAL: se fija con la medición de RNF-01 en la Fase 2 (§5.3 de
+# 02_ARQUITECTURA.md). No es un número medido.
+MemoryMax=192M
+Environment=GOMEMLIMIT=160MiB
+
+# RNF-13: registro estructurado JSON por stdout hacia journald.
+StandardOutput=journal
+StandardError=journal
+
+# P4: cero secretos en el repositorio. Cuando exista la credencial web
+# (D-14, Fase 3), se carga así y no desde el TOML:
+# LoadCredential=web:/etc/nasd/credencial
+
+[Install]
+WantedBy=multi-user.target

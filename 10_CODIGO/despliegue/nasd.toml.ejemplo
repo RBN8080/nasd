@@ -1,0 +1,27 @@
+# Configuración de nasd — copiar a /etc/nasd/nasd.toml
+#
+# P4 del charter: CERO SECRETOS EN EL REPOSITORIO, historial incluido.
+# Este archivo es un ejemplo y no contiene ninguno. Cuando exista la
+# credencial web (D-14, Fase 3), NO va aquí: va por LoadCredential= de
+# systemd.
+
+# Punto de montaje del volumen de datos (ADR-0019).
+# Dentro debe existir datos/ y estado/parciales/. El servicio los crea si
+# faltan, pero el volumen debe estar montado: si no, no arranca (P5).
+volumen = "/srv/nas"
+
+[red]
+# ADR-0018: se enlaza a la IP de la LAN, NO a 0.0.0.0. Así el proceso ni
+# siquiera escucha fuera de la interfaz declarada. El cortafuegos es el
+# segundo control independiente, no el único.
+direccion = "192.168.1.38"
+
+# Puerto >1024 para no necesitar privilegio elevado ni CAP_NET_BIND_SERVICE.
+puerto = 8080
+
+[plazos]
+# ADR-0026. Plazo POR ACTIVIDAD, en segundos: se renueva con cada avance de
+# datos. Los plazos absolutos de net/http (ReadTimeout, WriteTimeout) se
+# dejan sin fijar a propósito — cortarían descargas legítimas de 4 GB.
+# Valor de referencia [R]: no es criterio de aceptación.
+inactividad_s = 60

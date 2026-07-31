@@ -1,0 +1,238 @@
+// respaldo.ejemplo.jsonc — configuracion del cliente de respaldo.
+//
+// ESTE ES EL EJEMPLO PUBLICO. El archivo que el cliente lee de verdad se
+// llama respaldo.jsonc y vive solo en la instalacion de cada quien: describe
+// que carpetas se respaldan, con que numeros y en que disco, y eso es un
+// inventario del equipo de una persona, no parte del producto.
+//
+// Para usarlo: copie este archivo a respaldo.jsonc, en esta misma carpeta, y
+// cambie los valores. respaldo.jsonc esta en .gitignore a proposito.
+//
+// El formato es JSONC: JSON con comentarios de linea. El cargador los quita
+// antes de interpretar.
+{
+  "version": "0.2.0",
+
+  // Nombre del equipo que se respalda. Da nombre a su carpeta en el destino,
+  // asi que un disco puede guardar varios equipos sin mezclarlos.
+  "equipo": "EQUIPO-01",
+
+  // ---------------------------------------------------------------------------
+  //  DESTINOS
+  // ---------------------------------------------------------------------------
+  "destinos": {
+    // El nodo, por SMB. Corre solo, tres veces al dia.
+    "nodo": {
+      "unc": "\\\\192.168.1.38\\datos",
+      "raiz": "01_BACKUP",
+      "prefijoEquipo": "EQUIPO-01",
+      "credencial": "Administrador de credenciales de Windows",
+      "cadencia": "tres corridas al dia, minuto sorteado (ver bloque cadencia)",
+
+      // Una ruta UNC a la que le falte una barra —"\\servidor\datos" escrito
+      // como "\servidor\datos"— la resuelve Windows RELATIVA A C:, y entonces
+      // el respaldo se copia entero dentro del propio disco que pretendia
+      // proteger, sin que nada falle a gritos. Dejelo en true.
+      "abortarSiDestinoNoEsUNC": true,
+
+      // Recorta prefijos al escribir en el destino, para que el arbol de
+      // llegada no repita la profundidad del de origen.
+      "traduccionDeRutas": [
+        { "de": "C:\\Users\\usuario\\Documents", "a": "Documents" },
+        { "de": "C:\\dev", "a": "dev" }
+      ]
+    },
+
+    // El disco frio, a peticion. Es aditivo: no borra lo que ya hay.
+    "discoFrio": {
+      "serie": "ZZ000000000A1",
+      "etiqueta": "COPIA-FRIA",
+      "sistemaDeArchivos": "NTFS",
+
+      // El centinela es un archivo que tiene que existir en la raiz del disco
+      // para dar por bueno que es ESTE disco y no otro con la misma etiqueta.
+      "centinela": "_COPIA_FRIA_ZZ000000000A1.txt",
+
+      "modo": "aditivo",
+      "cadencia": "a peticion del operador",
+      "prefijoEquipo": "EQUIPO-01",
+      "prefijoNodo": "NODO-01",
+      "traduccionDeRutas": [
+        { "de": "C:\\Users\\usuario\\Documents", "a": "Documents" }
+      ],
+      "traduccionDelNodo": [
+        { "de": "\\\\192.168.1.38\\datos\\01_BACKUP", "a": "" }
+      ]
+    }
+  },
+
+  // ---------------------------------------------------------------------------
+  //  QUE ENTRA
+  //
+  //  Un CONTENEDOR no se respalda entero: dentro de el entran solo las
+  //  carpetas que empiezan por un numero (01_, 02_, …). Asi una carpeta nueva
+  //  entra el dia que alguien la numera, sin tocar este archivo, y la basura
+  //  sin numerar se queda fuera sin tener que enumerarla.
+  //
+  //  Una RAIZ DECLARADA entra entera, numerada o no.
+  //
+  //  clase A = insustituible (fotos, video, documentos)
+  //  clase B = reconstruible con trabajo (codigo, configuracion)
+  // ---------------------------------------------------------------------------
+  "contenedores": [
+    { "ruta": "C:\\Users\\usuario\\Documents", "clase": "B" },
+    { "ruta": "C:\\Users\\usuario\\Pictures",  "clase": "A" },
+    { "ruta": "C:\\Users\\usuario\\Videos",    "clase": "A" }
+  ],
+
+  "raicesDeclaradas": [
+    {
+      "ruta": "C:\\dev",
+      "clase": "B",
+      "nota": "Entra entera. Cada proyecto nuevo queda cubierto solo"
+    },
+    {
+      "ruta": "_CONFIGS",
+      "clase": "B",
+      "virtual": true,
+      "habilitada": false,
+      "nota": "Raiz virtual: junta .ssh, .gitconfig y similares en un destino. Deshabilitada de fabrica: contiene llaves privadas, y copiarlas a un recurso de red es una decision de seguridad distinta del resto"
+    }
+  ],
+
+  // Carpetas que viven en el nodo y viajan nodo -> disco frio, sin pasar por
+  // el equipo.
+  "raicesDelNodo": [
+    {
+      "ruta": "01_BACKUP/_HISTORICO",
+      "clase": "A",
+      "tipo": "raizDeclarada",
+      "nota": "Archivo congelado. Que aparezca material nuevo es normal; que cambie material viejo, no, y eso se reporta"
+    },
+    {
+      "ruta": "homeUsers",
+      "clase": "A",
+      "tipo": "contenedor",
+      "patron": "homeUsers/<usuario>/NN_*",
+      "nota": "No se declara cuenta por cuenta: se declara el contenedor y manda el numero"
+    }
+  ],
+
+  // ---------------------------------------------------------------------------
+  //  QUE NO ENTRA
+  //
+  //  Se compara por SEGMENTO de ruta completo, no por subcadena: "Juegos"
+  //  excluye "...\Juegos\..." pero no "...\JuegosPunk_Fotos\...".
+  // ---------------------------------------------------------------------------
+  "exclusiones": [
+    "AppData",
+    ".cache",
+    "C:\\Users\\usuario\\Downloads",
+    "Juegos",
+    "*.vmdk"
+  ],
+
+  // ---------------------------------------------------------------------------
+  //  SECRETOS DENTRO DE LO QUE SE RESPALDA
+  //
+  //  El motor NO excluye por patron en silencio: detecta y REPORTA. Excluir
+  //  falla en la direccion peligrosa —cree usted que esta a salvo— y ademas
+  //  sacaria del respaldo justo los archivos que mas falta hace conservar.
+  // ---------------------------------------------------------------------------
+  "secretos": {
+    "politica": "detectar-y-reportar",
+    "cifrarRaizDeclarada": "_CONFIGS",
+    "patronesDeDeteccion": [
+      "^\\.env($|\\.)", "\\.pem$", "\\.pfx$", "\\.p12$", "\\.ppk$", "\\.keystore$",
+      "^id_rsa", "^id_ed25519", "^id_ecdsa", "\\.key$", "\\.cer$", "\\.crt$",
+      "\\.npmrc$", "\\.pgpass$", "\\.netrc$",
+      "contrase", "password", "credencial", "credentials", "token", "secret"
+    ],
+    "nota": "Esta lista no es la garantia: es la red de deteccion, y tiene fugas. Por eso reporta en vez de decidir"
+  },
+
+  // ---------------------------------------------------------------------------
+  //  CENTINELAS ANTIRANSOMWARE
+  //
+  //  Un archivo fijo por carpeta vigilada, con su huella SHA-256. Si la huella
+  //  cambia, algo reescribio esa carpeta y el respaldo se detiene antes de
+  //  propagarlo.
+  //
+  //  LAS HUELLAS REALES NO SE PUBLICAN NI SE COMPARTEN: quien las tenga puede
+  //  reponer un centinela despues de tocarlo, que es justo lo que esta capa
+  //  existe para impedir. Calcule las suyas con:
+  //      Get-FileHash -Algorithm SHA256 <ruta>
+  // ---------------------------------------------------------------------------
+  "centinelas": [
+    { "ruta": "C:\\Users\\usuario\\Documents\\01_TRABAJO\\_centinela_respaldo.txt", "huella": "0000000000000000000000000000000000000000000000000000000000000000" },
+    { "ruta": "C:\\dev\\_centinela_respaldo.txt", "huella": "0000000000000000000000000000000000000000000000000000000000000000" }
+  ],
+
+  // ---------------------------------------------------------------------------
+  //  CUANDO CORRE
+  // ---------------------------------------------------------------------------
+  "cadencia": {
+    // Tres ventanas al dia. Dentro de cada una se sortea el minuto, para no
+    // pedirle al nodo tres conexiones a la misma hora exacta todos los dias.
+    "ventanas": [
+      { "inicio": "04:00", "duracionHoras": 3 },
+      { "inicio": "12:00", "duracionHoras": 3 },
+      { "inicio": "19:00", "duracionHoras": 3 }
+    ],
+
+    // Cuantas horas sin una corrida buena antes de avisar. Sale de la cadencia
+    // de arriba, no de un numero elegido a ojo: con tres ventanas, 22 h
+    // significa "se perdieron dos seguidas".
+    //
+    // El nodo LEE este valor del ESTADO.txt que publica el cliente, en vez de
+    // escribirse el suyo: si hubiera dos numeros para la misma pregunta, el
+    // dia que alguien cambiara las ventanas las dos pantallas se
+    // contradirian sin que nada fallara.
+    "horasParaAvisar": 22,
+
+    // Si el equipo estaba apagado a su hora, que corra al encender.
+    "recuperarCorridaPerdida": true
+  },
+
+  // ---------------------------------------------------------------------------
+  //  TESTIGO EXTERNO
+  //
+  //  Un reloj de fuera que avisa si el cliente deja de dar senales. Hace falta
+  //  porque el modo de fallo que mas importa —que el equipo se apague, se
+  //  cuelgue o deje de correr— se lleva por delante al vigilante junto con lo
+  //  vigilado: un icono ausente se parece demasiado a "todo bien".
+  // ---------------------------------------------------------------------------
+  "testigo": {
+    "proveedor": "healthchecks.io",
+    "medida": "hubo una corrida buena en los ultimos N dias",
+    "latidosPorDia": 3,
+    "periodHoras": 12,
+    "graceHoras": 10,
+
+    // La URL del testigo lleva un identificador que da derecho a escribir:
+    // NO se escribe aqui. Se guarda en el Administrador de credenciales de
+    // Windows y el cliente la pide por su nombre.
+    "urlDesde": "Administrador de credenciales de Windows"
+  },
+
+  // ---------------------------------------------------------------------------
+  //  DEUDA DE LA PRIMERA CORRIDA
+  //
+  //  OBLIGATORIA: el cargador la exige y no le pone valor por omision
+  //  (2-Nucleo/comun.ps1). Existe porque la primera copia de un equipo suele
+  //  hacerse a mano —por USB, por volumen—, y entonces el motor tiene que
+  //  saber que hay material que el no subio: mientras esta deuda no este
+  //  saldada, el conteo del destino no cuadra con el del origen y eso NO es
+  //  una averia.
+  //
+  //  En una instalacion nueva que va a subirlo todo con el motor, se declara
+  //  saldada y a cero, que es este ejemplo.
+  // ---------------------------------------------------------------------------
+  "deudaPrimeraCorrida": {
+    "fechaDeLaSubidaManual": "",
+    "totalArchivos": 0,
+    "totalBytes": 0,
+    "raices": [],
+    "saldada": true
+  }
+}
