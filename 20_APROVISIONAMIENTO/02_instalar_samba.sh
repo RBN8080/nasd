@@ -80,7 +80,13 @@ cat > "$CONF" <<EOF
    # RF-03 exige que el iPhone suba una foto, así que esto es requisito,
    # no comodidad. «fruit» traduce los metadatos de Apple a atributos
    # extendidos en lugar de a archivos ._ sueltos por todo el árbol.
-   vfs objects = catia fruit streams_xattr
+   # «fruit» es lo que arregla la escritura desde iOS. «catia» se RETIRÓ el
+   # 2026-07-31: traduce los caracteres que Windows no admite a un área
+   # privada de Unicode, y eso hacía que el nombre guardado en disco NO
+   # coincidiera con el que ven los clientes SMB — un carácter invisible al
+   # final. Rompía la fidelidad del nombre entre las tres vías, que vale más
+   # que el caso raro de un nombre con : * ? " < > |
+   vfs objects = fruit streams_xattr
    fruit:metadata = stream
    fruit:model = MacSamba
    fruit:posix_rename = yes
