@@ -336,6 +336,74 @@ else
 fi
 
 echo
+echo "-- Fase 5: acceso remoto por WireGuard (ADR-0043) --"
+
+# Solo se comprueba si el tunel esta instalado. Antes de la Fase 5 este bloque
+# no aplica y callarse es lo correcto: un FALLO por algo que aun no existe
+# entrena a ignorar los fallos, que es peor que no comprobar.
+if [ ! -f /etc/wireguard/wg0.conf ]; then
+  dato "túnel no instalado: bloque omitido (correcto antes de la Fase 5)"
+else
+  if ip link show wg0 >/dev/null 2>&1; then
+    si "interfaz wg0 levantada"
+  else
+    no "wg0 no existe: el acceso remoto está caído"
+  fi
+
+  if systemctl is-enabled --quiet wg-quick@wg0 2>/dev/null; then
+    si "el túnel se levanta solo al arrancar"
+  else
+    no "wg-quick@wg0 no habilitado: no sobrevivirá a un reinicio"
+  fi
+
+  N_PUERTO=$(ss -ulnp 2>/dev/null | grep -c ':61820 ')
+  if [ "${N_PUERTO:-0}" -gt 0 ]; then
+    si "escuchando en 61820/udp"
+  else
+    no "nada escucha en 61820/udp"
+  fi
+
+  REGLAS_WG=$(nft list ruleset 2>/dev/null)
+  N_WG=$(printf '%s' "$REGLAS_WG" | grep -c 'udp dport 61820 accept')
+  if [ "${N_WG:-0}" -gt 0 ]; then
+    si "el cortafuegos acepta 61820/udp"
+  else
+    no "el cortafuegos NO acepta 61820/udp: nadie podrá entrar"
+  fi
+
+  # Que forward siga cerrado es la prueba de que el tunel NO alcanza el resto
+  # de la casa. Si esto se rompe, el radio de una clave perdida crece de un
+  # servidor a la red entera.
+  N_FWD5=$(printf '%s' "$REGLAS_WG" | grep -A1 'hook forward' | grep -c 'policy drop')
+  if [ "${N_FWD5:-0}" -gt 0 ]; then
+    si "forward en policy drop: el túnel llega al NAS y a nada más"
+  else
+    no "forward ya NO está en drop: el túnel podría alcanzar otros equipos de la casa"
+  fi
+
+  # LO QUE DE VERDAD IMPORTA: que ALGUIEN haya conectado alguna vez. Que la
+  # interfaz exista no prueba que sea alcanzable desde fuera — es justo el
+  # error que costó la noche del 2026-07-31, cuando se dio por imposible algo
+  # que ya estaba funcionando.
+  N_PARES=$(wg show wg0 peers 2>/dev/null | grep -c .)
+  N_SALUDOS=$(wg show wg0 latest-handshakes 2>/dev/null | awk '$2>0' | grep -c .)
+  dato "dispositivos dados de alta: ${N_PARES:-0}"
+  if [ "${N_SALUDOS:-0}" -gt 0 ]; then
+    si "$N_SALUDOS de ${N_PARES:-0} han conectado alguna vez: el túnel es alcanzable de verdad"
+  else
+    no "NINGÚN dispositivo ha conectado nunca: la interfaz existe pero no está demostrado que se llegue desde fuera"
+  fi
+
+  # El extremo de los perfiles: IP fija es deuda conocida, no un fallo.
+  EXTREMO_PERFIL=$(grep -h '^Endpoint' /etc/wireguard/clientes/*.conf 2>/dev/null | head -1 | sed 's/.*= *//')
+  case "$EXTREMO_PERFIL" in
+    *duckdns.org*|*[a-z].[a-z]*) si "los perfiles usan un NOMBRE: sobreviven a un cambio de IP" ;;
+    "")                          dato "no se pudieron leer los perfiles de cliente" ;;
+    *)                           dato "DEUDA: los perfiles apuntan a la IP $EXTREMO_PERFIL, no a un nombre. Cuando el proveedor la cambie, el acceso remoto morirá EN SILENCIO. Se salda con 11_ddns.sh" ;;
+  esac
+fi
+
+echo
 echo "-- Endurecimiento (no debe haber empeorado con la Fase 4) --"
 NOTA=$(systemd-analyze security nasd --no-pager 2>/dev/null | tail -1)
 dato "${NOTA:-no disponible}"
