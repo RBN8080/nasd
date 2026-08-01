@@ -83,6 +83,22 @@ command -v qrencode >/dev/null 2>&1 || {
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qrencode >/dev/null
 }
 
+# tcpdump — SALDA UNA DEUDA DE P1 y no es una herramienta «por si acaso».
+#
+# Se instaló a mano el 2026-07-31 durante el diagnóstico, y acabó siendo lo que
+# resolvió la fase: sin captura no había forma de distinguir «el teléfono no
+# envía» de «el paquete no llega», que es la pregunta que costó dos sesiones.
+#
+# Además 06_ACCESO_REMOTO §10.3 lo PRESCRIBE como primer diagnóstico si el
+# acceso remoto vuelve a caer, y eso puede pasar: ADR-0044 deja escrito que esto
+# funciona por cómo se comporta el CGNAT del operador, no por configuración
+# nuestra. Una herramienta que el procedimiento exige tener no puede depender de
+# que alguien la instalara a mano una vez.
+command -v tcpdump >/dev/null 2>&1 || /usr/bin/test -x /usr/bin/tcpdump || {
+  echo "Instalando tcpdump (diagnóstico prescrito en 06_ACCESO_REMOTO §10.3)..."
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tcpdump >/dev/null
+}
+
 # El módulo se comprueba con RUTA ABSOLUTA. En este proyecto «no encontrado» ya
 # ha significado tres veces «no está en el PATH»: charter §3.3, §3.4 y el propio
 # modinfo de wireguard el 2026-07-31, que casi hace descartar esta fase entera.
