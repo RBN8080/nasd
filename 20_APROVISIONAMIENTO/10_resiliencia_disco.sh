@@ -85,11 +85,37 @@ fi
 # decidió, en un nodo de 592 MB (RES-01), y duplica lo que ADR-0034 ya resuelve
 # leyendo de /proc y /sys desde nasd. P8: lo que no aporta, no corre.
 # Se conserva la HERRAMIENTA smartctl, que es lo que hacía falta para diagnosticar.
-if systemctl is-active --quiet smartd 2>/dev/null || systemctl is-enabled --quiet smartd 2>/dev/null; then
-  systemctl disable --now smartd >/dev/null 2>&1 || true
-  verde "smartd detenido y deshabilitado (P8). smartctl se conserva."
+# LA UNIDAD SE LLAMA «smartmontools», NO «smartd», y esa diferencia hacía que
+# este bloque mintiera. Detectado en la auditoría del 2026-08-01:
+#
+#   systemctl is-enabled smartd  ->  not-found
+#   systemctl is-active  smartd  ->  inactive
+#
+# Las dos comprobaciones daban falso, el script entraba en el «else» e imprimía
+# «smartd no está corriendo (correcto)» mientras smartmontools.service llevaba
+# activo desde el 2026-07-31 17:56. Y el «disable --now smartd» tampoco podía
+# hacer nada, porque esa unidad no existe aquí.
+#
+# Es el defecto de ADR-0038 otra vez: el verificador no se parecía a la
+# pregunta. Se comprueba el nombre REAL y se falla ruidosamente (P5) si queda
+# corriendo, en vez de dar por bueno lo que no se ha mirado.
+UNIDAD_SMART=""
+for U in smartmontools smartd; do
+  if systemctl list-unit-files "$U.service" --no-legend 2>/dev/null | grep -q .; then
+    UNIDAD_SMART="$U"
+    break
+  fi
+done
+
+if [ -z "$UNIDAD_SMART" ]; then
+  verde "no hay unidad de smartd en este sistema (correcto)."
 else
-  verde "smartd no está corriendo (correcto)."
+  systemctl disable --now "$UNIDAD_SMART" >/dev/null 2>&1 || true
+  if systemctl is-active --quiet "$UNIDAD_SMART" 2>/dev/null; then
+    rojo "$UNIDAD_SMART SIGUE ACTIVO pese a haberlo detenido. Revíselo a mano."
+  else
+    verde "$UNIDAD_SMART detenido y deshabilitado (P8). smartctl se conserva."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
