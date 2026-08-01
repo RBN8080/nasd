@@ -111,8 +111,16 @@ echo
 echo "== Montaje por UUID (RNF-10) =="
 mkdir -p "$PUNTO"
 
-# El nombre de dispositivo cambia entre arranques; el UUID no.
-LINEA="UUID=$UUID  $PUNTO  ext4  defaults,noatime,nofail  0  2"
+# El nombre de dispositivo cambia entre arranques; el UUID no. **Y no es teoría:
+# el 2026-07-31 el disco se cayó del bus USB y volvió como sdc siendo sdb.** El
+# UUID fue lo único que permitió remontarlo (ADR-0040).
+#
+# errors=remount-ro NO es adorno (ADR-0040). El valor por omisión de este
+# volumen era «continue»: seguir escribiendo sobre un sistema de archivos que ya
+# falló. Con D-12 —copia única— eso convierte un fallo recuperable en corrupción
+# silenciosa. Se pone AQUÍ además de en el superbloque para que sea explícito y
+# visible en las opciones de montaje, que es lo que lee el vigilante de disco.
+LINEA="UUID=$UUID  $PUNTO  ext4  defaults,noatime,nofail,errors=remount-ro  0  2"
 if grep -q "$PUNTO" /etc/fstab; then
   echo "Ya hay una entrada para $PUNTO en /etc/fstab; se deja como está:"
   grep "$PUNTO" /etc/fstab
