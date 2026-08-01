@@ -282,6 +282,60 @@ else
 fi
 
 echo
+echo "-- Resiliencia del disco de datos (ADR-0040) --"
+
+# El 2026-07-31 el puente USB-SATA dejó de responder, el kernel descartó el
+# disco a los 30 s y ext4 se apagó. Se comprueba que las tres mitigaciones
+# siguen puestas, porque ninguna es visible en el uso diario: un nodo con esto
+# desactivado se comporta EXACTAMENTE igual hasta el día que vuelve a fallar.
+PART=$(findmnt -no SOURCE /srv/nas 2>/dev/null)
+DISCO_DATOS=$(lsblk -no PKNAME "$PART" 2>/dev/null)
+
+PLAZO=$(cat "/sys/block/$DISCO_DATOS/device/timeout" 2>/dev/null)
+if [ "${PLAZO:-0}" -ge 180 ]; then
+  si "plazo del kernel antes de descartar el disco: ${PLAZO}s (era 30s el día del incidente)"
+else
+  no "plazo del kernel en ${PLAZO:-desconocido}s: una respuesta lenta del puente USB tirará el disco. Ejecute 10_resiliencia_disco.sh"
+fi
+
+COMPORTA=$(dumpe2fs -h "$PART" 2>/dev/null | sed -n 's/^Errors behavior: *//p')
+if [ "$COMPORTA" = "Remount read-only" ]; then
+  si "ante error de E/S el volumen se remonta en solo-lectura, no sigue escribiendo"
+else
+  no "comportamiento ante error = «${COMPORTA:-desconocido}»: seguiría escribiendo sobre un volumen que ya falló, y con D-12 no hay segunda copia"
+fi
+
+# OJO: ext4 solo imprime «errors=» cuando DIFIERE de su valor por omisión, que
+# es remount-ro. La señal buena es la AUSENCIA de errors=continue, no la
+# presencia de errors=remount-ro. Comprobar la presencia haría fallar a un nodo
+# bien configurado.
+OPC_NAS=$(findmnt -no OPTIONS /srv/nas 2>/dev/null)
+case "$OPC_NAS" in
+  *errors=continue*) no "el montaje en vigor sigue en «continue»: $OPC_NAS" ;;
+  "")                no "no se pudieron leer las opciones de /srv/nas" ;;
+  *)                 si "montaje en vigor sin «continue»: $OPC_NAS" ;;
+esac
+
+if systemctl is-active --quiet nas-vigilar-disco.timer 2>/dev/null; then
+  si "vigilante de montaje activo: recupera el disco solo si vuelve a caerse"
+else
+  no "vigilante de montaje INACTIVO: una caída del bus dejaría el NAS inaccesible hasta repararlo a mano. Ejecute 10_resiliencia_disco.sh"
+fi
+
+# smartctl es la herramienta que faltaba el día del incidente. smartd, en cambio,
+# no debe correr: es un demonio que nadie decidió en un nodo de 592 MB (P8).
+if command -v smartctl >/dev/null 2>&1; then
+  SALUD=$(smartctl -d sat -H "$PART" 2>/dev/null | sed -n 's/^SMART overall-health self-assessment test result: *//p')
+  case "$SALUD" in
+    PASSED) si "SMART del disco de datos: PASSED" ;;
+    "")     dato "SMART no legible a través del puente USB" ;;
+    *)      no "SMART del disco de datos: $SALUD — RESPALDE AHORA" ;;
+  esac
+else
+  no "smartctl ausente: no se puede saber si el disco se está muriendo. Ejecute 10_resiliencia_disco.sh"
+fi
+
+echo
 echo "-- Endurecimiento (no debe haber empeorado con la Fase 4) --"
 NOTA=$(systemd-analyze security nasd --no-pager 2>/dev/null | tail -1)
 dato "${NOTA:-no disponible}"
