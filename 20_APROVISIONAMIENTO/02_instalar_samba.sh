@@ -14,6 +14,7 @@ set -euo pipefail
 PUNTO=/srv/nas
 USUARIO=nas
 RED=192.168.1.0/24
+RED_TUNEL=10.77.0.0/24   # debe coincidir con RED_TUNEL de 12_wireguard.sh
 RECURSO=datos
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -55,8 +56,22 @@ cat > "$CONF" <<EOF
    restrict anonymous = 2
    guest account = nobody
 
-   # RN-04 / RNF-07 — solo la LAN.
-   hosts allow = $RED 127.0.0.1
+   # RN-04 / RNF-07 — solo la LAN y el túnel de la Fase 5.
+   #
+   # El túnel NO estaba aquí y por eso SMB no funcionaba desde fuera de casa,
+   # medido el 2026-08-01 con el túnel vivo: el cortafuegos ya dejaba pasar el
+   # 445 por wg0 (regla iifname "wg0" de 03_cortafuegos.sh), pero el cliente
+   # remoto llega con origen 10.77.0.x y Samba rechazaba la sesión él mismo.
+   # La web sí funcionaba porque nasd no filtra por origen. Refuta el supuesto
+   # de 06_ACCESO_REMOTO §3.2 de que la Fase 5 costaba "cero cambios en Samba".
+   #
+   # Va sin condicionar a que exista el túnel, al contrario que las reglas del
+   # cortafuegos: aquí no hay superficie que regalar. Sin wg0 ningún paquete
+   # puede llegar con origen 10.77.0.x — las reglas de entrada solo aceptan el
+   # 445 desde 192.168.1.0/24 o por wg0, así que un origen falsificado desde la
+   # LAN no encaja en ninguna. Condicionarlo obligaría a reejecutar este script
+   # después de 12_wireguard.sh, que es la doble propiedad que costó ADR-0040.
+   hosts allow = $RED $RED_TUNEL 127.0.0.1
    hosts deny = 0.0.0.0/0
 
    # CIFRADO DESACTIVADO — D-18 / ADR-0031, decisión del responsable.
