@@ -66,6 +66,36 @@ table inet filter {
     # Diagnóstico dentro de la LAN.
     ip saddr $RED icmp type echo-request accept
 
+    # ICMPv6 — OBLIGATORIO, no es diagnóstico. RFC 4890 §4.4.1.
+    #
+    # IPv6 no tiene ARP: la resolución de vecinos y el anuncio del router SON
+    # ICMPv6. Con «policy drop» y sin estas reglas, el nodo descarta los
+    # Router Advertisement y NUNCA obtiene dirección IPv6, aunque el router los
+    # esté enviando correctamente cada pocos segundos.
+    #
+    # Eso fue exactamente lo que pasó: 06_ACCESO_REMOTO §8.4 registró que «la
+    # LAN tiene IPv6 y la Pi no», y se persiguió durante dos sesiones en
+    # accept_ra, en NetworkManager y en el router. La causa estaba aquí, en el
+    # cortafuegos del propio nodo. Medido el 2026-08-01: con estas reglas
+    # puestas, la Pi resuelve la puerta de enlace y sale a Internet por IPv6 en
+    # menos de 3 segundos; sin ellas, jamás.
+    #
+    # No amplía superficie: son mensajes de control del protocolo. Los tipos de
+    # descubrimiento van con hop limit 255, que por RFC 4861 §11.2 no puede
+    # falsificarse desde fuera del enlace — un paquete remoto llega con menos.
+    icmpv6 type { nd-router-advert, nd-router-solicit,
+                  nd-neighbor-solicit, nd-neighbor-advert } accept
+
+    # Errores de ICMPv6. Sin «packet-too-big» IPv6 se rompe en silencio: no hay
+    # fragmentación en tránsito, así que el descubrimiento de MTU es la ÚNICA
+    # forma de que una conexión con MTU menor funcione. Es el fallo clásico de
+    # «la web carga y las descargas grandes se cuelgan».
+    icmpv6 type { destination-unreachable, packet-too-big,
+                  time-exceeded, parameter-problem } accept
+
+    # Diagnóstico IPv6 dentro de la LAN, en paralelo a la regla IPv4 de arriba.
+    icmpv6 type echo-request ip6 saddr fe80::/10 accept
+
     # SSH: sin esto el nodo se queda inaccesible. Charter §7.1.2.
     ip saddr $RED tcp dport 22 accept
 
