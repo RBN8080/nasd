@@ -401,6 +401,68 @@ else
     "")                          dato "no se pudieron leer los perfiles de cliente" ;;
     *)                           dato "DEUDA: los perfiles apuntan a la IP $EXTREMO_PERFIL, no a un nombre. Cuando el proveedor la cambie, el acceso remoto morirá EN SILENCIO. Se salda con 11_ddns.sh" ;;
   esac
+
+  # D-21 — SAMBA POR EL TÚNEL. Esta comprobación existe porque su ausencia
+  # costó una sesión entera el 2026-08-01: el cortafuegos aceptaba el 445 por
+  # wg0, pero smb.conf filtraba por origen con «hosts allow» y solo tenía la
+  # LAN, asi que Samba rechazaba la sesión DESPUÉS de que el cortafuegos la
+  # dejara pasar. La web funcionaba y SMB no, y el síntoma parecía de red.
+  # Ninguna comprobación anterior lo habría visto.
+  if testparm -s 2>/dev/null | grep -q 'hosts allow.*10\.77\.0\.0/24'; then
+    si "Samba acepta el origen del túnel: SMB funciona desde fuera de casa"
+  else
+    no "Samba NO acepta 10.77.0.0/24 en hosts allow: la web irá por el túnel y SMB no (D-21)"
+  fi
+
+  # EL MANTENEDOR DE NAT. Sin él, el nodo queda alcanzable solo mientras haya
+  # tráfico: caducan la asociación del CGNAT, el NAT del router y la entrada
+  # ARP del router para este nodo, y el acceso remoto muere EN SILENCIO — que
+  # es exactamente lo que pasaba antes de existir. Ver 06_ACCESO_REMOTO §10.
+  if systemctl is-active --quiet nas-mantener-nat 2>/dev/null; then
+    si "el mantenedor de NAT está vivo: la ruta de entrada no caduca"
+  else
+    no "nas-mantener-nat CAÍDO: el acceso remoto dejará de funcionar en minutos, sin aviso"
+  fi
+  if systemctl is-enabled --quiet nas-mantener-nat 2>/dev/null; then
+    si "el mantenedor sobrevive al reinicio"
+  else
+    no "nas-mantener-nat no habilitado: tras un reinicio el acceso remoto no volverá"
+  fi
+
+  # DDNS. Que el temporizador exista no basta: lo que importa es que el nombre
+  # resuelva a la IP que el mundo ve de verdad. Se usa un servicio de eco HTTP
+  # porque aquí la pregunta es «qué IP ve Internet», que es justo para lo que
+  # sirve; NO se usa para deducir si hay CGNAT, que es el error registrado en
+  # el rector §11 v1.28.0.
+  if systemctl is-active --quiet nas-ddns.timer 2>/dev/null; then
+    si "el temporizador de DDNS está activo"
+    DOM=$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null)
+    if [ -n "$DOM" ]; then
+      IP_VE_INTERNET=$(curl -4 -fsS --max-time 10 https://ifconfig.me 2>/dev/null || echo "")
+      IP_DEL_NOMBRE=$(getent ahostsv4 "$DOM.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
+      if [ -n "$IP_VE_INTERNET" ] && [ "$IP_VE_INTERNET" = "$IP_DEL_NOMBRE" ]; then
+        si "$DOM.duckdns.org resuelve a la IP pública real ($IP_DEL_NOMBRE)"
+      elif [ -z "$IP_VE_INTERNET" ]; then
+        dato "no se pudo medir la IP pública; el nombre resuelve a ${IP_DEL_NOMBRE:-nada}"
+      else
+        no "$DOM.duckdns.org apunta a ${IP_DEL_NOMBRE:-nada} y la IP real es $IP_VE_INTERNET: el acceso remoto está roto"
+      fi
+    fi
+  else
+    no "el temporizador de DDNS no está activo: cuando cambie la IP, el acceso morirá en silencio"
+  fi
+fi
+
+# ICMPv6 EN EL CORTAFUEGOS — no es diagnóstico, es obligatorio (RFC 4890).
+# IPv6 no tiene ARP: el descubrimiento de vecinos y los anuncios del router SON
+# ICMPv6. Con «policy drop» y sin estas reglas el nodo descarta los anuncios y
+# nunca obtiene dirección IPv6, aunque el router los esté enviando bien. Se
+# persiguió dos sesiones en accept_ra, en NetworkManager y en el router; la
+# causa estaba en el propio cortafuegos.
+if nft list ruleset 2>/dev/null | grep -q 'nd-router-advert'; then
+  si "el cortafuegos admite el descubrimiento de vecinos IPv6 (RFC 4890)"
+else
+  no "faltan las reglas ICMPv6: el nodo NUNCA obtendrá dirección IPv6 y nadie dirá por qué"
 fi
 
 echo
