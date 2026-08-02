@@ -90,7 +90,10 @@ func ejecutar() error {
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
 
-	errores := make(chan error, 1)
+	// Dos servidores como mucho: el de siempre en la LAN y, si hay
+	// certificado, el de TLS hacia Internet. Comparten el mismo Handler, así
+	// que no hay dos webs: es la misma, servida por dos puertos.
+	errores := make(chan error, 2)
 	go func() {
 		reg.Info("nasd escuchando",
 			"direccion", srv.Addr,
@@ -101,6 +104,31 @@ func ejecutar() error {
 			errores <- err
 		}
 	}()
+
+	// TLS — ADR-0046. Termina aquí y no en un proxy: el limitador de intentos
+	// usa r.RemoteAddr, y tras un proxy todas las peticiones llegarían desde
+	// 127.0.0.1 (07_AUDITORIAS §7.2).
+	var srvTLS *http.Server
+	if cfg.TLSActivo() {
+		cargador, err := web.NuevoCargadorCert(cfg.Certificado, cfg.ClaveTLS)
+		if err != nil {
+			// P5: si se prometió TLS y no se puede dar, no se arranca
+			// sirviendo HTTP como si nada.
+			return fmt.Errorf("TLS configurado pero no utilizable: %w", err)
+		}
+		srvTLS = s.HTTPServer(cfg.DireccionTLS, cfg.PuertoTLS)
+		srvTLS.TLSConfig = cargador.Config()
+		go func() {
+			reg.Info("nasd escuchando por TLS", "direccion", srvTLS.Addr)
+			// Los certificados ya van en TLSConfig; por eso las rutas van
+			// vacías aquí.
+			if err := srvTLS.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errores <- err
+			}
+		}()
+	} else {
+		reg.Warn("TLS APAGADO: sin certificado configurado, la web solo va por HTTP en la LAN")
+	}
 
 	// Charter §6.2: WatchdogSec exige Type=notify y latido desde el código.
 	operacion.Listo(reg)
@@ -121,6 +149,13 @@ func ejecutar() error {
 	// indefinidamente (ADR-0026).
 	ctxApagado, cancelar := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelar()
+	// El de TLS primero: es el que puede tener clientes de Internet, y su
+	// error no debe tapar el del servidor principal.
+	if srvTLS != nil {
+		if err := srvTLS.Shutdown(ctxApagado); err != nil {
+			reg.Error("apagando el servidor TLS", "error", err)
+		}
+	}
 	return srv.Shutdown(ctxApagado)
 }
 

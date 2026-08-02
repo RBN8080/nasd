@@ -37,6 +37,58 @@ else
   aviso "Se aplica en el próximo reinicio."
 fi
 
+# SERVICIOS QUE NADIE PIDIÓ. Hallazgo de 07_AUDITORIAS §5.2 (auditoría 1):
+# corrían 41.5 MB en demonios que ninguna decisión del proyecto justifica, en
+# un nodo cuyo presupuesto real son 656 MB. §7.1.4 dice «sin servicios no
+# requeridos» y estos tres no tienen defensa posible:
+#
+#   bluetooth       un NAS no usa Bluetooth
+#   wpa_supplicant  el nodo es cableado; wlan0 está documentado como inutilizable
+#   avahi-daemon    mDNS, y además abría 5353/udp en 0.0.0.0
+#
+# NO se toca nmbd, que sí tiene defensa: lo levanta 02_instalar_samba.sh a
+# propósito y quitarlo haría que el NAS dejara de aparecer al explorar la red
+# desde Windows. Eso es una decisión de producto, no de endurecimiento.
+#
+# Reversible con: sudo systemctl enable --now <servicio>
+for S in bluetooth wpa_supplicant avahi-daemon; do
+  if systemctl list-unit-files "$S.service" --no-legend 2>/dev/null | grep -q .; then
+    systemctl disable --now "$S" >/dev/null 2>&1 || true
+    if systemctl is-active --quiet "$S" 2>/dev/null; then
+      rojo "  $S sigue activo pese a haberlo detenido"
+    else
+      verde "  $S detenido y deshabilitado (P8)"
+    fi
+  fi
+done
+
+# --- §7.1.5 · ventana de reinicio -------------------------------------------
+#
+# Hallazgo de 07_AUDITORIAS §5.1: unattended-upgrades instalaba las
+# actualizaciones pero TODAS las líneas de reinicio estaban comentadas, así que
+# lo que exige reinicio —kernel, glibc, ssh— quedaba instalado y NO en vigor.
+# El charter §7.1.5 pide las actualizaciones «con ventana de reinicio
+# definida», y sin ella el punto está a medias.
+#
+# Por qué a las 04:00 y por qué no da miedo: es una parada LIMPIA, no un corte.
+# systemd detiene nasd, que cierra sus escrituras; y las subidas en curso son
+# reanudables por el protocolo tus (ADR-0026), así que se retoman solas. NO es
+# el escenario de S-01, que habla de un corte brusco.
+echo
+echo "-- §7.1.5 ventana de reinicio --"
+cat > /etc/apt/apt.conf.d/60-nas-reinicio <<'EOF'
+// Generado por 20_APROVISIONAMIENTO/00_endurecer_nodo.sh — proyecto NAS.
+// Charter §7.1.5: actualizaciones desatendidas CON ventana de reinicio.
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+EOF
+if apt-config dump 2>/dev/null | grep -q 'Unattended-Upgrade::Automatic-Reboot "true"'; then
+  verde "Reinicio automático a las 04:00 en vigor."
+else
+  rojo "La ventana de reinicio NO quedó en vigor. Revise /etc/apt/apt.conf.d/."
+fi
+
 # --- Los otros cinco: se COMPRUEBAN, no se suponen ---------------------------
 echo
 echo "-- Comprobación de los otros cinco puntos --"
@@ -60,6 +112,11 @@ comprobar "§7.1.3 cortafuegos con política DENY" "$R"
 
 if [ "$(systemctl is-enabled unattended-upgrades 2>/dev/null)" = "enabled" ]; then R=ok; else R=no; fi
 comprobar "§7.1.5 actualizaciones de seguridad desatendidas" "$R"
+
+# El charter pide las actualizaciones Y la ventana. Comprobarlas por separado
+# es lo que reveló que el punto llevaba meses a medias (07_AUDITORIAS §5.1).
+if apt-config dump 2>/dev/null | grep -q 'Unattended-Upgrade::Automatic-Reboot "true"'; then R=ok; else R=no; fi
+comprobar "§7.1.5 ventana de reinicio definida (si no, el kernel no se aplica)" "$R"
 
 # §4.1: el nodo no tiene RTC, así que la hora depende de NTP y sin ella no hay
 # operación TLS válida — que es exactamente lo que la Fase 5 va a necesitar.

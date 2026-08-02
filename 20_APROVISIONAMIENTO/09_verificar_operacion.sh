@@ -453,6 +453,74 @@ else
   fi
 fi
 
+echo
+echo "-- Fase 6: TLS y web expuesta (ADR-0046, ADR-0048) --"
+CERT=/etc/nas/tls/fullchain.pem
+if [ ! -f "$CERT" ]; then
+  dato "sin certificado: la web va solo por HTTP en la LAN (correcto antes de la Fase 6)"
+else
+  # LO QUE MÁS IMPORTA Y LO QUE FALLA EN SILENCIO. Un certificado caducado
+  # deja la web inaccesible desde fuera sin que nada avise, y la renovación
+  # ocurre sola: si se rompe, nadie se entera hasta el día 90.
+  FIN=$(openssl x509 -in "$CERT" -noout -enddate 2>/dev/null | cut -d= -f2)
+  if [ -n "$FIN" ]; then
+    DIAS=$(( ( $(date -d "$FIN" +%s) - $(date +%s) ) / 86400 ))
+    if [ "$DIAS" -gt 21 ]; then
+      si "certificado válido, le quedan $DIAS días"
+    elif [ "$DIAS" -gt 0 ]; then
+      no "al certificado le quedan $DIAS días y la renovación debería haber ocurrido ya: revise certbot.timer"
+    else
+      no "CERTIFICADO CADUCADO: la web no es accesible desde fuera"
+    fi
+  else
+    no "no se pudo leer la fecha del certificado $CERT"
+  fi
+
+  if systemctl is-active --quiet certbot.timer 2>/dev/null; then
+    si "la renovación automática está activa (certbot.timer)"
+  else
+    no "certbot.timer parado: el certificado caducará sin avisar"
+  fi
+
+  # El gancho que repone la copia que lee nasd. Sin él, certbot renovaría en
+  # /etc/letsencrypt y nasd seguiría sirviendo el viejo hasta caducar — un
+  # fallo silencioso a 90 días vista.
+  if [ -x /etc/letsencrypt/renewal-hooks/deploy/nas-copiar.sh ]; then
+    si "el gancho de despliegue repone el certificado que lee nasd"
+  else
+    no "falta el gancho de renovación: nasd se quedaría con el certificado viejo"
+  fi
+
+  if ss -tlnp 2>/dev/null | grep -q ':443 '; then
+    si "nasd escucha en 443"
+  else
+    no "nada escucha en 443: la web expuesta no funciona"
+  fi
+
+  if nft list ruleset 2>/dev/null | grep -q 'tcp dport 443 accept'; then
+    si "el cortafuegos acepta 443/tcp (ADR-0048)"
+  else
+    no "el cortafuegos NO acepta 443/tcp"
+  fi
+
+  # La prueba que se parece a la pregunta: no basta con que el puerto esté
+  # abierto, hay que ver que el TLS negocia y que el certificado valida contra
+  # el almacén del sistema. Se fuerza la resolución al nodo para no depender
+  # de que la entrada desde Internet funcione (ADR-0044: hoy no funciona).
+  DOM_TLS=$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null)
+  if [ -n "$DOM_TLS" ]; then
+    COD=$(curl -sS -o /dev/null -w '%{http_code}:%{ssl_verify_result}' \
+      --resolve "$DOM_TLS.duckdns.org:443:127.0.0.1" \
+      "https://$DOM_TLS.duckdns.org/" 2>/dev/null || echo "fallo:x")
+    case "$COD" in
+      401:0|200:0) si "TLS negocia y el certificado VALIDA (${COD%%:*})" ;;
+      *:0)         dato "TLS válido, respuesta inesperada: ${COD%%:*}" ;;
+      *)           no "TLS no negocia o el certificado no valida ($COD)" ;;
+    esac
+  fi
+fi
+
+echo
 # ICMPv6 EN EL CORTAFUEGOS — no es diagnóstico, es obligatorio (RFC 4890).
 # IPv6 no tiene ARP: el descubrimiento de vecinos y los anuncios del router SON
 # ICMPv6. Con «policy drop» y sin estas reglas el nodo descarta los anuncios y
