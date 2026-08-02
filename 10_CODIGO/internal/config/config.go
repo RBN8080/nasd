@@ -24,6 +24,25 @@ type Config struct {
 	Direccion string
 	Puerto    int
 
+	// --- Fase 6 · TLS (ADR-0046) -----------------------------------------
+	//
+	// TLS termina AQUÍ, no en un proxy delante, y el motivo no es preferencia:
+	// el limitador de intentos identifica al cliente con r.RemoteAddr, y tras
+	// un proxy todas las peticiones llegarían desde 127.0.0.1 — cinco fallos
+	// de cualquiera dejarían fuera a todo el mundo (07_AUDITORIAS §7.2).
+	//
+	// A diferencia de Direccion, DireccionTLS sí es 0.0.0.0: el 443 es la
+	// superficie que la Fase 6 abre a propósito (ADR-0048). El 80 se queda
+	// donde estaba, enlazado a la IP de la LAN.
+	DireccionTLS string
+	PuertoTLS    int
+
+	// Rutas del certificado. Si CUALQUIERA de las dos está vacía, TLS queda
+	// apagado y nasd sirve solo HTTP — que es el estado válido antes de que
+	// 15_tls.sh haya emitido nada.
+	Certificado string
+	ClaveTLS    string
+
 	// Plazos — ADR-0026. Los absolutos NO se fijan: ver servidor.go.
 	PlazoCabeceras   time.Duration
 	PlazoOcioso      time.Duration
@@ -42,6 +61,8 @@ func porDefecto() Config {
 		Volumen:          "/srv/nas",
 		Direccion:        "127.0.0.1",
 		Puerto:           8080,
+		DireccionTLS:     "0.0.0.0",
+		PuertoTLS:        443,
 		PlazoCabeceras:   10 * time.Second,
 		PlazoOcioso:      120 * time.Second,
 		PlazoInactividad: 60 * time.Second,
@@ -77,6 +98,22 @@ func Cargar(ruta string) (Config, error) {
 				return c, fmt.Errorf("red.puerto: %w", err)
 			}
 			c.Puerto = n
+		}
+		if s, ok := v["red.direccion_tls"]; ok {
+			c.DireccionTLS = s
+		}
+		if s, ok := v["red.puerto_tls"]; ok {
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				return c, fmt.Errorf("red.puerto_tls: %w", err)
+			}
+			c.PuertoTLS = n
+		}
+		if s, ok := v["tls.certificado"]; ok {
+			c.Certificado = s
+		}
+		if s, ok := v["tls.clave"]; ok {
+			c.ClaveTLS = s
 		}
 		if s, ok := v["sesion.duracion_horas"]; ok {
 			n, err := strconv.Atoi(s)
@@ -127,5 +164,29 @@ func (c Config) validar() error {
 	if c.Direccion == "" {
 		return fmt.Errorf("direccion: no puede estar vacía; use la IP de la LAN (ADR-0018)")
 	}
+
+	// TLS: o están las dos rutas o no está ninguna. Media configuración es la
+	// forma más cara de descubrir un error, porque arrancaría sirviendo HTTP
+	// mientras alguien cree que hay TLS (P5).
+	if (c.Certificado == "") != (c.ClaveTLS == "") {
+		return fmt.Errorf("tls: certificado y clave se configuran juntos o ninguno (ADR-0046)")
+	}
+	if c.TLSActivo() {
+		if c.PuertoTLS < 1 || c.PuertoTLS > 65535 {
+			return fmt.Errorf("puerto_tls %d: fuera de rango", c.PuertoTLS)
+		}
+		if c.PuertoTLS == c.Puerto {
+			return fmt.Errorf("puerto_tls %d: no puede ser el mismo que el de HTTP", c.PuertoTLS)
+		}
+		if c.DireccionTLS == "" {
+			return fmt.Errorf("direccion_tls: no puede estar vacía si hay certificado")
+		}
+	}
 	return nil
+}
+
+// TLSActivo indica si hay certificado configurado. Sin él, nasd sirve solo
+// HTTP, que es el estado correcto antes de que 15_tls.sh haya emitido nada.
+func (c Config) TLSActivo() bool {
+	return c.Certificado != "" && c.ClaveTLS != ""
 }

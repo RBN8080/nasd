@@ -12,7 +12,9 @@ set -euo pipefail
 RED=192.168.1.0/24
 PUERTO_WEB=80   # ADR-0032
 PUERTO_WG=61820 # ADR-0043
+PUERTO_TLS=443  # ADR-0048
 WG_CONF=/etc/wireguard/wg0.conf
+CERT_TLS=/etc/nas/tls/fullchain.pem
 
 # El bloque de WireGuard se emite SOLO si el túnel está configurado. Un puerto
 # abierto sin nada escuchando detrás es superficie regalada (P8) — es el mismo
@@ -37,6 +39,30 @@ if [ -f "$WG_CONF" ]; then
 else
   BLOQUE_WG=""
   echo "Sin $WG_CONF: NO se abre el puerto de WireGuard (P8)."
+fi
+
+# El 443 se emite SOLO si el certificado existe — mismo criterio que arriba y
+# que ADR-0032. Y aquí pesa más: ADR-0042 fija como REGLA VINCULANTE que sin
+# TLS no se expone nada a Internet, «ni de prueba». Si este script pudiera
+# abrir el 443 sin certificado, esa regla sería una intención en vez de un
+# control.
+if [ -f "$CERT_TLS" ]; then
+  BLOQUE_TLS="
+    # --- Fase 6, web expuesta (ADR-0048) ---
+    #
+    # DESDE CUALQUIER ORIGEN, y a diferencia del 61820 esto SI es superficie
+    # permanente y anonima: detras hay una web que responde a cualquiera, no
+    # un WireGuard que calla sin clave. Se acepta porque ADR-0042 lo autoriza
+    # y porque el certificado ya existe, que era su condicion.
+    #
+    # No distingue familia a proposito: si algun dia entra IPv6, funciona sin
+    # tocar nada.
+    tcp dport $PUERTO_TLS accept
+"
+  echo "Certificado presente: se abre el $PUERTO_TLS (ADR-0048)."
+else
+  BLOQUE_TLS=""
+  echo "Sin $CERT_TLS: NO se abre el $PUERTO_TLS. Ejecute antes ./15_tls.sh (ADR-0042)."
 fi
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -107,7 +133,7 @@ table inet filter {
     # El 8080 se RETIRA a propósito: desde ADR-0032 no hay servicio detrás, y
     # una regla abierta sin nada escuchando es superficie regalada (P8).
     ip saddr $RED tcp dport $PUERTO_WEB accept
-$BLOQUE_WG
+$BLOQUE_TLS$BLOQUE_WG
     # Todo lo demás cae en silencio.
   }
 

@@ -26,6 +26,7 @@ PUERTO=80   # ADR-0032: se entra con la IP a secas, sin puerto
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
+aviso() { printf '\033[33m%s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
 # El binario nuevo es OPCIONAL: este script también sirve para actualizar la
@@ -98,6 +99,42 @@ inactividad_s = 60
 EOF
   chmod 0644 "$CONFIG"
   verde "$CONFIG creado."
+fi
+
+# --- Fase 6 · bloque TLS (ADR-0046) -----------------------------------------
+#
+# Se añade SOLO si el certificado existe, y solo si no estaba ya. Mismo
+# criterio que el 443 en 03_cortafuegos.sh: sin certificado, nasd sirve solo
+# HTTP, que es el estado correcto y no un fallo.
+#
+# Va aquí y no a mano porque este script es el dueño del TOML. Editarlo por
+# fuera es lo que ADR-0040 llamó doble propiedad, y ya costó una vez.
+CERT_TLS=/etc/nas/tls/fullchain.pem
+CLAVE_TLS=/etc/nas/tls/privkey.pem
+if [ -f "$CERT_TLS" ] && [ -f "$CLAVE_TLS" ]; then
+  if grep -q '^\[tls\]' "$CONFIG"; then
+    echo "El bloque [tls] ya está en $CONFIG; no se toca."
+  else
+    cp "$CONFIG" "$CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+    # direccion_tls va dentro de [red], que ya existe; el resto en su sección.
+    sed -i "/^puerto = /a\\
+\\
+# Fase 6 (ADR-0048): el 443 es la superficie que se abre a proposito.\\
+# El 80 se queda en la IP de la LAN, como estaba.\\
+direccion_tls = \"0.0.0.0\"\\
+puerto_tls = 443" "$CONFIG"
+    cat >> "$CONFIG" <<EOF
+
+[tls]
+# Emitidos por 15_tls.sh mediante DNS-01, sin abrir ningun puerto.
+# nasd los relee cuando cambian de fecha: la renovacion no exige reiniciar.
+certificado = "$CERT_TLS"
+clave = "$CLAVE_TLS"
+EOF
+    verde "Bloque TLS añadido a $CONFIG (ADR-0046)."
+  fi
+else
+  aviso "Sin certificado en $CERT_TLS: nasd servirá solo HTTP. Ejecute ./15_tls.sh"
 fi
 
 echo

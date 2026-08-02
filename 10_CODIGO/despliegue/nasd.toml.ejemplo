@@ -20,10 +20,27 @@ direccion = "192.168.1.38"
 # CAP_NET_BIND_SERVICE por AmbientCapabilities; el proceso NO se eleva.
 puerto = 80
 
+# --- Fase 6 · TLS (ADR-0046 y ADR-0048) -------------------------------------
+#
+# A diferencia de «direccion», esta SÍ es 0.0.0.0: el 443 es la superficie que
+# la Fase 6 abre a propósito. El 80 se queda donde estaba, solo en la LAN.
+direccion_tls = "0.0.0.0"
+puerto_tls = 443
+
+[tls]
+# Rutas del par que emite 15_tls.sh por DNS-01. Si se dejan VACÍAS o se borra
+# esta sección, nasd sirve solo HTTP — que es el estado correcto antes de
+# tener certificado. Media configuración hace que NO arranque (P5).
+#
+# nasd las relee cuando cambian de fecha, así que la renovación de cada 60
+# días NO exige reiniciar el servicio ni corta subidas en curso.
+certificado = "/etc/nas/tls/fullchain.pem"
+clave = "/etc/nas/tls/privkey.pem"
+
 [sesion]
 # Cuánto dura una sesión de la web antes de tener que volver a entrar.
-# Sin TLS (ADR-0018) una cookie robada vale lo que dure, así que no es
-# eterna. Valor de referencia [R].
+# Con TLS (ADR-0046) la cookie ya no viaja en claro fuera de la LAN, pero
+# sigue sin ser eterna: la web está expuesta a Internet. Valor de referencia [R].
 duracion_horas = 168
 
 [plazos]

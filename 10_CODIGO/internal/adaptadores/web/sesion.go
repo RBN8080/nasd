@@ -219,10 +219,20 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,                 // inalcanzable desde JavaScript
 		SameSite: http.SameSiteLaxMode, // frena el CSRF entre sitios
 		MaxAge:   int(s.duracionSesion.Seconds()),
-		// Secure NO se pone: ADR-0018 deja la v1 sin TLS, y marcarla Secure
-		// impediría que el navegador la enviara por HTTP. Es la consecuencia
-		// directa de aquella decisión, no un descuido: sin TLS la cookie
-		// viaja en claro por la LAN.
+		// Secure SOLO si la petición llegó por TLS — ADR-0046, que supersede
+		// a ADR-0018.
+		//
+		// Por qué condicional y no siempre: marcarla siempre rompería el
+		// acceso por HTTP desde la LAN, porque el navegador no envía cookies
+		// Secure sobre HTTP. Y no vale «usar siempre el nombre», porque desde
+		// dentro de casa el nombre NO funciona: resuelve a la IP pública y el
+		// router no hace NAT loopback, medido el 2026-08-01.
+		//
+		// Coste declarado: una sesión iniciada por HTTP en la LAN lleva
+		// cookie sin Secure. Vive solo dentro de casa, donde D-18 ya aceptó
+		// que el contenido viaja en claro. Desde Internet, siempre hay TLS y
+		// siempre lleva Secure.
+		Secure: r.TLS != nil,
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
