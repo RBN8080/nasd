@@ -121,7 +121,7 @@ if [ -f "$CERT_TLS" ] && [ -f "$CLAVE_TLS" ]; then
 \\
 # Fase 6 (ADR-0048): el 443 es la superficie que se abre a proposito.\\
 # El 80 se queda en la IP de la LAN, como estaba.\\
-direccion_tls = \"0.0.0.0\"\\
+direccion_tls = \"::\"\\
 puerto_tls = 443" "$CONFIG"
     cat >> "$CONFIG" <<EOF
 
@@ -173,7 +173,13 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
-RestrictAddressFamilies=AF_INET AF_UNIX
+# AF_INET6 hace falta desde la Fase 6, y su ausencia era un candado INVISIBLE:
+# con «direccion_tls = "::"» el enlace parece correcto y el puerto aparece
+# abierto, pero systemd le prohibe al proceso crear sockets IPv6 y no entra
+# nadie. Como la unica via de entrada viable desde Internet es IPv6 —el CGNAT
+# complica la IPv4 (ADR-0044)—, sin esta linea la Fase 6 esta muerta sin que
+# nada lo delate.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 # ADR-0032 — puerto 80 sin elevar el proceso.
 #
