@@ -548,6 +548,39 @@ else
 fi
 
 echo
+echo "-- Recuperación: identidad del nodo (ADR-0050) --"
+
+# Los scripts de aprovisionamiento reconstruyen la CONFIGURACIÓN, no la
+# IDENTIDAD. Sin este respaldo, perder la placa obliga a dar de alta otra vez
+# los tres dispositivos de WireGuard, uno por uno y con un QR nuevo.
+RESPALDO=/srv/nas/identidad/identidad.tar.gz
+if [ ! -f "$RESPALDO" ]; then
+  no "no hay respaldo de la identidad: si muere la placa hay que reconfigurar cada dispositivo a mano"
+elif ! tar tzf "$RESPALDO" >/dev/null 2>&1; then
+  # Que exista no basta. Un tar ilegible es un respaldo que no existe y lo
+  # parece hasta el día que hace falta — el mismo error que la captura sin -U.
+  no "el respaldo de la identidad EXISTE pero no se puede leer: no sirve para nada"
+elif ! tar tzf "$RESPALDO" 2>/dev/null | grep -q 'etc/wireguard/wg0.conf'; then
+  no "el respaldo no contiene la clave del servidor WireGuard, que es lo único irreemplazable"
+else
+  # Comparar contra lo que dice proteger, no contra el calendario: un respaldo
+  # de hace tres meses vale si la identidad no ha cambiado desde entonces.
+  MAS_NUEVO=$(find /etc/wireguard /etc/nasd/credencial /etc/nas/ddns.conf \
+                -newer "$RESPALDO" 2>/dev/null | head -1)
+  if [ -n "$MAS_NUEVO" ]; then
+    no "la identidad cambió DESPUÉS del último respaldo ($MAS_NUEVO): ejecute 17_respaldar_identidad.sh"
+  else
+    si "la identidad del nodo está respaldada y al día ($(stat -c %y "$RESPALDO" | cut -d' ' -f1))"
+  fi
+fi
+
+if systemctl is-enabled nas-respaldo-identidad.timer >/dev/null 2>&1; then
+  si "el respaldo de la identidad se repite solo: no depende de acordarse"
+else
+  no "el temporizador de respaldo no está habilitado: la copia envejecerá en silencio"
+fi
+
+echo
 echo "-- Endurecimiento (no debe haber empeorado con la Fase 4) --"
 NOTA=$(systemd-analyze security nasd --no-pager 2>/dev/null | tail -1)
 dato "${NOTA:-no disponible}"
