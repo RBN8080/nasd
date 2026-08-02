@@ -95,11 +95,24 @@ CONF=/etc/nas/ddns.conf
 # shellcheck disable=SC1090
 . "$CONF"
 
-# ip= vacío a propósito: DuckDNS toma la IP de origen de la petición, que es
-# exactamente la IP pública de la casa. Descubrirla nosotros añadiría una
-# dependencia de un tercero más para averiguar algo que el destinatario ya sabe.
-RESP=$(curl -fsS --max-time 20 \
-  "https://www.duckdns.org/update?domains=${DOMINIO}&token=${TESTIGO}&ip=" 2>&1)
+# DuckDNS solo autodetecta IPv4. Cuando existe la dirección fija de la Fase 6,
+# se envían LOS DOS valores explícitos: su API deja de autodetectar «ip» al
+# recibir «ipv6». Así el AAAA no conserva una SLAAC que el router no autoriza.
+IPV6_FIJA=$(ip -6 -o addr show dev eth0 scope global 2>/dev/null \
+  | awk '$4 ~ /::38\/64$/ {sub(/\/.*/, "", $4); print $4; exit}')
+
+if [ -n "$IPV6_FIJA" ]; then
+  IPV4_PUBLICA=$(curl -4 -fsS --max-time 15 https://ifconfig.me 2>/dev/null || echo "")
+  [ -n "$IPV4_PUBLICA" ] || {
+    logger -t nas-ddns -p user.err "No se pudo medir la IPv4 pública; no se actualizó ${DOMINIO}"
+    exit 1
+  }
+  RESP=$(curl -fsS --max-time 20 \
+    "https://www.duckdns.org/update?domains=${DOMINIO}&token=${TESTIGO}&ip=${IPV4_PUBLICA}&ipv6=${IPV6_FIJA}" 2>&1)
+else
+  RESP=$(curl -fsS --max-time 20 \
+    "https://www.duckdns.org/update?domains=${DOMINIO}&token=${TESTIGO}&ip=" 2>&1)
+fi
 
 if [ "$RESP" = "OK" ]; then
   exit 0
@@ -165,9 +178,16 @@ verde "DuckDNS aceptó la actualización."
 sleep 3
 IP_REAL=$(curl -4 -fsS --max-time 15 https://ifconfig.me 2>/dev/null || echo "")
 IP_NOMBRE=$(getent ahostsv4 "$DOMINIO.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
+IPV6_FIJA=$(ip -6 -o addr show dev eth0 scope global 2>/dev/null \
+  | awk '$4 ~ /::38\/64$/ {sub(/\/.*/, "", $4); print $4; exit}')
+IPV6_NOMBRE=$(getent ahostsv6 "$DOMINIO.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
 
 echo "  IP pública real:        ${IP_REAL:-no se pudo leer}"
 echo "  $DOMINIO.duckdns.org →  ${IP_NOMBRE:-no resuelve}"
+if [ -n "$IPV6_FIJA" ]; then
+  echo "  IPv6 fija del nodo:     $IPV6_FIJA"
+  echo "  AAAA publicado:         ${IPV6_NOMBRE:-no resuelve}"
+fi
 
 if [ -n "$IP_REAL" ] && [ "$IP_REAL" = "$IP_NOMBRE" ]; then
   verde "El nombre resuelve a la IP pública correcta."
@@ -179,11 +199,20 @@ else
   aviso "El nombre resuelve a otra IP. Puede ser caché de DNS; reintente en un minuto."
 fi
 
+if [ -n "$IPV6_FIJA" ] && [ "$IPV6_FIJA" = "$IPV6_NOMBRE" ]; then
+  verde "El AAAA resuelve a la IPv6 fija autorizada en el router."
+elif [ -n "$IPV6_FIJA" ] && [ -z "$IPV6_NOMBRE" ]; then
+  rojo "El nombre no tiene AAAA, aunque el nodo sí tiene la IPv6 fija $IPV6_FIJA."
+  exit 1
+elif [ -n "$IPV6_FIJA" ]; then
+  aviso "El AAAA aún apunta a $IPV6_NOMBRE; puede ser caché de DNS. Reintente en un minuto."
+fi
+
 echo
-aviso "OJO — esto NO abre nada todavía:"
-aviso "  el nombre ya apunta a su casa, pero el router sigue sin redirigir"
-aviso "  ningún puerto. Sin el paso 12 y sin la redirección, desde fuera no"
-aviso "  se llega a nada. Eso es correcto y es el orden previsto."
+aviso "OJO — el DDNS no abre puertos ni modifica el router:"
+aviso "  IPv4 sigue dependiendo de la red del operador; para IPv6, el router"
+aviso "  debe permitir solo TCP/443 hacia la dirección fija terminada en ::38."
+aviso "  No use DMZ: D-22 exige una regla mínima y específica."
 
 echo
 verde "Paso completado."
