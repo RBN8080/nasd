@@ -22,9 +22,10 @@ puerto = 80
 
 # --- Fase 6 · TLS (ADR-0046 y ADR-0048) -------------------------------------
 #
-# A diferencia de «direccion», esta SÍ es 0.0.0.0: el 443 es la superficie que
-# la Fase 6 abre a propósito. El 80 se queda donde estaba, solo en la LAN.
-direccion_tls = "0.0.0.0"
+# «::» y NO «0.0.0.0»: en Go, enlazar a 0.0.0.0 abre SOLO IPv4, y la unica via
+# de entrada viable desde Internet es IPv6 —el CGNAT complica la IPv4—. Un
+# socket solo-IPv4 dejaria la Fase 6 muerta sin que nada lo delatara.
+direccion_tls = "::"
 puerto_tls = 443
 
 [tls]

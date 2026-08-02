@@ -31,9 +31,18 @@ type Config struct {
 	// un proxy todas las peticiones llegarían desde 127.0.0.1 — cinco fallos
 	// de cualquiera dejarían fuera a todo el mundo (07_AUDITORIAS §7.2).
 	//
-	// A diferencia de Direccion, DireccionTLS sí es 0.0.0.0: el 443 es la
+	// A diferencia de Direccion, DireccionTLS escucha en todas: el 443 es la
 	// superficie que la Fase 6 abre a propósito (ADR-0048). El 80 se queda
 	// donde estaba, enlazado a la IP de la LAN.
+	//
+	// EL VALOR CORRECTO ES "::" Y NO "0.0.0.0", y la diferencia no es
+	// cosmética: en Go, enlazar a "0.0.0.0" abre SOLO IPv4. Con "::" el
+	// socket queda en doble pila y acepta las dos familias.
+	//
+	// Importa porque la única vía de entrada viable desde Internet es IPv6
+	// —el CGNAT del operador (ADR-0044) complica la IPv4—, así que un socket
+	// solo-IPv4 dejaría la Fase 6 muerta sin que nada lo delatara: el puerto
+	// aparece abierto, el cortafuegos correcto, y no entra nadie.
 	DireccionTLS string
 	PuertoTLS    int
 
@@ -61,7 +70,7 @@ func porDefecto() Config {
 		Volumen:          "/srv/nas",
 		Direccion:        "127.0.0.1",
 		Puerto:           8080,
-		DireccionTLS:     "0.0.0.0",
+		DireccionTLS:     "::",
 		PuertoTLS:        443,
 		PlazoCabeceras:   10 * time.Second,
 		PlazoOcioso:      120 * time.Second,
