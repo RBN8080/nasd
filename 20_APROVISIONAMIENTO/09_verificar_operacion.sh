@@ -188,7 +188,7 @@ else
 fi
 
 echo
-echo "  Para el resto hace falta la contraseña de la WEB (la de D-14, no la de Samba)."
+echo "  Para el resto hace falta la credencial única de WEB y Samba (ADR-0047)."
 read -rs -p "  Contraseña de la web (Intro para saltar): " CLAVE; echo
 
 if [ -z "$CLAVE" ]; then
@@ -446,6 +446,20 @@ else
         dato "no se pudo medir la IP pública; el nombre resuelve a ${IP_DEL_NOMBRE:-nada}"
       else
         no "$DOM.duckdns.org apunta a ${IP_DEL_NOMBRE:-nada} y la IP real es $IP_VE_INTERNET: el acceso remoto está roto"
+      fi
+
+      # Fase 6: el router autoriza la dirección fija terminada en ::38. Si el
+      # AAAA conserva una SLAAC anterior, el cliente llama a otro destino y la
+      # captura del nodo autorizado queda en cero.
+      IPV6_FIJA=$(ip -6 -o addr show dev eth0 scope global 2>/dev/null \
+        | awk '$4 ~ /::38\/64$/ {sub(/\/.*/, "", $4); print $4; exit}')
+      IPV6_DEL_NOMBRE=$(getent ahostsv6 "$DOM.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
+      if [ -n "$IPV6_FIJA" ] && [ "$IPV6_FIJA" = "$IPV6_DEL_NOMBRE" ]; then
+        si "$DOM.duckdns.org publica la IPv6 fija autorizada en el router ($IPV6_FIJA)"
+      elif [ -z "$IPV6_FIJA" ]; then
+        no "el nodo no tiene la IPv6 fija ::38 que debe autorizar el router"
+      else
+        no "$DOM.duckdns.org publica ${IPV6_DEL_NOMBRE:-ningún AAAA}, pero el router autoriza $IPV6_FIJA"
       fi
     fi
   else
