@@ -13,6 +13,23 @@
 NODO    ?= rpi
 BINARIO := nasd
 
+# En Windows, make elige cmd.exe si no encuentra un sh, y ENTONCES TODAS las
+# reglas fallan con «no se reconoce como un comando interno o externo» — un
+# mensaje que senala a tee o a CGO_ENABLED y nunca a la causa real, que es el
+# interprete. Ocurrio el 2026-08-04 al estrenar «make» desde PowerShell.
+#
+# No basta con apuntar a sh.exe: invocado asi hereda el PATH de Windows, donde
+# tee, grep, sha256sum y cut NO estan (comprobado el mismo dia). Hace falta un
+# shell de LOGIN, que es el que monta /usr/bin. Se verifico ademas que -lc
+# conserva el directorio de trabajo, sin lo cual las reglas no encontrarian
+# go.mod.
+#
+# Ruta 8.3 (PROGRA~1) porque make no entiende el espacio de «Program Files».
+ifeq ($(OS),Windows_NT)
+SHELL       := C:/PROGRA~1/Git/bin/bash.exe
+.SHELLFLAGS := -lc
+endif
+
 .PHONY: todo verificar carreras prueba compilar desplegar volver registro limpiar
 
 todo: verificar compilar
