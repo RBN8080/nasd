@@ -98,7 +98,17 @@ verificar-limpio:
 # Si /usr/local/bin/nasd no existiera, esta primera orden falla y el despliegue
 # se detiene. Es deliberado: en un nodo EN PRODUCCION esa ausencia es la señal
 # de que algo va mal, no un caso que haya que sortear.
-desplegar: verificar-limpio compilar
+# «verificar» va PRIMERO y no es negociable desde el 2026-08-04. Hasta ese dia
+# «desplegar» solo dependia de verificar-limpio y compilar, es decir, comprobaba
+# el ORIGEN del binario pero no su CORRECCION. Ese mismo dia un renombrado
+# estetico —«El servicio» a «Servicio»— dejo en rojo
+# TestEstadoConSesionRespondeHTMLYJSON, que usa ese texto para probar que la
+# plantilla se renderizo ENTERA, y el binario se instalo en produccion igual.
+# Nadie se entero hasta que la puerta se ejecuto a mano, horas despues.
+#
+# Una puerta por la que el camino diario no pasa no es una puerta. Cuesta unos
+# segundos por despliegue; el defecto que evita costo un binario en produccion.
+desplegar: verificar verificar-limpio compilar
 	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO) /usr/local/bin/$(BINARIO).previous'
 	scp $(BINARIO) $(NODO):/tmp/$(BINARIO)
 	ssh $(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'

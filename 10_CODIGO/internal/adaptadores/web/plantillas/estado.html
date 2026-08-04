@@ -9,19 +9,18 @@
 <body>
 
 <header>
-  <form method="post" action="/salir" class="salir"><button type="submit">Salir</button></form>
-  <nav class="migas"><a href="/">Archivos</a><a href="/estado">Estado</a></nav>
+  <div class="cabecera-superior">
+    <nav class="migas"></nav>
+    <div class="acciones-sesion">
+      <a href="/">Archivos</a>
+      <form method="post" action="/salir" class="salir">
+        <button type="submit">Salir</button>
+      </form>
+    </div>
+  </div>
 </header>
 
 <main>
-
-<p class="resumen v-{{.Peor}}">
-  {{if eq .Peor "ok"}}Todo en orden.
-  {{else if eq .Peor "desconocido"}}Hay indicadores que no se han podido medir. Mírelos abajo antes de dar nada por bueno.
-  {{else if eq .Peor "atencion"}}Algo pide atención. No es urgente, pero no se arregla solo.
-  {{else}}Hay un fallo. Léalo y actúe: con copia única (D-12) no hay de dónde recuperar.
-  {{end}}
-</p>
 
 <h2>Indicadores</h2>
 <table>
@@ -37,14 +36,14 @@
   </tbody>
 </table>
 
-<h2>El nodo</h2>
+<h2>Nodo</h2>
 <table>
   <tbody>
   {{range .Detalles}}<tr><td>{{.Clave}}</td><td class="num">{{.Valor}}</td></tr>{{end}}
   </tbody>
 </table>
 
-<h2>El servicio</h2>
+<h2>Servicio</h2>
 <!-- Los contadores se ponen a CERO al reiniciar el servicio: no son un
      histórico. De ahí que la primera fila sea desde cuándo llevan contando;
      sin ese dato, un porcentaje no significa nada. -->

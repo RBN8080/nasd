@@ -1,66 +1,321 @@
 :root { color-scheme: light dark; --borde: #8883; }
 * { box-sizing: border-box; }
+
 body {
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  margin: 0 auto; padding: 1rem; max-width: 60rem;
+  margin: 0 auto;
+  padding: 1rem;
+  max-width: 60rem;
 }
-header { border-bottom: 1px solid var(--borde); padding-bottom: .5rem; }
-.migas a { text-decoration: none; }
-.migas a::after { content: " / "; opacity: .5; }
-.migas a:last-child::after { content: ""; }
 
-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--borde); }
-td.num, th:not(:first-child) { text-align: right; white-space: nowrap; }
-a.dir { font-weight: 600; }
-.vacio { opacity: .6; font-style: italic; text-align: center; }
+/* ——— Cabecera (común a listado y estado) ——— */
+.cabecera-superior {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--borde);
+  margin-bottom: 0.5rem;
+}
 
-.mensaje { padding: .5rem .75rem; border-radius: .35rem; background: #0a01; border: 1px solid #0a04; }
-.oculto { opacity: .65; font-size: .9em; font-style: italic; }
-.mensaje.error { background: #d001; border-color: #d004; }
+.migas a {
+  text-decoration: none;
+  color: inherit;
+}
 
-.acciones { display: grid; gap: 1rem; border-top: 1px solid var(--borde); padding-top: 1rem; }
-.acciones form, #zona-subida { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-input, button { font: inherit; padding: .35rem .6rem; }
-#progreso { list-style: none; padding: 0; width: 100%; }
-#progreso li { display: grid; grid-template-columns: 1fr auto auto; gap: 1rem;
-  align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--borde); }
-#progreso button { font-size: .8em; padding: .15rem .4rem; margin-left: .3rem; }
-#boton-subir:disabled { opacity: .5; cursor: progress; }
+.migas a::after {
+  content: " / ";
+  opacity: .5;
+}
 
-/* El ancho de la tabla nunca debe empujar la página en un teléfono. */
-main { overflow-x: auto; }
+.migas a:last-child::after {
+  content: "";
+}
 
-/* Formulario de acceso — RF-15 */
-.acceso { max-width: 22rem; margin: 4rem auto; }
-.acceso h1 { margin-bottom: 1.5rem; }
-.acceso form { display: grid; gap: .6rem; }
-.acceso label { font-weight: 600; }
+.acciones-sesion {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
 
-.salir { float: right; }
-.salir button { font-size: .85em; padding: .2rem .5rem; }
+.acciones-sesion a {
+  font-size: 0.9rem;
+  text-decoration: none;
+  opacity: 0.85;
+}
 
-/* Administración — Fase 3 */
-.acciones-fila { display: flex; gap: .4rem; align-items: center; justify-content: flex-end; }
-.acciones-fila form { display: flex; gap: .25rem; }
-.acciones-fila input[type=text] { padding: .15rem .3rem; font-size: .85em; }
-.acciones-fila button { padding: .15rem .4rem; font-size: .8em; }
-a.destructivo, button.destructivo { color: #c00; font-weight: 600; }
-button.destructivo { border: 2px solid #c00; padding: .5rem 1rem; background: #c0000010; }
-.peligro { border: 2px solid #c00; border-radius: .5rem; padding: .75rem 1rem; margin: 1rem 0; background: #c0000010; }
-.ruta-destacada { font-family: ui-monospace, monospace; word-break: break-all; font-size: 1.1em; }
+.acciones-sesion a:hover {
+  opacity: 1;
+}
 
-/* Estado — Fase 4, RF-24.
-   El color NO es el único portador del veredicto: la columna «Estado» lleva
-   la palabra escrita. Un semáforo que solo distingue por color no lo lee
-   quien no distingue esos colores, ni se ve en una captura en blanco y negro. */
-.resumen { padding: .75rem 1rem; border-radius: .35rem; border: 2px solid var(--borde); font-weight: 600; }
+.salir {
+  float: none;
+  margin: 0;
+}
+
+/* ——— Botones y campos ———
+   NO se les fija background, border ni border-radius, y es deliberado: así
+   cada plataforma dibuja su propio control —el botón azul del sistema en el
+   iPhone, el nativo en Windows y en Android—. Es el «appearance: auto» de
+   CSS Basic User Interface Level 4 §4.1; en WebKit basta con dar background
+   o border para que Safari lo apague y deje un rectángulo plano.
+   Ocurrió el 2026-08-04 y por eso queda escrito: la ausencia es el estilo.
+   El botón destructivo SÍ los fija, más abajo, justo para NO parecer nativo. */
+input, button {
+  font: inherit;
+  padding: 0.35rem 0.6rem;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* ——— Tabla (estilo profesional unificado) ——— */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.1rem 0;
+  font-size: 0.95rem;
+}
+
+th {
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #888;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--borde);
+  text-align: left;
+}
+
+td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: middle;
+}
+
+td.num, th:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+tbody tr:hover {
+  background: #8881;
+}
+
+a.dir {
+  font-weight: 600;
+  color: inherit;
+}
+
+.vacio {
+  opacity: 0.55;
+  font-style: italic;
+  text-align: center;
+  padding: 2.5rem 1rem !important;
+  color: #777;
+}
+
+/* ——— Mensajes ——— */
+.mensaje {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.35rem;
+  background: #0a01;
+  border: 1px solid #0a04;
+}
+
+.oculto {
+  opacity: 0.65;
+  font-size: 0.9em;
+  font-style: italic;
+}
+
+.mensaje.error {
+  background: #d001;
+  border-color: #d004;
+}
+
+/* ——— Zona de acciones (listado) ——— */
+.acciones {
+  display: grid;
+  gap: 1.5rem;
+  border-top: 1px solid var(--borde);
+  padding-top: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.acciones form,
+#zona-subida {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+#zona-subida {
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--borde);
+  border-radius: 0.4rem;
+  background: #8881;
+}
+
+#zona-subida label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* ——— Progreso de subida ——— */
+#progreso {
+  list-style: none;
+  padding: 0;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+#progreso li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--borde);
+  font-size: 0.9rem;
+}
+
+#progreso li span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#progreso button {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.45rem;
+  margin-left: 0.2rem;
+}
+
+/* ——— Formulario de acceso ——— */
+.acceso {
+  max-width: 22rem;
+  margin: 4rem auto;
+}
+
+.acceso h1 {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.acceso form {
+  display: grid;
+  gap: .6rem;
+}
+
+.acceso label {
+  font-weight: 600;
+}
+
+.acceso input::placeholder {
+  font-style: italic;
+  color: #aaa;
+  opacity: 0.75;
+}
+
+/* ——— Administración ——— */
+.acciones-fila {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.acciones-fila form {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.acciones-fila input[type=text] {
+  padding: 0.15rem 0.3rem;
+  font-size: 0.85em;
+}
+
+.acciones-fila button {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8em;
+}
+
+a.destructivo,
+button.destructivo {
+  color: #c00;
+  font-weight: 600;
+}
+
+button.destructivo {
+  border: 2px solid #c00;
+  padding: 0.5rem 1rem;
+  background: #c0000010;
+}
+
+.peligro {
+  border: 2px solid #c00;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  background: #c0000010;
+}
+
+.ruta-destacada {
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+  font-size: 1.1em;
+}
+
+/* ——— Estado (Fase 4) ———
+   Aqui vivia «.resumen», el parrafo de veredicto global. Se retiro el
+   2026-08-04 junto con el elemento que lo usaba: RF-24 NO lo exige —pide
+   «desconocido»/null en lo no medido y la accion a tomar en cada indicador,
+   y las dos siguen—, y el veredicto global sigue publicandose en
+   /estado?formato=json. Dejar el CSS sin elemento era codigo zombi. */
 .v-ok          { border-color: #0a06; background: #0a01; }
 .v-atencion    { border-color: #e908; background: #e901; }
 .v-fallo       { border-color: #c00;  background: #c0000010; }
-.v-desconocido { border-color: #8886; background: #8880c; }
-tr.v-atencion td:first-child, tr.v-fallo td:first-child { font-weight: 600; }
-tr.v-fallo td { border-bottom-color: #c006; }
-.accion { display: inline-block; margin-top: .25rem; font-size: .85em; opacity: .85; text-align: left; }
-.avisos { font-size: .9em; opacity: .8; }
-h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
+.v-desconocido { border-color: #8886; background: #8881; }
+
+tr.v-atencion td:first-child,
+tr.v-fallo td:first-child {
+  font-weight: 600;
+}
+
+tr.v-fallo td {
+  border-bottom-color: #c006;
+}
+
+.accion {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.85em;
+  opacity: 0.85;
+  text-align: left;
+}
+
+.avisos {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 1.75rem 0 0.35rem;
+}
+
+/* El ancho de la tabla nunca debe empujar la página en un teléfono. */
+main {
+  overflow-x: auto;
+}

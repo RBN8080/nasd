@@ -8,11 +8,13 @@
 </head>
 <body>
 <main class="acceso">
-  <h1>    NAS</h1>
+  <h1>NAS</h1>
   {{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
   <form method="post" action="/acceso">
-    <label for="clave">Contraseña</label>
-    <input type="password" id="clave" name="clave" autocomplete="current-password" autofocus required>
+    <input type="password" id="clave" name="clave"
+       placeholder="Ingrese contraseña"
+       autocomplete="current-password"
+       autofocus required>
     <button type="submit">Entrar</button>
   </form>
   <p class="oculto">
