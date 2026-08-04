@@ -30,7 +30,7 @@ SHELL       := C:/PROGRA~1/Git/bin/bash.exe
 .SHELLFLAGS := -lc
 endif
 
-.PHONY: todo verificar carreras prueba compilar desplegar volver registro limpiar
+.PHONY: todo verificar verificar-limpio carreras prueba compilar desplegar volver registro limpiar
 
 todo: verificar compilar
 
@@ -79,6 +79,17 @@ compilar:
 	  -trimpath -ldflags="-s -w" -o $(BINARIO) ./cmd/nasd
 	@ls -lh $(BINARIO)
 
+# No se exige commitear cada retoque — el responsable lo pidio explicitamente
+# el 2026-08-04 para no llenar el historial de cambios triviales. Pero
+# vcs.revision (apartado E de NAS_OPERACION.txt) solo sirve si el commit que
+# senala es real, y eso es innegociable justo al desplegar: es el instante en
+# que el binario sale a produccion. Por eso el arbol se exige limpio AQUI, no
+# al editar. Se compara solo 10_CODIGO, no el repositorio entero: un .md o
+# .txt pendiente en otra carpeta no bloquea un despliegue de codigo.
+verificar-limpio:
+	@git diff --quiet -- . && git diff --cached --quiet -- . \
+	  || (echo "ERROR: hay cambios sin commitear en 10_CODIGO — commitee antes de desplegar, o vcs.revision del binario mentiria sobre su origen"; exit 1)
+
 # El respaldo va PRIMERO y por eso este objetivo no es solo «copiar y reiniciar»:
 # sin él, un binario defectuoso deja el servicio caído sin nada a lo que volver.
 # El procedimiento manual ya lo exigía (NAS_OPERACION.txt §8.F); automatizarlo
@@ -87,7 +98,7 @@ compilar:
 # Si /usr/local/bin/nasd no existiera, esta primera orden falla y el despliegue
 # se detiene. Es deliberado: en un nodo EN PRODUCCION esa ausencia es la señal
 # de que algo va mal, no un caso que haya que sortear.
-desplegar: compilar
+desplegar: verificar-limpio compilar
 	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO) /usr/local/bin/$(BINARIO).previous'
 	scp $(BINARIO) $(NODO):/tmp/$(BINARIO)
 	ssh $(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'
