@@ -271,8 +271,14 @@ func TestEstadoConSesionRespondeHTMLYJSON(t *testing.T) {
 	// de escribir la cabecera: si reventara a mitad, el error se registraría y
 	// esta petición seguiría siendo un 200 con media página. Comprobar solo el
 	// código sería aprobar sin verificar (00_RECTOR.md §12.5).
+	//
+	// El último trozo es la línea FINAL de la plantilla, y por eso no es un
+	// encabezado: el 2026-08-04 este test se puso en rojo al renombrar «El
+	// servicio» a «Servicio» por gusto estético. El ancla de «se renderizó
+	// entero» no puede depender de una palabra que se cambia al retocar el
+	// aspecto; sí puede depender de que exista el cierre de la página.
 	cuerpo := w.Body.String()
-	for _, trozo := range []string{"Indicadores", "Disco de datos", "Limitación del SoC", "El servicio"} {
+	for _, trozo := range []string{"Indicadores", "Disco de datos", "Limitación del SoC", "Los mismos datos en JSON"} {
 		if !strings.Contains(cuerpo, trozo) {
 			t.Fatalf("la página no contiene %q; ¿falló el render?\n%s", trozo, cuerpo)
 		}

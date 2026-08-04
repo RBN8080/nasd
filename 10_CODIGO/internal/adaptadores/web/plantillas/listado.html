@@ -17,11 +17,17 @@
      ofrecer, sugerir ni automatizar el borrado del origen tras subir. -->
 
 <header>
-  <form method="post" action="/salir" class="salir"><button type="submit">Salir</button></form>
-  <a class="salir" href="/estado">Estado</a>
-  <nav class="migas">
-    {{range .Migas}}<a href="{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}">{{.Nombre}}</a>{{end}}
-  </nav>
+  <div class="cabecera-superior">
+    <nav class="migas">
+      {{range .Migas}}<a href="{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}">{{.Nombre}}</a>{{end}}
+    </nav>
+    <div class="acciones-sesion">
+      <a href="/estado">Estado</a>
+      <form method="post" action="/salir" class="salir">
+        <button type="submit">Salir</button>
+      </form>
+    </div>
+  </div>
 </header>
 
 {{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{end}}">{{.Mensaje}}</p>{{end}}
