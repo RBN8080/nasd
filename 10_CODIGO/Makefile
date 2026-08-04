@@ -67,8 +67,24 @@ verificar:
 # pero NO es opcional al cerrar un bloque: el programa tiene tres puntos de
 # estado compartido y dos de los peores defectos de este proyecto fueron
 # carreras (rector v1.11.0).
+#
+# -race exige CGO_ENABLED=1, y por tanto un compilador de C. Windows no trae
+# uno de fábrica: hasta el 2026-08-04 esto era un hueco conocido en este PC
+# (NAS_OPERACION.txt §8.C), rodeable solo copiando el código a WSL. Ese día se
+# encontró que ya había un gcc funcional instalado por winget —comprobado
+# compilando y ejecutando un binario real, no solo con --version— y no está
+# en el PATH del sistema. Se añade aquí, SOLO para esta regla.
+#
+# Si esta ruta no existiera (paquete desinstalado o movido):
+#     winget install BrechtSanders.WinLibs.POSIX.UCRT
+ifeq ($(OS),Windows_NT)
+GCCBIN := /c/Users/usuario/AppData/Local/Microsoft/WinGet/Packages/BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe/mingw64/bin
 carreras:
-	go test -race ./...
+	PATH="$(GCCBIN):$$PATH" CGO_ENABLED=1 go test -race -count=1 ./...
+else
+carreras:
+	CGO_ENABLED=1 go test -race -count=1 ./...
+endif
 
 prueba:
 	go test -v ./...
