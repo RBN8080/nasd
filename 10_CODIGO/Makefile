@@ -13,7 +13,7 @@
 NODO    ?= rpi
 BINARIO := nasd
 
-.PHONY: todo verificar prueba compilar desplegar registro limpiar
+.PHONY: todo verificar carreras prueba compilar desplegar volver registro limpiar
 
 todo: verificar compilar
 
@@ -41,6 +41,10 @@ verificar:
 	  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
 	  || (echo "ERROR: uso prohibido — vuelca a tmpfs, es decir a RAM (ADR-0025)"; exit 1)
 	go test ./...
+	@# Se analiza para la plataforma REAL, no para la del host: hay avisos que
+	@# solo existen en linux/arm64. Charter §6.1 deja el análisis estático como
+	@# «advertencia = error», y sin esta línea la puerta no lo cumplía.
+	GOOS=linux GOARCH=arm64 staticcheck ./...
 
 # El detector de carreras. Se separa de «verificar» porque tarda bastante más,
 # pero NO es opcional al cerrar un bloque: el programa tiene tres puntos de
@@ -58,9 +62,32 @@ compilar:
 	  -trimpath -ldflags="-s -w" -o $(BINARIO) ./cmd/nasd
 	@ls -lh $(BINARIO)
 
+# El respaldo va PRIMERO y por eso este objetivo no es solo «copiar y reiniciar»:
+# sin él, un binario defectuoso deja el servicio caído sin nada a lo que volver.
+# El procedimiento manual ya lo exigía (NAS_OPERACION.txt §8.F); automatizarlo
+# a medias habría convertido «make desplegar» en la vía rápida a perderlo.
+#
+# Si /usr/local/bin/nasd no existiera, esta primera orden falla y el despliegue
+# se detiene. Es deliberado: en un nodo EN PRODUCCION esa ausencia es la señal
+# de que algo va mal, no un caso que haya que sortear.
 desplegar: compilar
+	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO) /usr/local/bin/$(BINARIO).previous'
 	scp $(BINARIO) $(NODO):/tmp/$(BINARIO)
 	ssh $(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'
+	@# «active» dice que ARRANCÓ; la huella dice que arrancó ESTE archivo. Son
+	@# dos afirmaciones distintas y el despliegue necesita las dos.
+	@huella_local=$$(sha256sum $(BINARIO) | cut -d' ' -f1); \
+	 huella_nodo=$$(ssh $(NODO) 'sha256sum /usr/local/bin/$(BINARIO)' | cut -d' ' -f1); \
+	 test "$$huella_local" = "$$huella_nodo" \
+	   || (echo "ERROR: la huella instalada NO coincide con la compilada"; exit 1); \
+	 echo "huella verificada  $$huella_local"
+
+# La vuelta atrás se automatiza por la misma razón que el respaldo: el
+# 2026-08-03, tecleada a mano, la ruta se escribió «/usr/local/nasd.previous»
+# —sin bin/— y la copia quedó donde el procedimiento no la busca. Un objetivo
+# no se equivoca de ruta bajo presión; una persona con el servicio caído, sí.
+volver:
+	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO).previous /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && systemctl is-active nasd'
 
 registro:
 	ssh $(NODO) 'journalctl -u nasd -n 50 --no-pager -o cat'
