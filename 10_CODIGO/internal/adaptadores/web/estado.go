@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"nasd/internal/adaptadores/sistema"
@@ -77,6 +78,10 @@ const (
 )
 
 type indicador struct {
+	// Clave ancla la fila en el DOM para que el flujo en vivo sepa qué celda
+	// refrescar (ADR-0051). Es un identificador, NO un rótulo: cambiarla deja
+	// la fila congelada en la pantalla sin que nada falle a gritos.
+	Clave     string    `json:"clave"`
 	Nombre    string    `json:"nombre"`
 	Valor     string    `json:"valor"`
 	Veredicto veredicto `json:"veredicto"`
@@ -87,34 +92,24 @@ type indicador struct {
 
 // evaluar es la ÚNICA fuente de veredictos del producto.
 //
-// La usan la pantalla y el ciclo de mantenimiento. Que sea una sola función es
-// lo que garantiza que el diario y /estado no puedan contar cosas distintas.
+// La usan la pantalla, el flujo en vivo y el ciclo de mantenimiento. Que sea
+// una sola función es lo que garantiza que el diario y /estado no puedan
+// contar cosas distintas.
+//
+// Se parte en dos mitades por COSTE DE MEDICIÓN, no por tema: lo que sale de
+// sistema.Vivo se puede reevaluar varias veces por segundo, y lo que necesita
+// statfs o vcgencmd no. Ver ADR-0051 y el tipo sistema.Vivo. La partición es
+// solo de cálculo: sigue habiendo un único criterio por indicador.
 func evaluar(n sistema.Nodo, i Instantanea) []indicador {
+	return append(evaluarVivos(n.Vivo, i), evaluarLentos(n)...)
+}
+
+// evaluarVivos son los indicadores que se recalculan en cada muestreo.
+func evaluarVivos(n sistema.Vivo, i Instantanea) []indicador {
 	var out []indicador
 	add := func(ind indicador) { out = append(out, ind) }
 
-	// --- Almacenamiento -----------------------------------------------------
-	add(evaluarVolumen("Disco de datos", n.Datos,
-		"Liberar espacio o borrar lo que ya no haga falta. Recuerde que no hay papelera (D-15)"))
-	add(evaluarVolumen("Medio de arranque", n.Arranque,
-		"P9: el medio de arranque es consumible. Reconstruir el nodo con 20_APROVISIONAMIENTO/; "+
-			"el disco de datos sobrevive porque D-04 los mantiene separados"))
-
 	// --- Nodo ---------------------------------------------------------------
-	if n.RAMOK {
-		uso := n.RAMUsoPorcentaje()
-		v := vOK
-		accion := ""
-		if uso >= ramAtencion {
-			v = vAtencion
-			accion = "Comprobar el RSS de nasd con «systemctl status nasd». Si crece con el " +
-				"tamaño del archivo que se sube, RNF-01 está roto y es un defecto, no falta de RAM"
-		}
-		add(indicador{"RAM usada", fmt.Sprintf("%.0f %% de %s", uso, legibleBytes(n.RAMTotalBytes)), v, accion})
-	} else {
-		add(indicador{"RAM usada", "no disponible", vDesconocido, ""})
-	}
-
 	if n.TemperaturaOK {
 		v, accion := vOK, ""
 		switch {
@@ -127,25 +122,46 @@ func evaluar(n sistema.Nodo, i Instantanea) []indicador {
 			accion = "Subiendo hacia el límite duro. La mitigación es un disipador; consta como " +
 				"riesgo aceptado en 00_RECTOR.md §4.5"
 		}
-		add(indicador{"Temperatura del SoC", fmt.Sprintf("%.1f °C", n.TemperaturaC), v, accion})
+		add(indicador{"temperatura", "Temperatura del procesador (SoC)",
+			fmt.Sprintf("%.1f °C", n.TemperaturaC), v, accion})
 	} else {
-		add(indicador{"Temperatura del SoC", "no disponible", vDesconocido, ""})
+		add(indicador{"temperatura", "Temperatura del procesador (SoC)", "no disponible", vDesconocido, ""})
 	}
 
-	add(evaluarThrottled(n.Throttled))
+	// RAM usada y RAM disponible eran DOS filas en dos tablas distintas y son
+	// el mismo dato mirado del derecho y del revés. Se dicen juntas: el
+	// porcentaje alerta, los megabytes libres son los que se entienden.
+	if n.RAMOK {
+		uso := n.RAMUsoPorcentaje()
+		v := vOK
+		accion := ""
+		if uso >= ramAtencion {
+			v = vAtencion
+			accion = "Comprobar el RSS de nasd con «systemctl status nasd». Si crece con el " +
+				"tamaño del archivo que se sube, RNF-01 está roto y es un defecto, no falta de RAM"
+		}
+		add(indicador{"memoria", "Memoria en uso",
+			fmt.Sprintf("%.0f %% — %s libres de %s", uso,
+				legibleBytes(n.RAMDisponibleBytes), legibleBytes(n.RAMTotalBytes)), v, accion})
+	} else {
+		add(indicador{"memoria", "Memoria en uso", "no disponible", vDesconocido, ""})
+	}
 
 	// --- Servicio -----------------------------------------------------------
-	add(evaluarPorcentaje("Disponibilidad de la web (SLI-1)", i.Disponibilidad(), sloDisponibilidad,
+	add(evaluarPorcentaje("disponibilidad", "Peticiones sin error del servidor (SLI-1)",
+		i.Disponibilidad(), sloDisponibilidad,
 		vAtencion, "Buscar los 5xx en el diario: «journalctl -u nasd -o json | grep '\"estado\":5'»"))
 
 	// SLI-2 es el único con objetivo del 100 %: un archivo que se transfirió
 	// entero y no quedó publicado es pérdida de datos, y con copia única no
 	// hay segunda oportunidad.
-	add(evaluarPorcentaje("Integridad de la publicación (SLI-2)", i.IntegridadDeSubida(), 100,
+	add(evaluarPorcentaje("integridad", "Subidas publicadas sin fallo (SLI-2)",
+		i.IntegridadDeSubida(), 100,
 		vFallo, "INCIDENTE. Revisar «subida confirmada» frente a los fallos de Confirmar() en el "+
 			"diario y comprobar el estado del sistema de archivos con dmesg"))
 
-	add(evaluarPorcentaje("Listados por debajo de 2 s (SLI-3)", i.LatenciaDeListado(), sloListados,
+	add(evaluarPorcentaje("latencia", "Listados por debajo de 2 s (SLI-3)",
+		i.LatenciaDeListado(), sloListados,
 		vAtencion, "Suele ser un directorio con muchísimas entradas (D-11 no acota el árbol). "+
 			"Comprobar cuál con los tiempos del diario"))
 
@@ -159,25 +175,41 @@ func evaluar(n sistema.Nodo, i Instantanea) []indicador {
 		accion = "Cerca del techo de ADR-0029. Si no hay nadie subiendo nada, es acumulación de " +
 			"subidas abandonadas: el barrido las desaloja, pero conviene mirar el origen"
 	}
-	add(indicador{"Subidas en curso", fmt.Sprintf("%d de %d", i.SubidasEnCurso, maxSubidasEnCurso), v, accion})
+	add(indicador{"subidas-en-curso", "Subidas en curso ahora mismo",
+		fmt.Sprintf("%d de %d", i.SubidasEnCurso, maxSubidasEnCurso), v, accion})
 
 	return out
 }
 
-func evaluarVolumen(nombre string, v sistema.Volumen, accionEspacio string) indicador {
+// evaluarLentos son los indicadores cuya medición cuesta: statfs y
+// /proc/diskstats para los volúmenes, y un proceso hijo para la limitación del
+// SoC. Se calculan al abrir la página y en cada ciclo de mantenimiento, no en
+// el flujo en vivo.
+func evaluarLentos(n sistema.Nodo) []indicador {
+	return []indicador{
+		evaluarVolumen("disco-datos", "Disco de datos", n.Datos,
+			"Liberar espacio o borrar lo que ya no haga falta. Recuerde que no hay papelera (D-15)"),
+		evaluarVolumen("disco-arranque", "Medio de arranque", n.Arranque,
+			"P9: el medio de arranque es consumible. Reconstruir el nodo con 20_APROVISIONAMIENTO/; "+
+				"el disco de datos sobrevive porque D-04 los mantiene separados"),
+		evaluarThrottled(n.Throttled),
+	}
+}
+
+func evaluarVolumen(clave, nombre string, v sistema.Volumen, accionEspacio string) indicador {
 	if !v.Disponible {
-		return indicador{nombre, "no disponible", vDesconocido, ""}
+		return indicador{clave, nombre, "no disponible", vDesconocido, ""}
 	}
 
 	// Un remontaje de solo lectura y los errores de ext4 pesan MÁS que la
 	// ocupación: el disco puede estar medio vacío y aun así estar muriéndose.
 	if v.SoloLecturaOK && v.SoloLectura {
-		return indicador{nombre, "MONTADO DE SOLO LECTURA", vFallo,
+		return indicador{clave, nombre, "MONTADO DE SOLO LECTURA", vFallo,
 			"Síntoma clásico de medio agonizante. Mirar dmesg y actuar antes de escribir nada más. " +
 				accionEspacio}
 	}
 	if v.ErroresOK && v.Errores > 0 {
-		return indicador{nombre, fmt.Sprintf("%d errores de ext4", v.Errores), vFallo,
+		return indicador{clave, nombre, fmt.Sprintf("%d errores de ext4", v.Errores), vFallo,
 			"El sistema de archivos ha registrado errores. Desmontar y pasar «fsck -f» cuanto antes"}
 	}
 
@@ -191,16 +223,16 @@ func evaluarVolumen(nombre string, v sistema.Volumen, accionEspacio string) indi
 	}
 	switch {
 	case uso >= discoFallo:
-		return indicador{nombre, valor, vFallo, accionEspacio}
+		return indicador{clave, nombre, valor, vFallo, accionEspacio}
 	case uso >= discoAtencion:
-		return indicador{nombre, valor, vAtencion, accionEspacio}
+		return indicador{clave, nombre, valor, vAtencion, accionEspacio}
 	}
 	if !v.SoloLecturaOK {
 		// Se dice en voz alta que falta una comprobación, en lugar de pintar
 		// un verde que también significaría «no lo he mirado».
 		valor += " · sin comprobar el remontaje de solo lectura"
 	}
-	return indicador{nombre, valor, vOK, ""}
+	return indicador{clave, nombre, valor, vOK, ""}
 }
 
 // evaluarThrottled distingue lo YA ACEPTADO de lo NUEVO, y esa distinción es
@@ -215,11 +247,16 @@ func evaluarVolumen(nombre string, v sistema.Volumen, accionEspacio string) indi
 // La subtensión es lo contrario: el charter §3.6 la midió a CERO, así que
 // cualquier bit encendido ahí es información nueva y accionable.
 func evaluarThrottled(t sistema.Throttled) indicador {
-	const nombre = "Limitación del SoC"
+	// La envoltura evita repetir clave y nombre en las nueve salidas, que era
+	// justo donde una de ellas podía quedarse con un rótulo distinto.
+	ind := func(valor string, v veredicto, accion string) indicador {
+		return indicador{"limitacion", "Limitación del procesador (SoC)", valor, v, accion}
+	}
+
 	if !t.Disponible {
-		return indicador{nombre, "no disponible por ninguna vía", vDesconocido,
-			"Comprobar a mano por SSH: «vcgencmd get_throttled». Si eso funciona y el " +
-				"servicio no lo ve, le falta SupplementaryGroups=video en la unidad (ADR-0036)"}
+		return ind("no disponible por ninguna vía", vDesconocido,
+			"Comprobar a mano por SSH: «vcgencmd get_throttled». Si eso funciona y el "+
+				"servicio no lo ve, le falta SupplementaryGroups=video en la unidad (ADR-0036)")
 	}
 
 	// La fuente parcial solo sabe de subtensión. Se dice, en vez de dejar que
@@ -227,43 +264,42 @@ func evaluarThrottled(t sistema.Throttled) indicador {
 	// habido limitación térmica».
 	if t.Parcial {
 		if t.SubtensionAhora {
-			return indicador{nombre, t.Hex(), vFallo,
-				"La alimentación no da. El charter §3.6 midió cero subtensión: esto es NUEVO. " +
-					"Revisar fuente y cable antes de seguir escribiendo en el disco"}
+			return ind(t.Hex(), vFallo,
+				"La alimentación no da. El charter §3.6 midió cero subtensión: esto es NUEVO. "+
+					"Revisar fuente y cable antes de seguir escribiendo en el disco")
 		}
-		return indicador{nombre, t.Hex() + " · lo térmico SIN MEDIR", vDesconocido,
-			"Solo se está leyendo la alarma de subtensión del hwmon. Para la palabra completa " +
-				"hace falta que la unidad lleve SupplementaryGroups=video (ADR-0036); " +
-				"mientras tanto RNF-11 no se está midiendo desde el servicio"}
+		return ind(t.Hex()+" · lo térmico SIN MEDIR", vDesconocido,
+			"Solo se está leyendo la alarma de subtensión del hwmon. Para la palabra completa "+
+				"hace falta que la unidad lleve SupplementaryGroups=video (ADR-0036); "+
+				"mientras tanto RNF-11 no se está midiendo desde el servicio")
 	}
 
 	switch {
 	case t.SubtensionAhora:
-		return indicador{nombre, t.Hex() + " — SUBTENSIÓN AHORA", vFallo,
-			"La alimentación no da. El charter §3.6 midió cero subtensión: esto es NUEVO. " +
-				"Revisar fuente y cable antes de seguir escribiendo en el disco"}
+		return ind(t.Hex()+" — SUBTENSIÓN AHORA", vFallo,
+			"La alimentación no da. El charter §3.6 midió cero subtensión: esto es NUEVO. "+
+				"Revisar fuente y cable antes de seguir escribiendo en el disco")
 	case t.SubtensionOcurrida:
-		return indicador{nombre, t.Hex() + " — hubo subtensión desde el arranque", vAtencion,
-			"No estaba en la medición del charter §3.6. Revisar la fuente"}
+		return ind(t.Hex()+" — hubo subtensión desde el arranque", vAtencion,
+			"No estaba en la medición del charter §3.6. Revisar la fuente")
 	case t.LimitadoAhora, t.FrecuenciaCapadaAhora:
-		return indicador{nombre, t.Hex() + " — limitando ahora", vAtencion,
-			"El nodo está rebajando frecuencia. Bajo carga es esperable sin disipador (RES-06)"}
+		return ind(t.Hex()+" — limitando ahora", vAtencion,
+			"El nodo está rebajando frecuencia. Bajo carga es esperable sin disipador (RES-06)")
 	case t.TermicoBlandoAhora:
-		return indicador{nombre, t.Hex() + " — límite térmico blando ACTIVO", vAtencion,
-			"Está ocurriendo ahora mismo. La mitigación sigue siendo un disipador (§4.5)"}
+		return ind(t.Hex()+" — límite térmico blando ACTIVO", vAtencion,
+			"Está ocurriendo ahora mismo. La mitigación sigue siendo un disipador (§4.5)")
 	case t.TermicoBlandoOcurrida:
-		return indicador{nombre, t.Hex() + " — límite térmico blando alcanzado alguna vez", vOK,
-			""}
+		return ind(t.Hex()+" — límite térmico blando alcanzado alguna vez", vOK, "")
 	}
-	return indicador{nombre, t.Hex() + " — sin limitación", vOK, ""}
+	return ind(t.Hex()+" — sin limitación", vOK, "")
 }
 
-func evaluarPorcentaje(nombre string, valor, objetivo float64, siFalla veredicto, accion string) indicador {
+func evaluarPorcentaje(clave, nombre string, valor, objetivo float64, siFalla veredicto, accion string) indicador {
 	if valor < 0 {
 		// Sin muestras no se aprueba ni se suspende. Un 100 % sobre cero
 		// peticiones es exactamente el defecto de «aprobar sin verificar» que
 		// 00_RECTOR.md §12.5 lleva cuatro veces corrigiendo.
-		return indicador{nombre, "sin muestras todavía", vDesconocido, ""}
+		return indicador{clave, nombre, "sin muestras todavía", vDesconocido, ""}
 	}
 	v := vOK
 	if valor < objetivo {
@@ -271,7 +307,8 @@ func evaluarPorcentaje(nombre string, valor, objetivo float64, siFalla veredicto
 	} else {
 		accion = ""
 	}
-	return indicador{nombre, fmt.Sprintf("%.2f %% (objetivo ≥ %.0f %%)", valor, objetivo), v, accion}
+	return indicador{clave, nombre,
+		fmt.Sprintf("%.2f %% (objetivo ≥ %.0f %%)", valor, objetivo), v, accion}
 }
 
 // ---------------------------------------------------------------------------
@@ -279,85 +316,137 @@ func evaluarPorcentaje(nombre string, valor, objetivo float64, siFalla veredicto
 // ---------------------------------------------------------------------------
 
 type vistaEstado struct {
-	Volumen     string
-	Servicio    Instantanea
-	Indicadores []indicador
+	Volumen string
+	// FilasNodo y FilasServicio son las dos tablas que se refrescan solas.
+	// La plantilla las pinta una vez y a partir de ahí las mantiene el flujo
+	// (ADR-0051); sin JavaScript se quedan en esta foto, que es correcta.
+	FilasNodo     []filaViva
+	FilasServicio []filaViva
+	// Lentos son los indicadores que NO se refrescan: medirlos cuesta statfs,
+	// /proc/diskstats o un proceso hijo. La pantalla dice que están medidos al
+	// abrir, en vez de dejar creer que también son de ahora mismo.
+	Lentos []indicador
 	// Peor es el veredicto más grave de todos: lo que se lee de un vistazo.
-	Peor veredicto
-	// Detalles y Trabajo son filas ya formateadas. La plantilla no calcula
-	// nada: ADR-0017 pone el render en el servidor, y eso incluye las
-	// decisiones de formato.
-	Detalles []pareja
-	Trabajo  []pareja
-	Avisos   []string
-	Csrf     string
+	Peor   veredicto
+	Avisos []string
 }
 
-type pareja struct{ Clave, Valor string }
+// filaViva es una fila de las dos tablas que se refrescan solas.
+//
+// ADR-0017 pone el render en el servidor y eso incluye el FORMATO: aquí el
+// valor ya viene escrito tal cual se lee en pantalla. El navegador no calcula
+// ni compone nada, solo sustituye texto — que es lo que permite que la página
+// sin JavaScript y el flujo digan exactamente lo mismo.
+type filaViva struct {
+	// Clave es el ancla en el DOM. Es un identificador y no un rótulo: si
+	// cambia sin cambiar la plantilla, el navegador deja de encontrar la celda
+	// y la fila se queda congelada sin que nada falle a gritos.
+	Clave string `json:"clave"`
+	// Nombre NO viaja en el flujo: no cambia nunca y repetirlo cuatro veces
+	// por segundo sería pagar ancho de banda por una constante.
+	Nombre    string    `json:"-"`
+	Valor     string    `json:"valor"`
+	Veredicto veredicto `json:"veredicto,omitempty"`
+	Accion    string    `json:"accion,omitempty"`
+}
 
-// detallesDelNodo son las cifras de contexto: no disparan alertas por sí
-// solas, pero son lo que se mira cuando una alerta ya saltó.
-func detallesDelNodo(n sistema.Nodo) []pareja {
-	if !n.Disponible {
-		return []pareja{{"Nodo", "métricas no disponibles fuera de Linux (D-06: esto es el host)"}}
+// contexto es una fila sin semáforo: no dispara alertas por sí sola, pero es
+// lo que se mira cuando una alerta ya saltó.
+func contexto(clave, nombre, valor string) filaViva {
+	return filaViva{Clave: clave, Nombre: nombre, Valor: valor}
+}
+
+const sinMedida = "no disponible"
+
+// filasVivas arma las dos tablas que se refrescan solas.
+//
+// ES LA ÚNICA FUNCIÓN QUE DECIDE QUÉ SE VE Y CÓMO SE ESCRIBE EN ELLAS, y la
+// usan las dos vías: el render inicial de la plantilla y cada marco del flujo.
+// Que sea una sola es lo que impide que la página y el flujo discrepen, por el
+// mismo motivo por el que evaluar() es una sola.
+func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
+	// Los indicadores ya traen valor formateado y veredicto; aquí solo se
+	// colocan en su sitio, intercalados con las filas de contexto que les dan
+	// sentido. Un porcentaje de CPU al lado de la temperatura explica la
+	// temperatura; en dos tablas distintas, no explicaba nada.
+	porClave := make(map[string]indicador, 8)
+	for _, ind := range evaluarVivos(n, i) {
+		porClave[ind.Clave] = ind
 	}
-	d := []pareja{
-		{"Encendido desde hace", duracionLegible(n.Uptime)},
-		{"Carga (1 · 5 · 15 min)", fmt.Sprintf("%.2f · %.2f · %.2f", n.Carga1, n.Carga5, n.Carga15)},
+	// La conversión directa vale porque los dos tipos tienen exactamente los
+	// mismos campos. Siguen siendo tipos distintos a propósito —un indicador
+	// lleva veredicto por definición y una fila de contexto no— y si algún día
+	// dejan de coincidir, esta línea deja de compilar en vez de fallar callada.
+	deIndicador := func(clave string) filaViva {
+		return filaViva(porClave[clave])
 	}
+
+	// --- El nodo ------------------------------------------------------------
+	cpu := sinMedida
 	if n.CPUOK {
-		d = append(d, pareja{"CPU ocupada",
-			fmt.Sprintf("%.0f %% (media de %s, sin contar espera de disco)", n.CPU, VentanaCPULegible)})
+		cpu = fmt.Sprintf("%.0f %% (sin contar la espera de disco)", n.CPU)
 	}
+	frecuencia := sinMedida
 	if n.FrecuenciaOK {
-		v := fmt.Sprintf("%d de %d MHz", n.FrecuenciaMHz, n.FrecuenciaMaxMHz)
+		frecuencia = fmt.Sprintf("%d de %d MHz", n.FrecuenciaMHz, n.FrecuenciaMaxMHz)
 		if n.FrecuenciaMHz < n.FrecuenciaMaxMHz {
 			// Por debajo del máximo puede ser ahorro en reposo o limitación
-			// térmica; el indicador de arriba lo distingue, esto solo informa.
-			v += " — por debajo del máximo"
-		}
-		d = append(d, pareja{"Frecuencia de la CPU", v})
-	}
-	if n.RAMOK {
-		d = append(d, pareja{"RAM disponible",
-			legibleBytes(n.RAMDisponibleBytes) + " de " + legibleBytes(n.RAMTotalBytes)})
-	}
-	for _, v := range []sistema.Volumen{n.Datos, n.Arranque} {
-		if v.EsOK {
-			d = append(d, pareja{"E/S en " + v.Punto + " desde el arranque",
-				legibleBytes(v.LeidoBytes) + " leídos · " + legibleBytes(v.EscritoBytes) + " escritos"})
+			// térmica; el indicador de limitación lo distingue, esto informa.
+			frecuencia += " — por debajo del máximo"
 		}
 	}
-	return d
-}
-
-// VentanaCPULegible existe solo para no repetir el número en la interfaz.
-var VentanaCPULegible = sistema.VentanaCPU.String()
-
-func trabajoDelServicio(i Instantanea) []pareja {
-	return []pareja{
-		{"Servicio en marcha desde hace", i.DesdeElArranque},
-		{"Peticiones atendidas", fmt.Sprintf("%d (%d correctas · %d de cliente · %d de servidor)",
-			i.Peticiones, i.Exito, i.ErroresCliente, i.ErroresServidor)},
-		{"Listados", fmt.Sprintf("%d, de los que %d pasaron de 2 s", i.Listados, i.ListadosLentos)},
-		{"Transferido", legibleBytes(uint64(i.BytesSubidos)) + " subidos · " +
-			legibleBytes(uint64(i.BytesDescargados)) + " descargados"},
-		{"Subidas", fmt.Sprintf("%d creadas · %d confirmadas · %d fallidas · %d descartadas · %d expiradas",
-			i.SubidasCreadas, i.SubidasConfirmadas, i.SubidasFallidas,
-			i.SubidasDescartadas, i.SubidasExpiradas)},
-		{"Borrados registrados", fmt.Sprintf("%d — cada uno consta en el diario en nivel WARN (RF-19)", i.Borrados)},
-		{"Accesos fallidos", fmt.Sprintf("%d", i.AccesosFallidos)},
-		{"Sesiones abiertas", fmt.Sprintf("%d", i.SesionesAbiertas)},
+	carga := sinMedida
+	if n.CargaOK {
+		carga = fmt.Sprintf("%.2f · %.2f · %.2f", n.Carga1, n.Carga5, n.Carga15)
 	}
+	encendido := sinMedida
+	if n.UptimeOK {
+		encendido = duracionLegible(n.Uptime)
+	}
+
+	nodo = []filaViva{
+		deIndicador("temperatura"),
+		deIndicador("memoria"),
+		contexto("cpu", "Uso del procesador", cpu),
+		contexto("frecuencia", "Velocidad del procesador", frecuencia),
+		// El kernel solo recalcula la carga cada 5 s: esta fila cambia despacio
+		// aunque el flujo llegue cuatro veces por segundo, y eso es correcto.
+		contexto("carga", "Trabajo en cola (1 · 5 · 15 min)", carga),
+		contexto("encendido", "Nodo encendido desde hace", encendido),
+	}
+
+	// --- El servicio --------------------------------------------------------
+	servicio = []filaViva{
+		contexto("servicio-desde", "Servicio en marcha desde hace", i.DesdeElArranque),
+		contexto("peticiones", "Peticiones atendidas",
+			fmt.Sprintf("%d — %d correctas · %d rechazadas · %d con error del servidor",
+				i.Peticiones, i.Exito, i.ErroresCliente, i.ErroresServidor)),
+		deIndicador("disponibilidad"),
+		contexto("listados", "Carpetas listadas",
+			fmt.Sprintf("%d, de las que %d pasaron de 2 s", i.Listados, i.ListadosLentos)),
+		deIndicador("latencia"),
+		contexto("transferido", "Datos transferidos",
+			legibleBytes(uint64(i.BytesSubidos))+" subidos · "+
+				legibleBytes(uint64(i.BytesDescargados))+" descargados"),
+		contexto("subidas", "Subidas de archivos",
+			fmt.Sprintf("%d creadas · %d publicadas · %d fallidas · %d descartadas · %d expiradas",
+				i.SubidasCreadas, i.SubidasConfirmadas, i.SubidasFallidas,
+				i.SubidasDescartadas, i.SubidasExpiradas)),
+		deIndicador("integridad"),
+		deIndicador("subidas-en-curso"),
+		contexto("sesiones", "Sesiones abiertas", strconv.Itoa(i.SesionesAbiertas)),
+		contexto("accesos-fallidos", "Intentos de acceso rechazados",
+			strconv.FormatInt(i.AccesosFallidos, 10)),
+		contexto("borrados", "Borrados registrados",
+			fmt.Sprintf("%d — cada uno consta en el diario (RF-19)", i.Borrados)),
+	}
+	return nodo, servicio
 }
 
 func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	n := sistema.Leer(r.Context(), s.volumen)
 
-	inst := s.contadores.instantanea()
-	inst.SubidasEnCurso = s.subidas.cuantas()
-	inst.SesionesAbiertas = s.sesiones.Abiertas()
-
+	inst := s.instantaneaCompleta()
 	indicadores := evaluar(n, inst)
 
 	w.Header().Set("Cache-Control", "no-store")
@@ -372,20 +461,30 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
 	v := vistaEstado{
-		Volumen:     s.volumen,
-		Servicio:    inst,
-		Indicadores: indicadores,
-		Peor:        peorDe(indicadores),
-		Detalles:    detallesDelNodo(n),
-		Trabajo:     trabajoDelServicio(inst),
-		Avisos:      n.Avisos,
-		Csrf:        s.csrfDe(r),
+		Volumen:       s.volumen,
+		FilasNodo:     filasNodo,
+		FilasServicio: filasServicio,
+		Lentos:        evaluarLentos(n),
+		Peor:          peorDe(indicadores),
+		Avisos:        n.Avisos,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.plantillas.ExecuteTemplate(w, "estado.html", v); err != nil {
 		s.reg.Error("render de /estado", "error", err)
 	}
+}
+
+// instantaneaCompleta reúne los contadores con los dos datos que no viven en
+// ellos. Existe porque hacían falta las mismas tres líneas en tres sitios
+// —la página, el flujo y el ciclo de mantenimiento— y en el tercero era fácil
+// olvidar una y publicar «0 sesiones abiertas» sin que fallara nada.
+func (s *Servidor) instantaneaCompleta() Instantanea {
+	i := s.contadores.instantanea()
+	i.SubidasEnCurso = s.subidas.cuantas()
+	i.SesionesAbiertas = s.sesiones.Abiertas()
+	return i
 }
 
 // quiereJSON admite las dos formas: la correcta por contenido negociado y la

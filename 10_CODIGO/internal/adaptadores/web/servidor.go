@@ -41,6 +41,9 @@ type Servidor struct {
 
 	// Observabilidad — Fase 4, charter §8.
 	contadores *contadores
+	// muestreador alimenta el flujo en vivo de /estado (ADR-0051). Solo mide
+	// mientras haya alguien mirando: sin espectadores no cuesta nada.
+	muestreador *muestreador
 	// veredictosPrevios recuerda el último veredicto de cada indicador para
 	// alertar solo en los CAMBIOS. Lo toca únicamente la goroutine de
 	// mantenimiento: ver anunciar().
@@ -100,6 +103,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		veredictosPrevios: make(map[string]veredicto),
 		volumen:           o.Volumen,
 	}
+	s.muestreador = nuevoMuestreador(s.marcoDelServidor)
 
 	// Al arrancar se mira qué subidas dejó a medias el proceso anterior.
 	// No se reabren aquí —eso ocurre al primer HEAD o PATCH— pero se informa,
@@ -144,6 +148,10 @@ func (s *Servidor) Rutas() http.Handler {
 
 	// Observabilidad — Fase 4, RF-24. Va DENTRO de lo protegido: ver estado.go.
 	protegido.HandleFunc("GET /estado", s.verEstado)
+	// El flujo en vivo de esa misma pantalla — ADR-0051. Detrás de la sesión
+	// por el mismo motivo que /estado: publica temperatura, capacidad y ritmo
+	// de uso, que son reconocimiento gratis para quien no tenga que verlos.
+	protegido.HandleFunc("GET /estado/flujo", s.flujoDeEstado)
 
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.tusCrear)

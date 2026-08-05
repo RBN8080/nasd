@@ -1,4 +1,42 @@
-:root { color-scheme: light dark; --borde: #8883; }
+/* ——— Vocabulario común ———
+   Antes del 05/08/2026 el color vivía en transparencias sueltas repartidas por
+   todo el archivo (#8881, #8882, #8883, #777, #aaa) y los tamaños de letra
+   habían salido uno a uno: 0.78, 0.8, 0.85, 0.9, 0.95, 1.05. Seis tamaños para
+   cuatro jerarquías reales es lo que se ve como «fuentes distintas» aunque la
+   familia sea la misma en toda la web.
+
+   Aquí quedan cuatro pasos de tamaño y un juego de colores con nombre. La
+   regla a partir de ahora: NO se escribe un color ni un tamaño literal fuera
+   de este bloque. Si hace falta uno nuevo, se añade aquí y se razona.
+
+   Los grises van en notación #RGBA con alfa: así el MISMO valor funciona en
+   claro y en oscuro, porque es el fondo el que asoma por debajo. Es el motivo
+   de que el proyecto no tenga dos paletas. */
+:root {
+  color-scheme: light dark;
+
+  --borde: #8883;
+  --tenue: #8881;
+  --suave: #8888;
+
+  /* Semáforo. Cada veredicto tiene borde y fondo, y el fondo es casi
+     transparente a propósito: tiñe la fila sin tapar el texto. */
+  --ok-borde: #0a06;      --ok-fondo: #0a01;
+  --aviso-borde: #e908;   --aviso-fondo: #e901;
+  --fallo-borde: #c00;    --fallo-fondo: #c0000010;
+  --desconocido-borde: #8886; --desconocido-fondo: #8881;
+
+  /* Escala tipográfica: rótulo, menor, tabla, título. El cuerpo es 1rem. */
+  --t-rotulo: 0.78rem;
+  --t-menor: 0.85rem;
+  --t-tabla: 0.95rem;
+  --t-titulo: 1.05rem;
+
+  /* Objetivo táctil mínimo de las Human Interface Guidelines de Apple. La
+     página se usa sobre todo desde el iPhone. */
+  --tactil: 44px;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -34,6 +72,12 @@ body {
   content: "";
 }
 
+/* El título de una página sin migas ocupa su sitio, para que la cabecera pese
+   igual en las dos y no parezcan dos diseños distintos. */
+.titulo-pagina {
+  font-weight: 600;
+}
+
 .acciones-sesion {
   display: flex;
   align-items: center;
@@ -41,7 +85,7 @@ body {
 }
 
 .acciones-sesion a {
-  font-size: 0.9rem;
+  font-size: var(--t-menor);
   text-decoration: none;
   opacity: 0.85;
 }
@@ -82,15 +126,15 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin: 1.1rem 0;
-  font-size: 0.95rem;
+  font-size: var(--t-tabla);
 }
 
 th {
   font-weight: 600;
-  font-size: 0.78rem;
+  font-size: var(--t-rotulo);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #888;
+  color: var(--suave);
   padding: 0.55rem 0.6rem;
   border-bottom: 1px solid var(--borde);
   text-align: left;
@@ -108,7 +152,7 @@ td.num, th:not(:first-child) {
 }
 
 tbody tr:hover {
-  background: #8881;
+  background: var(--tenue);
 }
 
 a.dir {
@@ -121,20 +165,20 @@ a.dir {
   font-style: italic;
   text-align: center;
   padding: 2.5rem 1rem !important;
-  color: #777;
+  color: var(--suave);
 }
 
 /* ——— Mensajes ——— */
 .mensaje {
   padding: 0.5rem 0.75rem;
   border-radius: 0.35rem;
-  background: #0a01;
+  background: var(--ok-fondo);
   border: 1px solid #0a04;
 }
 
 .oculto {
   opacity: 0.65;
-  font-size: 0.9em;
+  font-size: var(--t-menor);
   font-style: italic;
 }
 
@@ -164,12 +208,12 @@ a.dir {
   padding: 0.9rem 1rem;
   border: 1px dashed var(--borde);
   border-radius: 0.4rem;
-  background: #8881;
+  background: var(--tenue);
 }
 
 #zona-subida label {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--t-menor);
 }
 
 /* ——— Progreso de subida ——— */
@@ -187,7 +231,7 @@ a.dir {
   align-items: center;
   padding: 0.45rem 0;
   border-bottom: 1px solid var(--borde);
-  font-size: 0.9rem;
+  font-size: var(--t-menor);
 }
 
 #progreso li span:first-child {
@@ -197,7 +241,7 @@ a.dir {
 }
 
 #progreso button {
-  font-size: 0.78rem;
+  font-size: var(--t-rotulo);
   padding: 0.15rem 0.45rem;
   margin-left: 0.2rem;
 }
@@ -224,7 +268,7 @@ a.dir {
 
 .acceso input::placeholder {
   font-style: italic;
-  color: #aaa;
+  color: var(--suave);
   opacity: 0.75;
 }
 
@@ -243,32 +287,32 @@ a.dir {
 
 .acciones-fila input[type=text] {
   padding: 0.15rem 0.3rem;
-  font-size: 0.85em;
+  font-size: var(--t-menor);
 }
 
 .acciones-fila button {
   padding: 0.15rem 0.4rem;
-  font-size: 0.8em;
+  font-size: var(--t-rotulo);
 }
 
 a.destructivo,
 button.destructivo {
-  color: #c00;
+  color: var(--fallo-borde);
   font-weight: 600;
 }
 
 button.destructivo {
-  border: 2px solid #c00;
+  border: 2px solid var(--fallo-borde);
   padding: 0.5rem 1rem;
-  background: #c0000010;
+  background: var(--fallo-fondo);
 }
 
 .peligro {
-  border: 2px solid #c00;
+  border: 2px solid var(--fallo-borde);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   margin: 1rem 0;
-  background: #c0000010;
+  background: var(--fallo-fondo);
 }
 
 .ruta-destacada {
@@ -277,19 +321,24 @@ button.destructivo {
   font-size: 1.1em;
 }
 
+h2 {
+  font-size: var(--t-titulo);
+  margin: 1.75rem 0 0.35rem;
+}
+
 /* ——— Estado (Fase 4) ———
    Aqui vivia «.resumen», el parrafo de veredicto global. Se retiro el
    2026-08-04 junto con el elemento que lo usaba: RF-24 NO lo exige —pide
    «desconocido»/null en lo no medido y la accion a tomar en cada indicador,
    y las dos siguen—, y el veredicto global sigue publicandose en
    /estado?formato=json. Dejar el CSS sin elemento era codigo zombi. */
-.v-ok          { border-color: #0a06; background: #0a01; }
-.v-atencion    { border-color: #e908; background: #e901; }
-.v-fallo       { border-color: #c00;  background: #c0000010; }
-.v-desconocido { border-color: #8886; background: #8881; }
+.v-ok          { border-color: var(--ok-borde);          background: var(--ok-fondo); }
+.v-atencion    { border-color: var(--aviso-borde);       background: var(--aviso-fondo); }
+.v-fallo       { border-color: var(--fallo-borde);       background: var(--fallo-fondo); }
+.v-desconocido { border-color: var(--desconocido-borde); background: var(--desconocido-fondo); }
 
-tr.v-atencion td:first-child,
-tr.v-fallo td:first-child {
+tr.v-atencion .rotulo,
+tr.v-fallo .rotulo {
   font-weight: 600;
 }
 
@@ -297,25 +346,214 @@ tr.v-fallo td {
   border-bottom-color: #c006;
 }
 
-.accion {
-  display: inline-block;
-  margin-top: 0.25rem;
-  font-size: 0.85em;
-  opacity: 0.85;
+/* ——— Tablas de datos de /estado ———
+   EL DESCUADRE QUE ESTO ARREGLA (visto en el iPhone el 05/08/2026): las tres
+   tablas se veian de anchos distintos y habia que arrastrar la pagina de lado.
+
+   La causa eran dos reglas que se sumaban. «main» tiene overflow-x auto, asi
+   que las tres tablas comparten UNA barra de desplazamiento; y «white-space:
+   nowrap» impedia partir valores largos como «45 % (media de 250ms, sin contar
+   espera de disco)». La tabla con el texto mas largo se estiraba por encima
+   del ancho de la pagina y las otras se quedaban en el 100 % original — de ahi
+   que sus lineas terminaran en sitios distintos.
+
+   Se arregla por donde estaba el problema: aqui NADA lleva nowrap y el reparto
+   de columnas es FIJO, igual en las tres tablas. Asi se alinean entre si por
+   construccion y no por casualidad. */
+.datos {
+  table-layout: fixed;
+}
+
+.datos th,
+.datos td {
   text-align: left;
+  white-space: normal;
+}
+
+.datos .rotulo {
+  width: 34%;
+}
+
+.datos .estado,
+.datos th:last-child {
+  width: 7rem;
+  text-align: right;
+}
+
+/* Una ruta o una cifra larga parte donde haga falta antes que desbordar. */
+.datos .cifra {
+  overflow-wrap: anywhere;
+}
+
+/* La accion solo existe cuando hay algo que hacer. Va SIEMPRE en el HTML —el
+   flujo en vivo se limita a cambiarle el texto, sin crear ni destruir nodos— y
+   es el CSS quien la esconde mientras esta vacia. */
+.accion {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: var(--t-menor);
+  opacity: 0.85;
+}
+
+.accion:empty {
+  display: none;
+}
+
+.accion::before {
+  content: "→ ";
+}
+
+/* La pastilla dice el veredicto CON PALABRAS y no solo con color: un semaforo
+   que solo distingue por color no lo lee quien no distingue esos colores. */
+.pastilla {
+  display: inline-block;
+  font-size: var(--t-rotulo);
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--borde);
+  white-space: nowrap;
+}
+
+.v-ok .pastilla          { border-color: var(--ok-borde); }
+.v-atencion .pastilla    { border-color: var(--aviso-borde); }
+.v-fallo .pastilla       { border-color: var(--fallo-borde); font-weight: 600; }
+.v-desconocido .pastilla { border-color: var(--desconocido-borde); }
+
+/* Las filas sin semaforo —contexto— llevan un guion, que no debe pesar igual
+   que un veredicto de verdad. */
+tr:not([class]) .pastilla {
+  border-color: transparent;
+  opacity: 0.5;
+}
+
+.nota {
+  font-size: var(--t-menor);
+  color: var(--suave);
+  margin: 0.2rem 0 0;
 }
 
 .avisos {
-  font-size: 0.9em;
+  font-size: var(--t-menor);
   opacity: 0.8;
 }
 
-h2 {
-  font-size: 1.05rem;
-  margin: 1.75rem 0 0.35rem;
+/* ——— Rótulo de «en vivo» ——— */
+.linea-vivo {
+  margin: 0.6rem 0 0;
+  min-height: 1.5rem;
+}
+
+.latido {
+  display: inline-block;
+  font-size: var(--t-rotulo);
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--borde);
+  color: var(--suave);
+}
+
+.latido[data-vivo="si"] {
+  border-color: var(--ok-borde);
+  background: var(--ok-fondo);
+}
+
+.latido[data-vivo="no"] {
+  border-color: var(--aviso-borde);
+  background: var(--aviso-fondo);
+}
+
+/* El punto solo parpadea mientras el flujo esta vivo. */
+.latido[data-vivo="si"]::before {
+  content: "● ";
+  animation: latir 2s ease-in-out infinite;
+}
+
+@keyframes latir {
+  50% { opacity: 0.25; }
+}
+
+/* Quien haya pedido menos movimiento al sistema no tiene por que ver esto
+   parpadear. El rotulo sigue diciendo lo mismo con palabras. */
+@media (prefers-reduced-motion: reduce) {
+  .latido[data-vivo="si"]::before { animation: none; }
 }
 
 /* El ancho de la tabla nunca debe empujar la página en un teléfono. */
 main {
   overflow-x: auto;
+}
+
+/* ——— Teléfono ———
+   Solo para las tablas de /estado (.datos). El listado de archivos se deja
+   como está: es la referencia de aspecto que pidió el responsable, y
+   convertirlo en tarjetas es un cambio distinto que aún no se ha decidido.
+
+   Cada fila pasa a ser una tarjeta: rótulo y veredicto arriba, valor debajo a
+   ancho completo. Con esto ninguna tabla desborda y desaparece la barra de
+   arrastre lateral que hacía que las tres parecieran descuadradas. */
+@media (max-width: 40rem) {
+  .datos,
+  .datos thead,
+  .datos tbody,
+  .datos tr,
+  .datos td {
+    display: block;
+    width: auto;
+  }
+
+  .datos thead {
+    display: none;
+  }
+
+  .datos tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.1rem 0.75rem;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--borde);
+  }
+
+  .datos td {
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  /* Los anchos de la vista de escritorio SOBREVIVEN a «display: block» porque
+     tienen más especificidad, y en tarjeta estorban: MEDIDO el 05/08/2026 a
+     390 px, el 34 % del rótulo partía «Temperatura del procesador (SoC)» en
+     CUATRO líneas. Se anulan aquí, con la misma especificidad que aquellos y
+     más abajo en el archivo, que es lo que les hace ganar. */
+  .datos .rotulo,
+  .datos .estado,
+  .datos .valor {
+    width: auto;
+  }
+
+  .datos .rotulo {
+    grid-column: 1;
+    font-size: var(--t-rotulo);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--suave);
+  }
+
+  .datos .estado {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+
+  .datos .valor {
+    grid-column: 1 / -1;
+  }
+
+  /* Objetivo táctil de 44 px (HIG de Apple). «Salir» medía unos 28 px de alto
+     en el iPhone, que es la mitad de lo que el dedo necesita. */
+  .acciones-sesion a,
+  .salir button {
+    min-height: var(--tactil);
+    display: inline-flex;
+    align-items: center;
+  }
 }

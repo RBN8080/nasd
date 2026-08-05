@@ -10,7 +10,7 @@
 
 <header>
   <div class="cabecera-superior">
-    <nav class="migas"></nav>
+    <nav class="migas"><span class="titulo-pagina">Estado del servidor</span></nav>
     <div class="acciones-sesion">
       <a href="/">Archivos</a>
       <form method="post" action="/salir" class="salir">
@@ -22,35 +22,50 @@
 
 <main>
 
-<h2>Indicadores</h2>
-<table>
-  <thead><tr><th>Indicador</th><th>Valor</th><th>Estado</th></tr></thead>
-  <tbody>
-  {{range .Indicadores}}
-    <tr class="v-{{.Veredicto}}">
-      <td>{{.Nombre}}</td>
-      <td>{{.Valor}}{{if .Accion}}<br><span class="accion">→ {{.Accion}}</span>{{end}}</td>
-      <td class="num">{{.Veredicto}}</td>
-    </tr>
-  {{end}}
+<!-- El rótulo de «en vivo» lo enciende estado.js al conectar el flujo. Nace
+     oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
+     cartel que dijera «en vivo» sobre una foto congelada sería justo la clase
+     de indicador que miente que 00_RECTOR.md §12.5 lleva años corrigiendo. -->
+<p class="linea-vivo">
+  <span id="latido" class="latido" hidden></span>
+</p>
+<noscript>
+  <p class="nota">Sin JavaScript esta página no se refresca sola: las cifras son
+  las del momento en que se abrió. Recárguela para verlas de nuevo.</p>
+</noscript>
+
+<h2>El nodo ahora mismo</h2>
+<table class="datos">
+  <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
+  <tbody id="tabla-nodo">
+  {{range .FilasNodo}}{{template "fila-dato" .}}{{end}}
   </tbody>
 </table>
 
-<h2>Nodo</h2>
-<table>
-  <tbody>
-  {{range .Detalles}}<tr><td>{{.Clave}}</td><td class="num">{{.Valor}}</td></tr>{{end}}
-  </tbody>
-</table>
-
-<h2>Servicio</h2>
+<h2>El servicio ahora mismo</h2>
 <!-- Los contadores se ponen a CERO al reiniciar el servicio: no son un
      histórico. De ahí que la primera fila sea desde cuándo llevan contando;
      sin ese dato, un porcentaje no significa nada. -->
-<table>
+<table class="datos">
+  <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
+  <tbody id="tabla-servicio">
+  {{range .FilasServicio}}{{template "fila-dato" .}}{{end}}
+  </tbody>
+</table>
+
+<h2>Almacenamiento y hardware</h2>
+<p class="nota">Medido al abrir la página, no en vivo. Consultar el disco y el
+firmware cuesta bastante más que leer la temperatura, y ninguno de estos
+valores cambia de un segundo a otro. Recargue para volver a medirlos.</p>
+<table class="datos">
+  <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
   <tbody>
-  {{range .Trabajo}}<tr><td>{{.Clave}}</td><td class="num">{{.Valor}}</td></tr>{{end}}
-  <tr><td>Volumen de datos</td><td class="num">{{.Volumen}}</td></tr>
+  {{range .Lentos}}{{template "fila-dato" .}}{{end}}
+  <tr>
+    <td class="rotulo">Carpeta de datos</td>
+    <td class="valor"><span class="cifra">{{.Volumen}}</span></td>
+    <td class="estado"><span class="pastilla">—</span></td>
+  </tr>
   </tbody>
 </table>
 
@@ -65,6 +80,32 @@
 </p>
 
 </main>
+<script src="/estatico/estado.js"></script>
 </body>
 </html>
+{{end}}
+
+{{define "fila-dato"}}{{/*
+     Una sola definición de fila para las tres tablas. La usan tanto las filas
+     vivas como los indicadores lentos porque tienen los mismos campos, y que
+     compartan plantilla es lo que hace que se vean iguales sin acordarse.
+
+     La celda de acción va SIEMPRE presente aunque esté vacía: así estado.js
+     solo tiene que asignarle texto, sin crear ni destruir nodos. El CSS la
+     esconde mientras no diga nada.
+
+     El comentario va DENTRO y en sintaxis de plantilla, no en HTML fuera del
+     bloque: cualquier texto suelto a nivel de archivo convierte a estado.html
+     en una plantilla con cuerpo propio, y entonces choca con el {{define}} que
+     lleva ese mismo nombre. El síntoma es «multiple definition of template» al
+     arrancar, no al renderizar.
+*/}}
+  <tr data-clave="{{.Clave}}"{{if .Veredicto}} class="v-{{.Veredicto}}"{{end}}>
+    <td class="rotulo">{{.Nombre}}</td>
+    <td class="valor">
+      <span class="cifra">{{.Valor}}</span>
+      <span class="accion">{{.Accion}}</span>
+    </td>
+    <td class="estado"><span class="pastilla">{{if .Veredicto}}{{.Veredicto}}{{else}}—{{end}}</span></td>
+  </tr>
 {{end}}

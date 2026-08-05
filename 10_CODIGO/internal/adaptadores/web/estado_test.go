@@ -18,14 +18,16 @@ import (
 // estropear una sola cosa en cada prueba.
 func nodoSano() sistema.Nodo {
 	return sistema.Nodo{
-		Momento:            time.Now(),
-		Disponible:         true,
-		RAMOK:              true,
-		RAMTotalBytes:      948 << 20,
-		RAMDisponibleBytes: 640 << 20,
-		TemperaturaOK:      true,
-		TemperaturaC:       55.8,
-		Throttled:          sistema.Throttled{Disponible: true, TermicoBlandoOcurrida: true},
+		Vivo: sistema.Vivo{
+			Momento:            time.Now(),
+			Disponible:         true,
+			RAMOK:              true,
+			RAMTotalBytes:      948 << 20,
+			RAMDisponibleBytes: 640 << 20,
+			TemperaturaOK:      true,
+			TemperaturaC:       55.8,
+		},
+		Throttled: sistema.Throttled{Disponible: true, TermicoBlandoOcurrida: true},
 		Datos: sistema.Volumen{
 			Disponible: true, Punto: "/srv/nas", Dispositivo: "/dev/sdb1",
 			TotalBytes: 916 << 30, LibresBytes: 900 << 30,
@@ -278,7 +280,7 @@ func TestEstadoConSesionRespondeHTMLYJSON(t *testing.T) {
 	// entero» no puede depender de una palabra que se cambia al retocar el
 	// aspecto; sí puede depender de que exista el cierre de la página.
 	cuerpo := w.Body.String()
-	for _, trozo := range []string{"Indicadores", "Disco de datos", "Limitación del SoC", "Los mismos datos en JSON"} {
+	for _, trozo := range []string{"Disco de datos", "Limitación del procesador", "Los mismos datos en JSON"} {
 		if !strings.Contains(cuerpo, trozo) {
 			t.Fatalf("la página no contiene %q; ¿falló el render?\n%s", trozo, cuerpo)
 		}

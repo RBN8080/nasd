@@ -32,7 +32,7 @@ var rutasThrottled = []string{
 //
 // puntoDatos es el punto de montaje del volumen de datos (ADR-0019).
 func Leer(ctx context.Context, puntoDatos string) Nodo {
-	n := Nodo{Momento: time.Now(), Disponible: true}
+	n := Nodo{Vivo: Vivo{Momento: time.Now(), Disponible: true}}
 
 	leer := func(ruta string) (string, bool) {
 		b, err := os.ReadFile(ruta)
@@ -43,43 +43,38 @@ func Leer(ctx context.Context, puntoDatos string) Nodo {
 		return string(b), true
 	}
 
-	if s, ok := leer("/proc/uptime"); ok {
-		if d, err := analizarUptime(s); err != nil {
-			n.avisar("%v", err)
-		} else {
-			n.Uptime = d
-		}
+	if d, err := leerUptime(); err != nil {
+		n.avisar("%v", err)
+	} else {
+		n.Uptime, n.UptimeOK = d, true
 	}
 
-	if s, ok := leer("/proc/loadavg"); ok {
-		c1, c5, c15, err := analizarCarga(s)
-		if err != nil {
-			n.avisar("%v", err)
-		} else {
-			n.Carga1, n.Carga5, n.Carga15 = c1, c5, c15
-		}
+	if c1, c5, c15, err := leerCarga(); err != nil {
+		n.avisar("%v", err)
+	} else {
+		n.Carga1, n.Carga5, n.Carga15, n.CargaOK = c1, c5, c15, true
 	}
 
 	n.medirCPU(ctx)
 
-	if s, ok := leer("/proc/meminfo"); ok {
-		total, disp, err := analizarMeminfo(s)
-		if err != nil {
-			n.avisar("%v", err)
-		} else {
-			n.RAMTotalBytes, n.RAMDisponibleBytes, n.RAMOK = total, disp, true
-		}
+	if total, disp, err := leerMemoria(); err != nil {
+		n.avisar("%v", err)
+	} else {
+		n.RAMTotalBytes, n.RAMDisponibleBytes, n.RAMOK = total, disp, true
 	}
 
-	if s, ok := leer("/sys/class/thermal/thermal_zone0/temp"); ok {
-		if c, err := analizarMiligrados(s); err != nil {
-			n.avisar("%v", err)
-		} else {
-			n.TemperaturaC, n.TemperaturaOK = c, true
-		}
+	if c, err := leerTemperatura(); err != nil {
+		n.avisar("%v", err)
+	} else {
+		n.TemperaturaC, n.TemperaturaOK = c, true
 	}
 
-	n.medirFrecuencia()
+	if mhz, max, err := leerFrecuencia(); err != nil {
+		n.avisar("%v", err)
+	} else {
+		n.FrecuenciaMHz, n.FrecuenciaMaxMHz, n.FrecuenciaOK = mhz, max, true
+	}
+
 	n.medirThrottled(ctx)
 
 	// /proc/1/mounts y no /proc/mounts, a propósito: ver el comentario de
@@ -146,21 +141,114 @@ func (n *Nodo) medirCPU(ctx context.Context) {
 	}
 }
 
-func (n *Nodo) medirFrecuencia() {
+// ---------------------------------------------------------------------------
+// Una función por métrica. Devuelven error en lugar de anotar avisos porque
+// tienen DOS clientes con necesidades distintas: Leer() convierte el error en
+// un aviso con su motivo, y LeerVivo() solo baja la bandera.
+//
+// Que sean estas las únicas que saben dónde vive cada dato es el objetivo: la
+// ruta de la temperatura aparece una vez, no dos. Duplicarla era la forma
+// evidente de que un día el flujo y la página midieran cosas distintas.
+// ---------------------------------------------------------------------------
+
+func leerUptime() (time.Duration, error) {
+	b, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, fmt.Errorf("no se pudo leer /proc/uptime: %w", err)
+	}
+	return analizarUptime(string(b))
+}
+
+func leerCarga() (c1, c5, c15 float64, err error) {
+	b, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("no se pudo leer /proc/loadavg: %w", err)
+	}
+	return analizarCarga(string(b))
+}
+
+func leerMemoria() (total, disponible uint64, err error) {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0, fmt.Errorf("no se pudo leer /proc/meminfo: %w", err)
+	}
+	return analizarMeminfo(string(b))
+}
+
+func leerTemperatura() (float64, error) {
+	const ruta = "/sys/class/thermal/thermal_zone0/temp"
+	b, err := os.ReadFile(ruta)
+	if err != nil {
+		return 0, fmt.Errorf("no se pudo leer %s: %w", ruta, err)
+	}
+	return analizarMiligrados(string(b))
+}
+
+func leerFrecuencia() (mhz, maxMHz int, err error) {
 	const base = "/sys/devices/system/cpu/cpu0/cpufreq/"
 	actual, err1 := os.ReadFile(base + "scaling_cur_freq")
 	maxima, err2 := os.ReadFile(base + "cpuinfo_max_freq")
 	if err1 != nil || err2 != nil {
-		n.avisar("no se pudo leer la frecuencia de la CPU en %s", base)
-		return
+		return 0, 0, fmt.Errorf("no se pudo leer la frecuencia de la CPU en %s", base)
 	}
 	a, e1 := analizarKiloHercios(string(actual))
 	m, e2 := analizarKiloHercios(string(maxima))
 	if e1 != nil || e2 != nil {
-		n.avisar("frecuencia de la CPU: formato inesperado")
-		return
+		return 0, 0, fmt.Errorf("frecuencia de la CPU: formato inesperado")
 	}
-	n.FrecuenciaMHz, n.FrecuenciaMaxMHz, n.FrecuenciaOK = a, m, true
+	return a, m, nil
+}
+
+// LeerCPU toma una muestra suelta del contador de /proc/stat.
+//
+// Por sí sola no dice nada: hace falta una segunda para restar. Ver MuestraCPU.
+func LeerCPU() MuestraCPU {
+	b, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return MuestraCPU{}
+	}
+	t, o, err := analizarCPU(string(b))
+	if err != nil {
+		return MuestraCPU{}
+	}
+	return MuestraCPU{Total: t, Ocioso: o, OK: true}
+}
+
+// LeerVivo toma la fotografía BARATA del nodo, la que se puede repetir varias
+// veces por segundo. Ver el comentario del tipo Vivo para qué queda fuera.
+//
+// Recibe la muestra de CPU del tic anterior y devuelve la de este, para que
+// quien llama la pase al siguiente. Con una muestra previa inválida —el primer
+// tic de todos— el porcentaje sale sin medir en vez de salir cero.
+//
+// NO duerme y NO lanza procesos. Son siete lecturas de archivos que el kernel
+// sirve desde memoria; el coste es la propia llamada al sistema.
+func LeerVivo(previa MuestraCPU) (Vivo, MuestraCPU) {
+	v := Vivo{Momento: time.Now(), Disponible: true}
+
+	if d, err := leerUptime(); err == nil {
+		v.Uptime, v.UptimeOK = d, true
+	}
+	if c1, c5, c15, err := leerCarga(); err == nil {
+		v.Carga1, v.Carga5, v.Carga15, v.CargaOK = c1, c5, c15, true
+	}
+	if total, disp, err := leerMemoria(); err == nil {
+		v.RAMTotalBytes, v.RAMDisponibleBytes, v.RAMOK = total, disp, true
+	}
+	if c, err := leerTemperatura(); err == nil {
+		v.TemperaturaC, v.TemperaturaOK = c, true
+	}
+	if mhz, max, err := leerFrecuencia(); err == nil {
+		v.FrecuenciaMHz, v.FrecuenciaMaxMHz, v.FrecuenciaOK = mhz, max, true
+	}
+
+	actual := LeerCPU()
+	if previa.OK && actual.OK {
+		if p, ok := porcentajeCPU(previa.Total, previa.Ocioso, actual.Total, actual.Ocioso); ok {
+			v.CPU, v.CPUOK = p, true
+		}
+	}
+	return v, actual
 }
 
 // medirThrottled recorre las tres fuentes de ADR-0036, de mejor a peor.

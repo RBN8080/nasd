@@ -1,0 +1,222 @@
+package web
+
+import (
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
+
+	"nasd/internal/adaptadores/sistema"
+)
+
+// Estado en vivo — ADR-0051.
+//
+// La página de estado se refresca sola. El servidor empuja los valores por una
+// conexión larga y el navegador solo sustituye texto; no hay recarga, no hay
+// sondeo y no hay ninguna dependencia nueva (ADR-0013, ADR-0017).
+//
+// # POR QUÉ SSE Y NO WEBSOCKET
+//
+// Aquí los datos van en UN SOLO SENTIDO: del nodo a la pantalla. El navegador
+// no tiene nada que contar. SSE es exactamente eso —una respuesta HTTP que no
+// se cierra, con eventos separados por líneas en blanco— y sale de la
+// biblioteca estándar sin escribir protocolo. Un WebSocket sobre stdlib exige
+// el apretón de manos y el enmarcado a mano: unas trescientas líneas delicadas
+// para ganar un canal de vuelta que no se usa.
+//
+// # POR QUÉ UN SOLO MUESTREADOR
+//
+// El coste real no está en las conexiones, está en LEER. Si cada espectador
+// disparara su propia lectura, tres pestañas abiertas serían el triple de
+// trabajo sobre el nodo. Aquí muestrea UNA goroutine y reparte lo mismo a
+// todos: el coste de medir queda acotado y no depende de cuánta gente mire.
+//
+// Y solo corre mientras alguien mira. Sin espectadores no hay muestreo: la
+// última desconexión para el bucle, y la primera conexión lo arranca. Un panel
+// que nadie tiene abierto no debe costar nada.
+
+// intervaloVivo es cada cuánto se muestrea y se emite.
+//
+// EL SUELO NO ES UNA PREFERENCIA, LO PONE /proc/stat. El porcentaje de CPU no
+// se lee, se resta entre dos muestras, y el kernel cuenta en «jiffies» de
+// 10 ms por núcleo. En 250 ms los cuatro núcleos del nodo acumulan ~100
+// jiffies, así que el porcentaje sale con resolución de ~1 punto. A 100 ms
+// serían ~40 y el número saltaría de dos en dos puntos y medio: más rápido en
+// el reloj y PEOR en la pantalla, que es un mal negocio.
+//
+// Cuatro veces por segundo también es el límite de lo que sirve de algo: por
+// encima, el ojo ya no distingue el cambio de un número de tres cifras.
+//
+// Lo que se paga por tic son siete lecturas de archivos que el kernel sirve
+// desde memoria (ver sistema.Vivo). Ni proceso hijo, ni espera, ni disco: el
+// bus USB 2.0, que es el recurso escaso de este nodo (RES-02), no se toca.
+const intervaloVivo = 250 * time.Millisecond
+
+// marcoVivo es lo que viaja en cada evento.
+//
+// Van SIEMPRE todas las filas, no solo las que cambiaron. Un protocolo de
+// diferencias obligaría a que ningún espectador se perdiera nunca un marco, y
+// abajo se descartan a propósito los de un cliente lento: con diferencias, ese
+// cliente se quedaría con un valor viejo para siempre. Enviarlo entero cuesta
+// menos de un kilobyte y se recupera solo del siguiente marco. Quien evita el
+// trabajo inútil es el navegador, que no toca el DOM si el texto no cambió.
+type marcoVivo struct {
+	Nodo     []filaViva `json:"nodo"`
+	Servicio []filaViva `json:"servicio"`
+}
+
+// muestreador es el CUARTO punto de estado compartido del programa, tras el
+// registro de subidas, el de sesiones y los contadores. ADR-0013 dejó
+// vinculante documentarlos todos, así que aquí está:
+//
+//   - «oyentes» y «activo» los tocan la goroutine del bucle y la de cada
+//     petición. Van bajo el mismo cerrojo y nunca se leen fuera de él.
+//   - «activo» es lo que garantiza que haya COMO MUCHO un bucle vivo. No basta
+//     con mirar si el mapa está vacío: entre que el bucle decide salir y sale,
+//     una conexión nueva podría arrancar un segundo bucle y el nodo pasaría a
+//     muestrearse el doble de veces, en silencio y para siempre.
+type muestreador struct {
+	mu      sync.Mutex
+	oyentes map[chan marcoVivo]struct{}
+	activo  bool
+
+	// componer produce el marco. Se inyecta para que el muestreador no sepa
+	// nada del servidor y se pueda probar sin levantar uno entero.
+	componer func(sistema.Vivo) marcoVivo
+}
+
+func nuevoMuestreador(componer func(sistema.Vivo) marcoVivo) *muestreador {
+	return &muestreador{
+		oyentes:  make(map[chan marcoVivo]struct{}),
+		componer: componer,
+	}
+}
+
+// suscribir devuelve el canal por el que llegan los marcos y la función que
+// cancela la suscripción. La función DEBE llamarse: sin ella el oyente queda
+// en el mapa y el muestreo no se para nunca.
+func (m *muestreador) suscribir() (<-chan marcoVivo, func()) {
+	// Capacidad 1 y no 0: el bucle no puede quedarse esperando a que un
+	// espectador lento lea, porque los demás dependen de él.
+	c := make(chan marcoVivo, 1)
+
+	m.mu.Lock()
+	m.oyentes[c] = struct{}{}
+	arrancar := !m.activo
+	if arrancar {
+		m.activo = true
+	}
+	m.mu.Unlock()
+
+	if arrancar {
+		go m.bucle()
+	}
+
+	var unaVez sync.Once
+	return c, func() {
+		unaVez.Do(func() {
+			m.mu.Lock()
+			delete(m.oyentes, c)
+			m.mu.Unlock()
+		})
+	}
+}
+
+// bucle muestrea y reparte hasta que no queda nadie mirando.
+func (m *muestreador) bucle() {
+	// Primera muestra ANTES del primer tic: así el marco inicial ya trae el
+	// porcentaje de CPU medido en una ventana real, en lugar de estrenar la
+	// pantalla con un «no disponible» que se corrige un cuarto de segundo
+	// después.
+	previa := sistema.LeerCPU()
+
+	t := time.NewTicker(intervaloVivo)
+	defer t.Stop()
+
+	for range t.C {
+		var v sistema.Vivo
+		v, previa = sistema.LeerVivo(previa)
+		marco := m.componer(v)
+
+		m.mu.Lock()
+		if len(m.oyentes) == 0 {
+			// Se apaga bajo el mismo cerrojo con el que se enciende: quien
+			// llegue después verá «activo» en falso y arrancará un bucle nuevo.
+			m.activo = false
+			m.mu.Unlock()
+			return
+		}
+		for c := range m.oyentes {
+			select {
+			case c <- marco:
+			default:
+				// Espectador que aún no ha leído el marco anterior. Se descarta
+				// este: en un flujo de estado el dato NUEVO siempre vale más que
+				// el viejo, y bloquear aquí congelaría a todos los demás.
+			}
+		}
+		m.mu.Unlock()
+	}
+}
+
+// flujoDeEstado sirve el flujo SSE. Va detrás de la sesión, como /estado y por
+// los mismos motivos (ver el encabezado de estado.go).
+func (s *Servidor) flujoDeEstado(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	// Sin esto, cualquier intermediario que almacene en búfer retendría los
+	// eventos hasta llenar un bloque y el «tiempo real» llegaría a ráfagas.
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	if err := rc.Flush(); err != nil {
+		// Sin Flush no hay flujo posible: cada marco se quedaría en el búfer.
+		// Mejor decirlo y cerrar que servir una conexión que nunca entrega.
+		s.reg.Warn("flujo de estado no disponible: el ResponseWriter no deja vaciar", "error", err)
+		return
+	}
+
+	marcos, cancelar := s.muestreador.suscribir()
+	defer cancelar()
+
+	// EL PLAZO POR ACTIVIDAD DE ADR-0026 SE APLICA IGUAL QUE EN UNA DESCARGA, y
+	// hay que comprobar que no corta esto: es un plazo de 60 s que se RENUEVA
+	// con cada escritura, y aquí se escribe cuatro veces por segundo. Una
+	// conexión viva lo renueva 240 veces antes de acercarse al plazo; una
+	// conexión muerta deja de aceptar escrituras y el flujo se cierra solo, que
+	// es justo lo que se quiere. Verificado con TestElFlujoSobreviveAlPlazo.
+	escribir := escrituraConPlazo(w, s.plazoInactividad)
+	cod := json.NewEncoder(escribir)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			// El espectador cerró la pestaña o se fue la red. Nada que
+			// registrar: es el final normal de toda conexión de este tipo.
+			return
+		case marco := <-marcos:
+			if _, err := escribir.Write([]byte("data: ")); err != nil {
+				return
+			}
+			// Encode ya escribe el salto de línea final; el segundo cierra el
+			// evento, que es lo que el formato SSE exige para entregarlo.
+			if err := cod.Encode(marco); err != nil {
+				return
+			}
+			if _, err := escribir.Write([]byte("\n")); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// marcoDelServidor es lo que el muestreador inyecta: mide el servicio en el
+// mismo instante que el nodo, para que las dos tablas cuenten el mismo momento.
+func (s *Servidor) marcoDelServidor(v sistema.Vivo) marcoVivo {
+	nodo, servicio := filasVivas(v, s.instantaneaCompleta())
+	return marcoVivo{Nodo: nodo, Servicio: servicio}
+}
