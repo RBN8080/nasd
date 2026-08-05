@@ -55,6 +55,12 @@ func TestSinSesionTodoResponde401(t *testing.T) {
 		// disco, temperatura y ritmo de uso; sin TLS (ADR-0018) eso sería
 		// reconocimiento gratis para cualquiera en la LAN (ADR-0034).
 		{"GET", "/estado"},
+		// Y el flujo en vivo de esa misma pantalla (ADR-0051), que publica
+		// exactamente lo mismo y encima de forma continua. Dejarlo fuera
+		// habría abierto por la puerta de al lado lo que la fila de arriba
+		// cierra — que es la clase de asimetría que D-21 obliga a comprobar
+		// vía por vía en lugar de darla por hecha.
+		{"GET", "/estado/flujo"},
 	}
 	for _, c := range rutas {
 		w := httptest.NewRecorder()

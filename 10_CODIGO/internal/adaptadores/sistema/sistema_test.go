@@ -252,7 +252,7 @@ func TestUsoPorcentaje(t *testing.T) {
 }
 
 func TestRAMUsoPorcentajeUsaDisponible(t *testing.T) {
-	n := Nodo{RAMOK: true, RAMTotalBytes: 1000, RAMDisponibleBytes: 400}
+	n := Nodo{Vivo: Vivo{RAMOK: true, RAMTotalBytes: 1000, RAMDisponibleBytes: 400}}
 	if got := n.RAMUsoPorcentaje(); got != 60 {
 		t.Fatalf("uso de RAM = %v", got)
 	}

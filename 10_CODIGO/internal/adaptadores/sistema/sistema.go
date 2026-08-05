@@ -64,23 +64,43 @@ import (
 // ErrNoDisponible lo devuelve el lector en sistemas que no son Linux.
 var ErrNoDisponible = errors.New("métricas del nodo: solo disponibles en Linux")
 
-// Nodo es una fotografía de la máquina en un instante.
+// Vivo es la parte de la fotografía que SE PUEDE REPETIR VARIAS VECES POR
+// SEGUNDO. Todo lo de aquí son lecturas de archivos pequeños que el kernel
+// genera en memoria: siete open/read/close y ninguna espera.
 //
-// Ningún campo es de fiar sin su bandera de disponibilidad al lado. Lo que no
-// se pudo leer se cuenta en Avisos y no se rellena con ceros.
-type Nodo struct {
+// Está separada del resto por COSTE, no por estilo. Leer el nodo entero duerme
+// un cuarto de segundo para la ventana de CPU y LANZA UN PROCESO HIJO
+// —vcgencmd, ADR-0036—; repetir eso cuatro veces por segundo pondría un fork
+// cada 250 ms en un A53 de 1.4 GHz, y el muestreo continuo pasaría a costar
+// más que el servicio al que vigila.
+//
+// LO QUE NO ESTÁ AQUÍ ESTÁ FUERA A PROPÓSITO, y cada ausencia tiene motivo:
+//
+//   - Throttled: solo se obtiene lanzando vcgencmd (ADR-0036). Ver arriba.
+//   - Datos y Arranque: statfs, /proc/diskstats y /sys/fs/ext4. Además de
+//     costar más, no tendría sentido: un disco no cambia de ocupación en
+//     250 ms, y sondearlo a ese ritmo gastaría el bus USB 2.0 que RES-02 ya
+//     señala como el recurso escaso, para volver a leer el mismo número.
+//
+// Ningún campo es de fiar sin su bandera de disponibilidad al lado.
+type Vivo struct {
 	Momento time.Time
 
 	// Disponible es falso fuera de Linux. Los demás campos no valen nada.
 	Disponible bool
 
 	// Uptime del NODO, no del servicio.
-	Uptime time.Duration
+	Uptime   time.Duration
+	UptimeOK bool
 
 	Carga1, Carga5, Carga15 float64
+	CargaOK                 bool
 
-	// CPU es el porcentaje ocupado durante la ventana corta de muestreo.
-	// Ver VentanaCPU: es una media de esa ventana, no un instantáneo.
+	// CPU es el porcentaje ocupado durante la ventana de muestreo, que NO es
+	// fija: la marca quien llama. Leer() usa VentanaCPU; el muestreo continuo
+	// usa la distancia entre dos tics. En los dos casos es una media de esa
+	// ventana, nunca un instantáneo — el porcentaje de CPU no existe como
+	// lectura, solo como diferencia.
 	CPU   float64
 	CPUOK bool
 
@@ -94,6 +114,13 @@ type Nodo struct {
 	RAMTotalBytes      uint64
 	RAMDisponibleBytes uint64
 	RAMOK              bool
+}
+
+// Nodo es una fotografía COMPLETA de la máquina en un instante.
+//
+// Lo que no se pudo leer se cuenta en Avisos y no se rellena con ceros.
+type Nodo struct {
+	Vivo
 
 	Throttled Throttled
 
@@ -105,7 +132,27 @@ type Nodo struct {
 
 	// Avisos recoge lo que no se pudo leer, con su motivo. No se silencia
 	// nada: si /estado muestra menos de lo que debería, aquí consta por qué.
+	//
+	// El muestreo continuo NO los produce: son cadenas formateadas y generarlas
+	// cuatro veces por segundo sería basura para el recolector a cambio de
+	// nada. En el flujo, lo no medido se dice con la bandera de disponibilidad
+	// y el motivo sigue estando en la carga de la página.
 	Avisos []string
+}
+
+// MuestraCPU es el contador acumulado de /proc/stat en un instante.
+//
+// Existe porque el porcentaje de CPU no se puede leer: SOLO existe como
+// diferencia entre dos muestras. Leer() la resuelve durmiendo entre las dos;
+// el muestreo continuo no puede dormir —tiene que emitir a ritmo fijo—, así
+// que arrastra la muestra anterior de un tic al siguiente.
+//
+// El estado vive en QUIEN LLAMA y no en este paquete, y es deliberado:
+// ADR-0013 dejó vinculante acotar y documentar todo estado compartido, y la
+// forma más barata de acotarlo es que este paquete siga sin tener ninguno.
+type MuestraCPU struct {
+	Total, Ocioso uint64
+	OK            bool
 }
 
 // VentanaCPU es lo que se muestrea /proc/stat para calcular el porcentaje.
@@ -195,11 +242,13 @@ func (v Volumen) UsoPorcentaje() float64 {
 // MemFree en Linux es casi siempre bajo porque el kernel usa la RAM libre
 // como caché de disco, y esa caché se cede en cuanto alguien la necesita.
 // Alarmar con MemFree daría un rojo permanente que no significa nada.
-func (n Nodo) RAMUsoPorcentaje() float64 {
-	if !n.RAMOK || n.RAMTotalBytes == 0 {
+// Va en Vivo y no en Nodo para que el muestreo continuo pueda usarla: es el
+// mismo cálculo y no puede haber dos. Nodo la sigue teniendo por promoción.
+func (v Vivo) RAMUsoPorcentaje() float64 {
+	if !v.RAMOK || v.RAMTotalBytes == 0 {
 		return -1
 	}
-	return float64(n.RAMTotalBytes-n.RAMDisponibleBytes) * 100 / float64(n.RAMTotalBytes)
+	return float64(v.RAMTotalBytes-v.RAMDisponibleBytes) * 100 / float64(v.RAMTotalBytes)
 }
 
 // ---------------------------------------------------------------------------

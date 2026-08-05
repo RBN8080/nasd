@@ -110,11 +110,7 @@ func (s *Servidor) mantener(ctx context.Context) {
 // alerta y la pantalla discreparan, sería un defecto de este proyecto, no una
 // diferencia de criterio: no hay dos criterios.
 func (s *Servidor) vigilar(ctx context.Context) {
-	n := sistema.Leer(ctx, s.volumen)
-	inst := s.contadores.instantanea()
-	inst.SubidasEnCurso = s.subidas.cuantas()
-	inst.SesionesAbiertas = s.sesiones.Abiertas()
-	s.anunciar(evaluar(n, inst))
+	s.anunciar(evaluar(sistema.Leer(ctx, s.volumen), s.instantaneaCompleta()))
 }
 
 // anunciar emite SOLO LOS CAMBIOS de veredicto.
