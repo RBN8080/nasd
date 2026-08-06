@@ -15,6 +15,7 @@ import (
 	"iter"
 	"os"
 	"path"
+	"strings"
 
 	"nasd/internal/almacen"
 )
@@ -29,11 +30,67 @@ import (
 const (
 	subDatos     = "datos"
 	subParciales = "estado/parciales"
+
+	// SubHomeUsers es la carpeta, DENTRO de datos/, bajo la que cuelga la
+	// raíz de cada usuario (ADR-0055).
+	//
+	// Va dentro de datos/ a propósito: así el superusuario la ve igual por la
+	// web y por SMB, que es lo que se decidió —él ve todo—. Y su nombre queda
+	// RESERVADO: nadie puede crear, renombrar ni mover nada hacia él en la
+	// raíz de datos, porque una carpeta suya llamada igual dejaría a los
+	// usuarios compartiendo espacio con sus archivos.
+	SubHomeUsers = "homeUsers"
 )
+
+// esReservado decide si una ruta es intocable por la vía normal: el
+// contenedor de usuarios o la carpeta raíz de uno de ellos (ADR-0055).
+//
+// SOLO APLICA AL ALMACÉN SIN PREFIJO, es decir, al del superusuario. Un
+// usuario nunca puede nombrar esas rutas —su prefijo lo mete dentro de su
+// propia carpeta—, así que comprobarlo para él sería prohibirle una carpeta
+// suya que se llamara igual.
+//
+// Se compara por COMPONENTES y no con strings.HasPrefix: una carpeta llamada
+// «homeUsersXYZ» empieza igual y es un nombre perfectamente legítimo del
+// superusuario. Confundirlas la dejaría bloqueada sin motivo.
+func (a *Almacen) esReservado(r almacen.RutaSegura) bool {
+	if a.prefijo != "" || r.EsRaiz() {
+		return false
+	}
+	partes := strings.Split(r.Rel(), "/")
+	// «homeUsers» (el contenedor) y «homeUsers/<quien>» (una raíz de usuario).
+	// Más adentro sí se toca: las SUBCARPETAS de un usuario las administra
+	// tanto él como el superusuario, y eso es lo pedido.
+	return partes[0] == SubHomeUsers && len(partes) <= 2
+}
+
+// componenteSeguro comprueba que un nombre puede usarse como UN componente de
+// ruta, y solo uno. Lista positiva, por el mismo motivo que en el registro:
+// con una lista de prohibidos siempre falta uno, y el que falte se paga aquí.
+func componenteSeguro(nombre string) error {
+	if nombre == "" || len(nombre) > 32 {
+		return fmt.Errorf("%w: longitud fuera de rango", almacen.ErrRutaInvalida)
+	}
+	for _, r := range nombre {
+		esValido := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_'
+		if !esValido {
+			return fmt.Errorf("%w: %q no vale como nombre de carpeta de usuario",
+				almacen.ErrRutaInvalida, nombre)
+		}
+	}
+	return nil
+}
 
 // Almacen implementa almacen.Almacen sobre un volumen POSIX.
 type Almacen struct {
 	raiz *os.Root // anclado en el punto de montaje, p. ej. /srv/nas
+	// prefijo acota TODO lo que ve este almacén a un subárbol de datos/.
+	// Vacío para el superusuario; «homeUsers/juan» para un usuario (ADR-0055).
+	//
+	// AQUÍ VIVE EL AISLAMIENTO ENTERO, y por eso está en un solo campo que
+	// solo lee una función —real()—: una propiedad de seguridad repartida por
+	// veinte sitios no se puede auditar, y esta se lee en una pantalla.
+	prefijo string
 	// residuo acumula identificadores cuyo .meta no se pudo retirar. No es
 	// crítico —el archivo ya se publicó— pero no se calla (P5).
 	residuo []string
@@ -66,20 +123,69 @@ func AbrirVolumen(puntoDeMontaje string) (*Almacen, error) {
 func (a *Almacen) Close() error { return a.raiz.Close() }
 
 // real traduce una RutaSegura a la ruta relativa dentro de os.Root.
-func real(r almacen.RutaSegura) string {
+//
+// ES EL ÚNICO SITIO DONDE UNA RUTA DEL DOMINIO SE CONVIERTE EN UNA RUTA DEL
+// DISCO, y por tanto el único punto donde se aplica el aislamiento por
+// usuario. Si alguna vez hace falta otra traducción, se añade AQUÍ; una
+// segunda función que haga esto mismo sería una segunda oportunidad de
+// olvidarse del prefijo.
+//
+// POR QUÉ ESTO CONTIENE, y no hace falta creerlo por fe: almacen.RutaSegura
+// garantiza que Rel() es relativa, sin «..» y sin barra inicial (04_SEGURIDAD
+// §2, capa 1). Sobre esa garantía, path.Join no puede producir nada fuera de
+// «datos/<prefijo>». Y por debajo sigue os.Root, anclado en el punto de
+// montaje, que cierra el volumen entero incluidos los enlaces simbólicos que
+// apunten fuera (capa 2).
+//
+// LO QUE ESTO NO CIERRA, dicho en voz alta: un enlace simbólico creado DENTRO
+// de datos/ que apunte a otro punto de datos/ sigue siendo válido para
+// os.Root, porque no escapa del volumen. Crearlo exige SMB o SSH, es decir,
+// ser el superusuario — que ya lo ve todo—; el riesgo real es que se lo
+// ponga a un usuario sin querer. Ver ADR-0055 y 04_SEGURIDAD.md §2.bis.
+func (a *Almacen) real(r almacen.RutaSegura) string {
 	if r.EsRaiz() {
-		return subDatos
+		return path.Join(subDatos, a.prefijo)
 	}
-	return path.Join(subDatos, r.Rel())
+	return path.Join(subDatos, a.prefijo, r.Rel())
+}
+
+// ParaUsuario devuelve una vista del MISMO volumen acotada a la carpeta de un
+// usuario, creándola si no existe.
+//
+// Comparte el os.Root a propósito, en vez de abrir uno nuevo anclado en la
+// carpeta del usuario. El motivo es RNF-08: publicar una subida es un
+// rename() desde estado/parciales/ hasta datos/…, y rename() solo es atómico
+// dentro del mismo árbol. Un os.Root por usuario haría ese rename imposible y
+// habría que sustituirlo por copiar y borrar, que NO es atómico — se cambiaría
+// una garantía de durabilidad medida por una de aislamiento que RutaSegura ya
+// da. No compensa.
+func (a *Almacen) ParaUsuario(nombre string) (*Almacen, error) {
+	// SE VUELVE A VALIDAR AQUÍ AUNQUE EL REGISTRO YA LO HAGA, y no es
+	// redundancia por descuido: son dos invariantes distintas comprobadas en
+	// dos capas. autenticacion.NombreValido decide qué es un nombre de
+	// CUENTA aceptable; esto decide qué es un COMPONENTE DE RUTA seguro, que
+	// es lo que le importa al sistema de archivos. Si alguien relaja una, la
+	// otra sigue en pie — que es justo lo que se pide de un límite de
+	// seguridad. Además evita que este adaptador dependa del de autenticación.
+	if err := componenteSeguro(nombre); err != nil {
+		return nil, err
+	}
+	prefijo := path.Join(SubHomeUsers, nombre)
+	if err := a.raiz.MkdirAll(path.Join(subDatos, prefijo), 0o700); err != nil {
+		return nil, fmt.Errorf("preparar la carpeta de %q: %w", nombre, err)
+	}
+	// Copia superficial: mismo os.Root, distinto prefijo. El residuo queda
+	// por instancia, y no se comparte porque nada lo consulta en producción.
+	return &Almacen{raiz: a.raiz, prefijo: prefijo}, nil
 }
 
 func (a *Almacen) Estado(ctx context.Context, r almacen.RutaSegura) (almacen.Entrada, error) {
 	if err := ctx.Err(); err != nil {
 		return almacen.Entrada{}, err
 	}
-	fi, err := a.raiz.Stat(real(r))
+	fi, err := a.raiz.Stat(a.real(r))
 	if err != nil {
-		return almacen.Entrada{}, a.traducirEn(real(r), err)
+		return almacen.Entrada{}, a.traducirEn(a.real(r), err)
 	}
 	return aEntrada(r, fi), nil
 }
@@ -90,9 +196,9 @@ func (a *Almacen) Estado(ctx context.Context, r almacen.RutaSegura) (almacen.Ent
 // el número de entradas lo controla el usuario y no tiene cota (RNF-04).
 func (a *Almacen) Listar(ctx context.Context, r almacen.RutaSegura) iter.Seq2[almacen.Entrada, error] {
 	return func(yield func(almacen.Entrada, error) bool) {
-		d, err := a.raiz.Open(real(r))
+		d, err := a.raiz.Open(a.real(r))
 		if err != nil {
-			yield(almacen.Entrada{}, a.traducirEn(real(r), err))
+			yield(almacen.Entrada{}, a.traducirEn(a.real(r), err))
 			return
 		}
 		defer d.Close()
@@ -145,9 +251,9 @@ func (a *Almacen) Abrir(ctx context.Context, r almacen.RutaSegura) (io.ReadSeekC
 	if err := ctx.Err(); err != nil {
 		return nil, almacen.Entrada{}, err
 	}
-	f, err := a.raiz.Open(real(r))
+	f, err := a.raiz.Open(a.real(r))
 	if err != nil {
-		return nil, almacen.Entrada{}, a.traducirEn(real(r), err)
+		return nil, almacen.Entrada{}, a.traducirEn(a.real(r), err)
 	}
 	fi, err := f.Stat()
 	if err != nil {
@@ -165,12 +271,18 @@ func (a *Almacen) CrearDirectorio(ctx context.Context, r almacen.RutaSegura) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := a.raiz.Mkdir(real(r), 0o700); err != nil {
+	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
+	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
+	// interfaz: esconder un botón no impide la petición.
+	if a.esReservado(r) {
+		return almacen.ErrReservado
+	}
+	if err := a.raiz.Mkdir(a.real(r), 0o700); err != nil {
 		return traducir(err)
 	}
 	// El directorio nuevo también debe sobrevivir a un corte: se sincroniza
 	// el padre, que es quien contiene la entrada recién creada.
-	return a.sincronizarDirectorio(path.Dir(real(r)))
+	return a.sincronizarDirectorio(path.Dir(a.real(r)))
 }
 
 // Crear abre una escritura atómica hacia r.
@@ -186,7 +298,7 @@ func (a *Almacen) Crear(ctx context.Context, r almacen.RutaSegura) (almacen.Escr
 	if r.EsRaiz() {
 		return nil, almacen.ErrRutaInvalida
 	}
-	destino := real(r)
+	destino := a.real(r)
 	if _, err := a.raiz.Stat(destino); err == nil {
 		return nil, almacen.ErrYaExiste
 	} else if !errors.Is(err, fs.ErrNotExist) {

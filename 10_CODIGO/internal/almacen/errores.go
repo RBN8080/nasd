@@ -39,6 +39,16 @@ var (
 	// operación no recursiva. Destruir un árbol exige pedirlo por su nombre.
 	ErrNoVacio = errors.New("el directorio no está vacío")
 
+	// ErrReservado — se intentó crear, mover o destruir el contenedor de los
+	// usuarios o la carpeta raíz de uno de ellos por la vía normal (ADR-0055).
+	//
+	// Es una decisión del responsable, y la regla vive en el SERVIDOR y no en
+	// la interfaz: esconder el botón no impide la petición. Dar de baja a un
+	// usuario se hace desde el panel de administración, que además vuelve a
+	// pedir la contraseña — un solo clic en el listado del día a día no puede
+	// llevarse por delante la carpeta entera de una persona.
+	ErrReservado = errors.New("ruta reservada del sistema")
+
 	// ErrDentroDeSiMismo — mover un directorio dentro de su propio subárbol.
 	// El sistema lo rechazaría, pero conviene un error del dominio claro.
 	ErrDentroDeSiMismo = errors.New("no se puede mover un directorio dentro de sí mismo")
