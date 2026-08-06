@@ -57,7 +57,7 @@ func (a *Almacen) CrearReanudable(ctx context.Context, r almacen.RutaSegura, tot
 	if r.EsRaiz() {
 		return almacen.Parcial{}, nil, almacen.ErrRutaInvalida
 	}
-	destino := real(r)
+	destino := a.real(r)
 
 	// RF-23 desde el principio: no se empieza a subir 5 GB para descubrir al
 	// final que el destino estaba ocupado.
@@ -126,7 +126,7 @@ func (a *Almacen) ReabrirParcial(ctx context.Context, id string) (almacen.Parcia
 		f:        f,
 		id:       id,
 		temporal: a.rutaParte(id),
-		destino:  real(ruta),
+		destino:  a.real(ruta),
 		// El desplazamiento se toma del TAMAÑO REAL del archivo, nunca de un
 		// metadato. Es la garantía de ADR-0027.
 		escrito: fi.Size(),

@@ -28,6 +28,12 @@ func (a *Almacen) Renombrar(ctx context.Context, origen, destino almacen.RutaSeg
 	if origen.EsRaiz() || destino.EsRaiz() {
 		return almacen.ErrRutaInvalida
 	}
+	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
+	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
+	// interfaz: esconder un botón no impide la petición.
+	if a.esReservado(origen) || a.esReservado(destino) {
+		return almacen.ErrReservado
+	}
 	if origen.Rel() == destino.Rel() {
 		return nil // nada que hacer
 	}
@@ -39,7 +45,7 @@ func (a *Almacen) Renombrar(ctx context.Context, origen, destino almacen.RutaSeg
 		return almacen.ErrDentroDeSiMismo
 	}
 
-	rOrigen, rDestino := real(origen), real(destino)
+	rOrigen, rDestino := a.real(origen), a.real(destino)
 
 	// RF-23 vale aquí igual que al subir: NO se sobrescribe. Mover algo
 	// encima de otra cosa la destruiría en silencio, y sin papelera (D-15)
@@ -82,7 +88,13 @@ func (a *Almacen) Borrar(ctx context.Context, r almacen.RutaSegura) error {
 	if r.EsRaiz() {
 		return almacen.ErrRutaInvalida // la raíz de datos no se borra
 	}
-	destino := real(r)
+	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
+	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
+	// interfaz: esconder un botón no impide la petición.
+	if a.esReservado(r) {
+		return almacen.ErrReservado
+	}
+	destino := a.real(r)
 
 	fi, err := a.raiz.Stat(destino)
 	if err != nil {
@@ -115,7 +127,13 @@ func (a *Almacen) BorrarArbol(ctx context.Context, r almacen.RutaSegura) error {
 	if r.EsRaiz() {
 		return almacen.ErrRutaInvalida
 	}
-	destino := real(r)
+	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
+	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
+	// interfaz: esconder un botón no impide la petición.
+	if a.esReservado(r) {
+		return almacen.ErrReservado
+	}
+	destino := a.real(r)
 	if fi, err := a.raiz.Stat(destino); err != nil {
 		return a.traducirEn(destino, err)
 	} else if !fi.IsDir() {
@@ -164,7 +182,7 @@ func (a *Almacen) borrarRecursivo(ctx context.Context, dir string) error {
 // Resumen cuenta lo que cuelga de una ruta, para que la confirmación de
 // RF-18 diga qué se va a destruir en lugar de preguntar a ciegas.
 func (a *Almacen) Resumen(ctx context.Context, r almacen.RutaSegura) (almacen.Conteo, error) {
-	destino := real(r)
+	destino := a.real(r)
 	fi, err := a.raiz.Stat(destino)
 	if err != nil {
 		return almacen.Conteo{}, a.traducirEn(destino, err)
