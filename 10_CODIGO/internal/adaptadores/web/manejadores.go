@@ -24,6 +24,11 @@ type vistaListado struct {
 	// comentario extenso junto a target=_blank en listado.html. Mismo
 	// origen que Secure de la cookie de sesión (ADR-0046): r.TLS != nil.
 	EsHTTPS bool
+	// Orden es la columna por la que se está ordenando. Viaja en la URL y no
+	// en una cookie ni en el servidor: el listado ES el sistema de archivos
+	// (regla R1, ADR-0015) y no guarda estado de nadie. Como efecto lateral
+	// útil, un enlace copiado conserva el orden que se estaba viendo.
+	Orden criterio
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -47,6 +52,7 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 		EsError: r.URL.Query().Get("err") != "",
 		Csrf:    s.csrfDe(r),
 		EsHTTPS: r.TLS != nil,
+		Orden:   criterioDe(r.URL.Query().Get("orden")),
 	}
 
 	n := 0
@@ -74,9 +80,10 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 		n++
 	}
 
-	// Carpetas primero y numeración natural — ver orden.go, incluido el límite
-	// que tiene ordenar DESPUÉS de haber recortado a maxEntradasPorPagina.
-	ordenar(v.Entradas)
+	// Carpetas primero y el criterio que pida la URL — ver orden.go, incluido
+	// el límite que tiene ordenar DESPUÉS de haber recortado a
+	// maxEntradasPorPagina.
+	ordenarPor(v.Entradas, v.Orden)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 

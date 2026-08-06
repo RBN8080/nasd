@@ -1081,3 +1081,31 @@ tr.v-fallo .rotulo {
 .borrado .destructivo {
   width: 100%;
 }
+
+/* ——— Encabezados que ordenan (P-3, 06/08/2026) ———
+   El <th> ya trae su color y su tipografía del bloque de tabla; el enlace
+   solo tiene que heredarlos en vez de pintarse de color de vínculo, que es
+   el error que se cometió con «Mover…» y que el responsable cazó en una
+   captura. Aquí el enlace ocupa toda la celda para que el objetivo táctil
+   sea el encabezado entero y no las siete letras de «Tamaño». */
+a.orden {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.orden:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* La columna activa se marca con peso, no con un icono de flecha: no hay
+   alternancia de sentido que señalar —cada columna tiene una sola
+   dirección—, así que una flecha solo diría lo que el propio nombre de la
+   columna ya dice. */
+a.orden-activo {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}

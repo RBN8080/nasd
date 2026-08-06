@@ -279,6 +279,8 @@ func funciones() template.FuncMap {
 		// de un nombre de archivo del que abre un fragmento. Ver apertura.go.
 		"rutaURL": escaparRutaURL,
 		"listado": urlDeListado,
+		// Navegar sin perder la columna por la que se está ordenando (P-3).
+		"listadoCon": urlDeListadoCon,
 		// El navegador de carpetas de RF-17 enlaza a sí mismo en cada nivel,
 		// llevando siempre QUÉ se mueve y DÓNDE se está mirando. Construirlo
 		// en la plantilla a mano obligaría a escapar la consulta allí, que es

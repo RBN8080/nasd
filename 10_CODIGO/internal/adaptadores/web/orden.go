@@ -31,16 +31,72 @@ import (
 // autoritativo, y esa apariencia es nueva: sin orden, nadie daba por hecho que
 // estuviera todo.
 
-// ordenar deja los directorios delante y aplica orden natural dentro de cada
+// criterio es por cuál de las tres columnas se ordena el listado.
+//
+// SIN ALTERNANCIA, por petición explícita del responsable: cada encabezado
+// tiene UNA dirección fija y pulsarlo dos veces no invierte nada. El motivo
+// es que la dirección útil de cada columna no es discutible —los archivos se
+// buscan de la A a la Z, los grandes son los que estorban, y lo reciente es
+// lo que se acaba de tocar—, y una flechita que cambia de sentido obliga a
+// mirar el encabezado para saber qué se está viendo.
+type criterio string
+
+const (
+	porNombre     criterio = "nombre"
+	porTamano     criterio = "tamano"
+	porModificado criterio = "modificado"
+)
+
+// criterioDe traduce lo que llega por la URL. Cualquier cosa que no reconozca
+// cae en el orden por nombre, que es el de siempre: un parámetro escrito a
+// mano no debe dejar el listado en un estado que la interfaz no sabe dibujar.
+func criterioDe(s string) criterio {
+	switch criterio(s) {
+	case porTamano:
+		return porTamano
+	case porModificado:
+		return porModificado
+	default:
+		return porNombre
+	}
+}
+
+// ordenar aplica el orden por nombre, que es el de siempre y el de por
+// omisión. Se conserva como envoltorio para no tocar sus llamadas.
+func ordenar(es []almacen.Entrada) { ordenarPor(es, porNombre) }
+
+// ordenarPor deja SIEMPRE los directorios delante —«carpetas siempre arriba
+// primero», dicho por el responsable— y aplica el criterio dentro de cada
 // grupo. Es estable respecto al criterio, no respecto a la lectura del disco.
-func ordenar(es []almacen.Entrada) {
+func ordenarPor(es []almacen.Entrada, c criterio) {
 	// slices.SortFunc no sirve tal cual: hace falta el criterio compuesto
-	// «directorios primero, luego natural», y expresarlo en una función suelta
-	// lo hace comprobable por separado.
+	// «directorios primero, luego lo que toque», y expresarlo en una función
+	// suelta lo hace comprobable por separado.
 	sortStable(es, func(a, b almacen.Entrada) bool {
 		if a.EsDirectori != b.EsDirectori {
 			return a.EsDirectori
 		}
+		switch c {
+		case porTamano:
+			// LAS CARPETAS NO SE ORDENAN POR TAMAÑO, y no es un olvido: la
+			// tabla no muestra ninguno para ellas —el dato que trae el
+			// sistema de archivos es el peso de la entrada de directorio, no
+			// el de su contenido—, así que ordenarlas por él saldría como un
+			// orden aleatorio sin columna que lo explique. Se quedan por
+			// nombre, que es el único orden suyo que el usuario puede ver.
+			if a.EsDirectori {
+				break
+			}
+			if a.Tamano != b.Tamano {
+				return a.Tamano > b.Tamano
+			}
+		case porModificado:
+			if !a.Modificado.Equal(b.Modificado) {
+				return a.Modificado.After(b.Modificado)
+			}
+		}
+		// Desempate —y criterio único de porNombre—: natural y estable, para
+		// que dos archivos del mismo tamaño no bailen entre recargas.
 		return compararNatural(a.Nombre, b.Nombre) < 0
 	})
 }
