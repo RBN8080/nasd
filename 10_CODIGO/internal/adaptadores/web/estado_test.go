@@ -484,3 +484,44 @@ func TestDegradarseADesconocidoSiAvisa(t *testing.T) {
 		t.Fatalf("perder una medida que antes se tenía es un aviso; salieron %v", niveles)
 	}
 }
+
+// NINGUNA FILA LLEVA GUION EN LA COLUMNA DE ESTADO.
+//
+// El responsable lo pidió dos veces —el 05/08/2026 la segunda, señalando que la
+// primera no se había aplicado del todo— y por eso pasa a estar escrito aquí en
+// vez de confiado a la memoria de quien retoque la plantilla.
+//
+// El razonamiento, para que no se «arregle» al revés: una fila de contexto no
+// tiene veredicto porque no tiene UMBRAL contra el que aprobar o suspender —el
+// uso de CPU es un número, no una alarma—, y rellenar ese hueco con un guion,
+// con «N/A» o con «no aplica» es escribir algo donde no hay nada que decir. La
+// pastilla se queda vacía y el CSS la esconde.
+func TestNingunaFilaDeEstadoLlevaGuionEnLaColumnaDeEstado(t *testing.T) {
+	s := servidorConAuth(t)
+	h := s.Rutas()
+	cookie := abrirSesionDePrueba(t, h)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/estado", nil)
+	r.AddCookie(cookie)
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /estado -> %d", w.Code)
+	}
+	cuerpo := w.Body.String()
+
+	// Se busca el guion DENTRO de una pastilla, no en toda la página: hay
+	// valores que lo llevan legítimamente («0x0 — sin limitación»), y prohibir
+	// el carácter entero habría convertido esta prueba en una molestia que el
+	// siguiente que la vea en rojo desactiva.
+	if strings.Contains(cuerpo, `class="pastilla">—`) {
+		t.Fatal(`sigue habiendo pastillas con «—»; una fila sin umbral va vacía`)
+	}
+
+	// Y que la pastilla vacía EXISTA como elemento, que es lo que permite al
+	// flujo en vivo escribir en ella sin crear ni destruir nodos.
+	if !strings.Contains(cuerpo, `class="pastilla"></span>`) {
+		t.Fatal("no hay ninguna pastilla vacía; las filas de contexto deben " +
+			"conservar el elemento aunque no tengan veredicto que enseñar")
+	}
+}

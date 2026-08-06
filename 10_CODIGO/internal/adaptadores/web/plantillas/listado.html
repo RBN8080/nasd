@@ -26,10 +26,12 @@
          que es donde nadie las busca: en cualquier gestor de archivos el
          «subir» y el «crear carpeta» están arriba y a la vista.
 
-         Los menús son <details>/<summary> — HTML puro, SIN JavaScript. No es
+         Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
          purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y si
          estos menús dependieran de JS, un navegador sin él se quedaría sin
-         poder crear carpetas ni subir por el formulario de respaldo. -->
+         poder crear carpetas ni subir por el formulario de respaldo.
+         menus.js solo añade el cierre al pulsar fuera; sin él los menús
+         siguen funcionando con su propio botón. -->
     <div class="barra-acciones">
       <details class="menu">
         <summary class="boton-barra">Subir</summary>
@@ -68,7 +70,7 @@
         </div>
       </details>
 
-      <a href="/estado">Estado</a>
+      <a class="boton-barra" href="/estado">Estado</a>
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>
@@ -133,6 +135,7 @@
 {{if .Ocultas}}<p class="oculto">{{.Ocultas}} elemento(s) oculto(s) — nombres que empiezan por punto, normalmente temporales del sistema o del iPhone.</p>{{end}}
 </main>
 
+<script src="/estatico/menus.js"></script>
 <script src="/estatico/subida.js"></script>
 </body>
 </html>
