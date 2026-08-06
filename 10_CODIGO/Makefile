@@ -100,11 +100,34 @@ compilar:
 # vcs.revision (apartado E de NAS_OPERACION.txt) solo sirve si el commit que
 # senala es real, y eso es innegociable justo al desplegar: es el instante en
 # que el binario sale a produccion. Por eso el arbol se exige limpio AQUI, no
-# al editar. Se compara solo 10_CODIGO, no el repositorio entero: un .md o
-# .txt pendiente en otra carpeta no bloquea un despliegue de codigo.
+# al editar.
+#
+# LA PUERTA MIRA EL REPOSITORIO ENTERO, Y HASTA EL 2026-08-06 NO LO HACIA.
+#
+# Miraba solo 10_CODIGO, con el argumento de que un .md pendiente en otra
+# carpeta no deberia bloquear un despliegue de codigo. El argumento es
+# razonable y aun asi la puerta estaba rota, porque NO ES ESTA REGLA QUIEN
+# DECIDE lo que se estampa en el binario: Go calcula vcs.modified sobre
+# «git status --porcelain» del repositorio COMPLETO, archivos sin seguimiento
+# incluidos. Acotar la puerta a 10_CODIGO no acotaba la marca; solo dejaba de
+# vigilarla.
+#
+# Ocurrio de verdad: dos .patch que una sesion anterior dejo en la raiz —ni
+# siquiera codigo— bastaron para que un binario compilado desde un arbol
+# «limpio» segun esta regla saliera estampado como ARBOL MODIFICADO, pasara la
+# puerta y llegara a produccion. Comprobado apartando los dos archivos y
+# recompilando: vcs.modified paso de true a false sin tocar una linea.
+#
+# La regla y la marca tienen que medir LO MISMO, o la garantia de
+# «vcs.modified=false» que exige 00_RECTOR.md no es comprobable por nadie.
+# Se usa «git status --porcelain» a proposito: es exactamente lo que mira Go.
 verificar-limpio:
-	@git diff --quiet -- . && git diff --cached --quiet -- . \
-	  || (echo "ERROR: hay cambios sin commitear en 10_CODIGO — commitee antes de desplegar, o vcs.revision del binario mentiria sobre su origen"; exit 1)
+	@test -z "$$(git status --porcelain)" || ( \
+	  echo "ERROR: el repositorio tiene cambios sin commitear o archivos sin seguimiento."; \
+	  echo "       Go estamparia vcs.modified=true y el binario saldria como ARBOL MODIFICADO."; \
+	  echo "       Commitee, descarte o ignore lo siguiente antes de desplegar:"; \
+	  git status --porcelain; \
+	  exit 1)
 
 # El respaldo va PRIMERO y por eso este objetivo no es solo «copiar y reiniciar»:
 # sin él, un binario defectuoso deja el servicio caído sin nada a lo que volver.
