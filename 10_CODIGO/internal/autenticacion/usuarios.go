@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Registro de usuarios — ADR-0055.
@@ -83,8 +85,16 @@ const LongitudMinimaUsuario = 14
 // del archivo sea estable entre escrituras: un archivo que se reordena solo
 // es un archivo que no se puede revisar de un vistazo.
 type Registro struct {
+	// mu protege usuarios y sello. Hacen falta desde que el registro se
+	// RELEE en caliente: la relectura sustituye el slice mientras las
+	// peticiones lo consultan (Charter §6.1).
+	mu sync.Mutex
+
 	ruta     string
 	usuarios []Usuario
+	// sello es la fecha y el tamaño del archivo cuando se leyó. Es lo que
+	// permite saber si otro proceso —«nasd --crear-usuario»— lo cambió.
+	sello huella
 	// iteraciones es el coste con el que se derivan las cuentas nuevas Y con
 	// el que se gasta el tiempo cuando el usuario no existe: si el relleno
 	// costara distinto que una cuenta real, la diferencia sería medible.
@@ -140,15 +150,81 @@ func CargarRegistro(ruta string, iteraciones int) (*Registro, error) {
 		return nil, err
 	}
 	r := &Registro{ruta: ruta, iteraciones: iteraciones, relleno: relleno}
-	f, err := os.Open(ruta)
+	if err := r.releer(); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// Refrescar vuelve a leer el archivo SI HA CAMBIADO.
+//
+// # POR QUÉ EXISTE — DEFECTO ENCONTRADO EN USO REAL EL 2026-08-06
+//
+// El responsable dio de alta a un usuario con «nasd --crear-usuario», la orden
+// dijo «Cuenta creada», y al intentar entrar el servicio respondió que ese
+// usuario NO EXISTÍA. Los dos tenían razón: el alta la hace OTRO PROCESO, que
+// escribe el archivo, mientras el servicio conservaba en memoria la copia que
+// leyó al arrancar. La única forma de que el alta surtiera efecto era
+// reiniciar el servicio, y eso además tira todas las sesiones abiertas.
+//
+// El arreglo sigue la misma regla que el listado (R1, ADR-0015): EL ARCHIVO ES
+// EL REGISTRO. No hay copia en memoria que pueda quedarse vieja, hay una caché
+// que se comprueba antes de usarla.
+//
+// Cuesta un stat por intento de acceso, junto a una derivación que cuesta
+// 3.6 s. No es un precio que haya que discutir.
+func (r *Registro) Refrescar() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fi, err := os.Stat(r.ruta)
 	if errors.Is(err, os.ErrNotExist) {
-		return r, nil
+		// El archivo desapareció. Se refleja: quedan cero cuentas, y el
+		// superusuario sigue entrando porque su credencial vive aparte.
+		r.usuarios, r.sello = nil, huella{}
+		return nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("abrir el registro de usuarios %q: %w", ruta, err)
+		return fmt.Errorf("consultar el registro de usuarios %q: %w", r.ruta, err)
+	}
+	if (huella{fi.ModTime(), fi.Size()}) == r.sello {
+		return nil
+	}
+	return r.releerBloqueado()
+}
+
+// huella es lo que se compara para saber si el archivo cambió. Tamaño ADEMÁS
+// de fecha: dos escrituras dentro del mismo tic del reloj comparten fecha, y
+// el tamaño las distingue en el caso que más importa —dar de alta y de baja
+// seguidos—.
+type huella struct {
+	modificado time.Time
+	tamano     int64
+}
+
+func (r *Registro) releer() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.releerBloqueado()
+}
+
+// releerBloqueado exige r.mu tomado.
+//
+// NO PISA LO QUE HAY EN MEMORIA HASTA HABER LEÍDO TODO BIEN. Si el archivo
+// está a medio escribir o alguien lo estropeó editándolo a mano, se devuelve
+// el error y las cuentas que ya funcionaban siguen funcionando: un archivo
+// roto no debe dejar fuera a quien ya estaba dado de alta.
+func (r *Registro) releerBloqueado() error {
+	f, err := os.Open(r.ruta)
+	if errors.Is(err, os.ErrNotExist) {
+		r.usuarios, r.sello = nil, huella{}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("abrir el registro de usuarios %q: %w", r.ruta, err)
 	}
 	defer f.Close()
 
+	var leidos []Usuario
 	s := bufio.NewScanner(f)
 	for n := 1; s.Scan(); n++ {
 		linea := strings.TrimSpace(s.Text())
@@ -157,41 +233,59 @@ func CargarRegistro(ruta string, iteraciones int) (*Registro, error) {
 		}
 		nombre, credencial, ok := strings.Cut(linea, ":")
 		if !ok {
-			return nil, fmt.Errorf("registro de usuarios, línea %d: falta el separador «:»", n)
+			return fmt.Errorf("registro de usuarios, línea %d: falta el separador «:»", n)
 		}
 		// Se valida AL LEER y no solo al escribir: un archivo editado a mano
 		// —que es como se arregla esto cuando algo va mal— no puede colar un
 		// nombre que luego se use como carpeta.
 		if err := NombreValido(nombre); err != nil {
-			return nil, fmt.Errorf("registro de usuarios, línea %d: %w", n, err)
+			return fmt.Errorf("registro de usuarios, línea %d: %w", n, err)
 		}
 		if err := Valida(credencial); err != nil {
-			return nil, fmt.Errorf("registro de usuarios, línea %d, usuario %q: %w", n, nombre, err)
+			return fmt.Errorf("registro de usuarios, línea %d, usuario %q: %w", n, nombre, err)
 		}
-		if _, ya := r.Buscar(nombre); ya {
-			return nil, fmt.Errorf("registro de usuarios, línea %d: %w: %q", n, ErrYaExiste, nombre)
+		for _, y := range leidos {
+			if y.Nombre == nombre {
+				return fmt.Errorf("registro de usuarios, línea %d: %w: %q", n, ErrYaExiste, nombre)
+			}
 		}
-		r.usuarios = append(r.usuarios, Usuario{Nombre: nombre, Credencial: credencial})
+		leidos = append(leidos, Usuario{Nombre: nombre, Credencial: credencial})
 	}
 	if err := s.Err(); err != nil {
-		return nil, fmt.Errorf("leer el registro de usuarios: %w", err)
+		return fmt.Errorf("leer el registro de usuarios: %w", err)
 	}
-	return r, nil
+	r.usuarios = leidos
+	if fi, err := f.Stat(); err == nil {
+		r.sello = huella{fi.ModTime(), fi.Size()}
+	}
+	return nil
 }
 
 // Lista devuelve las cuentas en el orden del archivo. Copia, para que quien
 // la reciba no pueda alterar el registro por descuido.
 func (r *Registro) Lista() []Usuario {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := make([]Usuario, len(r.usuarios))
 	copy(out, r.usuarios)
 	return out
 }
 
 // Cuantos devuelve el número de cuentas.
-func (r *Registro) Cuantos() int { return len(r.usuarios) }
+func (r *Registro) Cuantos() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.usuarios)
+}
 
 // Buscar localiza una cuenta por nombre.
 func (r *Registro) Buscar(nombre string) (Usuario, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.buscarBloqueado(nombre)
+}
+
+func (r *Registro) buscarBloqueado(nombre string) (Usuario, bool) {
 	for _, u := range r.usuarios {
 		if u.Nombre == nombre {
 			return u, true
@@ -245,7 +339,22 @@ func (r *Registro) Alta(nombre, clave string) error {
 	if err := NombreValido(nombre); err != nil {
 		return err
 	}
-	if _, ya := r.Buscar(nombre); ya {
+	// Derivar ya exige LongitudMinima (12); aquí se pide más, y el porqué
+	// está junto a la constante.
+	if len([]rune(clave)) < LongitudMinimaUsuario {
+		return fmt.Errorf("%w: mínimo %d caracteres para una cuenta de usuario",
+			ErrClaveCorta, LongitudMinimaUsuario)
+	}
+	// La derivación cuesta ~3.6 s en el nodo y NO se hace con el cerrojo
+	// tomado: bloquearía todo intento de acceso durante esos segundos.
+	linea, err := Derivar(clave, r.iteraciones)
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ya := r.buscarBloqueado(nombre); ya {
 		return fmt.Errorf("%w: %q", ErrYaExiste, nombre)
 	}
 	if len(r.usuarios) >= maxUsuarios {
@@ -253,14 +362,6 @@ func (r *Registro) Alta(nombre, clave string) error {
 	}
 	// Derivar ya exige LongitudMinima (12); aquí se pide más, y el porqué
 	// está junto a la constante.
-	if len([]rune(clave)) < LongitudMinimaUsuario {
-		return fmt.Errorf("%w: mínimo %d caracteres para una cuenta de usuario",
-			ErrClaveCorta, LongitudMinimaUsuario)
-	}
-	linea, err := Derivar(clave, r.iteraciones)
-	if err != nil {
-		return err
-	}
 	r.usuarios = append(r.usuarios, Usuario{Nombre: nombre, Credencial: linea})
 	if err := r.guardar(); err != nil {
 		// Se deshace en memoria: si no se pudo guardar, el registro que
@@ -277,6 +378,8 @@ func (r *Registro) Alta(nombre, clave string) error {
 // llame, y la decisión está tomada —se aparta, no se destruye— porque sin
 // papelera (D-15) ni segunda copia (D-12) un borrado aquí no se deshace.
 func (r *Registro) Baja(nombre string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for i, u := range r.usuarios {
 		if u.Nombre != nombre {
 			continue
@@ -342,6 +445,12 @@ func (r *Registro) guardar() error {
 	}
 	if err := os.Rename(nombreTmp, r.ruta); err != nil {
 		return fmt.Errorf("publicar el registro: %w", err)
+	}
+	// Se resella con lo que acaba de quedar en disco: si no, la propia
+	// escritura del servicio le parecería un cambio ajeno y releería el
+	// archivo en el siguiente acceso sin ninguna necesidad.
+	if fi, err := os.Stat(r.ruta); err == nil {
+		r.sello = huella{fi.ModTime(), fi.Size()}
 	}
 	// El paso que todo el mundo olvida: sin esto el rename puede no haber
 	// llegado al disco aunque el archivo sí (ADR-0024).

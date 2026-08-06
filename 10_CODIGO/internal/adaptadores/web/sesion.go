@@ -401,6 +401,16 @@ func (s *Servidor) verificarAcceso(usuario, clave string) (valida, conocido bool
 	if nombreAceptable(usuario) == "" {
 		return false, false
 	}
+	// SE RELEE EL REGISTRO ANTES DE MIRARLO. Las altas las hace otro proceso
+	// —«nasd --crear-usuario»—, así que una copia cargada al arrancar se queda
+	// vieja en cuanto se da de alta a alguien: pasó en el nodo el 2026-08-06,
+	// la orden dijo «cuenta creada» y el servicio respondió que no existía.
+	//
+	// Si el archivo estuviera roto se sigue con lo que hay en memoria: quien
+	// ya estaba dado de alta no se queda fuera por eso. Pero NO en silencio.
+	if err := s.usuarios.Refrescar(); err != nil {
+		s.reg.Error("no se pudo releer el registro de usuarios", "error", err)
+	}
 	_, conocido = s.usuarios.Buscar(usuario)
 	return s.usuarios.Verifica(usuario, clave), conocido
 }
