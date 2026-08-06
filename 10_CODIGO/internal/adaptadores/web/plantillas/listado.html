@@ -19,7 +19,7 @@
 <header>
   <div class="cabecera-superior">
     <nav class="migas">
-      {{range .Migas}}<a href="{{listado .}}">{{.Nombre}}</a>{{end}}
+      {{range .Migas}}<a href="{{listadoCon . $.Orden}}">{{.Nombre}}</a>{{end}}
     </nav>
 
     <!-- LAS ACCIONES VIVEN AQUÍ, NO AL PIE. Antes estaban debajo de la tabla,
@@ -82,10 +82,23 @@
 
 <main>
 <table class="archivos">
-  <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th><th></th></tr></thead>
+  <!-- LOS ENCABEZADOS ORDENAN, Y CADA UNO TIENE UNA SOLA DIRECCIÓN (P-3).
+       No alternan: pulsar dos veces «Tamaño» no invierte nada. Lo pidió así
+       el responsable y la razón se sostiene sola — la dirección útil de cada
+       columna no es discutible: los nombres se buscan de la A a la Z, los
+       archivos que estorban son los grandes, y de las fechas interesa lo
+       recién tocado. Un sentido que cambia obliga a mirar el encabezado
+       para saber qué se está viendo.
+       El orden viaja en la URL, así que un enlace copiado lo conserva. -->
+  <thead><tr>
+    <th><a class="orden{{if eq .Orden "nombre"}} orden-activo{{end}}" href="{{listadoCon .Ruta "nombre"}}">Nombre</a></th>
+    <th><a class="orden{{if eq .Orden "tamano"}} orden-activo{{end}}" href="{{listadoCon .Ruta "tamano"}}">Tamaño</a></th>
+    <th><a class="orden{{if eq .Orden "modificado"}} orden-activo{{end}}" href="{{listadoCon .Ruta "modificado"}}">Modificado</a></th>
+    <th></th>
+  </tr></thead>
   <tbody>
   {{if not .Ruta.EsRaiz}}
-    <tr><td colspan="4"><a href="{{listado .Ruta.Padre}}">.. subir</a></td></tr>
+    <tr><td colspan="4"><a href="{{listadoCon .Ruta.Padre $.Orden}}">.. subir</a></td></tr>
   {{end}}
   {{range .Entradas}}
     <tr>
@@ -109,7 +122,7 @@
            pestaña nueva. Por HTTP en la LAN abren en la misma, como el resto:
            degradado, no roto. «noopener» porque abrir con target sin él le
            entrega a la página destino una referencia a esta. -->
-      <td>{{if .EsDirectori}}<a class="dir" href="{{listado .Ruta}}">{{.Nombre}}/</a>
+      <td>{{if .EsDirectori}}<a class="dir" href="{{listadoCon .Ruta $.Orden}}">{{.Nombre}}/</a>
           {{else}}{{$tipo := apertura .Nombre}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>

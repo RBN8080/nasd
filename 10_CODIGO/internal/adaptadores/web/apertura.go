@@ -119,6 +119,24 @@ func urlDeListado(r almacen.RutaSegura) string {
 	return "/ver/" + escaparRutaURL(r.Rel())
 }
 
+// urlDeListadoCon es urlDeListado llevándose el orden puesto.
+//
+// El responsable pidió que ordenar valga «también dentro de todas las
+// subcarpetas». Como el orden vive en la URL y no en el servidor (regla R1,
+// ADR-0015: el listado ES el sistema de archivos y no guarda estado), la
+// única forma de que sobreviva a un clic es que cada enlace de navegación lo
+// lleve consigo. Por eso lo usan las migas, las filas de carpeta y «subir».
+//
+// El orden por nombre no se escribe: es el de por omisión, y así los enlaces
+// del uso normal quedan limpios.
+func urlDeListadoCon(r almacen.RutaSegura, c criterio) string {
+	u := urlDeListado(r)
+	if c == porNombre {
+		return u
+	}
+	return u + "?orden=" + string(c)
+}
+
 type vistaVisor struct {
 	Ruta   almacen.RutaSegura
 	Nombre string
