@@ -19,12 +19,31 @@
   --tenue: #8881;
   --suave: #8888;
 
-  /* Semáforo. Cada veredicto tiene borde y fondo, y el fondo es casi
-     transparente a propósito: tiñe la fila sin tapar el texto. */
-  --ok-borde: #0a06;      --ok-fondo: #0a01;
-  --aviso-borde: #e908;   --aviso-fondo: #e901;
-  --fallo-borde: #c00;    --fallo-fondo: #c0000010;
-  --desconocido-borde: #8886; --desconocido-fondo: #8881;
+  /* Semáforo. Desde el 05/08/2026 el veredicto NO tiñe la fila: solo pinta
+     su pastilla. El responsable pidió quitar los fondos —«prácticamente solo
+     los fondos sobran»— porque con una tabla entera en verde el contraste
+     estorbaba más de lo que informaba. La señal sigue estando, concentrada
+     donde se mira.
+
+     Estos tonos son sólidos y no transparencias: la pastilla es ahora la
+     ÚNICA señal de color, así que tiene que leerse igual en claro y en
+     oscuro, y un #0a06 sobre fondo oscuro casi desaparecía. */
+  --ok-color: #2da44e;
+  --aviso-color: #bf8700;
+  --fallo-color: #c00;
+  --desconocido-color: #8888;
+
+  /* El fondo destructivo se conserva: no es un veredicto, es un botón que
+     debe NO parecer nativo a propósito. */
+  --fallo-fondo: #c0000010;
+
+  /* ÚNICO color OPACO del archivo, y el único que necesita dos valores.
+     Un menú desplegable no puede ser translúcido: dejaría ver la tabla por
+     debajo. Los grises con alfa del resto del archivo no sirven aquí porque
+     su gracia es justamente dejar pasar el fondo.
+     Se probó «Canvas», el color de sistema, y en la captura del 05/08/2026
+     salió BLANCO sobre una página en modo oscuro. Se declara a mano. */
+  --panel: #fff;
 
   /* Escala tipográfica: rótulo, menor, tabla, título. El cuerpo es 1rem. */
   --t-rotulo: 0.78rem;
@@ -35,6 +54,10 @@
   /* Objetivo táctil mínimo de las Human Interface Guidelines de Apple. La
      página se usa sobre todo desde el iPhone. */
   --tactil: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --panel: #1c1c1e; }
 }
 
 * { box-sizing: border-box; }
@@ -172,7 +195,7 @@ a.dir {
 .mensaje {
   padding: 0.5rem 0.75rem;
   border-radius: 0.35rem;
-  background: var(--ok-fondo);
+  background: #0a01;
   border: 1px solid #0a04;
 }
 
@@ -187,33 +210,165 @@ a.dir {
   border-color: #d004;
 }
 
-/* ——— Zona de acciones (listado) ——— */
-.acciones {
-  display: grid;
-  gap: 1.5rem;
-  border-top: 1px solid var(--borde);
-  padding-top: 1.5rem;
-  margin-top: 1.5rem;
-}
+/* ——— Barra de acciones del listado ———
+   Subir y Nueva carpeta vivían al PIE de la página, debajo de la tabla, que es
+   donde nadie los busca. Suben aquí, junto a Estado y Salir: en cualquier
+   gestor de archivos esas dos acciones están arriba.
 
-.acciones form,
-#zona-subida {
+   Los menús son <details>/<summary>, HTML puro y SIN JavaScript. No es
+   purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y montar
+   estos menús con JS habría dejado a un navegador sin él sin poder crear
+   carpetas ni usar el formulario de respaldo. */
+.barra-acciones {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
   align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
-#zona-subida {
-  padding: 0.9rem 1rem;
-  border: 1px dashed var(--borde);
+.menu {
+  position: relative;
+}
+
+/* Fuera el triángulo que el navegador pone por omisión en <summary>. */
+.menu > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu > summary::marker {
+  content: "";
+}
+
+/* EXCEPCIÓN DECLARADA a la regla de «los botones no llevan estilo».
+   Aquella regla existe para que iOS pinte sus controles nativos en los ENVÍOS
+   de formulario, y se mantiene intacta para esos. Un <summary> no es un envío
+   ni un control nativo: no hay aspecto que preservar, y el responsable pidió
+   barra de herramientas de aplicación de verdad. */
+.boton-barra {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--t-menor);
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--borde);
   border-radius: 0.4rem;
   background: var(--tenue);
 }
 
+.boton-barra:hover,
+.menu[open] > .boton-barra {
+  border-color: var(--suave);
+}
+
+/* El panel flota SOBRE la página, no la empuja: abrir un menú no puede mover
+   de sitio la fila que se estaba mirando. */
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 20;
+  min-width: 15rem;
+  padding: 0.85rem;
+  border: 1px solid var(--borde);
+  border-radius: 0.5rem;
+  background: var(--panel);
+  box-shadow: 0 0.5rem 1.5rem #0005;
+  display: grid;
+  gap: 0.7rem;
+  text-align: left;
+}
+
+.menu-panel form {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.menu-panel label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: var(--t-rotulo);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--suave);
+}
+
+/* ——— Menú de fila: el botón de tres puntos ——— */
+.boton-puntos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--suave);
+}
+
+/* LOS TRES PUNTOS SE DIBUJAN, NO SE ESCRIBEN.
+   Se probaron dos caracteres —«⋯» (U+22EF) y «•» (U+2022)— y los dos salieron
+   como caja vacía en la captura del 05/08/2026: depender de que una fuente
+   traiga un glifo concreto es depender de algo que no controlamos. Un punto y
+   dos sombras dan el mismo dibujo sin tipografía de por medio, y además queda
+   vertical, que es como lo pintan Drive y OneDrive.
+   «currentColor» hace que sigan al color del botón al pasar por encima. */
+.boton-puntos::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor;
+}
+
+.boton-puntos:hover,
+.menu[open] > .boton-puntos {
+  border-color: var(--borde);
+  background: var(--tenue);
+  color: inherit;
+}
+
+/* La fila del menú separa lo destructivo del resto con una línea, para que
+   «Borrar» no quede pegado a «Mover» y se pulse por inercia. D-15 no tiene
+   papelera: el clic de más no se deshace. */
+.menu-panel-fila .destructivo {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.6rem;
+  text-decoration: none;
+}
+
+/* ——— Subida, dentro de su panel ——— */
+#zona-subida {
+  display: grid;
+  gap: 0.5rem;
+}
+
+#zona-subida input[type=file] {
+  max-width: 100%;
+}
+
 #zona-subida label {
-  font-weight: 600;
-  font-size: var(--t-menor);
+  font-size: var(--t-rotulo);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--suave);
+}
+
+/* ——— Pie: qué binario está corriendo, y nada más ——— */
+.pie {
+  margin-top: 2.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--borde);
+  font-family: ui-monospace, monospace;
+  font-size: var(--t-rotulo);
+  letter-spacing: 0.02em;
+  color: var(--suave);
 }
 
 /* ——— Progreso de subida ——— */
@@ -280,35 +435,20 @@ a.dir {
   justify-content: flex-end;
 }
 
-.acciones-fila form {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.acciones-fila input[type=text] {
-  padding: 0.15rem 0.3rem;
-  font-size: var(--t-menor);
-}
-
-.acciones-fila button {
-  padding: 0.15rem 0.4rem;
-  font-size: var(--t-rotulo);
-}
-
 a.destructivo,
 button.destructivo {
-  color: var(--fallo-borde);
+  color: var(--fallo-color);
   font-weight: 600;
 }
 
 button.destructivo {
-  border: 2px solid var(--fallo-borde);
+  border: 2px solid var(--fallo-color);
   padding: 0.5rem 1rem;
   background: var(--fallo-fondo);
 }
 
 .peligro {
-  border: 2px solid var(--fallo-borde);
+  border: 2px solid var(--fallo-color);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   margin: 1rem 0;
@@ -332,18 +472,12 @@ h2 {
    «desconocido»/null en lo no medido y la accion a tomar en cada indicador,
    y las dos siguen—, y el veredicto global sigue publicandose en
    /estado?formato=json. Dejar el CSS sin elemento era codigo zombi. */
-.v-ok          { border-color: var(--ok-borde);          background: var(--ok-fondo); }
-.v-atencion    { border-color: var(--aviso-borde);       background: var(--aviso-fondo); }
-.v-fallo       { border-color: var(--fallo-borde);       background: var(--fallo-fondo); }
-.v-desconocido { border-color: var(--desconocido-borde); background: var(--desconocido-fondo); }
-
+/* Las filas NO se tiñen. Lo único que cambia de color es la pastilla, más
+   abajo. Se conserva la negrita del rótulo cuando algo va mal, que no es un
+   fondo y ayuda a encontrar la fila de un vistazo. */
 tr.v-atencion .rotulo,
 tr.v-fallo .rotulo {
   font-weight: 600;
-}
-
-tr.v-fallo td {
-  border-bottom-color: #c006;
 }
 
 /* ——— Tablas de datos de /estado ———
@@ -405,20 +539,26 @@ tr.v-fallo td {
 
 /* La pastilla dice el veredicto CON PALABRAS y no solo con color: un semaforo
    que solo distingue por color no lo lee quien no distingue esos colores. */
+/* Mayúsculas por CSS y NO en Go, y la distinción importa: el valor del
+   veredicto viaja en el JSON de /estado y en el diario, donde es «ok» en
+   minúscula y forma parte del contrato. Cambiarlo en origen habría alterado
+   las dos cosas para arreglar un detalle de pantalla. */
 .pastilla {
   display: inline-block;
   font-size: var(--t-rotulo);
-  letter-spacing: 0.02em;
-  padding: 0.1rem 0.45rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
   border-radius: 0.75rem;
   border: 1px solid var(--borde);
   white-space: nowrap;
 }
 
-.v-ok .pastilla          { border-color: var(--ok-borde); }
-.v-atencion .pastilla    { border-color: var(--aviso-borde); }
-.v-fallo .pastilla       { border-color: var(--fallo-borde); font-weight: 600; }
-.v-desconocido .pastilla { border-color: var(--desconocido-borde); }
+.v-ok .pastilla          { border-color: var(--ok-color);          color: var(--ok-color); }
+.v-atencion .pastilla    { border-color: var(--aviso-color);       color: var(--aviso-color); }
+.v-fallo .pastilla       { border-color: var(--fallo-color);       color: var(--fallo-color); }
+.v-desconocido .pastilla { border-color: var(--desconocido-color); color: var(--desconocido-color); }
 
 /* Las filas sin semaforo —contexto— llevan un guion, que no debe pesar igual
    que un veredicto de verdad. */
@@ -454,13 +594,13 @@ tr:not([class]) .pastilla {
 }
 
 .latido[data-vivo="si"] {
-  border-color: var(--ok-borde);
-  background: var(--ok-fondo);
+  border-color: var(--ok-color);
+  color: var(--ok-color);
 }
 
 .latido[data-vivo="no"] {
-  border-color: var(--aviso-borde);
-  background: var(--aviso-fondo);
+  border-color: var(--aviso-color);
+  color: var(--aviso-color);
 }
 
 /* El punto solo parpadea mientras el flujo esta vivo. */
@@ -479,10 +619,14 @@ tr:not([class]) .pastilla {
   .latido[data-vivo="si"]::before { animation: none; }
 }
 
-/* El ancho de la tabla nunca debe empujar la página en un teléfono. */
-main {
-  overflow-x: auto;
-}
+/* «main» YA NO es contenedor de desplazamiento, y quitarlo era obligatorio:
+   overflow-x en un eje convierte el otro en «auto», así que main recortaba
+   cualquier menú desplegable que asomara por debajo de su caja. Un menú
+   recortado por el contenedor es peor que una tabla ancha.
+
+   Puede quitarse porque la tabla dejó de ser ancha: la cuarta columna pasó de
+   un formulario de renombrado entero a un solo botón de 2 rem. Medido a
+   390 px después del cambio. */
 
 /* ——— Teléfono ———
    Solo para las tablas de /estado (.datos). El listado de archivos se deja
@@ -551,9 +695,50 @@ main {
   /* Objetivo táctil de 44 px (HIG de Apple). «Salir» medía unos 28 px de alto
      en el iPhone, que es la mitad de lo que el dedo necesita. */
   .acciones-sesion a,
-  .salir button {
+  .salir button,
+  .boton-barra {
     min-height: var(--tactil);
     display: inline-flex;
     align-items: center;
+  }
+
+  /* La barra de herramientas no cabe en una línea junto a las migas: MEDIDO,
+     el listado desbordaba 55 px a 390. Se apila, con las acciones debajo de
+     la ruta y alineadas a la derecha. */
+  .cabecera-superior {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .barra-acciones {
+    justify-content: flex-end;
+  }
+
+  /* Y la fecha deja de ser intocable: «2026-08-05 19:19» en una sola línea se
+     llevaba 110 px de los 358 disponibles. Partida en dos cabe, y así no hay
+     que esconder ninguna columna — que era la otra salida y pierde dato. */
+  .archivos td.num {
+    white-space: normal;
+  }
+
+  /* MEDIDO a 390 px: la tabla ocupaba 392 con 358 disponibles. El relleno de
+     0.6rem se llevaba 19 px por columna y las cuatro columnas sumaban 77 solo
+     de aire. A 0.3rem cabe sin esconder ninguna columna. */
+  .archivos th,
+  .archivos td {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+  }
+
+  .boton-puntos {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  /* El panel de fila se ancla al botón, que está pegado al borde derecho: con
+     15 rem se salía de pantalla en un teléfono. */
+  .menu-panel-fila {
+    min-width: 13rem;
   }
 }

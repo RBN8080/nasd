@@ -21,7 +21,53 @@
     <nav class="migas">
       {{range .Migas}}<a href="{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}">{{.Nombre}}</a>{{end}}
     </nav>
-    <div class="acciones-sesion">
+
+    <!-- LAS ACCIONES VIVEN AQUÍ, NO AL PIE. Antes estaban debajo de la tabla,
+         que es donde nadie las busca: en cualquier gestor de archivos el
+         «subir» y el «crear carpeta» están arriba y a la vista.
+
+         Los menús son <details>/<summary> — HTML puro, SIN JavaScript. No es
+         purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y si
+         estos menús dependieran de JS, un navegador sin él se quedaría sin
+         poder crear carpetas ni subir por el formulario de respaldo. -->
+    <div class="barra-acciones">
+      <details class="menu">
+        <summary class="boton-barra">Subir</summary>
+        <div class="menu-panel">
+          <!-- Camino normal: tus, reanudable (RF-12). -->
+          <div id="zona-subida" data-destino="{{.Ruta.Rel}}" data-csrf="{{.Csrf}}">
+            <label for="archivos">Archivos a subir</label>
+            <input type="file" id="archivos" multiple>
+            <button type="button" id="boton-subir" onclick="iniciarSubida()">Subir</button>
+            <ul id="progreso"></ul>
+          </div>
+
+          <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
+          <noscript>
+            <form method="post" action="/subir" enctype="multipart/form-data">
+              <!-- El ORDEN importa: el servidor recorre el flujo una sola vez y
+                   valida el testigo antes de aceptar ningún archivo. -->
+              <input type="hidden" name="csrf" value="{{.Csrf}}">
+              <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
+              <input type="file" name="archivo" required>
+              <button type="submit">Subir (sin JavaScript)</button>
+            </form>
+          </noscript>
+        </div>
+      </details>
+
+      <details class="menu">
+        <summary class="boton-barra">Nueva carpeta</summary>
+        <div class="menu-panel">
+          <form method="post" action="/directorio">
+            <input type="hidden" name="csrf" value="{{.Csrf}}">
+            <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
+            <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
+            <button type="submit">Crear</button>
+          </form>
+        </div>
+      </details>
+
       <a href="/estado">Estado</a>
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
@@ -33,7 +79,7 @@
 {{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{end}}">{{.Mensaje}}</p>{{end}}
 
 <main>
-<table>
+<table class="archivos">
   <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th><th></th></tr></thead>
   <tbody>
   {{if not .Ruta.EsRaiz}}
@@ -46,14 +92,36 @@
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>
       <td class="num acciones-fila">
-        <form method="post" action="/renombrar">
-          <input type="hidden" name="csrf" value="{{$.Csrf}}">
-          <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
-          <input type="text" name="destino" value="{{.Nombre}}" size="14"
-                 title="Nombre nuevo, o ruta completa para mover">
-          <button type="submit">Renombrar</button>
-        </form>
-        <a class="destructivo" href="/borrar/{{.Ruta.Rel}}">Borrar</a>
+        <!-- Un solo botón en lugar de un formulario entero por fila. La tabla
+             pasa de arrastrarse de lado en el móvil a caber, y las acciones
+             destructivas dejan de estar a un clic de distancia por accidente. -->
+        <details class="menu menu-fila">
+          <summary class="boton-puntos" title="Acciones" aria-label="Acciones"></summary>
+          <div class="menu-panel menu-panel-fila">
+            <form method="post" action="/renombrar">
+              <input type="hidden" name="csrf" value="{{$.Csrf}}">
+              <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
+              <label>Renombrar
+                <input type="text" name="destino" value="{{.Nombre}}">
+              </label>
+              <button type="submit">Guardar</button>
+            </form>
+            <form method="post" action="/renombrar">
+              <!-- Mover es el MISMO extremo: el servidor ya acepta una ruta
+                   completa como destino. Se separa aquí porque escribir
+                   «carpeta/archivo» en un campo que dice «Renombrar» no se le
+                   ocurre a nadie. -->
+              <input type="hidden" name="csrf" value="{{$.Csrf}}">
+              <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
+              <label>Mover a
+                <input type="text" name="destino" value="{{.Ruta.Rel}}"
+                       placeholder="carpeta/destino/{{.Nombre}}">
+              </label>
+              <button type="submit">Mover</button>
+            </form>
+            <a class="destructivo" href="/borrar/{{.Ruta.Rel}}">Borrar</a>
+          </div>
+        </details>
       </td>
     </tr>
   {{else}}
@@ -64,35 +132,6 @@
 {{if .Truncado}}<p class="mensaje error">Listado recortado: hay más entradas de las que se muestran.</p>{{end}}
 {{if .Ocultas}}<p class="oculto">{{.Ocultas}} elemento(s) oculto(s) — nombres que empiezan por punto, normalmente temporales del sistema o del iPhone.</p>{{end}}
 </main>
-
-<section class="acciones">
-  <form method="post" action="/directorio">
-    <input type="hidden" name="csrf" value="{{.Csrf}}">
-    <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
-    <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
-    <button type="submit">Crear carpeta</button>
-  </form>
-
-  <!-- Camino normal: tus, reanudable (RF-12). -->
-  <div id="zona-subida" data-destino="{{.Ruta.Rel}}" data-csrf="{{.Csrf}}">
-    <label for="archivos">Archivos a subir:</label>
-    <input type="file" id="archivos" multiple>
-    <button type="button" id="boton-subir" onclick="iniciarSubida()">Subir</button>
-    <ul id="progreso"></ul>
-  </div>
-
-  <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
-  <noscript>
-    <form method="post" action="/subir" enctype="multipart/form-data">
-      <!-- El ORDEN importa: el servidor recorre el flujo una sola vez y
-           valida el testigo antes de aceptar ningún archivo. -->
-      <input type="hidden" name="csrf" value="{{.Csrf}}">
-      <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
-      <input type="file" name="archivo" required>
-      <button type="submit">Subir (sin JavaScript)</button>
-    </form>
-  </noscript>
-</section>
 
 <script src="/estatico/subida.js"></script>
 </body>

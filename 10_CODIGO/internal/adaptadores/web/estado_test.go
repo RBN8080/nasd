@@ -279,8 +279,13 @@ func TestEstadoConSesionRespondeHTMLYJSON(t *testing.T) {
 	// servicio» a «Servicio» por gusto estético. El ancla de «se renderizó
 	// entero» no puede depender de una palabra que se cambia al retocar el
 	// aspecto; sí puede depender de que exista el cierre de la página.
+	// «Disco de datos» es un rótulo que el responsable pidió NO renombrar, así
+	// que es un ancla estable; «</html>» es el cierre de la plantilla y prueba
+	// que se renderizó entera. Las anclas anteriores —un encabezado y un
+	// párrafo de ayuda— se cayeron dos veces al retocar el aspecto, que es
+	// justo lo que este comentario lleva avisando desde el 2026-08-04.
 	cuerpo := w.Body.String()
-	for _, trozo := range []string{"Disco de datos", "Limitación del procesador", "Los mismos datos en JSON"} {
+	for _, trozo := range []string{"Disco de datos", "Medio de arranque", "</html>"} {
 		if !strings.Contains(cuerpo, trozo) {
 			t.Fatalf("la página no contiene %q; ¿falló el render?\n%s", trozo, cuerpo)
 		}

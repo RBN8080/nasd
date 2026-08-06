@@ -69,6 +69,10 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 		n++
 	}
 
+	// Carpetas primero y numeración natural — ver orden.go, incluido el límite
+	// que tiene ordenar DESPUÉS de haber recortado a maxEntradasPorPagina.
+	ordenar(v.Entradas)
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	// SIN CACHÉ, y no es opcional.
