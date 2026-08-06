@@ -571,28 +571,16 @@ a.dir {
 /* ——— «Este aparato ya sabe quién eres» ———
    Solo aparece cuando el nombre está recordado y basta con la contraseña.
    Enseña LA INICIAL Y NADA MÁS: identifica sin publicar de quién es la cuenta
-   a quien mire la pantalla por encima del hombro (ADR-0055). */
-.quien {
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  margin: 0 0 .4rem;
-}
+   a quien mire la pantalla por encima del hombro (ADR-0055).
 
-.inicial {
-  display: grid;
-  place-items: center;
-  width: 2.4rem;
-  height: 2.4rem;
-  flex: none;
-  border-radius: 50%;
-  border: 1px solid var(--borde);
-  background: var(--tenue);
-  font-size: var(--t-titulo);
-  font-weight: 600;
-}
-
+   VA DEBAJO DEL BOTÓN Y CENTRADO, por indicación del responsable sobre una
+   captura del 06/08. Arriba —con una pastilla redonda con la inicial— competía
+   con la casilla de la contraseña, que es lo único que hay que hacer en esta
+   pantalla. Cambiar de usuario es la salida, no la acción principal, y por eso
+   se lee como enlace y no como botón. */
 .cambiar {
+  margin: 1rem 0 0;
+  text-align: center;
   font-size: var(--t-menor);
 }
 

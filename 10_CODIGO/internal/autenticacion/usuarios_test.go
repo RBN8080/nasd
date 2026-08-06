@@ -215,3 +215,75 @@ func TestNingunaCuentaPuedeLlamarseComoElSuperusuario(t *testing.T) {
 		t.Errorf("se cargó un registro con una cuenta llamada %q", NombreSuperusuario)
 	}
 }
+
+// REGRESIÓN DEL DEFECTO ENCONTRADO EN USO REAL EL 2026-08-06.
+//
+// El responsable dio de alta a un usuario con «nasd --crear-usuario», la orden
+// dijo «Cuenta creada», y al intentar entrar el servicio respondió que ese
+// usuario no existía. Los dos tenían razón: el alta la hace OTRO PROCESO, y el
+// servicio conservaba en memoria la copia que leyó al arrancar.
+//
+// Se simula exactamente eso: dos Registro sobre el MISMO archivo. Uno es la
+// orden de terminal; el otro, el servicio que lleva rato en marcha.
+func TestElServicioSeEnteraDeUnAltaHechaPorLaTerminal(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "usuarios")
+
+	servicio, err := CargarRegistro(ruta, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("CargarRegistro (servicio): %v", err)
+	}
+	terminal, err := CargarRegistro(ruta, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("CargarRegistro (terminal): %v", err)
+	}
+
+	if err := terminal.Alta("juan", claveDePrueba); err != nil {
+		t.Fatalf("Alta: %v", err)
+	}
+
+	// ASÍ ERA EL DEFECTO: sin releer, el servicio no lo ve.
+	if servicio.Verifica("juan", claveDePrueba) {
+		t.Fatal("la prueba no vale: el servicio ya lo veía sin releer")
+	}
+
+	if err := servicio.Refrescar(); err != nil {
+		t.Fatalf("Refrescar: %v", err)
+	}
+	if !servicio.Verifica("juan", claveDePrueba) {
+		t.Error("tras releer, el servicio SIGUE sin ver la cuenta recién creada")
+	}
+
+	// Y la baja también viaja en el mismo sentido.
+	if err := terminal.Baja("juan"); err != nil {
+		t.Fatalf("Baja: %v", err)
+	}
+	if err := servicio.Refrescar(); err != nil {
+		t.Fatalf("Refrescar tras la baja: %v", err)
+	}
+	if servicio.Verifica("juan", claveDePrueba) {
+		t.Error("tras releer, el servicio sigue dejando entrar a una cuenta dada de baja")
+	}
+}
+
+// Un archivo roto NO puede dejar fuera a quien ya estaba dado de alta: se
+// devuelve el error —para que quien llame lo registre— y se conserva en
+// memoria lo último que sí se pudo leer.
+func TestUnRegistroRotoNoBorraLoQueYaFuncionaba(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "usuarios")
+	r, err := CargarRegistro(ruta, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("CargarRegistro: %v", err)
+	}
+	if err := r.Alta("juan", claveDePrueba); err != nil {
+		t.Fatalf("Alta: %v", err)
+	}
+	if err := os.WriteFile(ruta, []byte("esto no lleva separador\n"), 0o600); err != nil {
+		t.Fatalf("estropear el registro: %v", err)
+	}
+	if err := r.Refrescar(); err == nil {
+		t.Error("un registro roto se leyó como si nada")
+	}
+	if !r.Verifica("juan", claveDePrueba) {
+		t.Error("un archivo roto dejó fuera a una cuenta que ya funcionaba")
+	}
+}

@@ -15,12 +15,13 @@
   <form method="post" action="/acceso">
     {{if .Usuario}}
     {{/* Este aparato ya sabe a quién pertenece: solo se pide la contraseña.
-         Se enseña LA INICIAL Y NADA MÁS. Basta para reconocerse y no le dice
-         a quien coja el teléfono prestado de quién es la cuenta. */}}
-    <p class="quien">
-      <span class="inicial" aria-hidden="true">{{.Inicial}}</span>
-      <a class="cambiar" href="/acceso?cambiar=1">¿No eres {{.Inicial}}?, cambiar de usuario</a>
-    </p>
+         La inicial sigue estando —dentro del propio aviso— porque basta para
+         reconocerse y no le dice a quien coja el teléfono prestado de quién es
+         la cuenta.
+         SIN PASTILLA CON LA INICIAL Y DEBAJO DEL BOTÓN, por indicación del
+         responsable sobre una captura: arriba competía con la casilla de la
+         contraseña, que es lo único que hay que hacer en esta pantalla.
+         Cambiar de usuario es la salida, no la acción principal. */}}
     <label for="clave">Contraseña</label>
     <input type="password" id="clave" name="clave"
        autocomplete="current-password"
@@ -41,6 +42,12 @@
     {{end}}
     <button type="submit">Entrar</button>
   </form>
+
+  {{if .Usuario}}
+  <p class="cambiar">
+    <a href="/acceso?cambiar=1">¿No eres {{.Inicial}}?, cambiar de usuario</a>
+  </p>
+  {{end}}
 </main>
 </body>
 </html>

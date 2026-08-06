@@ -41,6 +41,8 @@ func ejecutar() error {
 		"lee una contraseña de la entrada estándar y escribe su línea derivada")
 	crearUsuario := flag.String("crear-usuario", "",
 		"da de alta una cuenta con ese nombre; lee su contraseña de la entrada estándar")
+	borrarUsuario := flag.String("borrar-usuario", "",
+		"da de baja una cuenta; NO toca sus archivos")
 	flag.Parse()
 
 	if *generar {
@@ -48,6 +50,9 @@ func ejecutar() error {
 	}
 	if *crearUsuario != "" {
 		return altaDeUsuario(*rutaConfig, *crearUsuario)
+	}
+	if *borrarUsuario != "" {
+		return bajaDeUsuario(*rutaConfig, *borrarUsuario)
 	}
 
 	// RNF-13: registro estructurado en JSON hacia journald por la salida
@@ -265,6 +270,32 @@ func altaDeUsuario(rutaConfig, nombre string) error {
 	// una línea de salida parece que se ha colgado.
 	fmt.Printf("Cuenta %q creada en %s. Su carpeta se prepara al entrar por primera vez.\n",
 		nombre, cfg.RutaUsuarios())
+	return nil
+}
+
+// bajaDeUsuario retira una cuenta del registro — ADR-0055.
+//
+// NO TOCA NI UN ARCHIVO DEL USUARIO, y eso es la decisión del responsable, no
+// una omisión: su carpeta «se aparta, no se destruye». Sin papelera (D-15) ni
+// segunda copia (D-12), un borrado aquí no se desharía.
+//
+// Es también la única forma de CAMBIAR una contraseña mientras no exista el
+// panel: baja y alta. Como la carpeta sobrevive, la persona vuelve a entrar y
+// se encuentra lo suyo donde estaba.
+func bajaDeUsuario(rutaConfig, nombre string) error {
+	cfg, err := config.Cargar(rutaConfig)
+	if err != nil {
+		return err
+	}
+	reg, err := autenticacion.CargarRegistro(cfg.RutaUsuarios(), web.IteracionesPBKDF2)
+	if err != nil {
+		return err
+	}
+	if err := reg.Baja(nombre); err != nil {
+		return err
+	}
+	fmt.Printf("Cuenta %q retirada del registro. SUS ARCHIVOS NO SE HAN TOCADO: "+
+		"siguen en datos/%s/%s.\n", nombre, fsposix.SubHomeUsers, nombre)
 	return nil
 }
 
