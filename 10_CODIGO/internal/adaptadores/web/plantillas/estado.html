@@ -10,7 +10,7 @@
 
 <header>
   <div class="cabecera-superior">
-    <nav class="migas"><span class="titulo-pagina">Estado del servidor</span></nav>
+    <nav class="migas"><span class="titulo-pagina">Estado del Servidor</span></nav>
     <div class="acciones-sesion">
       <a href="/">Archivos</a>
       <form method="post" action="/salir" class="salir">
@@ -34,7 +34,7 @@
   las del momento en que se abrió. Recárguela para verlas de nuevo.</p>
 </noscript>
 
-<h2>El nodo ahora mismo</h2>
+<h2>Nodo</h2>
 <table class="datos">
   <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
   <tbody id="tabla-nodo">
@@ -42,7 +42,7 @@
   </tbody>
 </table>
 
-<h2>El servicio ahora mismo</h2>
+<h2>Servicio</h2>
 <!-- Los contadores se ponen a CERO al reiniciar el servicio: no son un
      histórico. De ahí que la primera fila sea desde cuándo llevan contando;
      sin ese dato, un porcentaje no significa nada. -->
@@ -54,15 +54,12 @@
 </table>
 
 <h2>Almacenamiento y hardware</h2>
-<p class="nota">Medido al abrir la página, no en vivo. Consultar el disco y el
-firmware cuesta bastante más que leer la temperatura, y ninguno de estos
-valores cambia de un segundo a otro. Recargue para volver a medirlos.</p>
 <table class="datos">
   <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
   <tbody>
   {{range .Lentos}}{{template "fila-dato" .}}{{end}}
   <tr>
-    <td class="rotulo">Carpeta de datos</td>
+    <td class="rotulo">Punto de montaje</td>
     <td class="valor"><span class="cifra">{{.Volumen}}</span></td>
     <td class="estado"><span class="pastilla">—</span></td>
   </tr>
@@ -74,10 +71,7 @@ valores cambia de un segundo a otro. Recargue para volver a medirlos.</p>
 <ul class="avisos">{{range .Avisos}}<li>{{.}}</li>{{end}}</ul>
 {{end}}
 
-<p class="oculto">
-  Los mismos datos en JSON: <a href="/estado?formato=json">/estado?formato=json</a>.
-  El histórico está en el diario del nodo: <code>journalctl -u nasd</code>.
-</p>
+<p class="pie">{{.Version}}</p>
 
 </main>
 <script src="/estatico/estado.js"></script>

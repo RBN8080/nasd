@@ -122,10 +122,10 @@ func evaluarVivos(n sistema.Vivo, i Instantanea) []indicador {
 			accion = "Subiendo hacia el límite duro. La mitigación es un disipador; consta como " +
 				"riesgo aceptado en 00_RECTOR.md §4.5"
 		}
-		add(indicador{"temperatura", "Temperatura del procesador (SoC)",
+		add(indicador{"temperatura", "Temperatura del SoC",
 			fmt.Sprintf("%.1f °C", n.TemperaturaC), v, accion})
 	} else {
-		add(indicador{"temperatura", "Temperatura del procesador (SoC)", "no disponible", vDesconocido, ""})
+		add(indicador{"temperatura", "Temperatura del SoC", "no disponible", vDesconocido, ""})
 	}
 
 	// RAM usada y RAM disponible eran DOS filas en dos tablas distintas y son
@@ -140,11 +140,11 @@ func evaluarVivos(n sistema.Vivo, i Instantanea) []indicador {
 			accion = "Comprobar el RSS de nasd con «systemctl status nasd». Si crece con el " +
 				"tamaño del archivo que se sube, RNF-01 está roto y es un defecto, no falta de RAM"
 		}
-		add(indicador{"memoria", "Memoria en uso",
+		add(indicador{"memoria", "Uso de memoria",
 			fmt.Sprintf("%.0f %% — %s libres de %s", uso,
 				legibleBytes(n.RAMDisponibleBytes), legibleBytes(n.RAMTotalBytes)), v, accion})
 	} else {
-		add(indicador{"memoria", "Memoria en uso", "no disponible", vDesconocido, ""})
+		add(indicador{"memoria", "Uso de memoria", "no disponible", vDesconocido, ""})
 	}
 
 	// --- Servicio -----------------------------------------------------------
@@ -175,7 +175,7 @@ func evaluarVivos(n sistema.Vivo, i Instantanea) []indicador {
 		accion = "Cerca del techo de ADR-0029. Si no hay nadie subiendo nada, es acumulación de " +
 			"subidas abandonadas: el barrido las desaloja, pero conviene mirar el origen"
 	}
-	add(indicador{"subidas-en-curso", "Subidas en curso ahora mismo",
+	add(indicador{"subidas-en-curso", "Subidas en curso",
 		fmt.Sprintf("%d de %d", i.SubidasEnCurso, maxSubidasEnCurso), v, accion})
 
 	return out
@@ -250,7 +250,7 @@ func evaluarThrottled(t sistema.Throttled) indicador {
 	// La envoltura evita repetir clave y nombre en las nueve salidas, que era
 	// justo donde una de ellas podía quedarse con un rótulo distinto.
 	ind := func(valor string, v veredicto, accion string) indicador {
-		return indicador{"limitacion", "Limitación del procesador (SoC)", valor, v, accion}
+		return indicador{"limitacion", "Limitación del SoC (throttling)", valor, v, accion}
 	}
 
 	if !t.Disponible {
@@ -329,6 +329,8 @@ type vistaEstado struct {
 	// Peor es el veredicto más grave de todos: lo que se lee de un vistazo.
 	Peor   veredicto
 	Avisos []string
+	// Version es lo único que queda en el pie: qué binario está corriendo.
+	Version string
 }
 
 // filaViva es una fila de las dos tablas que se refrescan solas.
@@ -384,7 +386,7 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 	// --- El nodo ------------------------------------------------------------
 	cpu := sinMedida
 	if n.CPUOK {
-		cpu = fmt.Sprintf("%.0f %% (sin contar la espera de disco)", n.CPU)
+		cpu = fmt.Sprintf("%.0f %%", n.CPU)
 	}
 	frecuencia := sinMedida
 	if n.FrecuenciaOK {
@@ -392,7 +394,7 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 		if n.FrecuenciaMHz < n.FrecuenciaMaxMHz {
 			// Por debajo del máximo puede ser ahorro en reposo o limitación
 			// térmica; el indicador de limitación lo distingue, esto informa.
-			frecuencia += " — por debajo del máximo"
+			frecuencia += " (por debajo del máximo)"
 		}
 	}
 	carga := sinMedida
@@ -407,38 +409,38 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 	nodo = []filaViva{
 		deIndicador("temperatura"),
 		deIndicador("memoria"),
-		contexto("cpu", "Uso del procesador", cpu),
-		contexto("frecuencia", "Velocidad del procesador", frecuencia),
+		contexto("cpu", "Uso de CPU", cpu),
+		contexto("frecuencia", "Frecuencia de CPU", frecuencia),
 		// El kernel solo recalcula la carga cada 5 s: esta fila cambia despacio
 		// aunque el flujo llegue cuatro veces por segundo, y eso es correcto.
-		contexto("carga", "Trabajo en cola (1 · 5 · 15 min)", carga),
-		contexto("encendido", "Nodo encendido desde hace", encendido),
+		contexto("carga", "Carga media (1 · 5 · 15 min)", carga),
+		contexto("encendido", "Tiempo de actividad del nodo", encendido),
 	}
 
 	// --- El servicio --------------------------------------------------------
 	servicio = []filaViva{
-		contexto("servicio-desde", "Servicio en marcha desde hace", i.DesdeElArranque),
-		contexto("peticiones", "Peticiones atendidas",
-			fmt.Sprintf("%d — %d correctas · %d rechazadas · %d con error del servidor",
+		contexto("servicio-desde", "Tiempo de actividad del servicio", i.DesdeElArranque),
+		contexto("peticiones", "Peticiones HTTP",
+			fmt.Sprintf("%d · %d correctas · %d rechazadas · %d con error de servidor",
 				i.Peticiones, i.Exito, i.ErroresCliente, i.ErroresServidor)),
 		deIndicador("disponibilidad"),
-		contexto("listados", "Carpetas listadas",
-			fmt.Sprintf("%d, de las que %d pasaron de 2 s", i.Listados, i.ListadosLentos)),
+		contexto("listados", "Listados de directorio",
+			fmt.Sprintf("%d · %d por encima de 2 s", i.Listados, i.ListadosLentos)),
 		deIndicador("latencia"),
 		contexto("transferido", "Datos transferidos",
 			legibleBytes(uint64(i.BytesSubidos))+" subidos · "+
 				legibleBytes(uint64(i.BytesDescargados))+" descargados"),
-		contexto("subidas", "Subidas de archivos",
+		contexto("subidas", "Subidas",
 			fmt.Sprintf("%d creadas · %d publicadas · %d fallidas · %d descartadas · %d expiradas",
 				i.SubidasCreadas, i.SubidasConfirmadas, i.SubidasFallidas,
 				i.SubidasDescartadas, i.SubidasExpiradas)),
 		deIndicador("integridad"),
 		deIndicador("subidas-en-curso"),
-		contexto("sesiones", "Sesiones abiertas", strconv.Itoa(i.SesionesAbiertas)),
-		contexto("accesos-fallidos", "Intentos de acceso rechazados",
+		contexto("sesiones", "Sesiones activas", strconv.Itoa(i.SesionesAbiertas)),
+		contexto("accesos-fallidos", "Intentos de acceso fallidos",
 			strconv.FormatInt(i.AccesosFallidos, 10)),
 		contexto("borrados", "Borrados registrados",
-			fmt.Sprintf("%d — cada uno consta en el diario (RF-19)", i.Borrados)),
+			strconv.FormatInt(i.Borrados, 10)),
 	}
 	return nodo, servicio
 }
@@ -469,6 +471,7 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 		Lentos:        evaluarLentos(n),
 		Peor:          peorDe(indicadores),
 		Avisos:        n.Avisos,
+		Version:       versionDelBinario(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.plantillas.ExecuteTemplate(w, "estado.html", v); err != nil {
