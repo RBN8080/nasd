@@ -1,0 +1,62 @@
+{{define "visor.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — {{.Nombre}}</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+
+{{if .Tipo.Clase}}
+<!-- EL «src» VA EN EL HTML, NO LO PONE EL GUION. Así el visor funciona sin
+     JavaScript: el navegador dibuja lo que sepa dibujar. visor.js no habilita
+     nada, solo sustituye el resultado por el mensaje de RF-25 cuando el propio
+     navegador declara que no puede con el formato. Es mejora progresiva en el
+     sentido estricto, igual que menus.js. -->
+<!-- TÍTULO Y NO MIGAS, como en /estado. Las migas navegan una jerarquía y
+     aquí no hay ninguna que navegar: se está mirando UN archivo. Además, la
+     ascendencia de una ruta se incluye a sí misma, así que la última miga
+     habría apuntado a «/ver/<archivo>» —el listado de algo que no es una
+     carpeta— y eso responde 400. Comprobado, no supuesto. -->
+<header id="cabecera-visor">
+  <div class="cabecera-superior">
+    <span class="titulo-pagina">{{.Nombre}}</span>
+    <div class="barra-acciones">
+      <a class="boton-barra" href="{{listado .Ruta.Padre}}">Volver</a>
+    </div>
+  </div>
+</header>
+
+<main class="visor" id="visor">
+  {{if eq .Tipo.Clase "imagen"}}
+    <img src="/contenido/{{rutaURL .Ruta.Rel}}" alt="{{.Nombre}}"
+         data-visor data-clase="imagen">
+  {{else if eq .Tipo.Clase "video"}}
+    <video src="/contenido/{{rutaURL .Ruta.Rel}}" controls preload="metadata"
+           data-visor data-clase="video" data-mime="{{.Tipo.MIME}}"></video>
+  {{else if eq .Tipo.Clase "audio"}}
+    <audio src="/contenido/{{rutaURL .Ruta.Rel}}" controls preload="metadata"
+           data-visor data-clase="audio" data-mime="{{.Tipo.MIME}}"></audio>
+  {{else if eq .Tipo.Clase "pdf"}}
+    <object data="/contenido/{{rutaURL .Ruta.Rel}}" type="application/pdf"
+            aria-label="{{.Nombre}}" data-visor data-clase="pdf"></object>
+  {{else}}
+    <iframe src="/contenido/{{rutaURL .Ruta.Rel}}" title="{{.Nombre}}"
+            data-visor data-clase="texto"></iframe>
+  {{end}}
+</main>
+{{end}}
+
+<!-- RF-25 al pie de la letra: ÚNICAMENTE el mensaje y un botón «Ok» que sale
+     de él. Sin barra, sin migas y sin ofrecer la descarga como consuelo — esa
+     vive en el menú de tres puntos del listado, y solo ahí. -->
+<main class="acceso no-compatible" id="no-compatible"{{if .Tipo.Clase}} hidden{{end}}>
+  <p class="mensaje-no-compatible">Este archivo no se puede abrir en el navegador</p>
+  <p><a class="boton-barra" href="{{listado .Ruta.Padre}}">Ok</a></p>
+</main>
+
+{{if .Tipo.Clase}}<script src="/estatico/visor.js"></script>{{end}}
+</body>
+</html>
+{{end}}

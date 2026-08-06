@@ -19,7 +19,7 @@
 <header>
   <div class="cabecera-superior">
     <nav class="migas">
-      {{range .Migas}}<a href="{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}">{{.Nombre}}</a>{{end}}
+      {{range .Migas}}<a href="{{listado .}}">{{.Nombre}}</a>{{end}}
     </nav>
 
     <!-- LAS ACCIONES VIVEN AQUÍ, NO AL PIE. Antes estaban debajo de la tabla,
@@ -85,12 +85,18 @@
   <thead><tr><th>Nombre</th><th>Tamaño</th><th>Modificado</th><th></th></tr></thead>
   <tbody>
   {{if not .Ruta.EsRaiz}}
-    <tr><td colspan="4"><a href="{{with .Ruta.Padre}}{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}{{end}}">.. subir</a></td></tr>
+    <tr><td colspan="4"><a href="{{listado .Ruta.Padre}}">.. subir</a></td></tr>
   {{end}}
   {{range .Entradas}}
     <tr>
-      <td>{{if .EsDirectori}}<a class="dir" href="/ver/{{.Ruta.Rel}}">{{.Nombre}}/</a>
-          {{else}}<a href="/descargar/{{.Ruta.Rel}}">{{.Nombre}}</a>{{end}}</td>
+      <!-- EL NOMBRE ABRE; SOLO EL MENÚ DESCARGA (RF-25). Hasta D-23 esto
+           apuntaba a /descargar, que ordena «attachment»: el navegador hacía
+           lo correcto y el producto pedía lo que no quería.
+           Las imágenes van a una PESTAÑA NUEVA, que es lo que pidió el
+           responsable; «noopener» porque abrir con target sin él le entrega a
+           la página destino una referencia a esta. -->
+      <td>{{if .EsDirectori}}<a class="dir" href="{{listado .Ruta}}">{{.Nombre}}/</a>
+          {{else}}{{$tipo := apertura .Nombre}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if eq $tipo.Clase "imagen"}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>
       <td class="num acciones-fila">
@@ -100,6 +106,14 @@
         <details class="menu menu-fila">
           <summary class="boton-puntos" title="Acciones" aria-label="Acciones"></summary>
           <div class="menu-panel menu-panel-fila">
+            <!-- PRIMERA OPCIÓN DEL MENÚ, y el único gesto de toda la interfaz
+                 que descarga. Va en <form> y no en un enlace para que se lea
+                 como las demás acciones del panel. -->
+            {{if not .EsDirectori}}
+            <form method="get" action="/descargar/{{rutaURL .Ruta.Rel}}">
+              <button type="submit">Descargar</button>
+            </form>
+            {{end}}
             <form method="post" action="/renombrar">
               <input type="hidden" name="csrf" value="{{$.Csrf}}">
               <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
@@ -121,7 +135,7 @@
               </label>
               <button type="submit">Mover</button>
             </form>
-            <a class="destructivo" href="/borrar/{{.Ruta.Rel}}">Borrar</a>
+            <a class="destructivo" href="/borrar/{{rutaURL .Ruta.Rel}}">Borrar</a>
           </div>
         </details>
       </td>

@@ -32,7 +32,7 @@
     <button type="submit" class="destructivo">Sí, borrar definitivamente</button>
   </form>
 
-  <p><a href="{{with .Ruta.Padre}}{{if .EsRaiz}}/{{else}}/ver/{{.Rel}}{{end}}{{end}}">Cancelar y volver</a></p>
+  <p><a href="{{listado .Ruta.Padre}}">Cancelar y volver</a></p>
 </main>
 </body>
 </html>

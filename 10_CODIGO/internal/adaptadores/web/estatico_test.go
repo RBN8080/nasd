@@ -69,6 +69,7 @@ func TestLosRecursosEstaticosSeSirven(t *testing.T) {
 		"/estatico/menus.js",
 		"/estatico/estado.js",
 		"/estatico/subida.js",
+		"/estatico/visor.js",
 	} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", ruta, nil))

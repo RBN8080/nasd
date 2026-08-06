@@ -295,10 +295,10 @@ func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Servidor) redirigir(w http.ResponseWriter, r *http.Request, a almacen.RutaSegura, msg string, esError bool) {
-	destino := "/ver/" + escaparURL(a.Rel())
-	if a.EsRaiz() {
-		destino = "/"
-	}
+	// urlDeListado escapa POR COMPONENTE. Antes se usaba escaparURL sobre la
+	// ruta entera, que convierte también las barras en «%2F»: funcionaba de
+	// milagro porque ServeMux las decodifica antes de casar el comodín.
+	destino := urlDeListado(a)
 	q := "?msg=" + escaparURL(msg)
 	if esError {
 		q += "&err=1"
