@@ -3,7 +3,9 @@ package web
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -100,4 +102,40 @@ func (c *CargadorCert) Config() *tls.Config {
 		GetCertificate: c.obtener,
 		MinVersion:     tls.VersionTLS12,
 	}
+}
+
+// EscucharTLS abre el socket del puerto 443 — IPv6 ÚNICAMENTE, y con "tcp6" y
+// no con "tcp" es como se garantiza, no con la dirección.
+//
+// EL DEFECTO QUE ESTO CIERRA, encontrado el 2026-08-06 al investigar un
+// reporte real: Safari en iOS, al abrir una IMAGEN en pestaña nueva (RF-25
+// exige ese target=_blank) hacia una URL http://, intenta una vez una sonda
+// HTTPS al mismo host antes de navegar. Contra la IP de la LAN
+// (192.168.1.38) esa sonda SÍ encontraba algo escuchando en el 443 —el
+// propio nasd, con el certificado de nas-ejemplo.duckdns.org, que no vale
+// para esa IP— y Safari, en vez de caer de vuelta a HTTP en silencio,
+// abandona la navegación con «se solicitó una URL HTTP aunque solo admite
+// HTTPS» — el mismo fallo que produce curl con schannel (SEC_E_WRONG_
+// PRINCIPAL) contra la IP de la LAN: el certificado no nombra esa IP. Brave
+// no hace esa sonda y por eso "funciona fenomenal" en el mismo teléfono.
+// Registrado en 08_WEB_EXPUESTA.md §7 y 00_RECTOR.md §11 (v1.45.0).
+//
+// LA CAUSA NO ERA LA DIRECCIÓN, ERA EL TIPO DE RED. `direccion_tls = "::"`
+// es y sigue siendo correcta: ADR-0048 la exige para no dejar la Fase 6
+// muerta en un socket solo-IPv4. El error estaba en pedirle a `net.Listen`
+// la red "tcp", que en Go escucha en DOBLE PILA sobre "::" y acepta
+// conexiones IPv4 además de IPv6 — nadie lo pidió, y nadie lo vio hasta que
+// una sonda real de un cliente lo encontró. Con la red "tcp6" el mismo
+// "::" sigue aceptando cualquier dirección IPv6, y el kernel rechaza IPv4
+// en el propio socket: ni siquiera llega a TLS.
+//
+// PROBADO, NO SUPUESTO — TestEscucharTLSNuncaAceptaIPv4 abre el listener
+// real y comprueba las dos direcciones: IPv4 rechazada, IPv6 aceptada.
+//
+// El cortafuegos no necesitaba cambiar: `03_cortafuegos.sh` acepta 443 sin
+// distinguir familia (deliberado, ADR-0048) porque la única vía viable desde
+// Internet es IPv6 por el CGNAT (ADR-0044). El problema nunca fue esa regla:
+// era que, sin esto, algo SÍ contestaba en 443/tcp4 cuando nada debía.
+func EscucharTLS(direccion string, puerto int) (net.Listener, error) {
+	return net.Listen("tcp6", net.JoinHostPort(direccion, strconv.Itoa(puerto)))
 }
