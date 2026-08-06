@@ -203,11 +203,19 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("POST /borrar", s.conAlmacen(s.borrar))                    // RF-18, paso 2
 
 	// Observabilidad — Fase 4, RF-24. Va DENTRO de lo protegido: ver estado.go.
-	protegido.HandleFunc("GET /estado", s.verEstado)
-	// El flujo en vivo de esa misma pantalla — ADR-0051. Detrás de la sesión
-	// por el mismo motivo que /estado: publica temperatura, capacidad y ritmo
-	// de uso, que son reconocimiento gratis para quien no tenga que verlos.
-	protegido.HandleFunc("GET /estado/flujo", s.flujoDeEstado)
+	//
+	// Y DESDE ADR-0055, SOLO PARA EL SUPERUSUARIO, por decisión del
+	// responsable. El motivo se sostiene solo: publica temperatura, capacidad,
+	// ritmo de uso y subidas a medias —de TODO el nodo, no de la carpeta de
+	// quien mira—, así que a un usuario normal no le informa de nada suyo y a
+	// cambio le entrega reconocimiento del sistema entero.
+	protegido.HandleFunc("GET /estado", s.soloSuperusuario(s.verEstado))
+	// El flujo en vivo de esa misma pantalla — ADR-0051. Se cierra IGUAL y por
+	// separado: publica exactamente lo mismo y encima de forma continua.
+	// Dejarlo fuera abriría por la puerta de al lado lo que la línea de arriba
+	// cierra, que es la clase de asimetría que D-21 obliga a comprobar vía por
+	// vía en lugar de darla por hecha.
+	protegido.HandleFunc("GET /estado/flujo", s.soloSuperusuario(s.flujoDeEstado))
 
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))

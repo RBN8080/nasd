@@ -443,6 +443,29 @@ func (s *Servidor) almacenDeLaSesion(r *http.Request) (almacen.Almacen, error) {
 // compartido compila igual de bien y se equivoca en silencio.
 type manejadorDeUsuario func(http.ResponseWriter, *http.Request, almacen.Almacen)
 
+// soloSuperusuario cierra una ruta a todo el que no sea el responsable.
+//
+// LA REGLA VIVE AQUÍ Y NO EN LA PLANTILLA. Esconder el botón «Estado» de la
+// barra no impide teclear /estado, y esa confusión —creer que una interfaz que
+// no ofrece algo lo impide— es justo la asimetría que D-21 obliga a comprobar
+// vía por vía. La plantilla también lo esconde, pero como cortesía: para no
+// ofrecer una puerta que va a responder 403.
+//
+// 403 y no 404: quien pide ya está autenticado y la ruta existe. Fingir que no
+// existe no oculta nada —está en la barra del superusuario y en el manual— y
+// convertiría un «no te toca» en un «esto está roto».
+func (s *Servidor) soloSuperusuario(siguiente http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if usuarioDe(r) != autenticacion.NombreSuperusuario {
+			s.reg.Warn("acceso a una ruta de administración sin serlo",
+				"usuario", usuarioDe(r), "ruta", r.URL.Path, "origen", origenDe(r))
+			http.Error(w, "no autorizado", http.StatusForbidden)
+			return
+		}
+		siguiente(w, r)
+	}
+}
+
 func (s *Servidor) conAlmacen(f manejadorDeUsuario) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		alm, err := s.almacenDeLaSesion(r)
