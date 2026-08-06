@@ -294,8 +294,13 @@ func bajaDeUsuario(rutaConfig, nombre string) error {
 	if err := reg.Baja(nombre); err != nil {
 		return err
 	}
-	fmt.Printf("Cuenta %q retirada del registro. SUS ARCHIVOS NO SE HAN TOCADO: "+
-		"siguen en datos/%s/%s.\n", nombre, fsposix.SubHomeUsers, nombre)
+	// SE DICE «SI YA HABÍA ENTRADO» Y NO SE AFIRMA LA RUTA A SECAS, porque la
+	// carpeta se crea la PRIMERA VEZ QUE LA PERSONA USA LA WEB, no al darla de
+	// alta. La primera versión de este mensaje nombraba la ruta como un hecho y
+	// mandaba a mirar una carpeta que podía no existir todavía.
+	fmt.Printf("Cuenta %q retirada del registro. NO se ha tocado ninguno de sus "+
+		"archivos: si ya había entrado alguna vez, su carpeta sigue intacta bajo "+
+		"%s/%s en el volumen.\n", nombre, fsposix.SubHomeUsers, nombre)
 	return nil
 }
 
