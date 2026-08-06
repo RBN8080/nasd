@@ -897,3 +897,57 @@ tr.v-fallo .rotulo {
     min-width: 13rem;
   }
 }
+
+/* ——— Visor de apertura en el navegador (RF-25) ———
+   Una sola caja centrada para las cinco clases. No hay una regla por tipo
+   porque no hacía falta ninguna: lo que cambia entre una foto y un PDF es
+   cuánto alto pedir, no la disposición.
+
+   El alto se descuenta de la ventana y no del contenido: --alto-control es la
+   barra superior y el resto es el relleno de «body». Así una imagen vertical
+   cabe entera sin desplazar la página, que es lo que se pierde con un
+   max-height en porcentaje sobre un padre de altura automática. */
+.visor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.visor > * {
+  max-width: 100%;
+}
+
+.visor img,
+.visor video {
+  max-height: calc(100vh - var(--alto-control) - 4rem);
+  object-fit: contain;
+}
+
+.visor audio {
+  width: min(100%, 30rem);
+}
+
+/* El PDF y el texto no tienen tamaño propio que respetar: se les da la caja.
+   El fondo es el opaco del archivo por el mismo motivo que en los menús —un
+   documento translúcido dejaría ver la página por debajo—. */
+.visor object,
+.visor iframe {
+  width: 100%;
+  height: calc(100vh - var(--alto-control) - 4rem);
+  border: 1px solid var(--borde);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+/* RF-25 pide que el mensaje se presente SOLO. Reutiliza la caja centrada del
+   formulario de acceso: es la única disposición «una cosa en medio» que ya
+   existía, y añadir otra habría sido repetirla con otro nombre. */
+.no-compatible {
+  text-align: center;
+}
+
+.mensaje-no-compatible {
+  font-size: var(--t-titulo);
+  margin-bottom: 1.5rem;
+}

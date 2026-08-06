@@ -138,6 +138,14 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("GET /{$}", s.verListado)
 	protegido.HandleFunc("GET /ver/{ruta...}", s.verListado)
 	protegido.HandleFunc("GET /descargar/{ruta...}", s.descargar)
+
+	// Apertura en el navegador — RF-25, ADR-0052. Son DOS extremos y no uno:
+	// /abrir entrega la página del visor y /contenido los bytes pasivos. Ver
+	// apertura.go para por qué esa separación es lo que hace cumplible el
+	// mensaje de RF-25. /descargar queda intacto y sigue siendo el único que
+	// ordena «attachment».
+	protegido.HandleFunc("GET /abrir/{ruta...}", s.abrirEnNavegador)
+	protegido.HandleFunc("GET /contenido/{ruta...}", s.servirContenido)
 	protegido.HandleFunc("POST /subir", s.subirMultipart)
 	protegido.HandleFunc("POST /directorio", s.crearDirectorio)
 
@@ -252,5 +260,17 @@ func funciones() template.FuncMap {
 				" " + []string{"KB", "MB", "GB", "TB"}[exp]
 		},
 		"fecha": func(t time.Time) string { return t.Format("2006-01-02 15:04") },
+
+		// RF-25: el listado necesita saber, por cada entrada, si su nombre
+		// lleva a un visor o al mensaje, y con qué elemento se dibujaría.
+		"apertura": func(nombre string) tipoDeArchivo {
+			tipo, _ := tipoAbrible(nombre)
+			return tipo
+		},
+		// Y las rutas de las URL se escapan POR COMPONENTE. html/template no
+		// puede hacerlo por su cuenta: dentro de un href no distingue el «#»
+		// de un nombre de archivo del que abre un fragmento. Ver apertura.go.
+		"rutaURL": escaparRutaURL,
+		"listado": urlDeListado,
 	}
 }
