@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -115,5 +116,56 @@ func TestNuevoCargadorCertFallaSiNoExiste(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := NuevoCargadorCert(filepath.Join(dir, "no.pem"), filepath.Join(dir, "tampoco.pem")); err == nil {
 		t.Fatal("quería error con rutas inexistentes, no lo hubo")
+	}
+}
+
+// EL DEFECTO REAL, convertido en prueba: hasta el 2026-08-06 el listener TLS
+// se abría con la red "tcp" sobre "::", que en Go es doble pila y acepta
+// también IPv4. Contra la IP de la LAN eso respondía TLS con un certificado
+// que no la nombra —el de nas-ejemplo.duckdns.org—, y Safari en iOS, al abrir
+// una imagen en pestaña nueva (RF-25) hacia una URL http://, encontraba esa
+// respuesta al sondear HTTPS y abandonaba la navegación en vez de caer a
+// HTTP. Brave no hace esa sonda, por eso solo fallaba en Safari.
+//
+// La prueba abre un EscucharTLS real en loopback y exige las dos cosas a la
+// vez: que IPv6 (que sigue siendo la vía pública de la Fase 6, ADR-0048)
+// siga aceptando, y que IPv4 quede rechazado en el propio socket, antes de
+// llegar a TLS.
+func TestEscucharTLSNuncaAceptaIPv4(t *testing.T) {
+	ln, err := EscucharTLS("::1", 0) // puerto 0: el sistema asigna uno libre
+	if err != nil {
+		t.Fatalf("EscucharTLS: %v", err)
+	}
+	defer ln.Close()
+
+	_, puerto, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("leer el puerto asignado: %v", err)
+	}
+
+	aceptados := make(chan string, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		aceptados <- c.RemoteAddr().String()
+	}()
+
+	if _, err := net.DialTimeout("tcp4", net.JoinHostPort("127.0.0.1", puerto), time.Second); err == nil {
+		t.Fatal("una conexión IPv4 se aceptó; el listener sigue en doble pila")
+	}
+
+	c6, err := net.DialTimeout("tcp6", net.JoinHostPort("::1", puerto), time.Second)
+	if err != nil {
+		t.Fatalf("una conexión IPv6 legítima falló: %v", err)
+	}
+	c6.Close()
+
+	select {
+	case <-aceptados:
+	case <-time.After(2 * time.Second):
+		t.Fatal("el listener no aceptó la conexión IPv6")
 	}
 }

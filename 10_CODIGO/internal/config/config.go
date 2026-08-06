@@ -31,18 +31,26 @@ type Config struct {
 	// un proxy todas las peticiones llegarían desde 127.0.0.1 — cinco fallos
 	// de cualquiera dejarían fuera a todo el mundo (07_AUDITORIAS §7.2).
 	//
-	// A diferencia de Direccion, DireccionTLS escucha en todas: el 443 es la
-	// superficie que la Fase 6 abre a propósito (ADR-0048). El 80 se queda
-	// donde estaba, enlazado a la IP de la LAN.
+	// A diferencia de Direccion, DireccionTLS escucha en todas las
+	// direcciones IPv6: el 443 es la superficie que la Fase 6 abre a
+	// propósito (ADR-0048). El 80 se queda donde estaba, enlazado a la IP
+	// de la LAN.
 	//
 	// EL VALOR CORRECTO ES "::" Y NO "0.0.0.0", y la diferencia no es
-	// cosmética: en Go, enlazar a "0.0.0.0" abre SOLO IPv4. Con "::" el
-	// socket queda en doble pila y acepta las dos familias.
+	// cosmética: en Go, enlazar a "0.0.0.0" abre SOLO IPv4.
 	//
 	// Importa porque la única vía de entrada viable desde Internet es IPv6
 	// —el CGNAT del operador (ADR-0044) complica la IPv4—, así que un socket
 	// solo-IPv4 dejaría la Fase 6 muerta sin que nada lo delatara: el puerto
 	// aparece abierto, el cortafuegos correcto, y no entra nadie.
+	//
+	// "::" YA NO SIGNIFICA DOBLE PILA — corregido el 2026-08-06. web.
+	// EscucharTLS abre este socket con la red "tcp6", no "tcp": acepta
+	// cualquier IPv6, y el kernel rechaza IPv4 antes de llegar a TLS. Hasta
+	// esa fecha "tcp" + "::" SÍ era doble pila y aceptaba IPv4 también, y
+	// eso dejaba el 443 respondiendo TLS también en la IP de la LAN, con un
+	// certificado que no la nombra — nadie lo decidió, lo encontró Safari en
+	// iOS al sondear HTTPS antes de una navegación en pestaña nueva (RF-25).
 	DireccionTLS string
 	PuertoTLS    int
 

@@ -116,13 +116,22 @@ func ejecutar() error {
 			// sirviendo HTTP como si nada.
 			return fmt.Errorf("TLS configurado pero no utilizable: %w", err)
 		}
+		// web.EscucharTLS y no srvTLS.ListenAndServeTLS: el listener se abre
+		// a mano porque tiene que pedir la red "tcp6", no "tcp". Ver el
+		// comentario de EscucharTLS — la diferencia es la que le cerró a
+		// Safari en iOS una sonda HTTPS contra la IP de la LAN que nadie
+		// había pedido.
+		ln, err := web.EscucharTLS(cfg.DireccionTLS, cfg.PuertoTLS)
+		if err != nil {
+			return fmt.Errorf("abrir el puerto TLS: %w", err)
+		}
 		srvTLS = s.HTTPServer(cfg.DireccionTLS, cfg.PuertoTLS)
 		srvTLS.TLSConfig = cargador.Config()
 		go func() {
 			reg.Info("nasd escuchando por TLS", "direccion", srvTLS.Addr)
 			// Los certificados ya van en TLSConfig; por eso las rutas van
 			// vacías aquí.
-			if err := srvTLS.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := srvTLS.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errores <- err
 			}
 		}()
