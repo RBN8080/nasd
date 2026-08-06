@@ -36,13 +36,16 @@
     <p class="oculto">Hay más subcarpetas de las que caben en esta vista.</p>
   {{end}}
 
-  <!-- ORDEN CORREGIDO el 06/08/2026 sobre una captura anotada del
-       responsable: las dos acciones que HACEN algo van juntas y primero
-       —«Mover aquí» y «Crear carpeta»—, y «Cerrar», que solo se va sin
-       tocar nada, baja debajo y separada.
-       Es la misma disposición que la pantalla de borrado, donde la acción
-       vive arriba y «Cancelar y volver» va suelto abajo; por eso reutiliza
-       su clase en lugar de estrenar una.
+  <!-- LOS TRES SON BOTONES Y VAN EN UNA SOLA FILA. El responsable lo pidió
+       dos veces sobre dos capturas: primero «Mover…» en el menú del listado
+       y luego «Cerrar» aquí, que se habían dejado como enlaces y salían en
+       color de vínculo entre botones.
+       LA LECCIÓN, para que no haya una tercera vez: en esta interfaz, si
+       algo se pulsa y está junto a botones, ES un botón — aunque por dentro
+       sea una navegación—. Un <a> con aspecto de enlace al lado de un
+       <button> se lee como de otra familia, y da igual que técnicamente sea
+       lo correcto en HTML. Por eso «Cerrar» va en <form method="get">, el
+       mismo patrón que ya usan «Descargar» y «Mover…».
        «Cerrar» sale a la carpeta que contiene el elemento: antes de mover es
        de donde vino, y después del movimiento ES la carpeta destino, así que
        aterriza viendo el resultado sin que haga falta ninguna rama. -->
@@ -54,7 +57,7 @@
            origen: pedirlo aquí repondría el campo de texto ambiguo que este
            rediseño existe para quitar. -->
       <input type="hidden" name="carpeta" value="{{.Aqui.Rel}}">
-      <button type="submit">Mover aquí</button>
+      <button type="submit" class="boton-barra">Mover aquí</button>
     </form>
 
     <details class="menu">
@@ -72,9 +75,11 @@
         </form>
       </div>
     </details>
-  </div>
 
-  <p class="cancelar"><a href="{{listado .Origen.Padre}}">Cerrar</a></p>
+    <form method="get" action="{{listado .Origen.Padre}}">
+      <button type="submit" class="boton-barra">Cerrar</button>
+    </form>
+  </div>
 </main>
 </body>
 </html>
