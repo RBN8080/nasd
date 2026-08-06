@@ -63,7 +63,10 @@ function aplicar(indice, filas) {
 
     ponerTexto(destino.cifra, fila.valor);
     ponerTexto(destino.accion, fila.accion || '');
-    ponerTexto(destino.pastilla, fila.veredicto || '—');
+    // Vacía y no un guion: una fila sin umbral no tiene veredicto que enseñar,
+    // y el CSS esconde la pastilla en cuanto se queda sin texto. El elemento se
+    // mantiene para poder volver a escribir en él sin tocar el DOM.
+    ponerTexto(destino.pastilla, fila.veredicto || '');
 
     const clase = fila.veredicto ? 'v-' + fila.veredicto : '';
     if (destino.tr.className !== clase) destino.tr.className = clase;
@@ -85,7 +88,7 @@ function arrancar() {
 
   flujo.onopen = function () {
     fallos = 0;
-    marcarLatido('si', 'en vivo');
+    marcarLatido('si', 'en línea');
   };
 
   flujo.onmessage = function (e) {
@@ -98,7 +101,7 @@ function arrancar() {
       return;
     }
     fallos = 0;
-    marcarLatido('si', 'en vivo');
+    marcarLatido('si', 'en línea');
     aplicar(nodo, marco.nodo || []);
     aplicar(servicio, marco.servicio || []);
   };

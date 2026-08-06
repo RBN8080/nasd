@@ -10,9 +10,26 @@
 
 <header>
   <div class="cabecera-superior">
-    <nav class="migas"><span class="titulo-pagina">Estado del Servidor</span></nav>
-    <div class="acciones-sesion">
-      <a href="/">Archivos</a>
+    <!-- El rótulo de conexión lo enciende estado.js al conectar el flujo. Nace
+         oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
+         cartel que dijera «en línea» sobre una foto congelada sería justo la
+         clase de indicador que miente que 00_RECTOR.md §12.5 lleva años
+         corrigiendo.
+
+         Va pegado al título y no en una línea propia: es un adjetivo de esta
+         pantalla —dice si lo que se está mirando es de ahora— y como párrafo
+         suelto reservaba su altura aunque estuviera oculto, que era la franja
+         vacía bajo la divisoria. -->
+    <div class="titulo-estado">
+      <span class="titulo-pagina">Estado del Servidor</span>
+      <span id="latido" class="latido" hidden></span>
+    </div>
+
+    <!-- La MISMA barra que el listado, con la misma clase. Tener una clase
+         propia aquí es lo que dejó a esta página sin los arreglos de alineación
+         que se le hicieron a la otra. -->
+    <div class="barra-acciones">
+      <a class="boton-barra" href="/">Archivos</a>
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>
@@ -22,13 +39,6 @@
 
 <main>
 
-<!-- El rótulo de «en vivo» lo enciende estado.js al conectar el flujo. Nace
-     oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
-     cartel que dijera «en vivo» sobre una foto congelada sería justo la clase
-     de indicador que miente que 00_RECTOR.md §12.5 lleva años corrigiendo. -->
-<p class="linea-vivo">
-  <span id="latido" class="latido" hidden></span>
-</p>
 <noscript>
   <p class="nota">Sin JavaScript esta página no se refresca sola: las cifras son
   las del momento en que se abrió. Recárguela para verlas de nuevo.</p>
@@ -61,7 +71,7 @@
   <tr>
     <td class="rotulo">Punto de montaje</td>
     <td class="valor"><span class="cifra">{{.Volumen}}</span></td>
-    <td class="estado"><span class="pastilla">—</span></td>
+    <td class="estado"><span class="pastilla"></span></td>
   </tr>
   </tbody>
 </table>
@@ -71,7 +81,15 @@
 <ul class="avisos">{{range .Avisos}}<li>{{.}}</li>{{end}}</ul>
 {{end}}
 
-<p class="pie">{{.Version}}</p>
+<!-- Cada campo en su propio <span> para que el renglón pueda partirse ENTRE
+     campos y nunca por dentro de uno: media huella arriba y media abajo no se
+     puede leer ni comparar, que es para lo único que sirve una huella.
+
+     LOS ESPACIOS ALREDEDOR DEL SEPARADOR NO SOBRAN. Sin ellos los <span> quedan
+     pegados y la línea entera se vuelve una sola palabra sin ningún punto de
+     corte: MEDIDO, se salía 162 px de los 375 disponibles en vez de envolver.
+     Un espacio de verdad en el texto es lo que da la oportunidad de partir. -->
+<p class="pie">{{range $i, $campo := .Version}}{{if $i}} <span class="pie-sep">·</span> {{end}}<span>{{$campo}}</span>{{end}}</p>
 
 </main>
 <script src="/estatico/estado.js"></script>
@@ -86,7 +104,9 @@
 
      La celda de acción va SIEMPRE presente aunque esté vacía: así estado.js
      solo tiene que asignarle texto, sin crear ni destruir nodos. El CSS la
-     esconde mientras no diga nada.
+     esconde mientras no diga nada. La pastilla sigue la MISMA regla, y por eso
+     no lleva condicional ni el guion que llevaba antes: una fila sin umbral la
+     deja vacía y el CSS la oculta.
 
      El comentario va DENTRO y en sintaxis de plantilla, no en HTML fuera del
      bloque: cualquier texto suelto a nivel de archivo convierte a estado.html
@@ -100,6 +120,6 @@
       <span class="cifra">{{.Valor}}</span>
       <span class="accion">{{.Accion}}</span>
     </td>
-    <td class="estado"><span class="pastilla">{{if .Veredicto}}{{.Veredicto}}{{else}}—{{end}}</span></td>
+    <td class="estado"><span class="pastilla">{{.Veredicto}}</span></td>
   </tr>
 {{end}}

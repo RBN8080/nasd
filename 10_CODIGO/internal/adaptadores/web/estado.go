@@ -330,7 +330,10 @@ type vistaEstado struct {
 	Peor   veredicto
 	Avisos []string
 	// Version es lo único que queda en el pie: qué binario está corriendo.
-	Version string
+	// Viene por campos —nombre, revisión, fecha, huella— y no como una sola
+	// cadena, para que la plantilla pueda impedir que se rompa uno por dentro
+	// al envolver. Ver versionDelBinario.
+	Version []string
 }
 
 // filaViva es una fila de las dos tablas que se refrescan solas.

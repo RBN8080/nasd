@@ -54,10 +54,23 @@
   /* Objetivo táctil mínimo de las Human Interface Guidelines de Apple. La
      página se usa sobre todo desde el iPhone. */
   --tactil: 44px;
+
+  /* ALTURA ÚNICA DE TODO LO QUE VIVE EN LA BARRA SUPERIOR.
+     El descuadre vertical que el responsable fotografió el 05/08/2026 venía de
+     que cada control se dimensionaba solo: el <summary> por su relleno, el
+     <button> nativo por el suyo, y el enlace por la altura de su línea. Tres
+     alturas distintas en una fila que debe leerse como una sola pieza.
+     Con una variable, la barra mide lo mismo en las dos páginas y en las dos
+     plataformas, y en el teléfono sube al objetivo táctil sin repetir reglas. */
+  --alto-control: 2.25rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root { --panel: #1c1c1e; }
+}
+
+@media (max-width: 40rem) {
+  :root { --alto-control: var(--tactil); }
 }
 
 * { box-sizing: border-box; }
@@ -69,10 +82,15 @@ body {
   max-width: 60rem;
 }
 
-/* ——— Cabecera (común a listado y estado) ——— */
+/* ——— Cabecera (común a listado y estado) ———
+   Las DOS páginas usan exactamente esta cabecera y exactamente la misma barra
+   de acciones. Antes la de estado tenía clase propia («.acciones-sesion») y por
+   eso se le olvidaban los arreglos que se le hacían a la del listado: el
+   05/08/2026 el responsable fotografió «Archivos» y «Salir» pegados a la
+   izquierda en el iPhone, que era justo la regla que solo tenía la otra. Una
+   sola clase es lo que impide que vuelva a pasar. */
 .cabecera-superior {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
@@ -81,13 +99,29 @@ body {
   margin-bottom: 0.5rem;
 }
 
+/* La ruta pesa lo mismo que un control de la barra para que las dos mitades de
+   la cabecera se apoyen en la misma línea. Sin esto, la ruta —que es solo
+   texto— medía menos que los botones y la fila se veía torcida. */
+.migas {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: var(--alto-control);
+  min-width: 0;
+}
+
 .migas a {
   text-decoration: none;
   color: inherit;
 }
 
+/* El separador lleva su espacio en un margen y NO en el texto del content.
+   Con la ruta convertida en contenedor flex, cada enlace es un elemento y los
+   espacios de sus extremos se colapsan: un « / » con espacios habría quedado
+   pegado al siguiente nombre. El margen no se colapsa. */
 .migas a::after {
-  content: " / ";
+  content: "/";
+  margin: 0 0.35rem;
   opacity: .5;
 }
 
@@ -101,25 +135,20 @@ body {
   font-weight: 600;
 }
 
-.acciones-sesion {
+/* El título de /estado y su pastilla de conexión van juntos, alineados por el
+   centro: la pastilla es un adjetivo del título, no una línea aparte. */
+.titulo-estado {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-}
-
-.acciones-sesion a {
-  font-size: var(--t-menor);
-  text-decoration: none;
-  opacity: 0.85;
-}
-
-.acciones-sesion a:hover {
-  opacity: 1;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-height: var(--alto-control);
 }
 
 .salir {
   float: none;
   margin: 0;
+  display: flex;
 }
 
 /* ——— Botones y campos ———
@@ -215,15 +244,44 @@ a.dir {
    donde nadie los busca. Suben aquí, junto a Estado y Salir: en cualquier
    gestor de archivos esas dos acciones están arriba.
 
-   Los menús son <details>/<summary>, HTML puro y SIN JavaScript. No es
+   Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
    purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y montar
    estos menús con JS habría dejado a un navegador sin él sin poder crear
-   carpetas ni usar el formulario de respaldo. */
+   carpetas ni usar el formulario de respaldo. menus.js solo añade el cierre al
+   pulsar fuera, que es lo único que el elemento no sabe hacer. */
 .barra-acciones {
   display: flex;
-  align-items: center;
+  /* «stretch» y no «center», y esto es lo que endereza la fila de verdad.
+     --alto-control fija un SUELO, pero el botón nativo puede pedir más: MEDIDO
+     en escritorio el 05/08/2026, «Salir» salía a 39 px por su propio relleno
+     mientras los demás se quedaban en los 36 del suelo, y la fila arrancaba con
+     2 px de escalón. Forzarle una altura habría sido pelearse con el control
+     del sistema —que es justo lo que aquí se quiere conservar—; estirando, el
+     más alto manda y los demás lo igualan, mida lo que mida en cada
+     plataforma. */
+  align-items: stretch;
   gap: 0.6rem;
   flex-wrap: wrap;
+  /* SIEMPRE a la derecha, quepa o no quepa junto a la ruta.
+     Con «justify-content: space-between» en el padre bastaba mientras las dos
+     mitades cabían en una línea; en cuanto la barra se iba a una línea propia,
+     space-between la trataba como elemento único y la dejaba a la izquierda.
+     Es el defecto que el responsable fotografió en el iPhone. Un margen
+     automático empuja igual en los dos casos. */
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+/* El suelo de altura lo lleva CADA pieza de la barra, sea cual sea su etiqueta:
+   los dos <details> de menú, el enlace y el formulario de salida. */
+.barra-acciones > * {
+  min-height: var(--alto-control);
+}
+
+/* El <details> es quien se estira; el <summary> es lo que se ve. Sin esto, el
+   contenedor crecía y el botón dibujado dentro se quedaba corto y arriba. */
+.menu > .boton-barra {
+  height: 100%;
 }
 
 .menu {
@@ -234,6 +292,11 @@ a.dir {
 .menu > summary {
   list-style: none;
   cursor: pointer;
+  /* La forma con prefijo va PRIMERO y no sobra: Safari solo entiende
+     «user-select» sin prefijo desde la versión 17, y el iPhone del responsable
+     es el navegador principal de este producto. Sin ella, mantener el dedo
+     sobre un botón selecciona su texto y saca la lupa de iOS. */
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -247,22 +310,55 @@ a.dir {
 
 /* EXCEPCIÓN DECLARADA a la regla de «los botones no llevan estilo».
    Aquella regla existe para que iOS pinte sus controles nativos en los ENVÍOS
-   de formulario, y se mantiene intacta para esos. Un <summary> no es un envío
-   ni un control nativo: no hay aspecto que preservar, y el responsable pidió
-   barra de herramientas de aplicación de verdad. */
+   de formulario, y se mantiene intacta para esos —«Salir» sigue siendo el botón
+   azul del sistema, que es justo lo que el responsable señaló como bien—. Un
+   <summary> no es un envío ni un control nativo: no hay aspecto que preservar.
+   El mismo tratamiento lo lleva el ENLACE de navegación de la barra, y por eso
+   la clase no dice «summary»: en una barra de herramientas lo que importa es
+   que las piezas se lean iguales, no de qué etiqueta salieron. Un enlace suelto
+   en azul subrayado entre dos botones es el conflicto estético que se reportó
+   el 05/08/2026. */
 .boton-barra {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-height: var(--alto-control);
   font-size: var(--t-menor);
   padding: 0.3rem 0.75rem;
   border: 1px solid var(--borde);
   border-radius: 0.4rem;
   background: var(--tenue);
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .boton-barra:hover,
 .menu[open] > .boton-barra {
   border-color: var(--suave);
+}
+
+/* «Salir» conserva su aspecto nativo y solo se le iguala la ALTURA: es lo único
+   que hacía falta para que la fila dejara de verse escalonada. */
+.salir button {
+  min-height: var(--alto-control);
+}
+
+/* LOS MENÚS DE LA BARRA SE ANCLAN A LA BARRA, NO A SU BOTÓN.
+   Anclados al botón —que es lo natural y lo que había— el panel de «Subir» se
+   iba a la izquierda de un botón que está casi en el borde izquierdo: MEDIDO a
+   390 px, empezaba en −269 y quedaba recortado contra el borde de la pantalla,
+   con el selector de archivos fuera de la vista.
+   La barra siempre está DENTRO de la pantalla y siempre termina en el margen
+   derecho, así que colgar de ella el panel garantiza que se vea entero sin
+   tener que calcular nada por botón. Los menús de FILA no entran aquí: aquellos
+   sí deben salir junto a su propia fila y conservan su anclaje. */
+.barra-acciones {
+  position: relative;
+}
+
+.barra-acciones > .menu {
+  position: static;
 }
 
 /* El panel flota SOBRE la página, no la empuja: abrir un menú no puede mover
@@ -273,6 +369,9 @@ a.dir {
   top: calc(100% + 0.4rem);
   z-index: 20;
   min-width: 15rem;
+  /* Tope duro: pase lo que pase con el contenido, un panel nunca es más ancho
+     que la pantalla menos los márgenes de la página. */
+  max-width: calc(100vw - 2rem);
   padding: 0.85rem;
   border: 1px solid var(--borde);
   border-radius: 0.5rem;
@@ -336,8 +435,17 @@ a.dir {
 
 /* La fila del menú separa lo destructivo del resto con una línea, para que
    «Borrar» no quede pegado a «Mover» y se pulse por inercia. D-15 no tiene
-   papelera: el clic de más no se deshace. */
+   papelera: el clic de más no se deshace.
+   Se alinea como los DEMÁS elementos del panel y no como un enlace de texto:
+   arriba hay dos botones nativos que ocupan el ancho completo con su rótulo
+   centrado, y «Borrar» colgando del margen izquierdo era la disonancia que se
+   reportó. Mismo ancho, mismo centro, mismo objetivo táctil — y el color rojo
+   siendo lo único que lo distingue, que es como debe ser. */
 .menu-panel-fila .destructivo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--alto-control);
   border-top: 1px solid var(--borde);
   padding-top: 0.6rem;
   text-decoration: none;
@@ -360,15 +468,28 @@ a.dir {
   color: var(--suave);
 }
 
-/* ——— Pie: qué binario está corriendo, y nada más ——— */
+/* ——— Pie: qué binario está corriendo, y nada más ———
+   SIN línea propia. La última fila de la tabla de arriba ya dibuja una, y con
+   el borde puesto aquí salían DOS rayas paralelas con un vacío de 3,6 rem en
+   medio: 1,1 del margen de la tabla más 2,5 de este margen. Ese hueco es lo que
+   el responsable marcó en verde el 05/08/2026. Se quita la segunda raya y el
+   margen baja a lo que hace falta para que el pie respire. */
 .pie {
-  margin-top: 2.5rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid var(--borde);
+  margin-top: 0.9rem;
   font-family: ui-monospace, monospace;
   font-size: var(--t-rotulo);
   letter-spacing: 0.02em;
   color: var(--suave);
+}
+
+/* La línea entera mide unos 410 px y en el teléfono hay 358: va a envolver.
+   Que envuelva ENTRE campos y no por dentro de uno. */
+.pie span {
+  white-space: nowrap;
+}
+
+.pie-sep {
+  opacity: 0.6;
 }
 
 /* ——— Progreso de subida ——— */
@@ -427,12 +548,24 @@ a.dir {
   opacity: 0.75;
 }
 
-/* ——— Administración ——— */
-.acciones-fila {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  justify-content: flex-end;
+/* ——— Administración ———
+   EL DESCUADRE DE LOS TRES PUNTOS (fotografiado el 05/08/2026): aquí había un
+   «display: flex». Puesto sobre un <td> NO es un detalle de estilo: sustituye
+   al «display: table-cell», el navegador saca la celda del modelo de la tabla y
+   genera una celda anónima a su alrededor. Esa celda anónima ya no se alinea
+   con las de las demás filas, así que el botón caía a distinta altura según lo
+   que midiera cada fila —y las filas medían distinto porque la fecha se partía
+   en dos líneas en unas sí y en otras no—.
+   La celda vuelve a ser una celda. Un solo botón alineado a la derecha no
+   necesitaba un contenedor flex para nada. */
+td.acciones-fila {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.menu-fila {
+  display: inline-block;
+  vertical-align: middle;
 }
 
 a.destructivo,
@@ -560,11 +693,21 @@ tr.v-fallo .rotulo {
 .v-fallo .pastilla       { border-color: var(--fallo-color);       color: var(--fallo-color); }
 .v-desconocido .pastilla { border-color: var(--desconocido-color); color: var(--desconocido-color); }
 
-/* Las filas sin semaforo —contexto— llevan un guion, que no debe pesar igual
-   que un veredicto de verdad. */
-tr:not([class]) .pastilla {
-  border-color: transparent;
-  opacity: 0.5;
+/* LAS FILAS SIN SEMÁFORO NO LLEVAN NADA, y el guion que llevaban antes se
+   retiró a petición del responsable el 05/08/2026.
+   Se evaluaron las tres salidas que planteó. Un «N/A» habría sido la peor:
+   dice «no disponible» y el dato SÍ está —lo que no existe es un veredicto,
+   porque «Uso de CPU» no tiene umbral contra el que aprobar o suspender—. Un
+   guion decía lo mismo en más corto. Escribir «no aplica» en cada fila de
+   contexto sería ruido repetido doce veces.
+   Queda el hueco: en una tabla donde el resto de la columna sí lleva pastilla,
+   la ausencia ya se lee como «esta fila no es una alarma», que es exactamente
+   lo que pasa.
+   El elemento SIGUE en el HTML aunque esté vacío —lo esconde el CSS, no el
+   servidor— porque el flujo en vivo escribe sobre él sin crear nodos: si un
+   día ese indicador ganara umbral, la pastilla aparecería sola. */
+.pastilla:empty {
+  display: none;
 }
 
 .nota {
@@ -578,12 +721,11 @@ tr:not([class]) .pastilla {
   opacity: 0.8;
 }
 
-/* ——— Rótulo de «en vivo» ——— */
-.linea-vivo {
-  margin: 0.6rem 0 0;
-  min-height: 1.5rem;
-}
-
+/* ——— Rótulo de conexión ———
+   Vivía en un párrafo propio debajo de la cabecera, y ese párrafo reservaba su
+   altura estuviera o no visible: era la franja vacía que quedó entre la línea
+   divisoria y «Nodo». Ahora va DENTRO de la cabecera, al lado del título, y no
+   hay hueco que reservar. */
 .latido {
   display: inline-block;
   font-size: var(--t-rotulo);
@@ -692,34 +834,47 @@ tr:not([class]) .pastilla {
     grid-column: 1 / -1;
   }
 
-  /* Objetivo táctil de 44 px (HIG de Apple). «Salir» medía unos 28 px de alto
-     en el iPhone, que es la mitad de lo que el dedo necesita. */
-  .acciones-sesion a,
-  .salir button,
-  .boton-barra {
-    min-height: var(--tactil);
-    display: inline-flex;
-    align-items: center;
+  /* El objetivo táctil de 44 px (HIG de Apple) ya NO se pone aquí control por
+     control: lo lleva --alto-control, que en este mismo ancho vale --tactil.
+     Antes esta lista había que acordarse de ampliarla cada vez que aparecía un
+     elemento en la barra, y el enlace «Archivos» de /estado es exactamente el
+     que se quedó fuera.
+
+     Aquí vivía también un «flex-direction: column» que apilaba la cabecera.
+     Se retira: apilar era innecesario —basta con dejar que la barra envuelva
+     por sí sola— y era lo que dejaba las acciones pegadas a la izquierda,
+     porque «align-items: stretch» estiraba la barra a todo el ancho y su
+     contenido se alineaba al principio. La cabecera vuelve a ser una fila que
+     envuelve cuando no cabe, con la barra empujada a la derecha por su margen
+     automático. */
+
+  /* LA FECHA VUELVE A SER INTOCABLE, y el rodeo anterior era el defecto.
+     Se había permitido que envolviera para ganar ancho, sin caer en que
+     «2026-08-05» ofrece un punto de corte DESPUÉS DE CADA GUION: el navegador
+     partía por ahí y la celda quedaba con «2026-08-» arriba y «05 16:51»
+     abajo, alineado a la derecha y distinto en cada fila. Es el «ligero
+     desplazamiento del texto» que se reportó, y de paso lo que hacía que unas
+     filas midieran más alto que otras.
+
+     El ancho que hacía falta sale de la columna del NOMBRE, que es la que
+     puede ceder: un nombre largo partido en dos líneas se lee perfectamente,
+     una fecha partida por la mitad no. «anywhere» y no «break-word» porque es
+     el único de los dos que además reduce el ancho mínimo de la columna, que
+     es justo lo que necesita el reparto automático de la tabla. */
+  .archivos td:first-child {
+    overflow-wrap: anywhere;
   }
 
-  /* La barra de herramientas no cabe en una línea junto a las migas: MEDIDO,
-     el listado desbordaba 55 px a 390. Se apila, con las acciones debajo de
-     la ruta y alineadas a la derecha. */
-  .cabecera-superior {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
-  }
-
-  .barra-acciones {
-    justify-content: flex-end;
-  }
-
-  /* Y la fecha deja de ser intocable: «2026-08-05 19:19» en una sola línea se
-     llevaba 110 px de los 358 disponibles. Partida en dos cabe, y así no hay
-     que esconder ninguna columna — que era la otra salida y pierde dato. */
-  .archivos td.num {
-    white-space: normal;
+  /* Y para que ese «anywhere» casi nunca tenga que actuar, los datos
+     secundarios encogen de cuerpo. Es lo que hacen Drive y OneDrive en el
+     teléfono: el nombre —lo único con lo que se distingue un archivo de otro—
+     va en el cuerpo de texto, y el tamaño y la fecha en un cuerpo menor.
+     MEDIDO: devuelve unos 30 px a la columna del nombre, que es la diferencia
+     entre «01_1er_Cuatrimestre/» en una línea o partido por la mitad de una
+     palabra. No se esconde ninguna columna: no se pierde ningún dato. */
+  .archivos td.num,
+  .archivos th:not(:first-child) {
+    font-size: var(--t-rotulo);
   }
 
   /* MEDIDO a 390 px: la tabla ocupaba 392 con 358 disponibles. El relleno de
