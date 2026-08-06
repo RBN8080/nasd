@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"nasd/internal/almacen"
+	"nasd/internal/autenticacion"
 )
 
 type vistaListado struct {
@@ -29,6 +30,12 @@ type vistaListado struct {
 	// (regla R1, ADR-0015) y no guarda estado de nadie. Como efecto lateral
 	// útil, un enlace copiado conserva el orden que se estaba viendo.
 	Orden criterio
+	// EsSuperusuario decide si la barra superior enseña «Estado» (ADR-0055).
+	//
+	// ES SOLO LA MITAD DEL CONTROL, y la que menos vale: esconder el botón no
+	// impide la petición. Quien la impide es soloSuperusuario en la tabla de
+	// rutas. Esto existe para no ofrecer una puerta que va a responder 403.
+	EsSuperusuario bool
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -53,6 +60,8 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		Csrf:    s.csrfDe(r),
 		EsHTTPS: r.TLS != nil,
 		Orden:   criterioDe(r.URL.Query().Get("orden")),
+
+		EsSuperusuario: usuarioDe(r) == autenticacion.NombreSuperusuario,
 	}
 
 	n := 0

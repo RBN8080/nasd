@@ -392,3 +392,68 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 		t.Error("arrancó sin registro de usuarios")
 	}
 }
+
+// El estado del nodo es solo del superusuario — decisión del responsable,
+// 2026-08-06. Publica temperatura, capacidad y ritmo de uso de TODO el nodo:
+// a un usuario normal no le informa de nada suyo y le entrega reconocimiento
+// del sistema entero.
+//
+// SE COMPRUEBAN LAS DOS VÍAS POR SEPARADO, no una y por inspección la otra:
+// /estado/flujo publica exactamente lo mismo y de forma continua, así que
+// cerrar solo la página dejaría abierta la puerta de al lado. Es lo que D-21
+// obliga a verificar vía por vía.
+func TestSoloElSuperusuarioAlcanzaElEstado(t *testing.T) {
+	s, _ := servidorMultiusuario(t)
+	h := s.Rutas()
+
+	// EL CONTEXTO CANCELADO NO ES UN TRUCO: /estado/flujo es un flujo de
+	// eventos que por diseño no termina hasta que el cliente se va (ADR-0051),
+	// así que pedirlo sin nada que lo corte cuelga la prueba — pasó al
+	// escribirla. Cancelar el contexto es exactamente lo que hace un navegador
+	// al cerrar la pestaña, y no altera lo que se está midiendo: el rechazo
+	// ocurre ANTES, en la envoltura.
+	pedir := func(ruta string, sesion *http.Cookie) int {
+		ctx, cancelar := context.WithCancel(context.Background())
+		cancelar()
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", ruta, nil).WithContext(ctx)
+		r.AddCookie(sesion)
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+
+	deJuan := cookieLlamada(entrar(t, h, "juan", claveDeJuan), nombreCookie)
+	for _, ruta := range []string{"/estado", "/estado/flujo"} {
+		if c := pedir(ruta, deJuan); c != http.StatusForbidden {
+			t.Errorf("GET %s como usuario normal -> %d; se esperaba 403", ruta, c)
+		}
+	}
+
+	// Y al superusuario NO se le cierra: la regla separa, no bloquea a todos.
+	deAdmin := cookieLlamada(
+		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie)
+	for _, ruta := range []string{"/estado", "/estado/flujo"} {
+		if c := pedir(ruta, deAdmin); c == http.StatusForbidden {
+			t.Errorf("GET %s como superusuario -> 403; le corresponde verlo", ruta)
+		}
+	}
+}
+
+// Y la barra no ofrece una puerta que va a responder 403. Es cortesía, no
+// control —el control está en la prueba de arriba—, pero un botón que falla
+// siempre es un defecto de interfaz.
+func TestLaBarraSoloOfreceEstadoAlSuperusuario(t *testing.T) {
+	s, _ := servidorMultiusuario(t)
+	h := s.Rutas()
+
+	deJuan := listadoCon(t, h, cookieLlamada(entrar(t, h, "juan", claveDeJuan), nombreCookie))
+	if strings.Contains(deJuan, `href="/estado"`) {
+		t.Error("la barra de un usuario normal ofrece «Estado»")
+	}
+
+	deAdmin := listadoCon(t, h, cookieLlamada(
+		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie))
+	if !strings.Contains(deAdmin, `href="/estado"`) {
+		t.Error("al superusuario le desapareció «Estado» de la barra")
+	}
+}
