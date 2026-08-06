@@ -457,3 +457,24 @@ func TestLaBarraSoloOfreceEstadoAlSuperusuario(t *testing.T) {
 		t.Error("al superusuario le desapareció «Estado» de la barra")
 	}
 }
+
+// El atajo «Usuarios» a homeUsers/ es cortesía, igual que «Estado»: NO abre
+// ninguna puerta nueva —esa carpeta ya era navegable desde la raíz— y por eso
+// no necesita su propia envoltura en el servidor. Solo se ofrece a quien de
+// verdad puede sacarle algo: para un usuario normal, /ver/homeUsers cae dentro
+// de SU carpeta, no de la casa, y no encontraría nada al pulsarlo.
+func TestLaBarraSoloOfreceUsuariosAlSuperusuario(t *testing.T) {
+	s, _ := servidorMultiusuario(t)
+	h := s.Rutas()
+
+	deJuan := listadoCon(t, h, cookieLlamada(entrar(t, h, "juan", claveDeJuan), nombreCookie))
+	if strings.Contains(deJuan, `href="/ver/homeUsers"`) {
+		t.Error("la barra de un usuario normal ofrece «Usuarios»")
+	}
+
+	deAdmin := listadoCon(t, h, cookieLlamada(
+		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie))
+	if !strings.Contains(deAdmin, `href="/ver/homeUsers"`) {
+		t.Error("al superusuario no se le ofrece el atajo «Usuarios»")
+	}
+}

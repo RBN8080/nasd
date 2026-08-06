@@ -70,6 +70,18 @@
         </div>
       </details>
 
+      {{/* «Usuarios» — atajo a homeUsers/, solo para el superusuario.
+           NO ES UNA PUERTA NUEVA: homeUsers/ ya era una carpeta visible y
+           navegable dentro de la raíz (ADR-0055) — esto solo ahorra los clics
+           de bajar hasta ahí. Por eso no hace falta ninguna ruta nueva ni
+           envoltura soloSuperusuario en el servidor: /ver/homeUsers pasa por
+           conAlmacen igual que cualquier otro /ver, y el aislamiento de
+           SIEMPRE decide qué hay dentro. Para un usuario normal, esa ruta cae
+           dentro de SU PROPIA carpeta —nunca la de la casa— y no encontraría
+           nada; se esconde para no ofrecer un enlace que no lleva a ningún
+           lado, no porque haga falta cerrarlo. */}}
+      {{if .EsSuperusuario}}<a class="boton-barra" href="/ver/homeUsers">Usuarios</a>{{end}}
+
       {{/* «Estado» solo para el superusuario (ADR-0055). Publica temperatura,
            capacidad y ritmo de uso de TODO el nodo, no de la carpeta de quien
            mira: a un usuario normal no le informa de nada suyo y le entrega
