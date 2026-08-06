@@ -951,3 +951,108 @@ tr.v-fallo .rotulo {
   font-size: var(--t-titulo);
   margin-bottom: 1.5rem;
 }
+
+/* ——— Mover: el navegador de carpetas (RF-17, ADR-0054) ———
+   Sustituye a un campo de texto donde se escribía la ruta a mano. Ese campo
+   no falló por estrecho ni por mal rotulado: falló porque pedía algo que el
+   usuario no puede saber. Esto no tiene nada que escribir.
+
+   Es la MISMA caja centrada del acceso y del borrado, solo que más ancha:
+   aquí dentro va una lista de carpetas, y a 22rem los nombres largos se
+   parten. No se inventa una disposición nueva. */
+.mover {
+  max-width: 34rem;
+  margin: 3rem auto;
+}
+
+.mover h1 {
+  margin-bottom: 0.35rem;
+}
+
+.rotulo-destino {
+  margin-top: 1.25rem;
+  font-size: var(--t-rotulo);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--suave);
+}
+
+/* Las migas separan con «/» por CSS y no con un carácter escrito en la
+   plantilla: así el separador no se puede seleccionar ni copiar como si
+   formara parte del nombre de la carpeta. */
+.migas-mover a + a::before {
+  content: "/";
+  color: var(--suave);
+  margin: 0 0.15rem;
+}
+
+.lista-carpetas {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  border: 1px solid var(--borde);
+  border-radius: 0.5rem;
+  /* Con muchas subcarpetas la lista empujaría los tres botones fuera de la
+     pantalla, y son justo lo que hay que poder alcanzar siempre. */
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.lista-carpetas li + li {
+  border-top: 1px solid var(--borde);
+}
+
+/* Toda la fila es pulsable, no solo el texto: en el teléfono acertarle a un
+   nombre de carpeta de una línea es el mismo problema que ya resolvió el
+   botón de tres puntos. */
+.lista-carpetas a {
+  display: block;
+  padding: 0.6rem 0.85rem;
+  min-height: var(--alto-control);
+  text-decoration: none;
+}
+
+.lista-carpetas .oculto {
+  display: block;
+  padding: 0.6rem 0.85rem;
+}
+
+.acciones-mover {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+/* El menú de «Crear carpeta» se ancla a su botón, que aquí no está en una
+   barra sino en una fila de acciones. */
+.acciones-mover .menu {
+  position: relative;
+}
+
+.acciones-mover .menu-panel {
+  right: auto;
+  left: 0;
+}
+
+/* El aviso de operación completada. El responsable lo pidió «minimalista
+   pero que se note»: .mensaje ya es la pastilla verde tenue del listado, así
+   que solo se sube el borde y el texto al verde sólido que /estado usa para
+   los veredictos correctos. Sin animación — aparece y se queda hasta que se
+   cierra la vista. */
+.mensaje.exito {
+  border-color: var(--ok-color);
+  color: var(--ok-color);
+  font-weight: 600;
+}
+
+/* «Mover…» dentro del menú de fila: se lee como las demás acciones del
+   panel, sin el rojo que marca la destructiva. */
+.menu-panel-fila .accion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--alto-control);
+  text-decoration: none;
+}

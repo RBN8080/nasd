@@ -136,19 +136,15 @@
               </label>
               <button type="submit">Guardar</button>
             </form>
-            <form method="post" action="/renombrar">
-              <!-- Mover es el MISMO extremo: el servidor ya acepta una ruta
-                   completa como destino. Se separa aquí porque escribir
-                   «carpeta/archivo» en un campo que dice «Renombrar» no se le
-                   ocurre a nadie. -->
-              <input type="hidden" name="csrf" value="{{$.Csrf}}">
-              <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
-              <label>Mover a
-                <input type="text" name="destino" value="{{.Ruta.Rel}}"
-                       placeholder="carpeta/destino/{{.Nombre}}">
-              </label>
-              <button type="submit">Mover</button>
-            </form>
+            <!-- MOVER ES UN ENLACE, NO UN CAMPO DE TEXTO (ADR-0054).
+                 Aquí hubo un «Mover a» con una ruta escrita a mano, y en uso
+                 real no funcionó: el servidor distinguía mover de renombrar
+                 por si el texto llevaba una barra, regla que la interfaz
+                 nunca enseñó. Se escribía el nombre de la carpeta destino y
+                 salía «ya existe un elemento con ese nombre». El destino se
+                 elige ahora navegando, que es lo único que no se puede
+                 escribir mal. -->
+            <a class="accion" href="{{moverA .Ruta .Ruta.Padre}}">Mover…</a>
             <a class="destructivo" href="/borrar/{{rutaURL .Ruta.Rel}}">Borrar</a>
           </div>
         </details>

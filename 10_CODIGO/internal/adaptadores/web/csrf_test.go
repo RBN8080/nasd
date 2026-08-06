@@ -49,6 +49,10 @@ func TestSinTestigoCSRFSeRechazaTodoLoQueCambia(t *testing.T) {
 		{"/borrar", url.Values{"ruta": {"x.txt"}, "confirmado": {"si"}}},
 		{"/renombrar", url.Values{"origen": {"a.txt"}, "destino": {"b.txt"}}},
 		{"/directorio", url.Values{"destino": {""}, "nombre": {"nueva"}}},
+		// Mover dejó de ser parte de /renombrar el 2026-08-06 (ADR-0054), y un
+		// extremo nuevo que cambia el disco entra en esta lista el mismo día
+		// que nace: si no, la puerta se queda mirando solo lo viejo.
+		{"/mover", url.Values{"origen": {"a.txt"}, "carpeta": {"destino"}}},
 	}
 	for _, c := range casos {
 		if got := postCon(t, h, cookie, c.ruta, c.campos); got != http.StatusForbidden {
