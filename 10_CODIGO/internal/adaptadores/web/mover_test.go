@@ -47,6 +47,20 @@ func (a *almacenDeMover) CrearDirectorio(context.Context, almacen.RutaSegura) er
 	return nil
 }
 
+// Resumen devuelve un conteo fijo: lo usa la pantalla de confirmar borrado.
+func (a *almacenDeMover) Resumen(_ context.Context, r almacen.RutaSegura) (almacen.Conteo, error) {
+	for _, e := range a.hijos[r.Padre().Rel()] {
+		if e.Ruta.Rel() == r.Rel() {
+			return almacen.Conteo{
+				EsDirectorio: e.EsDirectori,
+				Archivos:     1,
+				Bytes:        206158430,
+			}, nil
+		}
+	}
+	return almacen.Conteo{}, almacen.ErrNoExiste
+}
+
 func (a *almacenDeMover) Renombrar(_ context.Context, origen, destino almacen.RutaSegura) error {
 	a.movimientos = append(a.movimientos, [2]string{origen.Rel(), destino.Rel()})
 	if a.choque != "" && destino.Rel() == a.choque {
@@ -122,8 +136,10 @@ func TestElListadoNoPideLaRutaDeDestinoEscritaAMano(t *testing.T) {
 			"exactamente lo que ADR-0054 retira, porque pide algo que el " +
 			"usuario no puede saber")
 	}
-	if !strings.Contains(cuerpo, `href="/mover/IMG_7539.MOV`) {
-		t.Fatalf("el menú de la fila no enlaza a la vista de mover:\n%s", cuerpo)
+	// Y va en un formulario, no en un enlace: en el panel conviven botones y
+	// un vínculo suelto se lee como de otra familia.
+	if !strings.Contains(cuerpo, `action="/mover/IMG_7539.MOV"`) {
+		t.Fatalf("el menú de la fila no lleva a la vista de mover:\n%s", cuerpo)
 	}
 }
 

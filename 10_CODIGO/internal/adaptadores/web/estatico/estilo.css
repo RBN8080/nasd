@@ -1047,12 +1047,37 @@ tr.v-fallo .rotulo {
   font-weight: 600;
 }
 
-/* «Mover…» dentro del menú de fila: se lee como las demás acciones del
-   panel, sin el rojo que marca la destructiva. */
-.menu-panel-fila .accion {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--alto-control);
-  text-decoration: none;
+/* ——— Confirmar borrado: centrado y jerarquía (P-2, 06/08/2026) ———
+   El responsable marcó sobre una captura qué debía centrarse. Lo que había
+   era una columna alineada a la izquierda donde el nombre del archivo —el
+   único dato que hay que leer antes de destruir algo, y que RF-18 obliga a
+   mostrar— pesaba lo mismo que el texto de alrededor.
+
+   No se toca el bloque rojo: ahí el texto va alineado a la izquierda a
+   propósito, porque son tres líneas de prosa y centrarlas las hace más
+   lentas de leer — y esa es justo la parte que no conviene leer deprisa. */
+.rotulo-borrado {
+  text-align: center;
+  font-size: var(--t-rotulo);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--suave);
+  margin-bottom: 0.35rem;
+}
+
+.borrado .ruta-destacada {
+  text-align: center;
+  margin-top: 0;
+}
+
+.cancelar {
+  text-align: center;
+  margin-top: 0.9rem;
+}
+
+/* El botón destructivo ocupa el ancho de la caja, como los del resto de la
+   interfaz. Antes quedaba a su ancho natural y flotaba a la izquierda bajo
+   un bloque que sí ocupaba todo: parecía de otra página. */
+.borrado .destructivo {
+  width: 100%;
 }
