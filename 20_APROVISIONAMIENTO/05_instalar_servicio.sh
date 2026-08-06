@@ -210,6 +210,20 @@ BindPaths=/dev/vcio_gencmd
 # Tercera capa de contención de rutas (04_SEGURIDAD §2).
 ReadWritePaths=/srv/nas
 
+# ADR-0055 — el registro de cuentas vive en /var/lib/nasd.
+#
+# systemd crea el directorio con el dueño del servicio ANTES de arrancar, lo
+# anade a ReadWritePaths por su cuenta (hace falta: ProtectSystem=strict deja
+# todo lo demas de solo lectura) y publica la ruta en $STATE_DIRECTORY.
+#
+# NO va en /srv/nas, y la diferencia importa: alli lo veria SMB, y ese disco
+# esta pensado para sobrevivir a la placa y viajar — justo lo que no se quiere
+# de unas credenciales.
+#
+# 0700: el registro no es asunto de nadie mas que del servicio.
+StateDirectory=nasd
+StateDirectoryMode=0700
+
 # RES-01 — valores PROVISIONALES: se fijan con la medición de RNF-01.
 MemoryMax=192M
 Environment=GOMEMLIMIT=160MiB

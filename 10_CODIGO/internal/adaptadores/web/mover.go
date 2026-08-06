@@ -75,7 +75,7 @@ type vistaMover struct {
 }
 
 // verMover dibuja el navegador de carpetas.
-func (s *Servidor) verMover(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) verMover(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	origen, err := almacen.NuevaRuta(r.PathValue("ruta"))
 	if err != nil || origen.EsRaiz() {
 		s.fallo(w, r, almacen.ErrRutaInvalida)
@@ -102,7 +102,7 @@ func (s *Servidor) verMover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n := 0
-	for e, err := range s.almacen.Listar(r.Context(), aqui) {
+	for e, err := range alm.Listar(r.Context(), aqui) {
 		if err != nil {
 			s.fallo(w, r, err)
 			return
@@ -143,7 +143,7 @@ func (s *Servidor) verMover(w http.ResponseWriter, r *http.Request) {
 // origen. Cambiar el nombre es renombrar (RF-16) y tiene su propio gesto;
 // mezclar las dos cosas otra vez sería reponer el defecto que esta vista
 // existe para corregir.
-func (s *Servidor) mover(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) mover(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	if err := r.ParseForm(); err != nil {
 		s.fallo(w, r, err)
 		return
@@ -168,7 +168,7 @@ func (s *Servidor) mover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.almacen.Renombrar(r.Context(), origen, destino); err != nil {
+	if err := alm.Renombrar(r.Context(), origen, destino); err != nil {
 		// RF-19: toda operación destructiva deja constancia, también al fallar.
 		s.reg.Warn("mover FALLÓ", "origen", origen.Rel(),
 			"destino", destino.Rel(), "remoto", origenDe(r), "error", err)

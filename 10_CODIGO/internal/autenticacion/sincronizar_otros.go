@@ -13,3 +13,9 @@ package autenticacion
 // Consecuencia: ejecutando en Windows, la durabilidad del registro NO está
 // garantizada. Las pruebas valen como prueba de lógica, no de durabilidad.
 func sincronizarDir(string) error { return nil }
+
+// heredarDuenoDe no tiene equivalente: Windows no usa uid/gid, y el problema
+// que resuelve —crear el registro como root y que lo lea el servicio— solo
+// existe en el nodo. Ver el comentario de su gemelo, que es donde está el
+// motivo entero.
+func heredarDuenoDe(string, string) error { return nil }

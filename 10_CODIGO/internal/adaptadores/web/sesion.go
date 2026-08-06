@@ -1,12 +1,15 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 )
 
@@ -17,6 +20,28 @@ import (
 
 const (
 	nombreCookie = "nas_sesion"
+
+	// cookieUsuario recuerda QUIÉN usa este aparato, para no volver a pedir el
+	// nombre. No es una credencial y no da acceso a nada: solo evita teclearlo.
+	//
+	// EXISTE POR UNA MEDICIÓN. Se propuso deducir el usuario a partir de la
+	// contraseña sola; se cronometró una verificación en el nodo y son 3.6 s
+	// (600 000 iteraciones de PBKDF2 sobre un A53 sin aceleración). Deducirlo
+	// obliga a probar contra cada cuenta —cinco usuarios, ~18 s por intento, y
+	// un intento FALLIDO cuesta igual—, con lo que el formulario de acceso se
+	// convierte en un amplificador que clava el único núcleo desde Internet.
+	// Recordar el nombre cuesta una cookie y deja una sola derivación por
+	// intento. ADR-0055.
+	cookieUsuario = "nas_usuario"
+
+	// El nombre se recuerda mucho más que la sesión: la sesión caduca porque
+	// da acceso, el nombre no da acceso a nada.
+	duracionRecuerdo = 365 * 24 * time.Hour
+
+	// Un solo mensaje para todos los fallos de acceso. Distinguir «ese usuario
+	// no existe» de «esa contraseña no es» convertiría el formulario en un
+	// listador de cuentas: bastaría probar nombres y leer la respuesta.
+	avisoAccesoFallido = "Usuario o contraseña incorrectos."
 
 	// Iteraciones de PBKDF2. Recomendación OWASP vigente para HMAC-SHA256.
 	//
@@ -130,15 +155,56 @@ func origenDe(r *http.Request) string {
 func (s *Servidor) exigirSesion(siguiente http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(nombreCookie)
-		if err == nil && s.sesiones.Valida(c.Value) {
-			siguiente.ServeHTTP(w, r)
+		if err != nil {
+			s.pedirAcceso(w, r, "")
 			return
 		}
-		s.pedirAcceso(w, r, "")
+		usuario, vigente := s.sesiones.Usuario(c.Value)
+		// FALLO CERRADO: una sesión vigente pero sin dueño no pasa. No debería
+		// existir —Abrir rechaza el nombre vacío—, y justo por eso, si alguna
+		// vez aparece una, lo que NO puede hacer es acabar mirando la carpeta
+		// del superusuario por descarte (ADR-0055).
+		if !vigente || usuario == "" {
+			s.pedirAcceso(w, r, "")
+			return
+		}
+		siguiente.ServeHTTP(w, r.WithContext(
+			context.WithValue(r.Context(), claveUsuario, usuario)))
 	})
 }
 
+// claveUsuario nombra al usuario dentro del contexto de la petición. Es de un
+// tipo propio y no una cadena: así ningún otro paquete puede escribir en esa
+// misma clave, ni por accidente ni a propósito.
+type claveDeContexto struct{}
+
+var claveUsuario claveDeContexto
+
+// usuarioDe devuelve de quién es la petición. Solo tiene valor detrás de
+// exigirSesion, que es el único que lo pone.
+func usuarioDe(r *http.Request) string {
+	u, _ := r.Context().Value(claveUsuario).(string)
+	return u
+}
+
 func (s *Servidor) pedirAcceso(w http.ResponseWriter, r *http.Request, aviso string) {
+	s.pedirAccesoComo(w, r, usuarioRecordado(r), aviso)
+}
+
+// vistaAcceso es lo que ve el formulario.
+//
+// Usuario vacío significa «este aparato no sabe quién eres»: se pide el
+// nombre. Con nombre, solo se pide la contraseña.
+type vistaAcceso struct {
+	Aviso   string
+	Usuario string
+	// Inicial es lo ÚNICO que se enseña de quien usa este aparato. Basta para
+	// que uno se reconozca y no delata el nombre completo a quien lo coja
+	// prestado o mire por encima del hombro.
+	Inicial string
+}
+
+func (s *Servidor) pedirAccesoComo(w http.ResponseWriter, r *http.Request, usuario, aviso string) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !aceptaHTML(r) {
 		http.Error(w, "no autenticado", http.StatusUnauthorized)
@@ -146,9 +212,47 @@ func (s *Servidor) pedirAcceso(w http.ResponseWriter, r *http.Request, aviso str
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
-	if err := s.plantillas.ExecuteTemplate(w, "acceso.html", map[string]string{"Aviso": aviso}); err != nil {
+	s.renderAcceso(w, usuario, aviso)
+}
+
+func (s *Servidor) renderAcceso(w http.ResponseWriter, usuario, aviso string) {
+	v := vistaAcceso{Aviso: aviso, Usuario: usuario, Inicial: inicialDe(usuario)}
+	if err := s.plantillas.ExecuteTemplate(w, "acceso.html", v); err != nil {
 		s.reg.Error("render del formulario de acceso", "error", err)
 	}
+}
+
+func inicialDe(usuario string) string {
+	if usuario == "" {
+		return ""
+	}
+	return strings.ToUpper(string([]rune(usuario)[0]))
+}
+
+// usuarioRecordado lee el nombre que este aparato tiene guardado.
+//
+// Se VALIDA aunque venga de nuestra propia cookie, porque una cookie la
+// escribe el cliente y puede llegar con cualquier cosa dentro. Lo que no pase
+// el filtro se trata como si no hubiera nombre: se vuelve a pedir.
+func usuarioRecordado(r *http.Request) string {
+	c, err := r.Cookie(cookieUsuario)
+	if err != nil {
+		return ""
+	}
+	return nombreAceptable(c.Value)
+}
+
+// nombreAceptable devuelve el nombre si puede ser de alguien, o "" si no.
+// No dice si ese alguien existe: eso solo lo sabe quien verifica la
+// contraseña, y responde siempre lo mismo (avisoAccesoFallido).
+func nombreAceptable(v string) string {
+	if v == autenticacion.NombreSuperusuario {
+		return v
+	}
+	if autenticacion.NombreValido(v) != nil {
+		return ""
+	}
+	return v
 }
 
 // aceptaHTML distingue a un navegador de un cliente de la API.
@@ -166,11 +270,18 @@ func (s *Servidor) mostrarAcceso(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	usuario := usuarioRecordado(r)
+
+	// «¿No eres J?, cambiar de usuario»: el aparato deja de dar por sabido
+	// quién lo usa y vuelve a preguntar el nombre.
+	if r.URL.Query().Has("cambiar") {
+		s.olvidarUsuario(w)
+		usuario = ""
+	}
+
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.plantillas.ExecuteTemplate(w, "acceso.html", map[string]string{}); err != nil {
-		s.reg.Error("render del formulario de acceso", "error", err)
-	}
+	s.renderAcceso(w, usuario, "")
 }
 
 func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
@@ -187,30 +298,56 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		s.pedirAcceso(w, r, "Petición inválida.")
 		return
 	}
+	// El nombre lo teclea quien entra la primera vez en este aparato; después
+	// lo pone la cookie que lo recuerda. Lo tecleado manda, para que «cambiar
+	// de usuario» funcione aunque la cookie siga ahí.
+	usuario := strings.TrimSpace(r.PostFormValue("usuario"))
+	if usuario == "" {
+		usuario = usuarioRecordado(r)
+	}
 	clave := r.PostFormValue("clave")
 
-	// Serializado: una derivación a la vez, pase lo que pase.
-	s.limitador.verificar.Lock()
-	valida := autenticacion.Verificar(s.credencial, clave)
-	s.limitador.verificar.Unlock()
-
+	valida, conocido := s.verificarAcceso(usuario, clave)
 	if !valida {
 		s.limitador.fallo(origen)
 		s.contadores.accesosFallidos.Add(1)
 		// NUNCA se registra la contraseña ni parte de ella (04_SEGURIDAD §6).
-		s.reg.Warn("intento de acceso fallido", "origen", origen)
-		s.pedirAcceso(w, r, "Contraseña incorrecta.")
+		//
+		// Y EL NOMBRE SOLO SI EXISTE. Con dos campos, tarde o temprano alguien
+		// teclea su contraseña en la casilla del nombre; anotar lo que llegue
+		// metería esa contraseña en el diario, que es exactamente lo que la
+		// regla de arriba prohíbe. Un nombre que no existe no aporta nada al
+		// registro y sí puede ser un secreto mal puesto.
+		anotado := usuario
+		if !conocido {
+			anotado = "desconocido"
+		}
+		s.reg.Warn("intento de acceso fallido", "origen", origen, "usuario", anotado)
+		s.pedirAccesoComo(w, r, nombreAceptable(usuario), avisoAccesoFallido)
 		return
 	}
 
-	testigo, err := s.sesiones.Abrir()
+	testigo, err := s.sesiones.Abrir(usuario)
 	if err != nil {
 		s.reg.Error("no se pudo abrir la sesión", "error", err)
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
 	s.limitador.acierto(origen)
-	s.reg.Info("sesión iniciada", "origen", origen, "sesiones_abiertas", s.sesiones.Abiertas())
+	s.reg.Info("sesión iniciada", "origen", origen, "usuario", usuario,
+		"sesiones_abiertas", s.sesiones.Abiertas())
+
+	// El aparato recuerda el nombre para no volver a pedirlo. Se renueva en
+	// cada entrada: así un aparato en uso no vuelve a preguntarlo nunca.
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieUsuario,
+		Value:    usuario,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(duracionRecuerdo.Seconds()),
+		Secure:   r.TLS != nil,
+	})
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     nombreCookie,
@@ -237,6 +374,88 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// verificarAcceso comprueba la contraseña de quien dice ser «usuario», y de
+// paso informa de si ese nombre corresponde a alguien — lo segundo SOLO para
+// el registro, nunca para la respuesta.
+//
+// Las dos ramas cuestan lo mismo: una derivación de PBKDF2 con las mismas
+// iteraciones. La del superusuario contra su credencial; la de un usuario
+// contra la suya o, si no existe, contra la de relleno del registro. Sin esa
+// simetría, un cronómetro distinguiría los nombres reales de los inventados
+// (CWE-208).
+func (s *Servidor) verificarAcceso(usuario, clave string) (valida, conocido bool) {
+	// Serializado: una derivación a la vez, pase lo que pase. Con 3.6 s cada
+	// una en el nodo, cuatro en paralelo clavarían las cuatro CPU del 3B+, que
+	// ya opera con el límite térmico blando activo (RNF-11).
+	s.limitador.verificar.Lock()
+	defer s.limitador.verificar.Unlock()
+
+	if usuario == autenticacion.NombreSuperusuario {
+		return autenticacion.Verificar(s.credencial, clave), true
+	}
+	// Un nombre que ni siquiera puede ser de nadie se rechaza sin gastar la
+	// derivación, y eso NO filtra nada: las reglas del nombre son públicas y
+	// cualquiera puede comprobarlas sin preguntarle al servidor. Lo que sí
+	// filtraría —si un nombre VÁLIDO existe o no— cuesta siempre lo mismo,
+	// porque de eso se encarga Verifica con su credencial de relleno.
+	if nombreAceptable(usuario) == "" {
+		return false, false
+	}
+	_, conocido = s.usuarios.Buscar(usuario)
+	return s.usuarios.Verifica(usuario, clave), conocido
+}
+
+// olvidarUsuario borra el nombre que este aparato recordaba.
+func (s *Servidor) olvidarUsuario(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name: cookieUsuario, Value: "", Path: "/", HttpOnly: true, MaxAge: -1,
+	})
+}
+
+// almacenDeLaSesion devuelve el almacén ACOTADO a quien hace la petición.
+//
+// Es la única puerta por la que un manejador consigue con qué trabajar, y por
+// eso está aquí y no repartida: quien atiende una petición no elige almacén,
+// lo recibe ya acotado (ADR-0055).
+func (s *Servidor) almacenDeLaSesion(r *http.Request) (almacen.Almacen, error) {
+	usuario := usuarioDe(r)
+	switch {
+	case usuario == "":
+		// No puede ocurrir detrás de exigirSesion, y precisamente por eso se
+		// trata como error y no como «pues el del superusuario»: si algún día
+		// ocurre, el fallo debe ser ruidoso y no una escalada silenciosa.
+		return nil, errors.New("petición sin usuario en la sesión")
+	case usuario == autenticacion.NombreSuperusuario:
+		return s.almacenRaiz, nil
+	}
+	// Sin caché a propósito: ParaUsuario solo asegura que la carpeta existe, y
+	// guardar el resultado añadiría estado compartido —con su cerrojo y sus
+	// entradas rancias tras dar de baja a alguien— a cambio de ahorrar tres
+	// llamadas al sistema por petición. No compensa.
+	return s.abrirAlmacen(usuario)
+}
+
+// manejadorDeUsuario atiende una petición con el almacén de quien la hace.
+//
+// EL PARÁMETRO ES LA GARANTÍA, y por eso no es un campo del servidor: un
+// manejador no puede olvidarse de acotar lo que ve, porque no tiene manera de
+// conseguir el almacén sin recibirlo ya acotado. La versión con campo
+// compartido compila igual de bien y se equivoca en silencio.
+type manejadorDeUsuario func(http.ResponseWriter, *http.Request, almacen.Almacen)
+
+func (s *Servidor) conAlmacen(f manejadorDeUsuario) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		alm, err := s.almacenDeLaSesion(r)
+		if err != nil {
+			s.reg.Error("no se pudo abrir la carpeta del usuario",
+				"usuario", usuarioDe(r), "error", err)
+			http.Error(w, "error interno", http.StatusInternalServerError)
+			return
+		}
+		f(w, r, alm)
+	}
+}
+
 func (s *Servidor) salir(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(nombreCookie); err == nil {
 		s.sesiones.Cerrar(c.Value)
@@ -244,6 +463,10 @@ func (s *Servidor) salir(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: nombreCookie, Value: "", Path: "/", HttpOnly: true, MaxAge: -1,
 	})
+	// El nombre NO se olvida al salir: salir es «he terminado», no «este ya no
+	// es mi aparato». Olvidarlo obligaría a teclearlo cada vez y dejaría la
+	// cookie sin más uso que el primer día. Para olvidarlo está «cambiar de
+	// usuario», que es donde alguien lo pide a propósito.
 	s.reg.Info("sesión cerrada", "origen", origenDe(r))
 	http.Redirect(w, r, "/acceso", http.StatusSeeOther)
 }

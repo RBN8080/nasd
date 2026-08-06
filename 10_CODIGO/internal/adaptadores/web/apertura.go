@@ -151,7 +151,7 @@ type vistaVisor struct {
 // navegador no puede con el formato, lo que hay en pantalla ya es una página
 // nuestra donde escribir el mensaje acordado, y no una descarga a medio
 // empezar ni una pestaña en blanco.
-func (s *Servidor) abrirEnNavegador(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) abrirEnNavegador(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	ruta, err := almacen.NuevaRuta(r.PathValue("ruta"))
 	if err != nil {
 		s.fallo(w, r, err)
@@ -165,7 +165,7 @@ func (s *Servidor) abrirEnNavegador(w http.ResponseWriter, r *http.Request) {
 
 	// Se abre —y se cierra— para dos cosas: confirmar que el archivo existe
 	// antes de prometer un visor, y mirar la cabecera cuando es un PDF.
-	lector, entrada, err := s.almacen.Abrir(r.Context(), ruta)
+	lector, entrada, err := alm.Abrir(r.Context(), ruta)
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -189,7 +189,7 @@ func (s *Servidor) abrirEnNavegador(w http.ResponseWriter, r *http.Request) {
 
 // servirContenido es la ruta de BYTES PASIVOS. Solo entrega lo que está en la
 // lista positiva, con el MIME de esa lista y marcado «inline».
-func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	ruta, err := almacen.NuevaRuta(r.PathValue("ruta"))
 	if err != nil {
 		s.fallo(w, r, err)
@@ -202,7 +202,7 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request) {
 		s.mostrarNoCompatible(w, ruta)
 		return
 	}
-	lector, entrada, err := s.almacen.Abrir(r.Context(), ruta)
+	lector, entrada, err := alm.Abrir(r.Context(), ruta)
 	if err != nil {
 		s.fallo(w, r, err)
 		return

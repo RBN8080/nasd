@@ -6,14 +6,42 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 )
 
 const claveDePrueba = "contraseña-de-prueba-larga"
+
+// iteracionesDePrueba: bajas a propósito. Aquí se prueba el control de acceso,
+// no el coste del KDF, que está medido en el nodo (3.6 s por verificación).
+const iteracionesDePrueba = 1000
+
+// registroDePrueba devuelve un registro vacío respaldado por un archivo
+// temporal, que es lo que Nuevo exige desde ADR-0055.
+func registroDePrueba(t *testing.T) *autenticacion.Registro {
+	t.Helper()
+	reg, err := autenticacion.CargarRegistro(
+		filepath.Join(t.TempDir(), "usuarios"), iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("CargarRegistro: %v", err)
+	}
+	return reg
+}
+
+// almacenPorUsuarioDePrueba entrega SIEMPRE el mismo almacén.
+//
+// Vale porque lo que se comprueba en este paquete es el reparto —quién recibe
+// un almacén y quién no—, no el aislamiento en sí: ese vive en fsposix, se
+// mide contra disco de verdad y tiene sus propias pruebas
+// (fsposix/aislamiento_test.go).
+func almacenPorUsuarioDePrueba(a almacen.Almacen) func(string) (almacen.Almacen, error) {
+	return func(string) (almacen.Almacen, error) { return a, nil }
+}
 
 func servidorConAuth(t *testing.T) *Servidor {
 	t.Helper()
@@ -25,9 +53,11 @@ func servidorConAuth(t *testing.T) *Servidor {
 	}
 	s, err := Nuevo(Opciones{
 		Almacen:          almacenVacio{},
+		AlmacenDe:        almacenPorUsuarioDePrueba(almacenVacio{}),
 		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		PlazoInactividad: time.Minute,
 		Credencial:       linea,
+		Usuarios:         registroDePrueba(t),
 		DuracionSesion:   time.Hour,
 	})
 	if err != nil {
@@ -91,7 +121,10 @@ func TestAccesoCorrectoAbreSesion(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/acceso",
-		strings.NewReader(url.Values{"clave": {claveDePrueba}}.Encode()))
+		strings.NewReader(url.Values{
+			"usuario": {autenticacion.NombreSuperusuario},
+			"clave":   {claveDePrueba},
+		}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(w, r)
 
@@ -130,7 +163,10 @@ func TestAccesoIncorrectoNoAbreSesion(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/acceso",
-		strings.NewReader(url.Values{"clave": {"equivocada-y-larga"}}.Encode()))
+		strings.NewReader(url.Values{
+			"usuario": {autenticacion.NombreSuperusuario},
+			"clave":   {"equivocada-y-larga"},
+		}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("Accept", "text/html")
 	h.ServeHTTP(w, r)
@@ -154,7 +190,10 @@ func TestLimitadorCortaLosIntentosRepetidos(t *testing.T) {
 	intentar := func() int {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("POST", "/acceso",
-			strings.NewReader(url.Values{"clave": {"mal-pero-larga-aqui"}}.Encode()))
+			strings.NewReader(url.Values{
+				"usuario": {autenticacion.NombreSuperusuario},
+				"clave":   {"mal-pero-larga-aqui"},
+			}.Encode()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		r.RemoteAddr = "192.168.1.99:5555"
 		h.ServeHTTP(w, r)
@@ -168,7 +207,10 @@ func TestLimitadorCortaLosIntentosRepetidos(t *testing.T) {
 	// El siguiente debe llevar Retry-After.
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/acceso",
-		strings.NewReader(url.Values{"clave": {claveDePrueba}}.Encode()))
+		strings.NewReader(url.Values{
+			"usuario": {autenticacion.NombreSuperusuario},
+			"clave":   {claveDePrueba},
+		}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.RemoteAddr = "192.168.1.99:5555"
 	h.ServeHTTP(w, r)
@@ -186,8 +228,10 @@ func TestSinCredencialNoArranca(t *testing.T) {
 	for _, mala := range []string{"", "basura", "md5$1$a$b"} {
 		_, err := Nuevo(Opciones{
 			Almacen:        almacenVacio{},
+			AlmacenDe:      almacenPorUsuarioDePrueba(almacenVacio{}),
 			Registro:       slog.New(slog.NewJSONHandler(io.Discard, nil)),
 			Credencial:     mala,
+			Usuarios:       registroDePrueba(t),
 			DuracionSesion: time.Hour,
 		})
 		if err == nil {
@@ -202,7 +246,7 @@ func TestSalirInvalidaElTestigoEnElServidor(t *testing.T) {
 	s := servidorConAuth(t)
 	h := s.Rutas()
 
-	tok, _ := s.sesiones.Abrir()
+	tok, _ := s.sesiones.Abrir(autenticacion.NombreSuperusuario)
 	cookie := &http.Cookie{Name: nombreCookie, Value: tok}
 
 	w := httptest.NewRecorder()

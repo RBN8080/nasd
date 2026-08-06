@@ -9,16 +9,38 @@
 <body>
 <main class="acceso">
   <h1>NAS</h1>
+
   {{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
+
   <form method="post" action="/acceso">
+    {{if .Usuario}}
+    {{/* Este aparato ya sabe a quién pertenece: solo se pide la contraseña.
+         Se enseña LA INICIAL Y NADA MÁS. Basta para reconocerse y no le dice
+         a quien coja el teléfono prestado de quién es la cuenta. */}}
+    <p class="quien">
+      <span class="inicial" aria-hidden="true">{{.Inicial}}</span>
+      <a class="cambiar" href="/acceso?cambiar=1">¿No eres {{.Inicial}}?, cambiar de usuario</a>
+    </p>
+    <label for="clave">Contraseña</label>
     <input type="password" id="clave" name="clave"
-       placeholder="Ingrese contraseña"
        autocomplete="current-password"
        autofocus required>
+    {{else}}
+    {{/* Primera vez en este aparato: hacen falta las dos casillas. Van con
+         etiqueta propia, no con dos textos grises iguales dentro de la
+         casilla, que es lo que hacía que parecieran la misma cosa dos
+         veces. */}}
+    <label for="usuario">Usuario</label>
+    <input type="text" id="usuario" name="usuario"
+       autocomplete="username"
+       autocapitalize="off" autocorrect="off" spellcheck="false"
+       autofocus required>
+    <label for="clave">Contraseña</label>
+    <input type="password" id="clave" name="clave"
+       autocomplete="current-password" required>
+    {{end}}
     <button type="submit">Entrar</button>
   </form>
-  <p class="oculto">
-  </p>
 </main>
 </body>
 </html>

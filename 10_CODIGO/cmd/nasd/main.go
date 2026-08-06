@@ -22,6 +22,7 @@ import (
 	"nasd/internal/adaptadores/fsposix"
 	"nasd/internal/adaptadores/operacion"
 	"nasd/internal/adaptadores/web"
+	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 	"nasd/internal/config"
 )
@@ -38,10 +39,15 @@ func ejecutar() error {
 	rutaConfig := flag.String("config", "", "ruta del archivo TOML de configuración")
 	generar := flag.Bool("generar-credencial", false,
 		"lee una contraseña de la entrada estándar y escribe su línea derivada")
+	crearUsuario := flag.String("crear-usuario", "",
+		"da de alta una cuenta con ese nombre; lee su contraseña de la entrada estándar")
 	flag.Parse()
 
 	if *generar {
 		return generarCredencial()
+	}
+	if *crearUsuario != "" {
+		return altaDeUsuario(*rutaConfig, *crearUsuario)
 	}
 
 	// RNF-13: registro estructurado en JSON hacia journald por la salida
@@ -68,11 +74,30 @@ func ejecutar() error {
 	}
 	reg.Info("credencial de la web cargada", "origen", origen)
 
+	// Registro de cuentas — ADR-0055. Que el archivo no exista NO es un error:
+	// un nodo recién instalado no tiene usuarios y el superusuario, que no está
+	// aquí, entra igual.
+	usuarios, err := autenticacion.CargarRegistro(cfg.RutaUsuarios(), web.IteracionesPBKDF2)
+	if err != nil {
+		return err
+	}
+	reg.Info("registro de usuarios cargado",
+		"ruta", cfg.RutaUsuarios(), "cuentas", usuarios.Cuantos())
+
 	s, err := web.Nuevo(web.Opciones{
-		Almacen:          alm,
+		Almacen: alm,
+		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
+		// ningún otro sitio: es lo que permite que el paquete web no sepa que
+		// existe fsposix. La conversión de tipo la hace esta función —el
+		// adaptador devuelve su propio tipo y el puerto pide la interfaz—, que
+		// es trabajo de la raíz de composición y de nadie más.
+		AlmacenDe: func(usuario string) (almacen.Almacen, error) {
+			return alm.ParaUsuario(usuario)
+		},
 		Registro:         reg,
 		PlazoInactividad: cfg.PlazoInactividad,
 		Credencial:       credencial,
+		Usuarios:         usuarios,
 		DuracionSesion:   cfg.DuracionSesion,
 		Volumen:          cfg.Volumen,
 	})
@@ -196,6 +221,51 @@ func leerCredencial() (string, string, error) {
 		"no hay credencial de la web configurada. " +
 			"Genérela con «nasd --generar-credencial» y entréguesela por " +
 			"LoadCredential=web:/etc/nasd/credencial en la unidad systemd")
+}
+
+// altaDeUsuario da de alta una cuenta desde la terminal — ADR-0055.
+//
+// POR QUÉ EMPIEZA POR AQUÍ Y NO POR EL PANEL DE LA WEB: la primera cuenta hay
+// que crearla antes de que exista pantalla alguna donde crearla, y una vía por
+// terminal sigue haciendo falta después, para el día en que la web no arranque.
+//
+// La contraseña se lee de la ENTRADA ESTÁNDAR y no de un argumento, por el
+// mismo motivo que en --generar-credencial: un argumento queda en el historial
+// del intérprete y en la lista de procesos, a la vista de cualquier usuario del
+// sistema (P4).
+//
+// Uso:
+//
+//	printf '%s' 'la contraseña' | sudo nasd --config /etc/nasd/nasd.toml --crear-usuario juan
+func altaDeUsuario(rutaConfig, nombre string) error {
+	cfg, err := config.Cargar(rutaConfig)
+	if err != nil {
+		return err
+	}
+	// Se valida ANTES de leer nada: si el nombre no vale, mejor decirlo sin
+	// haber pedido una contraseña que no se va a usar.
+	if err := autenticacion.NombreValido(nombre); err != nil {
+		return err
+	}
+	reg, err := autenticacion.CargarRegistro(cfg.RutaUsuarios(), web.IteracionesPBKDF2)
+	if err != nil {
+		return err
+	}
+	b, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
+	if err != nil {
+		return fmt.Errorf("leer la contraseña de la entrada estándar: %w", err)
+	}
+	// Se recortan solo los saltos finales que añade el intérprete. Los espacios
+	// NO se tocan: pueden ser parte de la contraseña.
+	clave := strings.TrimRight(string(b), "\r\n")
+	if err := reg.Alta(nombre, clave); err != nil {
+		return err
+	}
+	// Aviso, no silencio: en el nodo esto tarda ~3.6 s por la derivación, y sin
+	// una línea de salida parece que se ha colgado.
+	fmt.Printf("Cuenta %q creada en %s. Su carpeta se prepara al entrar por primera vez.\n",
+		nombre, cfg.RutaUsuarios())
+	return nil
 }
 
 // generarCredencial lee la contraseña de la ENTRADA ESTÁNDAR y escribe su

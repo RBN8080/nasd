@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -25,6 +26,16 @@ type Sesiones struct {
 }
 
 type sesion struct {
+	// usuario es DE QUIÉN es esta sesión, y es lo que decide qué carpeta ve
+	// (ADR-0055). Nunca está vacío: Abrir lo rechaza.
+	//
+	// Vive aquí y no en la cookie a propósito. Si viajara en la cookie, sería
+	// el cliente quien dice quién es, y cambiar una letra bastaría para
+	// mirar la carpeta de otro. El navegador solo lleva un testigo opaco; el
+	// nombre lo pone el servidor al verificar la contraseña y no se vuelve a
+	// preguntar.
+	usuario string
+
 	caduca time.Time
 	// csrf acompaña a la sesión y se exige en TODA petición que cambie algo.
 	//
@@ -39,12 +50,20 @@ func NuevasSesiones(duracion time.Duration) *Sesiones {
 	return &Sesiones{m: make(map[string]sesion), duracion: duracion}
 }
 
-// Abrir crea una sesión y devuelve su testigo.
+// Abrir crea una sesión A NOMBRE DE ALGUIEN y devuelve su testigo.
 //
 // 32 bytes de crypto/rand: el espacio es tan grande que adivinarlo no es una
 // vía de ataque, lo que importa porque sin TLS (ADR-0018) el testigo viaja en
 // claro por la LAN y su exposición real es esa, no la fuerza bruta.
-func (s *Sesiones) Abrir() (string, error) {
+//
+// EL NOMBRE ES OBLIGATORIO y se comprueba aquí, en el sitio donde nacen las
+// sesiones. Una sesión sin dueño sería una sesión a la que después habría que
+// asignarle una carpeta adivinando, y adivinar aquí significa enseñarle a
+// alguien la carpeta de otro (ADR-0055).
+func (s *Sesiones) Abrir(usuario string) (string, error) {
+	if usuario == "" {
+		return "", errors.New("abrir sesión: falta el usuario")
+	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generar el testigo de sesión: %w", err)
@@ -59,8 +78,9 @@ func (s *Sesiones) Abrir() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.m[testigo] = sesion{
-		caduca: time.Now().Add(s.duracion),
-		csrf:   base64.RawURLEncoding.EncodeToString(c),
+		usuario: usuario,
+		caduca:  time.Now().Add(s.duracion),
+		csrf:    base64.RawURLEncoding.EncodeToString(c),
 	}
 	return testigo, nil
 }
@@ -86,23 +106,37 @@ func (s *Sesiones) CsrfValido(testigo, recibido string) bool {
 	return subtle.ConstantTimeCompare([]byte(esperado), []byte(recibido)) == 1
 }
 
-// Valida indica si el testigo sigue vigente. Caducidad ABSOLUTA, no
-// deslizante: una sesión robada no se prolonga sola con el uso del ladrón.
-func (s *Sesiones) Valida(testigo string) bool {
+// Usuario devuelve de quién es la sesión, y si sigue vigente.
+//
+// Es la consulta PRINCIPAL: quien atiende una petición no necesita saber si
+// hay sesión, necesita saber de quién es, porque de eso depende qué carpeta
+// mira. Devolver las dos cosas juntas evita la versión rota de esto —validar
+// primero y preguntar el nombre después—, que deja un hueco entre ambas
+// llamadas en el que la sesión puede caducar.
+//
+// Caducidad ABSOLUTA, no deslizante: una sesión robada no se prolonga sola
+// con el uso del ladrón.
+func (s *Sesiones) Usuario(testigo string) (string, bool) {
 	if testigo == "" {
-		return false
+		return "", false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	se, ok := s.m[testigo]
 	if !ok {
-		return false
+		return "", false
 	}
 	if time.Now().After(se.caduca) {
 		delete(s.m, testigo)
-		return false
+		return "", false
 	}
-	return true
+	return se.usuario, true
+}
+
+// Valida indica si el testigo sigue vigente, sin mirar de quién es.
+func (s *Sesiones) Valida(testigo string) bool {
+	_, ok := s.Usuario(testigo)
+	return ok
 }
 
 // Cerrar invalida un testigo concreto.
