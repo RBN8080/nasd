@@ -1,0 +1,75 @@
+{{define "mover.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — Mover</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+<main class="mover">
+  <h1>Mover</h1>
+  <p class="ruta-destacada">{{.Origen.Nombre}}</p>
+
+  <!-- El aviso verde va ARRIBA, no junto al botón: tras pulsar «Mover aquí»
+       la página se recarga desde el principio, y al pie no se vería sin
+       desplazarse en el teléfono. -->
+  {{if .Hecho}}<p class="mensaje exito">Movido con éxito</p>{{end}}
+  {{if .Error}}<p class="mensaje error">{{.Error}}</p>{{end}}
+
+  <p class="rotulo-destino">Mover a esta carpeta:</p>
+  <p class="migas-mover">
+    {{range .Migas}}<a href="{{moverA $.Origen .}}">{{.Nombre}}</a>{{end}}
+  </p>
+
+  <ul class="lista-carpetas">
+    {{if not .Aqui.EsRaiz}}
+      <li><a href="{{moverA .Origen .Aqui.Padre}}">.. subir</a></li>
+    {{end}}
+    {{range .Carpetas}}
+      <li><a class="dir" href="{{moverA $.Origen .Ruta}}">{{.Nombre}}/</a></li>
+    {{else}}
+      <li class="oculto">Esta carpeta no tiene subcarpetas.</li>
+    {{end}}
+  </ul>
+  {{if .Truncado}}
+    <p class="oculto">Hay más subcarpetas de las que caben en esta vista.</p>
+  {{end}}
+
+  <!-- Los tres botones que pidió el responsable, en el orden que pidió.
+       «Cerrar» sale a la carpeta que contiene el elemento: antes de mover es
+       de donde vino, y después del movimiento ES la carpeta destino, así que
+       aterriza viendo el resultado sin que haga falta ninguna rama. -->
+  <div class="acciones-mover">
+    <a class="boton-barra" href="{{listado .Origen.Padre}}">Cerrar</a>
+
+    <form method="post" action="/mover">
+      <input type="hidden" name="csrf" value="{{.Csrf}}">
+      <input type="hidden" name="origen" value="{{.Origen.Rel}}">
+      <!-- Solo la CARPETA. El nombre lo conserva el servidor a partir del
+           origen: pedirlo aquí repondría el campo de texto ambiguo que este
+           rediseño existe para quitar. -->
+      <input type="hidden" name="carpeta" value="{{.Aqui.Rel}}">
+      <button type="submit">Mover aquí</button>
+    </form>
+
+    <details class="menu">
+      <summary class="boton-barra">Crear carpeta</summary>
+      <div class="menu-panel">
+        <form method="post" action="/directorio">
+          <input type="hidden" name="csrf" value="{{.Csrf}}">
+          <input type="hidden" name="destino" value="{{.Aqui.Rel}}">
+          <!-- Este campo es lo único que distingue crear una carpeta DESDE
+               aquí de crearla desde el listado: hace que se vuelva a esta
+               vista en lugar de salir a la lista de archivos. -->
+          <input type="hidden" name="mover" value="{{.Origen.Rel}}">
+          <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
+          <button type="submit">Crear</button>
+        </form>
+      </div>
+    </details>
+  </div>
+</main>
+</body>
+</html>
+{{end}}

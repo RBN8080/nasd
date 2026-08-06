@@ -150,7 +150,14 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("POST /directorio", s.crearDirectorio)
 
 	// Administración — Fase 3. Después de RF-15, por RN-06.
-	protegido.HandleFunc("POST /renombrar", s.renombrar)              // RF-16 y RF-17
+	//
+	// MOVER TIENE EXTREMO PROPIO desde el 2026-08-06 (ADR-0054).
+	// Compartirlo con renombrar obligaba a adivinar la intención mirando si
+	// el texto llevaba una barra, y en uso real se adivinó mal. /renombrar
+	// conserva SOLO el renombrado, que es lo que su nombre dice.
+	protegido.HandleFunc("GET /mover/{ruta...}", s.verMover)          // RF-17, paso 1
+	protegido.HandleFunc("POST /mover", s.mover)                      // RF-17, paso 2
+	protegido.HandleFunc("POST /renombrar", s.renombrar)              // RF-16
 	protegido.HandleFunc("GET /borrar/{ruta...}", s.confirmarBorrado) // RF-18, paso 1
 	protegido.HandleFunc("POST /borrar", s.borrar)                    // RF-18, paso 2
 
@@ -272,5 +279,10 @@ func funciones() template.FuncMap {
 		// de un nombre de archivo del que abre un fragmento. Ver apertura.go.
 		"rutaURL": escaparRutaURL,
 		"listado": urlDeListado,
+		// El navegador de carpetas de RF-17 enlaza a sí mismo en cada nivel,
+		// llevando siempre QUÉ se mueve y DÓNDE se está mirando. Construirlo
+		// en la plantilla a mano obligaría a escapar la consulta allí, que es
+		// justo donde se olvida — ver escaparConsulta en mover.go.
+		"moverA": urlDeMover,
 	}
 }

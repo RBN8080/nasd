@@ -296,6 +296,23 @@ func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request) {
 		s.fallo(w, r, err)
 		return
 	}
+
+	// Crear una carpeta DESDE el navegador de mover tiene que devolver ahí,
+	// no al listado: quien está eligiendo destino acaba de fabricarlo y lo
+	// siguiente que quiere es entrar en él (RF-17, ADR-0054).
+	//
+	// No es un redirección abierta aunque venga del formulario: el valor se
+	// valida como RutaSegura y la URL la construye urlDeMover con esa ruta
+	// ya saneada. No hay forma de que apunte fuera del propio servicio.
+	if m := r.PostFormValue("mover"); m != "" {
+		origen, err := almacen.NuevaRuta(m)
+		if err != nil {
+			s.fallo(w, r, err)
+			return
+		}
+		http.Redirect(w, r, urlDeMover(origen, padre), http.StatusSeeOther)
+		return
+	}
 	s.redirigir(w, r, padre, "Carpeta creada", false)
 }
 
@@ -304,7 +321,12 @@ func (s *Servidor) redirigir(w http.ResponseWriter, r *http.Request, a almacen.R
 	// ruta entera, que convierte también las barras en «%2F»: funcionaba de
 	// milagro porque ServeMux las decodifica antes de casar el comodín.
 	destino := urlDeListado(a)
-	q := "?msg=" + escaparURL(msg)
+	// QueryEscape y no escaparURL (que es PathEscape): este valor va en la
+	// CONSULTA, y PathEscape deja pasar «&» por ser legal en un segmento de
+	// ruta. Los mensajes llevan nombres de archivo dentro —«Renombrado:
+	// a&b.txt»—, así que uno con «&» partía el parámetro y el aviso llegaba
+	// cortado. Defecto latente desde que los mensajes incluyen nombres.
+	q := "?msg=" + escaparConsulta(msg)
 	if esError {
 		q += "&err=1"
 	}

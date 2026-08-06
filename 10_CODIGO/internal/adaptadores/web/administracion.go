@@ -69,10 +69,20 @@ func (s *Servidor) exigirCSRF(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// RF-16 y RF-17 — renombrar y mover son la misma operación.
+// RF-16 — renombrar, y SOLO renombrar.
 //
-// El formulario manda la ruta actual y el destino completo. Si el destino no
-// lleva barra, se interpreta como renombrar dentro de la misma carpeta.
+// HASTA EL 2026-08-06 ESTE MANEJADOR HACÍA TAMBIÉN DE MOVER, distinguiendo
+// una intención de la otra por si el texto recibido llevaba una barra. Bajo
+// el capó las dos son un rename(2), y de ahí venía la tentación de unirlas;
+// pero para QUIEN USA EL PRODUCTO son gestos distintos, y la interfaz no
+// enseñaba en ninguna parte la regla de la barra. El resultado, reportado en
+// uso real: se escribía el nombre de la carpeta destino, el servidor lo leía
+// como un nombre nuevo, chocaba con esa carpeta y respondía «ya existe un
+// elemento con ese nombre». Correcto y desconcertante a la vez.
+//
+// Mover vive ahora en mover.go, con su propia vista. Aquí el destino es
+// SIEMPRE un nombre dentro del mismo directorio: no queda nada que adivinar.
+// ADR-0054.
 func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.fallo(w, r, err)
@@ -87,16 +97,9 @@ func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request) {
 		s.fallo(w, r, err)
 		return
 	}
-	propuesto := strings.TrimSpace(r.PostFormValue("destino"))
-
-	var destino almacen.RutaSegura
-	if strings.Contains(propuesto, "/") {
-		// Mover: el destino es una ruta completa (RF-17).
-		destino, err = almacen.NuevaRuta(propuesto)
-	} else {
-		// Renombrar: mismo directorio, nombre nuevo (RF-16).
-		destino, err = origen.Padre().Hija(propuesto)
-	}
+	// Hija valida el nombre como componente único: una barra aquí ya no se
+	// reinterpreta como ruta, se rechaza por lo que es.
+	destino, err := origen.Padre().Hija(strings.TrimSpace(r.PostFormValue("destino")))
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -104,16 +107,16 @@ func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.almacen.Renombrar(r.Context(), origen, destino); err != nil {
 		// RF-19: toda operación destructiva deja constancia, también cuando falla.
-		s.reg.Warn("renombrar/mover FALLÓ",
+		s.reg.Warn("renombrar FALLÓ",
 			"origen", origen.Rel(), "destino", destino.Rel(),
 			"remoto", origenDe(r), "error", err)
 		s.fallo(w, r, err)
 		return
 	}
 	// RF-19: marca de tiempo la pone el registro, ruta y resultado van aquí.
-	s.reg.Info("renombrado o movido",
+	s.reg.Info("renombrado",
 		"origen", origen.Rel(), "destino", destino.Rel(), "remoto", origenDe(r))
-	s.redirigir(w, r, origen.Padre(), "Movido a "+destino.Rel(), false)
+	s.redirigir(w, r, origen.Padre(), "Renombrado: "+destino.Nombre(), false)
 }
 
 // confirmarBorrado — el primer paso de RF-18.
