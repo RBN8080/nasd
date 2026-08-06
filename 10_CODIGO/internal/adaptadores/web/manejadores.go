@@ -20,6 +20,10 @@ type vistaListado struct {
 	// Csrf viaja en cada formulario del listado. Sin él, las acciones
 	// destructivas quedarían solo tras SameSite=Lax.
 	Csrf string
+	// EsHTTPS decide si las imágenes abren en pestaña nueva — ver el
+	// comentario extenso junto a target=_blank en listado.html. Mismo
+	// origen que Secure de la cookie de sesión (ADR-0046): r.TLS != nil.
+	EsHTTPS bool
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -42,6 +46,7 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 		Mensaje: r.URL.Query().Get("msg"),
 		EsError: r.URL.Query().Get("err") != "",
 		Csrf:    s.csrfDe(r),
+		EsHTTPS: r.TLS != nil,
 	}
 
 	n := 0

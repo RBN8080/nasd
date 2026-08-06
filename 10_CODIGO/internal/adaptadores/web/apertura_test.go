@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"io"
 	"iter"
 	"log/slog"
@@ -106,6 +107,21 @@ func peticionConSesion(t *testing.T, s *Servidor, ruta string) *httptest.Respons
 	return w
 }
 
+// peticionConSesionHTTPS simula una petición que llegó por TLS, con el mismo
+// campo que usa el servidor de verdad: r.TLS != nil. httptest.NewRequest lo
+// deja en nil por omisión —simula HTTP—, así que las pruebas que necesitan el
+// otro lado de esa rama lo fijan a mano, sin abrir un socket TLS real.
+func peticionConSesionHTTPS(t *testing.T, s *Servidor, ruta string) *httptest.ResponseRecorder {
+	t.Helper()
+	cookie, _ := sesionAbierta(t, s)
+	r := httptest.NewRequest(http.MethodGet, ruta, nil)
+	r.AddCookie(cookie)
+	r.TLS = &tls.ConnectionState{}
+	w := httptest.NewRecorder()
+	s.Rutas().ServeHTTP(w, r)
+	return w
+}
+
 // EL DEFECTO QUE ORIGINÓ RF-25, convertido en prueba: el nombre del archivo ya
 // no puede apuntar a /descargar. Mientras lo hiciera, todo navegador que
 // respete «attachment» —Brave, entre otros— descargaba al hacer clic, que es
@@ -135,19 +151,19 @@ func TestElNombreAbreYSoloElMenuDescarga(t *testing.T) {
 	}
 }
 
-// Las imágenes, y solo ellas, se abren en una pestaña nueva.
-func TestSoloLasImagenesAbrenEnPestanaNueva(t *testing.T) {
+// Sobre HTTPS, las imágenes —y solo ellas— se abren en una pestaña nueva.
+func TestSoloLasImagenesAbrenEnPestanaNuevaSobreHTTPS(t *testing.T) {
 	s, a := servidorDeApertura(t)
 	a.agregar(t, "foto.png", []byte("\x89PNG\r\n\x1a\n"))
 	a.agregar(t, "notas.txt", []byte("hola"))
 
-	for linea := range strings.SplitSeq(peticionConSesion(t, s, "/").Body.String(), "\n") {
+	for linea := range strings.SplitSeq(peticionConSesionHTTPS(t, s, "/").Body.String(), "\n") {
 		if !strings.Contains(linea, `href="/abrir/`) {
 			continue
 		}
 		enPestana := strings.Contains(linea, `target="_blank"`)
 		if strings.Contains(linea, "foto.png") && !enPestana {
-			t.Error("la imagen no abre en una pestaña nueva")
+			t.Error("la imagen no abre en una pestaña nueva por HTTPS")
 		}
 		if strings.Contains(linea, "notas.txt") && enPestana {
 			t.Error("un archivo que no es imagen abre en una pestaña nueva")
@@ -155,6 +171,30 @@ func TestSoloLasImagenesAbrenEnPestanaNueva(t *testing.T) {
 		if enPestana && !strings.Contains(linea, `rel="noopener"`) {
 			t.Error("se abre una pestaña nueva sin rel=noopener")
 		}
+	}
+}
+
+// EL ARREGLO DEL 2026-08-06, convertido en prueba: sobre HTTP en la LAN
+// ninguna imagen abre en pestaña nueva, ni siquiera ella. Es la mitad del
+// defecto que encontró el diario del nodo —cero peticiones de imagen lo
+// alcanzaban mientras target=_blank apuntaba a una URL http:// en Safari en
+// iOS— y ADR-0053 lo documenta con la evidencia completa. Degradado a la
+// misma pestaña, igual que el resto; no roto.
+func TestNingunaImagenAbreEnPestanaNuevaSobreHTTP(t *testing.T) {
+	s, a := servidorDeApertura(t)
+	a.agregar(t, "foto.png", []byte("\x89PNG\r\n\x1a\n"))
+
+	cuerpo := peticionConSesion(t, s, "/").Body.String()
+	for linea := range strings.SplitSeq(cuerpo, "\n") {
+		if !strings.Contains(linea, "foto.png") {
+			continue
+		}
+		if strings.Contains(linea, `target="_blank"`) {
+			t.Error("una imagen abre en pestaña nueva sobre HTTP: eso es justo lo que Safari en iOS bloquea (ADR-0053)")
+		}
+	}
+	if !strings.Contains(cuerpo, `href="/abrir/foto.png">foto.png`) {
+		t.Fatalf("el enlace de la imagen no navega en la misma pestaña sobre HTTP: %s", cuerpo)
 	}
 }
 

@@ -93,10 +93,24 @@
            apuntaba a /descargar, que ordena «attachment»: el navegador hacía
            lo correcto y el producto pedía lo que no quería.
            Las imágenes van a una PESTAÑA NUEVA, que es lo que pidió el
-           responsable; «noopener» porque abrir con target sin él le entrega a
-           la página destino una referencia a esta. -->
+           responsable — PERO SOLO SI ESTA PÁGINA LLEGÓ POR HTTPS.
+           EL MOTIVO, encontrado el 2026-08-06 con el diario del propio nodo,
+           no con una suposición: en la LAN, sobre http://192.168.1.38, Safari
+           en iOS bloquea la navegación de target=_blank hacia una URL http://
+           ANTES de emitir la petición —cero peticiones de imagen llegaron a
+           nasd durante las pruebas del responsable, aunque PDF y vídeo, que
+           navegan en la MISMA pestaña, sí llegaban y respondían 200—. No
+           depende de qué responda el puerto 443: se probó cerrando esa vía
+           por completo (ADR-0053) y el bloqueo persistió. Brave no impone
+           esa restricción y por eso solo fallaba ahí.
+           Mismo criterio que Secure en la cookie de sesión (ADR-0046):
+           r.TLS != nil. Por HTTPS —el dominio público, o la LAN cuando
+           resuelve por IPv6 (08_WEB_EXPUESTA.md §2)— las imágenes SÍ abren en
+           pestaña nueva. Por HTTP en la LAN abren en la misma, como el resto:
+           degradado, no roto. «noopener» porque abrir con target sin él le
+           entrega a la página destino una referencia a esta. -->
       <td>{{if .EsDirectori}}<a class="dir" href="{{listado .Ruta}}">{{.Nombre}}/</a>
-          {{else}}{{$tipo := apertura .Nombre}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if eq $tipo.Clase "imagen"}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
+          {{else}}{{$tipo := apertura .Nombre}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>
       <td class="num acciones-fila">
