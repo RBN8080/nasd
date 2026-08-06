@@ -538,14 +538,62 @@ a.dir {
   gap: .6rem;
 }
 
+/* La etiqueta va PEGADA a su casilla y separada de la anterior. Sin esto, con
+   dos pares etiqueta+casilla la rejilla los reparte a distancias iguales y las
+   cuatro filas se leen como cuatro cosas sueltas en lugar de como dos. */
 .acceso label {
   font-weight: 600;
+  font-size: var(--t-menor);
+  margin-top: .4rem;
+}
+
+.acceso label:first-of-type {
+  margin-top: 0;
+}
+
+.acceso input {
+  height: var(--alto-control);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.acceso button {
+  margin-top: .8rem;
+  height: var(--alto-control);
 }
 
 .acceso input::placeholder {
   font-style: italic;
   color: var(--suave);
   opacity: 0.75;
+}
+
+/* ——— «Este aparato ya sabe quién eres» ———
+   Solo aparece cuando el nombre está recordado y basta con la contraseña.
+   Enseña LA INICIAL Y NADA MÁS: identifica sin publicar de quién es la cuenta
+   a quien mire la pantalla por encima del hombro (ADR-0055). */
+.quien {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin: 0 0 .4rem;
+}
+
+.inicial {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--borde);
+  background: var(--tenue);
+  font-size: var(--t-titulo);
+  font-weight: 600;
+}
+
+.cambiar {
+  font-size: var(--t-menor);
 }
 
 /* ——— Administración ———

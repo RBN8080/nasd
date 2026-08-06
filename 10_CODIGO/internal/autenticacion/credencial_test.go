@@ -86,11 +86,11 @@ func TestSesionesCicloCompleto(t *testing.T) {
 	if s.Valida("") || s.Valida("inventado") {
 		t.Fatal("validó un testigo que no existe")
 	}
-	t1, err := s.Abrir()
+	t1, err := s.Abrir("admin")
 	if err != nil {
 		t.Fatalf("Abrir: %v", err)
 	}
-	t2, _ := s.Abrir()
+	t2, _ := s.Abrir("juan")
 	if t1 == t2 {
 		t.Fatal("dos sesiones con el mismo testigo: el azar no es azar")
 	}
@@ -111,7 +111,7 @@ func TestSesionesCicloCompleto(t *testing.T) {
 
 func TestSesionCaducaYSePurga(t *testing.T) {
 	s := NuevasSesiones(10 * time.Millisecond)
-	tok, _ := s.Abrir()
+	tok, _ := s.Abrir("juan")
 	if !s.Valida(tok) {
 		t.Fatal("debía ser válida al abrirla")
 	}
@@ -124,7 +124,7 @@ func TestSesionCaducaYSePurga(t *testing.T) {
 	// misma fuga que ya costó una revisión con las subidas.
 	s2 := NuevasSesiones(10 * time.Millisecond)
 	for range 5 {
-		s2.Abrir()
+		s2.Abrir("juan")
 	}
 	time.Sleep(30 * time.Millisecond)
 	if n := s2.Purgar(); n != 5 {
@@ -132,5 +132,39 @@ func TestSesionCaducaYSePurga(t *testing.T) {
 	}
 	if s2.Abiertas() != 0 {
 		t.Errorf("quedaron %d sesiones tras purgar", s2.Abiertas())
+	}
+}
+
+// Una sesión SIN DUEÑO no puede existir: es a lo que después habría que
+// asignarle una carpeta adivinando, y adivinar ahí significa enseñarle a
+// alguien la carpeta de otro (ADR-0055).
+func TestNoSeAbreUnaSesionSinUsuario(t *testing.T) {
+	s := NuevasSesiones(time.Hour)
+	if _, err := s.Abrir(""); err == nil {
+		t.Fatal("se abrió una sesión sin usuario")
+	}
+	if s.Abiertas() != 0 {
+		t.Errorf("quedó registrada una sesión sin dueño: %d abiertas", s.Abiertas())
+	}
+}
+
+// La sesión recuerda de quién es, y eso es lo que decide qué carpeta se ve.
+func TestLaSesionRecuerdaDeQuienEs(t *testing.T) {
+	s := NuevasSesiones(time.Hour)
+	tok, err := s.Abrir("juan")
+	if err != nil {
+		t.Fatalf("Abrir: %v", err)
+	}
+	quien, ok := s.Usuario(tok)
+	if !ok || quien != "juan" {
+		t.Errorf("Usuario() = %q, %v; se esperaba juan", quien, ok)
+	}
+	// Un testigo inventado no tiene dueño, y sobre todo no hereda ninguno.
+	if quien, ok := s.Usuario("inventado"); ok || quien != "" {
+		t.Errorf("un testigo inventado devolvió %q, %v", quien, ok)
+	}
+	s.Cerrar(tok)
+	if _, ok := s.Usuario(tok); ok {
+		t.Error("una sesión cerrada sigue teniendo dueño")
 	}
 }

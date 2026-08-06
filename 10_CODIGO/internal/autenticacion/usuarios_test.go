@@ -188,3 +188,30 @@ func TestElRegistroNoEsLegiblePorTerceros(t *testing.T) {
 		t.Errorf("el registro tiene permisos %o: lo pueden leer otros", modo)
 	}
 }
+
+// El nombre del superusuario no puede ser también el de una cuenta.
+//
+// Si lo fuera, esa cuenta sería un fantasma: existiría en el registro, tendría
+// carpeta creada, y NO PODRÍA ENTRAR NUNCA, porque el acceso resuelve ese
+// nombre contra la credencial del superusuario antes de mirar aquí. Se rechaza
+// al darla de alta Y al leer el archivo, porque el archivo se edita a mano
+// cuando algo va mal.
+func TestNingunaCuentaPuedeLlamarseComoElSuperusuario(t *testing.T) {
+	r := registroVacio(t)
+	if err := r.Alta(NombreSuperusuario, claveDePrueba); err == nil {
+		t.Fatalf("se dio de alta una cuenta llamada %q", NombreSuperusuario)
+	}
+
+	// Y colado a mano en el archivo, tampoco: el registro no carga.
+	ruta := filepath.Join(t.TempDir(), "usuarios")
+	linea, err := Derivar(claveDePrueba, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("Derivar: %v", err)
+	}
+	if err := os.WriteFile(ruta, []byte(NombreSuperusuario+":"+linea+"\n"), 0o600); err != nil {
+		t.Fatalf("escribir el registro a mano: %v", err)
+	}
+	if _, err := CargarRegistro(ruta, iteracionesDePrueba); err == nil {
+		t.Errorf("se cargó un registro con una cuenta llamada %q", NombreSuperusuario)
+	}
+}

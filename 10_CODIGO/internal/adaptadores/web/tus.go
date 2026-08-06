@@ -152,7 +152,7 @@ func cabecerasTus(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 }
 
-func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	cabecerasTus(w)
 	if !s.exigirCSRF(w, r) {
 		return
@@ -195,7 +195,7 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 	// la subida sobreviva a un reinicio del servicio (ADR-0027).
 	// RF-23 se comprueba ya aquí, para fallar pronto en lugar de tras
 	// transferir 5 GB.
-	parcial, escritor, err := s.almacen.CrearReanudable(r.Context(), ruta, total)
+	parcial, escritor, err := alm.CrearReanudable(r.Context(), ruta, total)
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -216,9 +216,9 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request) {
 //
 // Esto es lo que hace que una subida sobreviva a un reinicio del servicio:
 // el .meta dice adónde iba y el tamaño del parcial dice por dónde iba.
-func (s *Servidor) recuperar(r *http.Request, id string) (*subidaEnCurso, bool) {
+func (s *Servidor) recuperar(r *http.Request, alm almacen.Almacen, id string) (*subidaEnCurso, bool) {
 	sub, err := s.subidas.obtenerOAbrir(id, func() (*subidaEnCurso, error) {
-		parcial, escritor, err := s.almacen.ReabrirParcial(r.Context(), id)
+		parcial, escritor, err := alm.ReabrirParcial(r.Context(), id)
 		if err != nil {
 			return nil, err
 		}
@@ -232,9 +232,9 @@ func (s *Servidor) recuperar(r *http.Request, id string) (*subidaEnCurso, bool) 
 	return sub, true
 }
 
-func (s *Servidor) tusEstado(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) tusEstado(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	cabecerasTus(w)
-	sub, ok := s.recuperar(r, r.PathValue("id"))
+	sub, ok := s.recuperar(r, alm, r.PathValue("id"))
 	if !ok {
 		http.Error(w, "no existe", http.StatusNotFound)
 		return
@@ -246,13 +246,13 @@ func (s *Servidor) tusEstado(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	cabecerasTus(w)
 	if !s.exigirCSRF(w, r) {
 		return
 	}
 	id := r.PathValue("id")
-	sub, ok := s.recuperar(r, id)
+	sub, ok := s.recuperar(r, alm, id)
 	if !ok {
 		http.Error(w, "no existe", http.StatusNotFound)
 		return
@@ -321,13 +321,13 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request) {
 //
 // Sin este verbo, cancelar dejaba basura en estado/parciales/ hasta que el
 // barrido de ADR-0029 la recogiera, días después.
-func (s *Servidor) tusDescartar(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) tusDescartar(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	cabecerasTus(w)
 	if !s.exigirCSRF(w, r) {
 		return
 	}
 	id := r.PathValue("id")
-	sub, ok := s.recuperar(r, id)
+	sub, ok := s.recuperar(r, alm, id)
 	if !ok {
 		http.Error(w, "no existe", http.StatusNotFound)
 		return

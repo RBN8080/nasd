@@ -6,12 +6,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"nasd/internal/autenticacion"
 )
 
 // sesionAbierta devuelve la cookie y el testigo CSRF de una sesión real.
 func sesionAbierta(t *testing.T, s *Servidor) (*http.Cookie, string) {
 	t.Helper()
-	tok, err := s.sesiones.Abrir()
+	tok, err := s.sesiones.Abrir(autenticacion.NombreSuperusuario)
 	if err != nil {
 		t.Fatalf("Abrir sesión: %v", err)
 	}

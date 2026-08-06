@@ -9,7 +9,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -69,6 +71,22 @@ type Config struct {
 	// que dure, así que no se pone eterna. Siete días equilibra comodidad y
 	// exposición para un uso doméstico. [R]
 	DuracionSesion time.Duration
+
+	// DirectorioEstado es donde vive el registro de usuarios (ADR-0055).
+	//
+	// NO es el disco de datos, y la diferencia importa: en el disco de datos
+	// lo vería SMB, y ese disco está pensado para sobrevivir a la placa y
+	// viajar — que es justo lo que no se quiere de unas credenciales.
+	//
+	// /var/lib/nasd es lo que systemd llama StateDirectory: estado persistente
+	// y escribible de un servicio (systemd.exec(5)). La unidad lo declara y
+	// systemd lo crea con el dueño correcto antes de arrancar.
+	DirectorioEstado string
+}
+
+// RutaUsuarios es el archivo del registro de cuentas.
+func (c Config) RutaUsuarios() string {
+	return filepath.Join(c.DirectorioEstado, "usuarios")
 }
 
 // Valores de referencia [R] — no son criterio de aceptación (01_REQUISITOS §2).
@@ -84,6 +102,7 @@ func porDefecto() Config {
 		PlazoOcioso:      120 * time.Second,
 		PlazoInactividad: 60 * time.Second,
 		DuracionSesion:   7 * 24 * time.Hour,
+		DirectorioEstado: "/var/lib/nasd",
 	}
 }
 
@@ -139,6 +158,9 @@ func Cargar(ruta string) (Config, error) {
 			}
 			c.DuracionSesion = time.Duration(n) * time.Hour
 		}
+		if s, ok := v["estado.directorio"]; ok {
+			c.DirectorioEstado = s
+		}
 		if s, ok := v["plazos.inactividad_s"]; ok {
 			n, err := strconv.Atoi(s)
 			if err != nil {
@@ -161,6 +183,20 @@ func Cargar(ruta string) (Config, error) {
 		}
 		c.Puerto = n
 	}
+	if s := os.Getenv("NASD_ESTADO"); s != "" {
+		c.DirectorioEstado = s
+	}
+	// STATE_DIRECTORY la pone systemd a partir de StateDirectory= y MANDA
+	// sobre lo demás: es la ruta que systemd ha creado de verdad, con el dueño
+	// del servicio. Si el TOML dijera otra cosa, ganaría una carpeta que quizá
+	// ni existe.
+	//
+	// Puede traer varias rutas separadas por «:» si la unidad declara varias
+	// (systemd.exec(5)); aquí solo hay una, y se toma la primera.
+	if s := os.Getenv("STATE_DIRECTORY"); s != "" {
+		primera, _, _ := strings.Cut(s, ":")
+		c.DirectorioEstado = primera
+	}
 
 	return c, c.validar()
 }
@@ -180,6 +216,11 @@ func (c Config) validar() error {
 	// arrancar y se ve de inmediato.
 	if c.Direccion == "" {
 		return fmt.Errorf("direccion: no puede estar vacía; use la IP de la LAN (ADR-0018)")
+	}
+	// Sin sitio donde vivir el registro no se puede dar de alta a nadie, y el
+	// fallo aparecería mucho más tarde, al intentarlo (P5).
+	if c.DirectorioEstado == "" {
+		return fmt.Errorf("estado.directorio: no puede estar vacío (ADR-0055)")
 	}
 
 	// TLS: o están las dos rutas o no está ninguna. Media configuración es la

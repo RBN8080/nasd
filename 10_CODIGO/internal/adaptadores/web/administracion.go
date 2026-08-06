@@ -83,7 +83,7 @@ func (s *Servidor) exigirCSRF(w http.ResponseWriter, r *http.Request) bool {
 // Mover vive ahora en mover.go, con su propia vista. Aquí el destino es
 // SIEMPRE un nombre dentro del mismo directorio: no queda nada que adivinar.
 // ADR-0054.
-func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	if err := r.ParseForm(); err != nil {
 		s.fallo(w, r, err)
 		return
@@ -105,7 +105,7 @@ func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.almacen.Renombrar(r.Context(), origen, destino); err != nil {
+	if err := alm.Renombrar(r.Context(), origen, destino); err != nil {
 		// RF-19: toda operación destructiva deja constancia, también cuando falla.
 		s.reg.Warn("renombrar FALLÓ",
 			"origen", origen.Rel(), "destino", destino.Rel(),
@@ -125,13 +125,13 @@ func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request) {
 // accidental». Aquí se muestra QUÉ se va a destruir —cuántos archivos y
 // cuántos bytes— porque sin papelera (D-15) y con copia única (D-12) esta
 // pantalla es la última oportunidad de darse cuenta.
-func (s *Servidor) confirmarBorrado(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) confirmarBorrado(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	ruta, err := almacen.NuevaRuta(r.PathValue("ruta"))
 	if err != nil || ruta.EsRaiz() {
 		s.fallo(w, r, almacen.ErrRutaInvalida)
 		return
 	}
-	conteo, err := s.almacen.Resumen(r.Context(), ruta)
+	conteo, err := alm.Resumen(r.Context(), ruta)
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -149,7 +149,7 @@ func (s *Servidor) confirmarBorrado(w http.ResponseWriter, r *http.Request) {
 }
 
 // borrar — el segundo paso de RF-18, el que destruye.
-func (s *Servidor) borrar(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) borrar(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	if err := r.ParseForm(); err != nil {
 		s.fallo(w, r, err)
 		return
@@ -172,7 +172,7 @@ func (s *Servidor) borrar(w http.ResponseWriter, r *http.Request) {
 
 	// Se cuenta ANTES de destruir: después ya no se puede saber qué había, y
 	// sin papelera el registro es lo único que queda (RF-19).
-	conteo, err := s.almacen.Resumen(r.Context(), ruta)
+	conteo, err := alm.Resumen(r.Context(), ruta)
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -181,9 +181,9 @@ func (s *Servidor) borrar(w http.ResponseWriter, r *http.Request) {
 	// Un árbol solo se tala si el usuario venía de la confirmación que le
 	// dijo cuántos archivos contenía.
 	if conteo.EsDirectorio {
-		err = s.almacen.BorrarArbol(r.Context(), ruta)
+		err = alm.BorrarArbol(r.Context(), ruta)
 	} else {
-		err = s.almacen.Borrar(r.Context(), ruta)
+		err = alm.Borrar(r.Context(), ruta)
 	}
 	if err != nil {
 		s.reg.Warn("borrado FALLÓ",

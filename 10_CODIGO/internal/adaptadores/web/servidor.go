@@ -25,7 +25,18 @@ var recursos embed.FS
 
 // Servidor arma el adaptador HTTP completo.
 type Servidor struct {
-	almacen          almacen.Almacen
+	// almacenRaiz ve el volumen ENTERO: es el del superusuario.
+	//
+	// NO SE USA PARA ATENDER PETICIONES. Lo que un manejador ve llega por
+	// parámetro, ya acotado a quien pregunta (ver conAlmacen en sesion.go).
+	// Aquí queda para lo que es de la casa y no de nadie: revisar al arrancar
+	// qué subidas quedaron a medias y expirarlas en el ciclo de mantenimiento.
+	almacenRaiz almacen.Almacen
+	// abrirAlmacen devuelve la vista del volumen acotada a un usuario. Es una
+	// función y no el adaptador entero para que este paquete no dependa de
+	// fsposix: quien las une es la raíz de composición (cmd/nasd).
+	abrirAlmacen func(usuario string) (almacen.Almacen, error)
+
 	reg              *slog.Logger
 	plantillas       *template.Template
 	plazoInactividad time.Duration
@@ -34,7 +45,12 @@ type Servidor struct {
 	// Autenticación — RF-15. credencial es la línea derivada, NUNCA la
 	// contraseña en claro: esta nunca entra en el proceso más allá del
 	// instante de verificarla.
+	//
+	// credencial es la del SUPERUSUARIO y no está en usuarios: su llave vive
+	// en un archivo que el servicio no puede escribir, y el registro sí es
+	// escribible. La asimetría es a propósito (ADR-0055).
 	credencial     string
+	usuarios       *autenticacion.Registro
 	sesiones       *autenticacion.Sesiones
 	limitador      *limitadorAcceso
 	duracionSesion time.Duration
@@ -55,12 +71,20 @@ type Servidor struct {
 }
 
 type Opciones struct {
-	Almacen          almacen.Almacen
+	Almacen almacen.Almacen
+	// AlmacenDe acota el volumen a la carpeta de un usuario (ADR-0055). La
+	// pone la raíz de composición; sin ella no podría entrar nadie que no sea
+	// el superusuario, así que Nuevo la exige.
+	AlmacenDe        func(usuario string) (almacen.Almacen, error)
 	Registro         *slog.Logger
 	PlazoInactividad time.Duration
 	// Credencial es la línea derivada que produce «nasd --generar-credencial».
 	// Si está vacía, Nuevo falla: NO existe un modo sin autenticar (RF-15).
-	Credencial     string
+	Credencial string
+	// Usuarios es el registro de cuentas. Puede estar VACÍO —un nodo recién
+	// instalado no tiene usuarios— pero no puede faltar: sin él, dar de alta a
+	// alguien no serviría de nada y el fallo aparecería al intentar entrar.
+	Usuarios       *autenticacion.Registro
 	DuracionSesion time.Duration
 	// Volumen es el punto de montaje del disco de datos (ADR-0019), necesario
 	// para informar de su ocupación y su salud en /estado.
@@ -81,6 +105,17 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.Registro == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta el registro")
 	}
+	// Las dos piezas del acceso por usuario, exigidas aquí y no descubiertas
+	// al primer intento de entrar. Sin AlmacenDe, un usuario válido entraría y
+	// se encontraría un error interno; sin Usuarios, ninguna cuenta existiría
+	// y la única pista sería «contraseña incorrecta» para una contraseña
+	// buena. Las dos son degradaciones silenciosas de las que P5 prohíbe.
+	if o.AlmacenDe == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta AlmacenDe (ADR-0055)")
+	}
+	if o.Usuarios == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta el registro de usuarios (ADR-0055)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -90,7 +125,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	}
 
 	s := &Servidor{
-		almacen:           o.Almacen,
+		almacenRaiz:       o.Almacen,
+		abrirAlmacen:      o.AlmacenDe,
+		usuarios:          o.Usuarios,
 		reg:               o.Registro,
 		plantillas:        t,
 		plazoInactividad:  o.PlazoInactividad,
@@ -109,7 +146,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	// No se reabren aquí —eso ocurre al primer HEAD o PATCH— pero se informa,
 	// porque un montón de parciales acumulados es el síntoma de ADR-0029 y
 	// debe verse en el registro sin tener que ir a mirar el disco (P7).
-	if ps, err := s.almacen.Reanudables(context.Background()); err != nil {
+	if ps, err := s.almacenRaiz.Reanudables(context.Background()); err != nil {
 		o.Registro.Warn("no se pudo revisar las subidas a medias", "error", err)
 	} else if len(ps) > 0 {
 		var bytes int64
@@ -135,19 +172,23 @@ func (s *Servidor) Rutas() http.Handler {
 	mux.Handle("GET /estatico/", http.FileServerFS(recursos))
 	mux.Handle("/", s.exigirSesion(protegido))
 
-	protegido.HandleFunc("GET /{$}", s.verListado)
-	protegido.HandleFunc("GET /ver/{ruta...}", s.verListado)
-	protegido.HandleFunc("GET /descargar/{ruta...}", s.descargar)
+	// TODO LO QUE TOCA ARCHIVOS VA ENVUELTO EN conAlmacen, que le entrega al
+	// manejador el volumen ya acotado a quien pregunta (ADR-0055). Esta tabla
+	// es, además, la lista de lo que puede ver archivos: lo que no aparezca
+	// aquí envuelto, no los ve.
+	protegido.HandleFunc("GET /{$}", s.conAlmacen(s.verListado))
+	protegido.HandleFunc("GET /ver/{ruta...}", s.conAlmacen(s.verListado))
+	protegido.HandleFunc("GET /descargar/{ruta...}", s.conAlmacen(s.descargar))
 
 	// Apertura en el navegador — RF-25, ADR-0052. Son DOS extremos y no uno:
 	// /abrir entrega la página del visor y /contenido los bytes pasivos. Ver
 	// apertura.go para por qué esa separación es lo que hace cumplible el
 	// mensaje de RF-25. /descargar queda intacto y sigue siendo el único que
 	// ordena «attachment».
-	protegido.HandleFunc("GET /abrir/{ruta...}", s.abrirEnNavegador)
-	protegido.HandleFunc("GET /contenido/{ruta...}", s.servirContenido)
-	protegido.HandleFunc("POST /subir", s.subirMultipart)
-	protegido.HandleFunc("POST /directorio", s.crearDirectorio)
+	protegido.HandleFunc("GET /abrir/{ruta...}", s.conAlmacen(s.abrirEnNavegador))
+	protegido.HandleFunc("GET /contenido/{ruta...}", s.conAlmacen(s.servirContenido))
+	protegido.HandleFunc("POST /subir", s.conAlmacen(s.subirMultipart))
+	protegido.HandleFunc("POST /directorio", s.conAlmacen(s.crearDirectorio))
 
 	// Administración — Fase 3. Después de RF-15, por RN-06.
 	//
@@ -155,11 +196,11 @@ func (s *Servidor) Rutas() http.Handler {
 	// Compartirlo con renombrar obligaba a adivinar la intención mirando si
 	// el texto llevaba una barra, y en uso real se adivinó mal. /renombrar
 	// conserva SOLO el renombrado, que es lo que su nombre dice.
-	protegido.HandleFunc("GET /mover/{ruta...}", s.verMover)          // RF-17, paso 1
-	protegido.HandleFunc("POST /mover", s.mover)                      // RF-17, paso 2
-	protegido.HandleFunc("POST /renombrar", s.renombrar)              // RF-16
-	protegido.HandleFunc("GET /borrar/{ruta...}", s.confirmarBorrado) // RF-18, paso 1
-	protegido.HandleFunc("POST /borrar", s.borrar)                    // RF-18, paso 2
+	protegido.HandleFunc("GET /mover/{ruta...}", s.conAlmacen(s.verMover))          // RF-17, paso 1
+	protegido.HandleFunc("POST /mover", s.conAlmacen(s.mover))                      // RF-17, paso 2
+	protegido.HandleFunc("POST /renombrar", s.conAlmacen(s.renombrar))              // RF-16
+	protegido.HandleFunc("GET /borrar/{ruta...}", s.conAlmacen(s.confirmarBorrado)) // RF-18, paso 1
+	protegido.HandleFunc("POST /borrar", s.conAlmacen(s.borrar))                    // RF-18, paso 2
 
 	// Observabilidad — Fase 4, RF-24. Va DENTRO de lo protegido: ver estado.go.
 	protegido.HandleFunc("GET /estado", s.verEstado)
@@ -169,10 +210,10 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("GET /estado/flujo", s.flujoDeEstado)
 
 	// Núcleo del protocolo tus — ADR-0027.
-	protegido.HandleFunc("POST /subidas", s.tusCrear)
-	protegido.HandleFunc("HEAD /subidas/{id}", s.tusEstado)
-	protegido.HandleFunc("PATCH /subidas/{id}", s.tusEnviar)
-	protegido.HandleFunc("DELETE /subidas/{id}", s.tusDescartar)
+	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))
+	protegido.HandleFunc("HEAD /subidas/{id}", s.conAlmacen(s.tusEstado))
+	protegido.HandleFunc("PATCH /subidas/{id}", s.conAlmacen(s.tusEnviar))
+	protegido.HandleFunc("DELETE /subidas/{id}", s.conAlmacen(s.tusDescartar))
 
 	return s.conRegistro(mux)
 }

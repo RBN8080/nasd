@@ -44,6 +44,18 @@ var ErrYaExiste = errors.New("ya existe un usuario con ese nombre")
 // ErrNoExiste — baja o consulta de alguien que no está.
 var ErrNoExiste = errors.New("no existe ese usuario")
 
+// NombreSuperusuario es el nombre con el que el responsable se identifica en
+// el formulario de acceso.
+//
+// Hacía falta uno en cuanto el acceso dejó de ser «una contraseña y ya»: si se
+// pide un nombre, él también tiene que teclear alguno. No está en el registro
+// —su credencial vive aparte, ver arriba— y por eso mismo el registro tiene
+// que RECHAZARLO: una cuenta llamada igual no podría entrar nunca, porque el
+// acceso resolvería ese nombre contra la credencial del superusuario antes de
+// mirar el registro. Sería una cuenta fantasma, con carpeta creada y sin dueño
+// posible.
+const NombreSuperusuario = "admin"
+
 // maxUsuarios acota el registro. No es una regla de producto: es que el
 // acceso compara la contraseña contra CADA usuario cuando no sabe cuál es, y
 // cada comparación cuesta ~3.6 s en el nodo (medido el 2026-08-06). Sin tope,
@@ -98,6 +110,10 @@ type Registro struct {
 // mayúsculas, así que «Juan» y «juan» serían dos carpetas distintas y dos
 // cuentas que se confunden al teclearlas por SSH o por SMB.
 func NombreValido(nombre string) error {
+	if nombre == NombreSuperusuario {
+		return fmt.Errorf("%w: %q está reservado para el superusuario",
+			ErrNombreInvalido, NombreSuperusuario)
+	}
 	if len(nombre) < 2 || len(nombre) > 32 {
 		return fmt.Errorf("%w: debe tener entre 2 y 32 caracteres", ErrNombreInvalido)
 	}
@@ -318,6 +334,11 @@ func (r *Registro) guardar() error {
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("cerrar el temporal del registro: %w", err)
+	}
+	// Antes de publicar, no después: si el rename ya ocurrió y el chown
+	// fallara, el registro bueno quedaría instalado y sin dueño correcto.
+	if err := heredarDuenoDe(dir, nombreTmp); err != nil {
+		return err
 	}
 	if err := os.Rename(nombreTmp, r.ruta); err != nil {
 		return fmt.Errorf("publicar el registro: %w", err)

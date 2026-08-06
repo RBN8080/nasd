@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"nasd/internal/adaptadores/sistema"
+	"nasd/internal/autenticacion"
 )
 
 // nodoSano es un nodo con todo medido y en orden, para partir de ahí y
@@ -385,7 +386,10 @@ func abrirSesionDePrueba(t *testing.T, h http.Handler) *http.Cookie {
 	t.Helper()
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/acceso",
-		strings.NewReader(url.Values{"clave": {claveDePrueba}}.Encode()))
+		strings.NewReader(url.Values{
+			"usuario": {autenticacion.NombreSuperusuario},
+			"clave":   {claveDePrueba},
+		}.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(w, r)
 	for _, c := range w.Result().Cookies() {

@@ -38,7 +38,7 @@ type vistaListado struct {
 // acumula el directorio entero ni obliga al navegador a dibujar 10 000 filas.
 const maxEntradasPorPagina = 2000
 
-func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	ruta, err := almacen.NuevaRuta(r.PathValue("ruta"))
 	if err != nil {
 		s.fallo(w, r, err)
@@ -56,7 +56,7 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n := 0
-	for e, err := range s.almacen.Listar(r.Context(), ruta) {
+	for e, err := range alm.Listar(r.Context(), ruta) {
 		if err != nil {
 			s.fallo(w, r, err)
 			return
@@ -104,13 +104,13 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Servidor) descargar(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) descargar(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	ruta, err := almacen.NuevaRuta(r.PathValue("ruta"))
 	if err != nil {
 		s.fallo(w, r, err)
 		return
 	}
-	lector, entrada, err := s.almacen.Abrir(r.Context(), ruta)
+	lector, entrada, err := alm.Abrir(r.Context(), ruta)
 	if err != nil {
 		s.fallo(w, r, err)
 		return
@@ -157,7 +157,7 @@ func (e escrituraDelegada) Unwrap() http.ResponseWriter { return e.ResponseWrite
 // subirMultipart es el camino de respaldo SIN JavaScript (ADR-0027).
 // El camino normal de la interfaz es tus; ambos escriben por el mismo
 // EscrituraAtomica, así que la durabilidad es un único camino.
-func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	// PROHIBIDO r.ParseMultipartForm / r.FormFile — ADR-0025.
 	// Vuelcan el excedente a os.TempDir(), que con PrivateTmp=yes es tmpfs,
 	// es decir RAM: 4 GB sobre un presupuesto de 592 MB (RES-01).
@@ -239,7 +239,7 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request) {
 				s.fallo(w, r, err)
 				return
 			}
-			if err := s.escribir(w, r, ruta, parte); err != nil {
+			if err := s.escribir(w, r, alm, ruta, parte); err != nil {
 				s.fallo(w, r, err)
 				return
 			}
@@ -256,8 +256,8 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request) {
 }
 
 // escribir vuelca un io.Reader al almacén con la secuencia atómica completa.
-func (s *Servidor) escribir(w http.ResponseWriter, r *http.Request, ruta almacen.RutaSegura, origen io.Reader) error {
-	ea, err := s.almacen.Crear(r.Context(), ruta)
+func (s *Servidor) escribir(w http.ResponseWriter, r *http.Request, alm almacen.Almacen, ruta almacen.RutaSegura, origen io.Reader) error {
+	ea, err := alm.Crear(r.Context(), ruta)
 	if err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func (s *Servidor) escribir(w http.ResponseWriter, r *http.Request, ruta almacen
 	return nil
 }
 
-func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request) {
+func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	if err := r.ParseForm(); err != nil {
 		s.fallo(w, r, err)
 		return
@@ -299,7 +299,7 @@ func (s *Servidor) crearDirectorio(w http.ResponseWriter, r *http.Request) {
 		s.fallo(w, r, err)
 		return
 	}
-	if err := s.almacen.CrearDirectorio(r.Context(), nueva); err != nil {
+	if err := alm.CrearDirectorio(r.Context(), nueva); err != nil {
 		s.fallo(w, r, err)
 		return
 	}
