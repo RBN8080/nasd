@@ -136,15 +136,26 @@
               </label>
               <button type="submit">Guardar</button>
             </form>
-            <!-- MOVER ES UN ENLACE, NO UN CAMPO DE TEXTO (ADR-0054).
+            <!-- MOVER YA NO ES UN CAMPO DE TEXTO (ADR-0054).
                  Aquí hubo un «Mover a» con una ruta escrita a mano, y en uso
                  real no funcionó: el servidor distinguía mover de renombrar
                  por si el texto llevaba una barra, regla que la interfaz
                  nunca enseñó. Se escribía el nombre de la carpeta destino y
                  salía «ya existe un elemento con ese nombre». El destino se
                  elige ahora navegando, que es lo único que no se puede
-                 escribir mal. -->
-            <a class="accion" href="{{moverA .Ruta .Ruta.Padre}}">Mover…</a>
+                 escribir mal.
+                 VA EN <form method="get">, IGUAL QUE «Descargar», y no en un
+                 enlace: en el panel conviven botones y el enlace salía suelto
+                 en color de vínculo, como si fuera de otra familia. La acción
+                 es la misma clase de cosa que las de al lado y tiene que
+                 leerse así.
+                 Sin «?a=»: cuando no se indica carpeta, verMover empieza por
+                 la que contiene el elemento, que es adonde llevaba ese
+                 parámetro. Un formulario GET además reescribe la consulta, así
+                 que ponerlo en el «action» no habría servido de nada. -->
+            <form method="get" action="/mover/{{rutaURL .Ruta.Rel}}">
+              <button type="submit">Mover…</button>
+            </form>
             <a class="destructivo" href="/borrar/{{rutaURL .Ruta.Rel}}">Borrar</a>
           </div>
         </details>

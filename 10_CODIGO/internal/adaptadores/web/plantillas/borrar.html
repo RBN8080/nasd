@@ -7,10 +7,14 @@
 <link rel="stylesheet" href="/estatico/estilo.css">
 </head>
 <body>
-<main class="acceso">
+<main class="acceso borrado">
   <h1>Confirmar borrado</h1>
 
-  <p>Se va a borrar:</p>
+  <!-- Centrado a petición del responsable (06/08/2026). El nombre es el
+       dato que hay que leer antes de destruir nada, y RF-18 exige que se
+       muestre: alineado al centro bajo su rótulo, se lee como una sola
+       cosa en vez de como dos párrafos sueltos. -->
+  <p class="rotulo-borrado">Se va a borrar:</p>
   <p class="ruta-destacada">{{.Ruta.Rel}}</p>
 
   <div class="peligro">
@@ -20,7 +24,7 @@
     {{else}}
       <p><strong>Archivo de {{tamano .Conteo.Bytes}}.</strong></p>
     {{end}}
-    <p><strong>Esto no se puede deshacer.</strong> No hay papelera, y este
+    <p><strong>Esta acción no se puede deshacer.</strong> No hay papelera, y este
     disco no tiene copia: lo que se borre aquí desaparece. Si el archivo solo
     existe en este NAS, se pierde.</p>
   </div>
@@ -29,10 +33,10 @@
     <input type="hidden" name="csrf" value="{{.Csrf}}">
     <input type="hidden" name="ruta" value="{{.Ruta.Rel}}">
     <input type="hidden" name="confirmado" value="si">
-    <button type="submit" class="destructivo">Sí, borrar definitivamente</button>
+    <button type="submit" class="destructivo">Eliminar definitivamente</button>
   </form>
 
-  <p><a href="{{listado .Ruta.Padre}}">Cancelar y volver</a></p>
+  <p class="cancelar"><a href="{{listado .Ruta.Padre}}">Cancelar y volver</a></p>
 </main>
 </body>
 </html>
