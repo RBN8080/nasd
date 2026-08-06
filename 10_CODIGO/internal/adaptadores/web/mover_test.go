@@ -229,9 +229,43 @@ func TestTrasMoverSeVuelveALaVistaConElAvisoEncendido(t *testing.T) {
 	if !strings.Contains(cuerpo, "mensaje exito") {
 		t.Error("la vista no dibuja el aviso verde de operación completada")
 	}
-	// Y «Cerrar» tiene que sacar a la carpeta donde acaba de aterrizar.
-	if !strings.Contains(cuerpo, `href="/ver/Videos"`) {
+	// Y «Cerrar» tiene que sacar a la carpeta donde acaba de aterrizar. Es un
+	// <form method="get"> y no un enlace: en esta interfaz, lo que se pulsa
+	// junto a botones ES un botón, aunque por dentro sea una navegación.
+	if !strings.Contains(cuerpo, `action="/ver/Videos"`) {
 		t.Errorf("«Cerrar» no lleva a la carpeta destino:\n%s", cuerpo)
+	}
+}
+
+// EL RESPONSABLE TUVO QUE PEDIR ESTO DOS VECES, sobre dos capturas: primero
+// «Mover…» en el menú del listado y luego «Cerrar» aquí. Los dos se habían
+// dejado como enlaces y salían en color de vínculo entre botones.
+//
+// La regla que fija esta prueba: en la fila de acciones de la vista de mover
+// NO hay enlaces. Lo que se pulsa ahí es un botón, aunque por dentro sea una
+// navegación. No hay tercera vez.
+func TestEnLaFilaDeAccionesDeMoverNoHayEnlaces(t *testing.T) {
+	s, a := servidorDeMover(t)
+	a.agregar(t, "Videos", true)
+	a.agregar(t, "notas.txt", false)
+
+	cuerpo := peticionConSesion(t, s, "/mover/notas.txt").Body.String()
+
+	ini := strings.Index(cuerpo, `<div class="acciones-mover">`)
+	if ini < 0 {
+		t.Fatal("no se encuentra la fila de acciones")
+	}
+	fila := cuerpo[ini:]
+	if fin := strings.Index(fila, "</main>"); fin >= 0 {
+		fila = fila[:fin]
+	}
+	if strings.Contains(fila, "<a ") || strings.Contains(fila, "<a>") {
+		t.Errorf("hay un enlace entre los botones de la fila de acciones:\n%s", fila)
+	}
+	for _, b := range []string{"Mover aquí", "Crear carpeta", "Cerrar"} {
+		if !strings.Contains(fila, b) {
+			t.Errorf("falta «%s» en la fila de acciones", b)
+		}
 	}
 }
 
