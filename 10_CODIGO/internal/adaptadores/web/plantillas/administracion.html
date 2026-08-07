@@ -1,0 +1,71 @@
+{{define "administracion.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — Administración</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+
+<header>
+  <div class="cabecera-superior">
+    <div class="titulo-estado">
+      <span class="titulo-pagina">Administración</span>
+    </div>
+
+    <!-- La MISMA barra y la MISMA clase que listado.html y estado.html
+         (ver el comentario junto a .cabecera-superior en estilo.css): tener
+         una clase propia aquí es justo lo que dejó a /estado sin los
+         arreglos de alineación que recibía la otra página. -->
+    <div class="barra-acciones">
+      <a class="boton-barra" href="/">Archivos</a>
+      <a class="boton-barra" href="/estado">Estado</a>
+      <form method="post" action="/salir" class="salir">
+        <button type="submit">Salir</button>
+      </form>
+    </div>
+  </div>
+</header>
+
+<main>
+
+{{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{else}}exito{{end}}">{{.Mensaje}}</p>{{end}}
+
+<h2>Cuentas</h2>
+<table class="datos">
+  <thead><tr><th>Cuenta</th><th>Sesión</th><th></th></tr></thead>
+  <tbody>
+  {{range .Usuarios}}
+    <tr{{if .Activo}} class="v-ok"{{end}}>
+      <td class="rotulo">{{.Nombre}}</td>
+      <td class="estado"><span class="pastilla">{{if .Activo}}activa{{end}}</span></td>
+      <td class="num"><a class="destructivo" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></td>
+    </tr>
+  {{else}}
+    <tr><td colspan="3">Todavía no hay ninguna cuenta dada de alta.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+<!-- El superusuario (admin) no aparece en esta lista: no está en el
+     registro (ADR-0055) y no se puede dar de baja a sí mismo por aquí. -->
+
+<h2>Nueva cuenta</h2>
+<form method="post" action="/administracion/alta">
+  <input type="hidden" name="csrf" value="{{.Csrf}}">
+  <label for="nombre">Nombre</label>
+  <input type="text" id="nombre" name="nombre"
+     autocapitalize="off" autocorrect="off" spellcheck="false"
+     required>
+  <label for="clave">Contraseña</label>
+  <input type="password" id="clave" name="clave"
+     autocomplete="new-password" minlength="14" required>
+  <p class="nota">Solo minúsculas, dígitos, «-» y «_», empezando por letra. Mínimo 14 caracteres.</p>
+  <button type="submit">Crear cuenta</button>
+</form>
+
+</main>
+</body>
+</html>
+{{end}}

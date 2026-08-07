@@ -168,3 +168,41 @@ func TestLaSesionRecuerdaDeQuienEs(t *testing.T) {
 		t.Error("una sesión cerrada sigue teniendo dueño")
 	}
 }
+
+// El panel de administración (P-4, etapa 2) usa esto para mostrar quién
+// tiene sesión abierta ahora mismo.
+func TestActivosPorUsuario(t *testing.T) {
+	s := NuevasSesiones(time.Hour)
+	if activos := s.ActivosPorUsuario(); len(activos) != 0 {
+		t.Fatalf("sin sesiones abiertas, ActivosPorUsuario() = %v", activos)
+	}
+
+	s.Abrir("juan")
+	tokAna, _ := s.Abrir("ana")
+	// Dos sesiones de la MISMA cuenta —dos aparatos— cuentan como una sola
+	// entrada: la pregunta es «¿tiene sesión?», no «¿cuántas?».
+	s.Abrir("juan")
+
+	activos := s.ActivosPorUsuario()
+	if len(activos) != 2 || !activos["juan"] || !activos["ana"] {
+		t.Errorf("ActivosPorUsuario() = %v; se esperaban juan y ana", activos)
+	}
+	if activos["luis"] {
+		t.Error("una cuenta sin sesión salió como activa")
+	}
+
+	s.Cerrar(tokAna)
+	if activos := s.ActivosPorUsuario(); activos["ana"] {
+		t.Error("ana seguía activa tras cerrar su única sesión")
+	}
+}
+
+// Y las caducadas no cuentan, aunque nadie las haya purgado todavía.
+func TestActivosPorUsuarioNoIncluyeCaducadas(t *testing.T) {
+	s := NuevasSesiones(10 * time.Millisecond)
+	s.Abrir("juan")
+	time.Sleep(30 * time.Millisecond)
+	if activos := s.ActivosPorUsuario(); activos["juan"] {
+		t.Error("una sesión caducada salió como activa")
+	}
+}

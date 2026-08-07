@@ -217,6 +217,15 @@ func (s *Servidor) Rutas() http.Handler {
 	// vía en lugar de darla por hecha.
 	protegido.HandleFunc("GET /estado/flujo", s.soloSuperusuario(s.flujoDeEstado))
 
+	// Panel de administración — P-4, etapa 2 (ADR-0055). SOLO el
+	// superusuario, misma envoltura que /estado. Ninguna de las cuatro toca
+	// archivos —dar de alta o de baja una cuenta no es tocar el disco—, así
+	// que ninguna lleva conAlmacen.
+	protegido.HandleFunc("GET /administracion", s.soloSuperusuario(s.verAdministracion))
+	protegido.HandleFunc("POST /administracion/alta", s.soloSuperusuario(s.altaUsuario))
+	protegido.HandleFunc("GET /administracion/baja/{nombre}", s.soloSuperusuario(s.confirmarBaja))
+	protegido.HandleFunc("POST /administracion/baja", s.soloSuperusuario(s.bajaUsuario))
+
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))
 	protegido.HandleFunc("HEAD /subidas/{id}", s.conAlmacen(s.tusEstado))
