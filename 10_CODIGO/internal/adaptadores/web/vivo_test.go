@@ -134,6 +134,7 @@ func servidorConPlazo(t *testing.T, plazo time.Duration) *Servidor {
 	s, err := Nuevo(Opciones{
 		Almacen:          almacenVacio{},
 		AlmacenDe:        almacenPorUsuarioDePrueba(almacenVacio{}),
+		PromoverUsuario:  promoverUsuarioDePrueba,
 		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		PlazoInactividad: plazo,
 		Credencial:       linea,

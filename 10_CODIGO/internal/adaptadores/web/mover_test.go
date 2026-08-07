@@ -96,6 +96,7 @@ func servidorDeMover(t *testing.T) (*Servidor, *almacenDeMover) {
 	s, err := Nuevo(Opciones{
 		Almacen:          a,
 		AlmacenDe:        almacenPorUsuarioDePrueba(a),
+		PromoverUsuario:  promoverUsuarioDePrueba,
 		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		PlazoInactividad: time.Minute,
 		Credencial:       linea,

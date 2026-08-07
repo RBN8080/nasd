@@ -40,10 +40,16 @@ func (a *almacenMarcado) Listar(context.Context, almacen.RutaSegura) iter.Seq2[a
 }
 
 // reparto registra a quién se le pidió un almacén y con cuál se le respondió.
+//
+// TAMBIÉN registra las promociones (P-4, etapa 2): qué cuentas se pidió
+// promover al darlas de baja, y permite simular que promover falla, para
+// probar que la baja se aborta entera y no solo a medias.
 type reparto struct {
-	mu      sync.Mutex
-	pedidos []string
-	raiz    *almacenMarcado
+	mu            sync.Mutex
+	pedidos       []string
+	raiz          *almacenMarcado
+	promovidos    []string
+	errorPromover error
 }
 
 func (rp *reparto) para(usuario string) (almacen.Almacen, error) {
@@ -57,6 +63,22 @@ func (rp *reparto) pedidosHechos() []string {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
 	return append([]string(nil), rp.pedidos...)
+}
+
+func (rp *reparto) promover(nombre string) error {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	if rp.errorPromover != nil {
+		return rp.errorPromover
+	}
+	rp.promovidos = append(rp.promovidos, nombre)
+	return nil
+}
+
+func (rp *reparto) promovidosHechos() []string {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	return append([]string(nil), rp.promovidos...)
 }
 
 const claveDeJuan = "clave-de-juan-bastante-larga"
@@ -77,6 +99,7 @@ func servidorMultiusuario(t *testing.T) (*Servidor, *reparto) {
 	s, err := Nuevo(Opciones{
 		Almacen:          rp.raiz,
 		AlmacenDe:        rp.para,
+		PromoverUsuario:  rp.promover,
 		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		PlazoInactividad: time.Minute,
 		Credencial:       linea,
@@ -253,12 +276,13 @@ func TestQueLaCuentaExistaNoCambiaLaRespuesta(t *testing.T) {
 			}
 		}
 		s, err := Nuevo(Opciones{
-			Almacen:        almacenVacio{},
-			AlmacenDe:      almacenPorUsuarioDePrueba(almacenVacio{}),
-			Registro:       slog.New(slog.NewJSONHandler(io.Discard, nil)),
-			Credencial:     linea,
-			Usuarios:       usuarios,
-			DuracionSesion: time.Hour,
+			Almacen:         almacenVacio{},
+			AlmacenDe:       almacenPorUsuarioDePrueba(almacenVacio{}),
+			PromoverUsuario: promoverUsuarioDePrueba,
+			Registro:        slog.New(slog.NewJSONHandler(io.Discard, nil)),
+			Credencial:      linea,
+			Usuarios:        usuarios,
+			DuracionSesion:  time.Hour,
 		})
 		if err != nil {
 			t.Fatalf("Nuevo: %v", err)
@@ -373,12 +397,13 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 	}
 	base := func() Opciones {
 		return Opciones{
-			Almacen:        almacenVacio{},
-			AlmacenDe:      almacenPorUsuarioDePrueba(almacenVacio{}),
-			Registro:       slog.New(slog.NewJSONHandler(io.Discard, nil)),
-			Credencial:     linea,
-			Usuarios:       registroDePrueba(t),
-			DuracionSesion: time.Hour,
+			Almacen:         almacenVacio{},
+			AlmacenDe:       almacenPorUsuarioDePrueba(almacenVacio{}),
+			PromoverUsuario: promoverUsuarioDePrueba,
+			Registro:        slog.New(slog.NewJSONHandler(io.Discard, nil)),
+			Credencial:      linea,
+			Usuarios:        registroDePrueba(t),
+			DuracionSesion:  time.Hour,
 		}
 	}
 	sinAlmacenDe := base()
@@ -390,6 +415,13 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 	sinUsuarios.Usuarios = nil
 	if _, err := Nuevo(sinUsuarios); err == nil {
 		t.Error("arrancó sin registro de usuarios")
+	}
+	// P-4, etapa 2: sin esto, una baja quitaría el acceso y dejaría la
+	// carpeta perdida dentro de homeUsers/ sin que nada lo avisara.
+	sinPromoverUsuario := base()
+	sinPromoverUsuario.PromoverUsuario = nil
+	if _, err := Nuevo(sinPromoverUsuario); err == nil {
+		t.Error("arrancó sin poder promover la carpeta de un usuario al darlo de baja")
 	}
 }
 
@@ -476,5 +508,84 @@ func TestLaBarraSoloOfreceUsuariosAlSuperusuario(t *testing.T) {
 		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie))
 	if !strings.Contains(deAdmin, `href="/ver/homeUsers"`) {
 		t.Error("al superusuario no se le ofrece el atajo «Usuarios»")
+	}
+}
+
+// almacenConEntradas lista exactamente los nombres dados. Sirve para probar
+// qué se esconde del listado y qué no, algo que almacenMarcado —una sola
+// entrada fija— no permite comprobar.
+type almacenConEntradas struct {
+	almacenVacio
+	nombres []string
+}
+
+func (a almacenConEntradas) Listar(context.Context, almacen.RutaSegura) iter.Seq2[almacen.Entrada, error] {
+	return func(yield func(almacen.Entrada, error) bool) {
+		for _, n := range a.nombres {
+			r, err := almacen.NuevaRuta(n)
+			if err != nil {
+				yield(almacen.Entrada{}, err)
+				return
+			}
+			if !yield(almacen.Entrada{Ruta: r, Nombre: n, EsDirectori: true}, nil) {
+				return
+			}
+		}
+	}
+}
+
+// homeUsers/ SE ESCONDE DEL LISTADO — corrección del 06/08: con el atajo
+// «Usuarios» ya en la barra, verla también en la raíz es una segunda ruta a
+// lo mismo. Pero SOLO para el superusuario y SOLO en su raíz: un usuario
+// normal puede tener su PROPIA subcarpeta llamada igual dentro de su
+// espacio —fsposix no se lo impide, esReservado no mira su prefijo—, y esa
+// no es la especial. Ocultársela sería el mismo defecto que esta misma
+// versión corrige en la baja.
+func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
+	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("Derivar: %v", err)
+	}
+	usuarios := registroDePrueba(t)
+	if err := usuarios.Alta("juan", claveDeJuan); err != nil {
+		t.Fatalf("Alta(juan): %v", err)
+	}
+	raiz := almacenConEntradas{nombres: []string{"homeUsers", "fotos"}}
+	// La carpeta de juan tiene, dentro de SU espacio, una subcarpeta que por
+	// coincidencia se llama igual que la especial — y por eso debe verse.
+	deJuan := almacenConEntradas{nombres: []string{"homeUsers", "recibos"}}
+
+	s, err := Nuevo(Opciones{
+		Almacen:          raiz,
+		AlmacenDe:        almacenPorUsuarioDePrueba(deJuan),
+		PromoverUsuario:  promoverUsuarioDePrueba,
+		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		PlazoInactividad: time.Minute,
+		Credencial:       linea,
+		Usuarios:         usuarios,
+		DuracionSesion:   time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("Nuevo: %v", err)
+	}
+	h := s.Rutas()
+
+	// Las carpetas se renderizan con una barra final (listado.html:
+	// «{{.Nombre}}/»), de ahí el «/» en cada comprobación.
+	cuerpoAdmin := listadoCon(t, h, cookieLlamada(
+		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie))
+	if strings.Contains(cuerpoAdmin, ">homeUsers/<") {
+		t.Errorf("la raíz del superusuario sigue listando homeUsers/:\n%s", cuerpoAdmin)
+	}
+	if !strings.Contains(cuerpoAdmin, ">fotos/<") {
+		t.Errorf("se escondió también una carpeta que no era homeUsers:\n%s", cuerpoAdmin)
+	}
+
+	cuerpoJuan := listadoCon(t, h, cookieLlamada(entrar(t, h, "juan", claveDeJuan), nombreCookie))
+	if !strings.Contains(cuerpoJuan, ">homeUsers/<") {
+		t.Errorf("a juan se le escondió SU PROPIA carpeta, que solo coincide en el nombre:\n%s", cuerpoJuan)
+	}
+	if !strings.Contains(cuerpoJuan, ">recibos/<") {
+		t.Errorf("no aparece la otra carpeta de juan:\n%s", cuerpoJuan)
 	}
 }

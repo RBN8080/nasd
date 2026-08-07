@@ -36,6 +36,12 @@ type Servidor struct {
 	// función y no el adaptador entero para que este paquete no dependa de
 	// fsposix: quien las une es la raíz de composición (cmd/nasd).
 	abrirAlmacen func(usuario string) (almacen.Almacen, error)
+	// promoverUsuario saca la carpeta de una cuenta de homeUsers/ y la deja
+	// en la raíz del superusuario, con el mismo nombre. Lo llama SOLO la
+	// baja (panel.go), justo antes de retirar la cuenta del registro —
+	// corrección del 06/08: la carpeta debe quedar a la vista, no perdida
+	// dentro de un sitio que el propio panel deja de mostrar.
+	promoverUsuario func(nombre string) error
 
 	reg              *slog.Logger
 	plantillas       *template.Template
@@ -75,7 +81,14 @@ type Opciones struct {
 	// AlmacenDe acota el volumen a la carpeta de un usuario (ADR-0055). La
 	// pone la raíz de composición; sin ella no podría entrar nadie que no sea
 	// el superusuario, así que Nuevo la exige.
-	AlmacenDe        func(usuario string) (almacen.Almacen, error)
+	AlmacenDe func(usuario string) (almacen.Almacen, error)
+	// PromoverUsuario saca la carpeta de una cuenta de homeUsers/ al darla de
+	// baja (etapa 2, corrección del 06/08). Sin ella, la baja quitaría el
+	// acceso pero la carpeta seguiría viviendo en un sitio que el panel ya
+	// no enseña — el defecto que esto corrige. Nuevo la exige por lo mismo
+	// que exige AlmacenDe: la alternativa es una baja que se ve completa y
+	// no lo está.
+	PromoverUsuario  func(nombre string) error
 	Registro         *slog.Logger
 	PlazoInactividad time.Duration
 	// Credencial es la línea derivada que produce «nasd --generar-credencial».
@@ -116,6 +129,12 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.Usuarios == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta el registro de usuarios (ADR-0055)")
 	}
+	// Sin esto, dar de baja quitaría el acceso y dejaría la carpeta perdida
+	// dentro de homeUsers/ — el defecto de la etapa 2 que se corrigió el
+	// 06/08. Exigirla aquí es la misma lógica que AlmacenDe y Usuarios.
+	if o.PromoverUsuario == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta PromoverUsuario (P-4, etapa 2)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -127,6 +146,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	s := &Servidor{
 		almacenRaiz:       o.Almacen,
 		abrirAlmacen:      o.AlmacenDe,
+		promoverUsuario:   o.PromoverUsuario,
 		usuarios:          o.Usuarios,
 		reg:               o.Registro,
 		plantillas:        t,

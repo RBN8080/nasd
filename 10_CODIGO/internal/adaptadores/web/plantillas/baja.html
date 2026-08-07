@@ -14,9 +14,9 @@
   <p class="ruta-destacada">{{.Nombre}}</p>
 
   <div class="peligro">
-    <p><strong>Su carpeta NO se toca.</strong> Deja de poder entrar, pero lo
-    que haya subido sigue ahí, apartado, hasta que se le vuelva a dar de
-    alta.</p>
+    <p><strong>Su carpeta no se destruye ni se modifica.</strong> Deja de
+    poder entrar, y lo que haya subido sale de <code>homeUsers</code> y
+    queda como una carpeta más en su raíz, con el mismo nombre.</p>
   </div>
 
   {{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}

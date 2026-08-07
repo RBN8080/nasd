@@ -74,6 +74,21 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 			v.Truncado = true
 			break
 		}
+		// homeUsers/ se esconde del listado — pedido el 06/08: con el atajo
+		// «Usuarios» ya en la barra, verla también aquí es una segunda ruta a
+		// lo mismo, y el botón deja de tener sentido propio si la carpeta que
+		// abrevia ya estaba a la vista.
+		//
+		// SOLO en la raíz y SOLO para el superusuario, las dos condiciones a
+		// la vez. Para un usuario normal esto NUNCA aplica: aunque tuviera su
+		// propia subcarpeta llamada igual dentro de SU espacio —algo que
+		// fsposix permite, esReservado no mira su prefijo—, esa carpeta es
+		// suya y no la especial, y ocultársela sería el mismo defecto que
+		// esta misma versión corrige en la baja: algo del usuario
+		// desapareciendo de donde debería verse.
+		if ruta.EsRaiz() && v.EsSuperusuario && e.Nombre == homeUsersNombre {
+			continue
+		}
 		// Las entradas que empiezan por punto se ocultan, como hace cualquier
 		// gestor de archivos. Aquí importa por un motivo concreto: iOS deja
 		// directorios temporales «.sb-XXXX» al copiar o descomprimir, y los
