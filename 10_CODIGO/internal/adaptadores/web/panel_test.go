@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -148,8 +149,13 @@ func TestBajaExigeLaContrasenaDelSuperusuarioOtraVez(t *testing.T) {
 }
 
 // Y con la contraseña correcta —la del SUPERUSUARIO, no la de juan— sí.
-func TestBajaConLaContrasenaCorrectaQuitaLaCuenta(t *testing.T) {
-	s, _ := servidorMultiusuario(t)
+//
+// Y ADEMÁS —corrección del 06/08— la carpeta se manda a promover ANTES de
+// tocar el registro: es lo que corrige el defecto reportado en uso real,
+// donde la cuenta desaparecía y su carpeta se quedaba huérfana dentro de
+// homeUsers/.
+func TestBajaConLaContrasenaCorrectaQuitaLaCuentaYPromueveLaCarpeta(t *testing.T) {
+	s, rp := servidorMultiusuario(t)
 
 	w := postConSesion(t, s, "/administracion/baja", url.Values{
 		"nombre": {"juan"},
@@ -160,6 +166,29 @@ func TestBajaConLaContrasenaCorrectaQuitaLaCuenta(t *testing.T) {
 	}
 	if _, existe := s.usuarios.Buscar("juan"); existe {
 		t.Error("juan seguía en el registro tras la baja confirmada")
+	}
+	promovidos := rp.promovidosHechos()
+	if len(promovidos) != 1 || promovidos[0] != "juan" {
+		t.Errorf("promovidosHechos() = %v; se esperaba solo [juan]", promovidos)
+	}
+}
+
+// SI NO SE PUEDE PROMOVER LA CARPETA, LA BAJA SE ABORTA ENTERA. Lo contrario
+// —quitar la cuenta igual— es exactamente el defecto que se corrige: una
+// carpeta que se queda sin dueño visible en ningún sitio.
+func TestBajaSeAbortaSiNoSePuedePromoverLaCarpeta(t *testing.T) {
+	s, rp := servidorMultiusuario(t)
+	rp.errorPromover = errors.New("ya existe algo con ese nombre en la raíz")
+
+	w := postConSesion(t, s, "/administracion/baja", url.Values{
+		"nombre": {"juan"},
+		"clave":  {claveDePrueba},
+	})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("baja -> %d; se esperaba 303 (vuelve al panel con el error)", w.Code)
+	}
+	if _, existe := s.usuarios.Buscar("juan"); !existe {
+		t.Error("la cuenta se dio de baja aunque su carpeta no se pudo promover")
 	}
 }
 

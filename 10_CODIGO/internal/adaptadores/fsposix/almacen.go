@@ -179,6 +179,53 @@ func (a *Almacen) ParaUsuario(nombre string) (*Almacen, error) {
 	return &Almacen{raiz: a.raiz, prefijo: prefijo}, nil
 }
 
+// PromoverCarpetaDeUsuario saca la carpeta de un usuario de homeUsers/ y la
+// deja como una carpeta más de la raíz del superusuario, con el mismo nombre
+// — corrección del 06/08 sobre P-4/etapa 2: dar de baja dejaba la cuenta sin
+// acceso pero su carpeta seguía viviendo DENTRO de homeUsers/, un sitio que
+// el propio panel deja de mostrar (esReservado no se toca: sigue protegiendo
+// la vía normal). El responsable la quiere a la vista, junto a lo demás.
+//
+// NO PASA POR Renombrar/Mover: esReservado los bloquearía a propósito, y con
+// razón — para la vía normal, homeUsers/<quien> es intocable. Esta función
+// ES la excepción, y solo la dispara una baja.
+//
+// Si la persona nunca entró, ParaUsuario nunca creó su carpeta —se crea al
+// primer acceso, no al alta— y no hay nada que mover: no es un error.
+//
+// Si YA existe algo en la raíz con ese nombre, se rehúsa en vez de fusionar
+// o sobrescribir (RF-23, D-12): quien llame decide qué hacer, y lo correcto
+// es abortar la baja entera antes que arriesgar un archivo ajeno.
+func (a *Almacen) PromoverCarpetaDeUsuario(nombre string) error {
+	if err := componenteSeguro(nombre); err != nil {
+		return err
+	}
+	origen := path.Join(subDatos, SubHomeUsers, nombre)
+	destino := path.Join(subDatos, nombre)
+
+	if _, err := a.raiz.Stat(origen); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return traducir(err)
+	}
+	if _, err := a.raiz.Stat(destino); err == nil {
+		return fmt.Errorf("%w: ya existe %q en la raíz, junto a homeUsers", almacen.ErrYaExiste, nombre)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return traducir(err)
+	}
+
+	if err := a.raiz.Rename(origen, destino); err != nil {
+		return fmt.Errorf("promover la carpeta de %q: %w", nombre, traducir(err))
+	}
+	// Los dos padres cambiaron de contenido: el de origen perdió una entrada,
+	// el de destino ganó una. Los dos se sincronizan, mismo criterio que
+	// ADR-0024.
+	if err := a.sincronizarDirectorio(path.Dir(origen)); err != nil {
+		return err
+	}
+	return a.sincronizarDirectorio(path.Dir(destino))
+}
+
 func (a *Almacen) Estado(ctx context.Context, r almacen.RutaSegura) (almacen.Entrada, error) {
 	if err := ctx.Err(); err != nil {
 		return almacen.Entrada{}, err

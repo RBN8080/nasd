@@ -43,6 +43,11 @@ func almacenPorUsuarioDePrueba(a almacen.Almacen) func(string) (almacen.Almacen,
 	return func(string) (almacen.Almacen, error) { return a, nil }
 }
 
+// promoverUsuarioDePrueba es un no-op: los paquetes que no prueban el panel
+// de administración no necesitan que esto haga nada, solo que exista —Nuevo
+// la exige desde la corrección del 06/08 (etapa 2, promoción al dar de baja).
+func promoverUsuarioDePrueba(string) error { return nil }
+
 func servidorConAuth(t *testing.T) *Servidor {
 	t.Helper()
 	// Iteraciones bajas: aquí se prueba el control de acceso, no el coste
@@ -54,6 +59,7 @@ func servidorConAuth(t *testing.T) *Servidor {
 	s, err := Nuevo(Opciones{
 		Almacen:          almacenVacio{},
 		AlmacenDe:        almacenPorUsuarioDePrueba(almacenVacio{}),
+		PromoverUsuario:  promoverUsuarioDePrueba,
 		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		PlazoInactividad: time.Minute,
 		Credencial:       linea,
@@ -227,12 +233,13 @@ func TestLimitadorCortaLosIntentosRepetidos(t *testing.T) {
 func TestSinCredencialNoArranca(t *testing.T) {
 	for _, mala := range []string{"", "basura", "md5$1$a$b"} {
 		_, err := Nuevo(Opciones{
-			Almacen:        almacenVacio{},
-			AlmacenDe:      almacenPorUsuarioDePrueba(almacenVacio{}),
-			Registro:       slog.New(slog.NewJSONHandler(io.Discard, nil)),
-			Credencial:     mala,
-			Usuarios:       registroDePrueba(t),
-			DuracionSesion: time.Hour,
+			Almacen:         almacenVacio{},
+			AlmacenDe:       almacenPorUsuarioDePrueba(almacenVacio{}),
+			PromoverUsuario: promoverUsuarioDePrueba,
+			Registro:        slog.New(slog.NewJSONHandler(io.Discard, nil)),
+			Credencial:      mala,
+			Usuarios:        registroDePrueba(t),
+			DuracionSesion:  time.Hour,
 		})
 		if err == nil {
 			t.Errorf("arrancó con una credencial inválida: %q", mala)

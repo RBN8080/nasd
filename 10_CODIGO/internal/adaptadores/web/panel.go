@@ -13,10 +13,19 @@ import (
 // decide en el servidor, y la barra solo esconde el botón por cortesía (ver
 // el comentario junto a esa función en sesion.go).
 //
-// NO VA ENVUELTO EN conAlmacen. Dar de alta o de baja una cuenta no toca
-// ningún archivo — la carpeta del usuario se crea sola, la primera vez que
-// entra, en fsposix.Almacen.ParaUsuario — así que estos manejadores no
-// necesitan un almacén acotado, igual que verEstado tampoco lo necesita.
+// NO VA ENVUELTO EN conAlmacen. Ni el alta ni la baja necesitan el almacén
+// ACOTADO A UN USUARIO que esa envoltura entrega —la carpeta se crea sola,
+// la primera vez que alguien entra, en fsposix.Almacen.ParaUsuario—; la baja
+// SÍ toca disco desde la corrección del 06/08 (promoverUsuario, más abajo),
+// pero por una puerta propia y no por el almacén de la sesión, igual que
+// verEstado tampoco necesita uno acotado.
+
+// homeUsersNombre es el nombre de la carpeta contenedora de usuarios, tal
+// cual lo fija fsposix.SubHomeUsers — repetido aquí y no importado, porque
+// este paquete no depende de fsposix (ADR-0055): la traducción de nombres a
+// rutas de disco es cosa de la raíz de composición, no del adaptador web. La
+// plantilla del listado ya repetía este mismo literal en el atajo «Usuarios».
+const homeUsersNombre = "homeUsers"
 
 // filaUsuario es lo que ve el panel de cada cuenta del registro.
 type filaUsuario struct {
@@ -142,12 +151,24 @@ func (s *Servidor) bajaUsuario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// NO TOCA NI UN ARCHIVO (D-25): la carpeta se aparta, no se destruye —
-	// Registro.Baja solo retira la cuenta de quien puede entrar.
+	// LA CARPETA SE PROMUEVE ANTES DE TOCAR EL REGISTRO — corrección del
+	// 06/08. Reportado en uso real: la cuenta desaparecía de la lista, pero
+	// su carpeta seguía dentro de homeUsers/, que el propio panel ya no
+	// enseña. Si no se puede promover —un choque de nombre en la raíz, por
+	// ejemplo—, la baja se aborta ENTERA y la cuenta sigue activa: lo
+	// contrario dejaría una carpeta huérfana en un sitio invisible, que es
+	// exactamente el defecto que esto corrige.
+	if err := s.promoverUsuario(nombre); err != nil {
+		s.reg.Warn("baja de usuario: no se pudo promover su carpeta",
+			"nombre", nombre, "remoto", origenDe(r), "error", err)
+		s.redirigirAdministracion(w, r, "no se pudo completar la baja de «"+nombre+"»: "+err.Error(), true)
+		return
+	}
 	if err := s.usuarios.Baja(nombre); err != nil {
 		s.redirigirAdministracion(w, r, err.Error(), true)
 		return
 	}
 	s.reg.Warn("USUARIO DADO DE BAJA", "nombre", nombre, "remoto", origenDe(r))
-	s.redirigirAdministracion(w, r, "Cuenta dada de baja: "+nombre+". Su carpeta no se ha tocado.", false)
+	s.redirigirAdministracion(w, r,
+		"Cuenta dada de baja: "+nombre+". Su carpeta no se ha destruido: ahora vive en la raíz, junto a homeUsers.", false)
 }

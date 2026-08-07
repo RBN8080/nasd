@@ -71,15 +71,19 @@
       </details>
 
       {{/* «Usuarios» — atajo a homeUsers/, solo para el superusuario.
-           NO ES UNA PUERTA NUEVA: homeUsers/ ya era una carpeta visible y
-           navegable dentro de la raíz (ADR-0055) — esto solo ahorra los clics
-           de bajar hasta ahí. Por eso no hace falta ninguna ruta nueva ni
+           NO ES UNA PUERTA NUEVA: homeUsers/ sigue siendo una carpeta
+           navegable dentro de la raíz (ADR-0055), y sigue sin ruta propia ni
            envoltura soloSuperusuario en el servidor: /ver/homeUsers pasa por
            conAlmacen igual que cualquier otro /ver, y el aislamiento de
            SIEMPRE decide qué hay dentro. Para un usuario normal, esa ruta cae
            dentro de SU PROPIA carpeta —nunca la de la casa— y no encontraría
            nada; se esconde para no ofrecer un enlace que no lleva a ningún
-           lado, no porque haga falta cerrarlo. */}}
+           lado, no porque haga falta cerrarlo.
+           DESDE EL 06/08 YA NO APARECE EN EL LISTADO de la raíz del
+           superusuario —verListado la filtra, ver manejadores.go—, pedido
+           expresamente para que este botón deje de ser una segunda ruta a lo
+           mismo. El filtro no reemplaza este atajo: sin él, homeUsers/ dejaría
+           de ser alcanzable sin teclear la URL a mano. */}}
       {{if .EsSuperusuario}}<a class="boton-barra" href="/ver/homeUsers">Usuarios</a>{{end}}
 
       {{/* «Estado» solo para el superusuario (ADR-0055). Publica temperatura,

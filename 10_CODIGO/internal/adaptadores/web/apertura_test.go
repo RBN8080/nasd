@@ -73,6 +73,7 @@ func servidorDeApertura(t *testing.T) (*Servidor, *almacenDeApertura) {
 	s, err := Nuevo(Opciones{
 		Almacen:          a,
 		AlmacenDe:        almacenPorUsuarioDePrueba(a),
+		PromoverUsuario:  promoverUsuarioDePrueba,
 		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		PlazoInactividad: time.Minute,
 		Credencial:       linea,

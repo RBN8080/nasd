@@ -99,6 +99,10 @@ func ejecutar() error {
 		AlmacenDe: func(usuario string) (almacen.Almacen, error) {
 			return alm.ParaUsuario(usuario)
 		},
+		// La baja llama a esto ANTES de retirar la cuenta del registro
+		// (etapa 2, corrección del 06/08): la carpeta sale de homeUsers/ y
+		// queda como una más de la raíz.
+		PromoverUsuario:  alm.PromoverCarpetaDeUsuario,
 		Registro:         reg,
 		PlazoInactividad: cfg.PlazoInactividad,
 		Credencial:       credencial,
@@ -275,32 +279,41 @@ func altaDeUsuario(rutaConfig, nombre string) error {
 
 // bajaDeUsuario retira una cuenta del registro — ADR-0055.
 //
-// NO TOCA NI UN ARCHIVO DEL USUARIO, y eso es la decisión del responsable, no
-// una omisión: su carpeta «se aparta, no se destruye». Sin papelera (D-15) ni
-// segunda copia (D-12), un borrado aquí no se desharía.
+// NO SE DESTRUYE NI UN ARCHIVO DEL USUARIO, y eso es la decisión del
+// responsable, no una omisión. Sin papelera (D-15) ni segunda copia (D-12),
+// un borrado aquí no se desharía. **Corrección del 06/08:** su carpeta ya no
+// se queda dentro de homeUsers/ —un sitio que el panel deja de mostrar—, sale
+// a la raíz del volumen, junto a lo demás. La promoción va ANTES que la baja
+// del registro: si no se puede promover (por ejemplo, un choque de nombre en
+// la raíz), la cuenta sigue activa y se avisa del motivo, en vez de dejar el
+// registro y el disco contando historias distintas.
 //
-// Es también la única forma de CAMBIAR una contraseña mientras no exista el
-// panel: baja y alta. Como la carpeta sobrevive, la persona vuelve a entrar y
-// se encuentra lo suyo donde estaba.
+// Es también la única forma de CAMBIAR una contraseña mientras no exista un
+// campo propio para ello: baja y alta. Como la carpeta sobrevive —solo
+// cambia de sitio—, la persona vuelve a entrar y se encuentra lo suyo.
 func bajaDeUsuario(rutaConfig, nombre string) error {
 	cfg, err := config.Cargar(rutaConfig)
 	if err != nil {
 		return err
 	}
+	alm, err := fsposix.AbrirVolumen(cfg.Volumen)
+	if err != nil {
+		return err
+	}
+	defer alm.Close()
 	reg, err := autenticacion.CargarRegistro(cfg.RutaUsuarios(), web.IteracionesPBKDF2)
 	if err != nil {
 		return err
 	}
+	if err := alm.PromoverCarpetaDeUsuario(nombre); err != nil {
+		return fmt.Errorf("no se pudo promover la carpeta de %q, la cuenta SIGUE activa: %w", nombre, err)
+	}
 	if err := reg.Baja(nombre); err != nil {
 		return err
 	}
-	// SE DICE «SI YA HABÍA ENTRADO» Y NO SE AFIRMA LA RUTA A SECAS, porque la
-	// carpeta se crea la PRIMERA VEZ QUE LA PERSONA USA LA WEB, no al darla de
-	// alta. La primera versión de este mensaje nombraba la ruta como un hecho y
-	// mandaba a mirar una carpeta que podía no existir todavía.
-	fmt.Printf("Cuenta %q retirada del registro. NO se ha tocado ninguno de sus "+
-		"archivos: si ya había entrado alguna vez, su carpeta sigue intacta bajo "+
-		"%s/%s en el volumen.\n", nombre, fsposix.SubHomeUsers, nombre)
+	fmt.Printf("Cuenta %q retirada del registro. Si ya había entrado alguna vez, "+
+		"su carpeta sigue intacta y ahora vive en la raíz del volumen, junto a "+
+		"homeUsers/, en vez de dentro.\n", nombre)
 	return nil
 }
 
