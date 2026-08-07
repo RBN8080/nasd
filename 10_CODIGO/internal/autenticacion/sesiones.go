@@ -169,3 +169,25 @@ func (s *Sesiones) Abiertas() int {
 	defer s.mu.Unlock()
 	return len(s.m)
 }
+
+// ActivosPorUsuario dice, de cada cuenta con sesión VIGENTE ahora mismo, que
+// la tiene. Lo usa el panel de administración (P-4, etapa 2) para mostrar
+// quién está dentro en este instante.
+//
+// Es una consulta, no una purga: a diferencia de Usuario(), no borra las
+// caducadas al pasar por ellas — de eso ya se encarga Purgar() en el ciclo de
+// mantenimiento, y duplicar ese trabajo aquí solo añadiría una segunda razón
+// para que el mapa cambiara mientras alguien lo recorre.
+func (s *Sesiones) ActivosPorUsuario() map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ahora := time.Now()
+	activos := make(map[string]bool, len(s.m))
+	for _, se := range s.m {
+		if ahora.After(se.caduca) {
+			continue
+		}
+		activos[se.usuario] = true
+	}
+	return activos
+}

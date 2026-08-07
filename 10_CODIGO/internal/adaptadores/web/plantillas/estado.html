@@ -30,6 +30,10 @@
          que se le hicieron a la otra. -->
     <div class="barra-acciones">
       <a class="boton-barra" href="/">Archivos</a>
+      {{/* Quien llega a /estado ya es el superusuario —soloSuperusuario lo
+           exige—, así que aquí no hace falta ningún {{if}}: a diferencia de
+           la barra del listado, esta página nunca la ve nadie más. */}}
+      <a class="boton-barra" href="/administracion">Administración</a>
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>

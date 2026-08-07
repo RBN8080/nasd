@@ -55,6 +55,10 @@ func TestSinTestigoCSRFSeRechazaTodoLoQueCambia(t *testing.T) {
 		// extremo nuevo que cambia el disco entra en esta lista el mismo día
 		// que nace: si no, la puerta se queda mirando solo lo viejo.
 		{"/mover", url.Values{"origen": {"a.txt"}, "carpeta": {"destino"}}},
+		// Panel de administración (P-4, etapa 2): no cambia el disco, cambia
+		// quién puede entrar, y eso pesa igual o más.
+		{"/administracion/alta", url.Values{"nombre": {"nueva"}, "clave": {"contrasena-bastante-larga"}}},
+		{"/administracion/baja", url.Values{"nombre": {"juan"}, "clave": {claveDePrueba}}},
 	}
 	for _, c := range casos {
 		if got := postCon(t, h, cookie, c.ruta, c.campos); got != http.StatusForbidden {
