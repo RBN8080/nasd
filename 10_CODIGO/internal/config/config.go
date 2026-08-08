@@ -89,6 +89,13 @@ func (c Config) RutaUsuarios() string {
 	return filepath.Join(c.DirectorioEstado, "usuarios")
 }
 
+// RutaUsoDisco es el archivo donde P-4 etapa 3 guarda la última medida de
+// uso de disco de cada cuenta, para que sobreviva a un reinicio del
+// servicio (internal/metricas).
+func (c Config) RutaUsoDisco() string {
+	return filepath.Join(c.DirectorioEstado, "uso-disco")
+}
+
 // Valores de referencia [R] — no son criterio de aceptación (01_REQUISITOS §2).
 // Se sustituyen por medición cuando exista.
 func porDefecto() Config {

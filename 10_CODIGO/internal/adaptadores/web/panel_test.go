@@ -1,13 +1,18 @@
 package web
 
 import (
+	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 )
 
@@ -19,7 +24,7 @@ import (
 
 // La regla la aplica soloSuperusuario, la misma envoltura que ya protege
 // /estado (TestSoloElSuperusuarioAlcanzaElEstado). Aquí se comprueba que las
-// CUATRO rutas nuevas están detrás de ella, no solo la primera.
+// CINCO rutas nuevas están detrás de ella, no solo la primera.
 func TestSoloElSuperusuarioAlcanzaLaAdministracion(t *testing.T) {
 	s, _ := servidorMultiusuario(t)
 	h := s.Rutas()
@@ -40,7 +45,7 @@ func TestSoloElSuperusuarioAlcanzaLaAdministracion(t *testing.T) {
 	// Las POST también, aunque el 403 de soloSuperusuario llegue antes de que
 	// exigirCSRF mire el formulario: un usuario normal no debe poder ni
 	// intentarlo.
-	for _, ruta := range []string{"/administracion/alta", "/administracion/baja"} {
+	for _, ruta := range []string{"/administracion/alta", "/administracion/baja", "/administracion/refrescar"} {
 		if got := postCon(t, h, deJuan, ruta, url.Values{}); got != http.StatusForbidden {
 			t.Errorf("POST %s como usuario normal -> %d; se esperaba 403", ruta, got)
 		}
@@ -225,5 +230,176 @@ func TestElPanelMuestraQuienTieneSesionActiva(t *testing.T) {
 	}
 	if n := strings.Count(cuerpo, ">activa<"); n != 1 {
 		t.Errorf(`"activa" aparece %d veces; se esperaba 1 (solo ana)`, n)
+	}
+}
+
+// Pruebas de las métricas de uso de disco — P-4, etapa 3.
+//
+// LO QUE SE COMPRUEBA AQUÍ es el manejador —qué hace refrescarMetricas con lo
+// que Resumen le devuelve—, no Resumen en sí: eso ya tiene sus propias
+// pruebas contra disco real en fsposix/administracion_test.go.
+
+// almacenConTamano solo añade un Resumen con un valor fijo a almacenVacio:
+// es lo único que refrescarMetricas necesita de un almacén.
+type almacenConTamano struct {
+	almacenVacio
+	bytes int64
+}
+
+func (a almacenConTamano) Resumen(context.Context, almacen.RutaSegura) (almacen.Conteo, error) {
+	return almacen.Conteo{EsDirectorio: true, Bytes: a.bytes}, nil
+}
+
+// servidorParaMetricas da de alta una cuenta por cada entrada del mapa, con
+// el almacén devolviendo el tamaño indicado. El mapa se lee EN CADA
+// LLAMADA a AlmacenDe —no se copia al construir—, así que una prueba puede
+// cambiar un valor entre dos refrescos para simular que una carpeta creció.
+func servidorParaMetricas(t *testing.T, bytesPorUsuario map[string]int64) *Servidor {
+	t.Helper()
+	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("Derivar: %v", err)
+	}
+	usuarios := registroDePrueba(t)
+	for nombre := range bytesPorUsuario {
+		if err := usuarios.Alta(nombre, claveDeJuan); err != nil {
+			t.Fatalf("Alta(%s): %v", nombre, err)
+		}
+	}
+	s, err := Nuevo(Opciones{
+		Almacen: almacenVacio{},
+		AlmacenDe: func(nombre string) (almacen.Almacen, error) {
+			return almacenConTamano{bytes: bytesPorUsuario[nombre]}, nil
+		},
+		PromoverUsuario:  promoverUsuarioDePrueba,
+		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		PlazoInactividad: time.Minute,
+		Credencial:       linea,
+		Usuarios:         usuarios,
+		DuracionSesion:   time.Hour,
+		Metricas:         metricasDePrueba(t),
+	})
+	if err != nil {
+		t.Fatalf("Nuevo: %v", err)
+	}
+	return s
+}
+
+// Antes del primer «Refrescar métricas», el panel no inventa un tamaño: lo
+// dice explícitamente, en vez de sugerir 0 B como si ya se hubiera medido.
+func TestPanelMuestraSinMedirTodaviaAntesDeRefrescar(t *testing.T) {
+	s := servidorParaMetricas(t, map[string]int64{"juan": 999})
+	cuerpo := peticionConSesion(t, s, "/administracion").Body.String()
+	if !strings.Contains(cuerpo, "sin medir todavía") {
+		t.Errorf("el panel no dice «sin medir todavía» antes del primer refresco:\n%s", cuerpo)
+	}
+}
+
+// EL RECORRIDO CENTRAL DE LA ETAPA: la primera medida no tiene variación que
+// mostrar —no hay con qué compararla—, y la segunda sí, con signo.
+func TestRefrescarMetricasMideYMuestraLaVariacionEnLaSegundaVez(t *testing.T) {
+	bytes := map[string]int64{"juan": 2 * 1024 * 1024}
+	s := servidorParaMetricas(t, bytes)
+
+	if w := postConSesion(t, s, "/administracion/refrescar", url.Values{}); w.Code != http.StatusSeeOther {
+		t.Fatalf("refrescar -> %d; se esperaba 303", w.Code)
+	}
+	cuerpo := peticionConSesion(t, s, "/administracion").Body.String()
+	if !strings.Contains(cuerpo, "2.0 MB (primera medición)") {
+		t.Fatalf("tras el primer refresco falta el tamaño o «primera medición»:\n%s", cuerpo)
+	}
+
+	// La carpeta de juan «crece» a 3 MB entre un refresco y el siguiente.
+	bytes["juan"] = 3 * 1024 * 1024
+	if w := postConSesion(t, s, "/administracion/refrescar", url.Values{}); w.Code != http.StatusSeeOther {
+		t.Fatalf("segundo refrescar -> %d; se esperaba 303", w.Code)
+	}
+	cuerpo = peticionConSesion(t, s, "/administracion").Body.String()
+	// html/template escapa el «+» como entidad HTML (&#43;) — es el mismo
+	// carácter una vez que el navegador lo interpreta, ADR-0017 no lo cambia.
+	if !strings.Contains(cuerpo, "3.0 MB (&#43;1.0 MB)") {
+		t.Errorf("la segunda medida no muestra la variación con signo esperada:\n%s", cuerpo)
+	}
+}
+
+// Una cuenta que nunca entró no tiene carpeta —ParaUsuario nunca la crea,
+// ver fsposix/almacen.go— y eso NO es un fallo del refresco: cuenta como
+// 0 bytes, porque Resumen devuelve almacen.ErrNoExiste sobre una raíz que
+// no existe todavía.
+func TestRefrescarMetricasCuentaComoCeroLaCuentaSinCarpeta(t *testing.T) {
+	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("Derivar: %v", err)
+	}
+	usuarios := registroDePrueba(t)
+	if err := usuarios.Alta("nunca-entro", claveDeJuan); err != nil {
+		t.Fatalf("Alta: %v", err)
+	}
+	s, err := Nuevo(Opciones{
+		Almacen:          almacenVacio{},
+		AlmacenDe:        almacenPorUsuarioDePrueba(almacenVacio{}), // Resumen -> ErrNoExiste
+		PromoverUsuario:  promoverUsuarioDePrueba,
+		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		PlazoInactividad: time.Minute,
+		Credencial:       linea,
+		Usuarios:         usuarios,
+		DuracionSesion:   time.Hour,
+		Metricas:         metricasDePrueba(t),
+	})
+	if err != nil {
+		t.Fatalf("Nuevo: %v", err)
+	}
+
+	postConSesion(t, s, "/administracion/refrescar", url.Values{})
+
+	cuerpo := peticionConSesion(t, s, "/administracion").Body.String()
+	if !strings.Contains(cuerpo, "0 B (primera medición)") {
+		t.Errorf("una cuenta sin carpeta debería medir 0 B, no fallar ni seguir «sin medir»:\n%s", cuerpo)
+	}
+}
+
+// SI UNA CUENTA FALLA AL MEDIRSE, LAS DEMÁS NO SE QUEDAN SIN REFRESCAR: un
+// error aislado se registra y se salta, no aborta el lote entero —al
+// contrario que la baja (promoverUsuario), que si aborta entera a propósito.
+func TestRefrescarMetricasContinuaSiUnaCuentaFalla(t *testing.T) {
+	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
+	if err != nil {
+		t.Fatalf("Derivar: %v", err)
+	}
+	usuarios := registroDePrueba(t)
+	for _, nombre := range []string{"rota", "sana"} {
+		if err := usuarios.Alta(nombre, claveDeJuan); err != nil {
+			t.Fatalf("Alta(%s): %v", nombre, err)
+		}
+	}
+	s, err := Nuevo(Opciones{
+		Almacen: almacenVacio{},
+		AlmacenDe: func(nombre string) (almacen.Almacen, error) {
+			if nombre == "rota" {
+				return nil, errors.New("simulado: no se pudo abrir el almacén de esta cuenta")
+			}
+			return almacenConTamano{bytes: 4096}, nil
+		},
+		PromoverUsuario:  promoverUsuarioDePrueba,
+		Registro:         slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		PlazoInactividad: time.Minute,
+		Credencial:       linea,
+		Usuarios:         usuarios,
+		DuracionSesion:   time.Hour,
+		Metricas:         metricasDePrueba(t),
+	})
+	if err != nil {
+		t.Fatalf("Nuevo: %v", err)
+	}
+
+	if w := postConSesion(t, s, "/administracion/refrescar", url.Values{}); w.Code != http.StatusSeeOther {
+		t.Fatalf("refrescar -> %d; se esperaba 303 aunque una cuenta fallara", w.Code)
+	}
+
+	if _, medida := s.metricas.Todas()["sana"]; !medida {
+		t.Error("«sana» no se midió porque «rota» falló: el lote se abortó entero")
+	}
+	if _, medida := s.metricas.Todas()["rota"]; medida {
+		t.Error("«rota» aparece medida a pesar de que su almacén devolvía error")
 	}
 }

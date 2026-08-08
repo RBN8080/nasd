@@ -1,10 +1,14 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/metricas"
 )
 
 // Panel de administración — P-4, etapa 2 (ADR-0055).
@@ -31,10 +35,21 @@ const homeUsersNombre = "homeUsers"
 type filaUsuario struct {
 	Nombre string
 	// Activo — sesión vigente ahora mismo (autenticacion.Sesiones,
-	// etapa 2). Es el ÚNICO dato en vivo de esta primera versión del panel:
-	// se decidió así porque cuesta un mapa en memoria, no un recorrido de
-	// disco por cuenta.
+	// etapa 2). Es el ÚNICO dato EN VIVO del panel: se decidió así porque
+	// cuesta un mapa en memoria, no un recorrido de disco por cuenta.
 	Activo bool
+	// UsoDisco y Medido son BAJO DEMANDA — P-4, etapa 3 — y por eso van
+	// separados de Activo en vez de mezclados en el mismo texto: lo que hay
+	// aquí puede tener minutos, días o no existir todavía, y la plantilla
+	// lo dice explícitamente en vez de dar a entender que es tan fresco
+	// como el resto de la fila. ADR-0017: el tamaño y la variación ya
+	// vienen formados —ver formatoUsoDisco—, la plantilla solo compone.
+	UsoDisco string
+	// Medido es el momento de esa medición; cero si la cuenta nunca se ha
+	// refrescado. Se deja como time.Time y no como texto para poder seguir
+	// usando la función de plantilla «fecha», la misma que ya usa
+	// listado.html.
+	Medido time.Time
 }
 
 type vistaAdministracion struct {
@@ -46,13 +61,21 @@ type vistaAdministracion struct {
 
 func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {
 	activos := s.sesiones.ActivosPorUsuario()
+	// Todas() es una lectura en memoria —lo caro ya ocurrió, si acaso, en el
+	// último «Refrescar métricas»—: cargar el panel nunca recorre disco.
+	medidas := s.metricas.Todas()
 	v := vistaAdministracion{
 		Mensaje: r.URL.Query().Get("msg"),
 		EsError: r.URL.Query().Get("err") != "",
 		Csrf:    s.csrfDe(r),
 	}
 	for _, u := range s.usuarios.Lista() {
-		v.Usuarios = append(v.Usuarios, filaUsuario{Nombre: u.Nombre, Activo: activos[u.Nombre]})
+		fila := filaUsuario{Nombre: u.Nombre, Activo: activos[u.Nombre]}
+		if m, ok := medidas[u.Nombre]; ok {
+			fila.UsoDisco = formatoUsoDisco(m)
+			fila.Medido = m.Momento
+		}
+		v.Usuarios = append(v.Usuarios, fila)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -171,4 +194,67 @@ func (s *Servidor) bajaUsuario(w http.ResponseWriter, r *http.Request) {
 	s.reg.Warn("USUARIO DADO DE BAJA", "nombre", nombre, "remoto", origenDe(r))
 	s.redirigirAdministracion(w, r,
 		"Cuenta dada de baja: "+nombre+". Su carpeta no se ha destruido: ahora vive en la raíz, junto a homeUsers.", false)
+}
+
+// formatoUsoDisco compone el tamaño y la variación con signo desde la
+// última medida, en una sola cadena — ADR-0017: la decisión de formato es
+// del servidor, la plantilla solo la pega junto a la fecha (fila.Medido).
+func formatoUsoDisco(m metricas.Medida) string {
+	variacion := "primera medición"
+	if m.Variacion != nil {
+		switch d := *m.Variacion; {
+		case d == 0:
+			variacion = "sin cambios"
+		case d > 0:
+			variacion = "+" + legibleBytes(uint64(d))
+		default:
+			variacion = "−" + legibleBytes(uint64(-d))
+		}
+	}
+	return legibleBytes(uint64(m.Bytes)) + " (" + variacion + ")"
+}
+
+// refrescarMetricas mide el uso de disco de cada cuenta y publica el lote
+// entero de una vez — P-4, etapa 3.
+//
+// ES LA OPERACIÓN CARA DEL PANEL A PROPÓSITO: recorrer el árbol de hasta
+// maxUsuarios cuentas no es gratis (Resumen es recursivo, sin caché — ver
+// fsposix/administracion.go), así que ocurre SOLO al pulsar el botón y
+// nunca al servir /administracion. Es la misma razón por la que
+// evaluarLentos, en estado.go, no vive en el flujo en vivo.
+func (s *Servidor) refrescarMetricas(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.fallo(w, r, err)
+		return
+	}
+	if !s.exigirCSRF(w, r) {
+		return
+	}
+
+	nuevas := make(map[string]int64)
+	for _, u := range s.usuarios.Lista() {
+		alm, err := s.abrirAlmacen(u.Nombre)
+		if err != nil {
+			s.reg.Warn("refrescar métricas: no se pudo abrir el almacén de la cuenta",
+				"nombre", u.Nombre, "error", err)
+			continue
+		}
+		c, err := alm.Resumen(r.Context(), almacen.Raiz())
+		if err != nil && !errors.Is(err, almacen.ErrNoExiste) {
+			s.reg.Warn("refrescar métricas: no se pudo medir la cuenta",
+				"nombre", u.Nombre, "error", err)
+			continue
+		}
+		// ErrNoExiste: la cuenta nunca entró y ParaUsuario nunca creó su
+		// carpeta (fsposix/almacen.go) — no es un fallo, son 0 bytes.
+		nuevas[u.Nombre] = c.Bytes
+	}
+
+	if err := s.metricas.Actualizar(nuevas, time.Now()); err != nil {
+		s.reg.Error("refrescar métricas: no se pudo publicar el registro", "error", err)
+		s.redirigirAdministracion(w, r, "no se pudieron guardar las métricas: "+err.Error(), true)
+		return
+	}
+	s.reg.Info("métricas de uso de disco refrescadas", "cuentas", len(nuevas), "remoto", origenDe(r))
+	s.redirigirAdministracion(w, r, "Métricas actualizadas.", false)
 }

@@ -34,19 +34,31 @@
 
 <h2>Cuentas</h2>
 <table class="datos">
-  <thead><tr><th>Cuenta</th><th>Sesión</th><th></th></tr></thead>
+  <thead><tr><th>Cuenta</th><th>Sesión</th><th>Uso de disco</th><th></th></tr></thead>
   <tbody>
   {{range .Usuarios}}
     <tr{{if .Activo}} class="v-ok"{{end}}>
       <td class="rotulo">{{.Nombre}}</td>
       <td class="estado"><span class="pastilla">{{if .Activo}}activa{{end}}</span></td>
+      <!-- Bajo demanda, no en vivo (P-4, etapa 3): se dice explícitamente
+           CUÁNDO se midió, para no confundirlo con Cuenta/Sesión de al
+           lado, que sí son de ahora mismo. -->
+      <td class="num">{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}} · medido {{fecha .Medido}}{{end}}</td>
       <td class="num"><a class="destructivo" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></td>
     </tr>
   {{else}}
-    <tr><td colspan="3">Todavía no hay ninguna cuenta dada de alta.</td></tr>
+    <tr><td colspan="4">Todavía no hay ninguna cuenta dada de alta.</td></tr>
   {{end}}
   </tbody>
 </table>
+
+{{if .Usuarios}}
+<form method="post" action="/administracion/refrescar">
+  <input type="hidden" name="csrf" value="{{.Csrf}}">
+  <button type="submit">Refrescar métricas</button>
+  <p class="nota">Recorre el disco de cada cuenta: puede tardar. El uso de disco no se mide solo — hay que pulsar este botón.</p>
+</form>
+{{end}}
 
 <!-- El superusuario (admin) no aparece en esta lista: no está en el
      registro (ADR-0055) y no se puede dar de baja a sí mismo por aquí. -->

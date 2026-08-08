@@ -79,6 +79,7 @@ func servidorDeApertura(t *testing.T) (*Servidor, *almacenDeApertura) {
 		Credencial:       linea,
 		Usuarios:         registroDePrueba(t),
 		DuracionSesion:   time.Hour,
+		Metricas:         metricasDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
