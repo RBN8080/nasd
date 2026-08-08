@@ -18,6 +18,7 @@ import (
 
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/metricas"
 )
 
 //go:embed plantillas/*.html estatico/*
@@ -60,6 +61,11 @@ type Servidor struct {
 	sesiones       *autenticacion.Sesiones
 	limitador      *limitadorAcceso
 	duracionSesion time.Duration
+	// metricas guarda el uso de disco medido bajo demanda por cuenta —
+	// P-4, etapa 3. Se lee en cada carga de /administracion (barato: ya
+	// está en memoria) y se escribe SOLO al pulsar «Refrescar métricas»
+	// (caro: recorre el árbol de cada cuenta), nunca al servir la página.
+	metricas *metricas.Registro
 
 	// Observabilidad — Fase 4, charter §8.
 	contadores *contadores
@@ -102,6 +108,12 @@ type Opciones struct {
 	// Volumen es el punto de montaje del disco de datos (ADR-0019), necesario
 	// para informar de su ocupación y su salud en /estado.
 	Volumen string
+	// Metricas guarda el uso de disco medido bajo demanda por cuenta —
+	// P-4, etapa 3. Puede estar VACÍO —un nodo recién instalado, o donde
+	// nadie ha pulsado «Refrescar métricas» todavía— pero no puede faltar,
+	// por la misma razón que Usuarios: sin él, /administracion no tendría
+	// dónde leer ni dónde publicar lo que mida.
+	Metricas *metricas.Registro
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -135,6 +147,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.PromoverUsuario == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta PromoverUsuario (P-4, etapa 2)")
 	}
+	if o.Metricas == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Metricas (P-4, etapa 3)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -159,6 +174,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		contadores:        nuevosContadores(),
 		veredictosPrevios: make(map[string]veredicto),
 		volumen:           o.Volumen,
+		metricas:          o.Metricas,
 	}
 	s.muestreador = nuevoMuestreador(s.marcoDelServidor)
 
@@ -238,13 +254,16 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("GET /estado/flujo", s.soloSuperusuario(s.flujoDeEstado))
 
 	// Panel de administración — P-4, etapa 2 (ADR-0055). SOLO el
-	// superusuario, misma envoltura que /estado. Ninguna de las cuatro toca
-	// archivos —dar de alta o de baja una cuenta no es tocar el disco—, así
-	// que ninguna lleva conAlmacen.
+	// superusuario, misma envoltura que /estado. Ninguna de las cuatro
+	// primeras toca archivos —dar de alta o de baja una cuenta no es tocar
+	// el disco—, así que ninguna lleva conAlmacen; refrescarMetricas SÍ lee
+	// disco (P-4, etapa 3), pero por su propia puerta —s.abrirAlmacen, una
+	// vez por cuenta— y no por el almacén acotado a quien pregunta.
 	protegido.HandleFunc("GET /administracion", s.soloSuperusuario(s.verAdministracion))
 	protegido.HandleFunc("POST /administracion/alta", s.soloSuperusuario(s.altaUsuario))
 	protegido.HandleFunc("GET /administracion/baja/{nombre}", s.soloSuperusuario(s.confirmarBaja))
 	protegido.HandleFunc("POST /administracion/baja", s.soloSuperusuario(s.bajaUsuario))
+	protegido.HandleFunc("POST /administracion/refrescar", s.soloSuperusuario(s.refrescarMetricas))
 
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))

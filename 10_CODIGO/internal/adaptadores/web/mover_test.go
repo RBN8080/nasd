@@ -102,6 +102,7 @@ func servidorDeMover(t *testing.T) (*Servidor, *almacenDeMover) {
 		Credencial:       linea,
 		Usuarios:         registroDePrueba(t),
 		DuracionSesion:   time.Hour,
+		Metricas:         metricasDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)

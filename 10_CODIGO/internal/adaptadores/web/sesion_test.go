@@ -13,6 +13,7 @@ import (
 
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/metricas"
 )
 
 const claveDePrueba = "contraseña-de-prueba-larga"
@@ -29,6 +30,17 @@ func registroDePrueba(t *testing.T) *autenticacion.Registro {
 		filepath.Join(t.TempDir(), "usuarios"), iteracionesDePrueba)
 	if err != nil {
 		t.Fatalf("CargarRegistro: %v", err)
+	}
+	return reg
+}
+
+// metricasDePrueba devuelve un registro de métricas vacío respaldado por un
+// archivo temporal, que es lo que Nuevo exige desde P-4 etapa 3.
+func metricasDePrueba(t *testing.T) *metricas.Registro {
+	t.Helper()
+	reg, err := metricas.CargarRegistro(filepath.Join(t.TempDir(), "uso-disco"))
+	if err != nil {
+		t.Fatalf("metricas.CargarRegistro: %v", err)
 	}
 	return reg
 }
@@ -65,6 +77,7 @@ func servidorConAuth(t *testing.T) *Servidor {
 		Credencial:       linea,
 		Usuarios:         registroDePrueba(t),
 		DuracionSesion:   time.Hour,
+		Metricas:         metricasDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -240,6 +253,7 @@ func TestSinCredencialNoArranca(t *testing.T) {
 			Credencial:      mala,
 			Usuarios:        registroDePrueba(t),
 			DuracionSesion:  time.Hour,
+			Metricas:        metricasDePrueba(t),
 		})
 		if err == nil {
 			t.Errorf("arrancó con una credencial inválida: %q", mala)

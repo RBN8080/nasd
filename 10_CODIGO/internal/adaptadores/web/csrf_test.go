@@ -59,6 +59,11 @@ func TestSinTestigoCSRFSeRechazaTodoLoQueCambia(t *testing.T) {
 		// quién puede entrar, y eso pesa igual o más.
 		{"/administracion/alta", url.Values{"nombre": {"nueva"}, "clave": {"contrasena-bastante-larga"}}},
 		{"/administracion/baja", url.Values{"nombre": {"juan"}, "clave": {claveDePrueba}}},
+		// P-4, etapa 3: no cambia el disco de nadie, pero sí publica el
+		// registro de métricas — la misma clase de escritura que las de
+		// arriba, y entra en la lista el mismo día que nace (ver el
+		// comentario de /mover, dos líneas más arriba).
+		{"/administracion/refrescar", url.Values{}},
 	}
 	for _, c := range casos {
 		if got := postCon(t, h, cookie, c.ruta, c.campos); got != http.StatusForbidden {

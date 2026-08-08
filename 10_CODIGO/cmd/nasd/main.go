@@ -25,6 +25,7 @@ import (
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 	"nasd/internal/config"
+	"nasd/internal/metricas"
 )
 
 func main() {
@@ -89,6 +90,14 @@ func ejecutar() error {
 	reg.Info("registro de usuarios cargado",
 		"ruta", cfg.RutaUsuarios(), "cuentas", usuarios.Cuantos())
 
+	// Métricas de uso de disco por cuenta — P-4, etapa 3. Que el archivo no
+	// exista tampoco es un error aquí, por la misma razón que el registro de
+	// usuarios: un nodo recién instalado no tiene ninguna medida todavía.
+	metricasUso, err := metricas.CargarRegistro(cfg.RutaUsoDisco())
+	if err != nil {
+		return err
+	}
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen: alm,
 		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
@@ -109,6 +118,7 @@ func ejecutar() error {
 		Usuarios:         usuarios,
 		DuracionSesion:   cfg.DuracionSesion,
 		Volumen:          cfg.Volumen,
+		Metricas:         metricasUso,
 	})
 	if err != nil {
 		return err
