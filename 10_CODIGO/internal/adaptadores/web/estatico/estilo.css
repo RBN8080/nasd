@@ -683,6 +683,17 @@ tr.v-fallo .rotulo {
   text-align: right;
 }
 
+/* Excepción SOLO para la tabla de cuentas de /administracion. En esa tabla
+   «Sesión» ya NO es la última columna real —«Uso de disco» va después,
+   P-4 etapa 3— así que su encabezado sigue la regla base .datos th
+   { text-align: left } mientras la pastilla de abajo seguía a la derecha:
+   quedaba flotando lejos de su propio rótulo. Reportado en uso real. En
+   estado.html «Estado» SÍ es la última columna —ahí th:last-child ya
+   coincide con ella— y no lleva esta clase, así que no le afecta. */
+.tabla-cuentas .estado {
+  text-align: left;
+}
+
 /* Una ruta o una cifra larga parte donde haga falta antes que desbordar. */
 .datos .cifra {
   overflow-wrap: anywhere;
