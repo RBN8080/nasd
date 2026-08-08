@@ -33,7 +33,7 @@
 {{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{else}}exito{{end}}">{{.Mensaje}}</p>{{end}}
 
 <h2>Cuentas</h2>
-<table class="datos">
+<table class="datos tabla-cuentas">
   <thead><tr><th>Cuenta</th><th>Sesión</th><th>Uso de disco</th><th></th></tr></thead>
   <tbody>
   {{range .Usuarios}}
@@ -56,7 +56,6 @@
 <form method="post" action="/administracion/refrescar">
   <input type="hidden" name="csrf" value="{{.Csrf}}">
   <button type="submit">Refrescar métricas</button>
-  <p class="nota">Recorre el disco de cada cuenta: puede tardar. El uso de disco no se mide solo — hay que pulsar este botón.</p>
 </form>
 {{end}}
 
