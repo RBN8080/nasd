@@ -71,7 +71,13 @@ type Servidor struct {
 	contadores *contadores
 	// muestreador alimenta el flujo en vivo de /estado (ADR-0051). Solo mide
 	// mientras haya alguien mirando: sin espectadores no cuesta nada.
-	muestreador *muestreador
+	muestreador *muestreador[marcoVivo]
+	// cuentas alimenta el flujo en vivo de /administracion (P-7, ADR-0056).
+	// Es OTRA instancia del mismo motor, no otro motor: así el panel no paga
+	// las lecturas de /proc que solo necesita /estado, y /estado no paga el
+	// recorrido del registro de usuarios. Cada página arranca y para su propio
+	// bucle según quién la esté mirando.
+	cuentas *muestreador[marcoCuentas]
 	// veredictosPrevios recuerda el último veredicto de cada indicador para
 	// alertar solo en los CAMBIOS. Lo toca únicamente la goroutine de
 	// mantenimiento: ver anunciar().
@@ -176,7 +182,8 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		volumen:           o.Volumen,
 		metricas:          o.Metricas,
 	}
-	s.muestreador = nuevoMuestreador(s.marcoDelServidor)
+	s.muestreador = nuevoMuestreador(s.abrirLectorVivo)
+	s.cuentas = nuevoMuestreador(s.abrirLectorCuentas)
 
 	// Al arrancar se mira qué subidas dejó a medias el proceso anterior.
 	// No se reabren aquí —eso ocurre al primer HEAD o PATCH— pero se informa,
@@ -264,6 +271,12 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("GET /administracion/baja/{nombre}", s.soloSuperusuario(s.confirmarBaja))
 	protegido.HandleFunc("POST /administracion/baja", s.soloSuperusuario(s.bajaUsuario))
 	protegido.HandleFunc("POST /administracion/refrescar", s.soloSuperusuario(s.refrescarMetricas))
+	// El flujo en vivo del panel — P-7, ADR-0056. Se cierra igual que la
+	// página que alimenta y por el mismo motivo que /estado/flujo: publica
+	// exactamente lo mismo y encima de forma continua, así que dejarlo fuera
+	// abriría por la puerta de al lado lo que la línea de /administracion
+	// cierra (D-21).
+	protegido.HandleFunc("GET /administracion/flujo", s.soloSuperusuario(s.flujoDeCuentas))
 
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))

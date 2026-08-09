@@ -33,6 +33,10 @@ func TestSoloElSuperusuarioAlcanzaLaAdministracion(t *testing.T) {
 	for _, c := range []struct{ metodo, ruta string }{
 		{"GET", "/administracion"},
 		{"GET", "/administracion/baja/juan"},
+		// El flujo en vivo publica lo mismo que la página y encima de forma
+		// continua (P-7, ADR-0056): si se quedara fuera de esta tabla, abriría
+		// por la puerta de al lado lo que la primera línea cierra.
+		{"GET", "/administracion/flujo"},
 	} {
 		r := httptest.NewRequest(c.metodo, c.ruta, nil)
 		r.AddCookie(deJuan)
@@ -230,6 +234,77 @@ func TestElPanelMuestraQuienTieneSesionActiva(t *testing.T) {
 	}
 	if n := strings.Count(cuerpo, ">activa<"); n != 1 {
 		t.Errorf(`"activa" aparece %d veces; se esperaba 1 (solo ana)`, n)
+	}
+}
+
+// El flujo en vivo del panel — P-7, ADR-0056.
+//
+// LO QUE ESTA PRUEBA DEFIENDE no es que el flujo emita, sino que emita lo MISMO
+// que pinta la página: la prueba de arriba busca ">activa<" en el HTML y esta
+// busca ese mismo texto en el marco. Si alguien cambia el rótulo en un solo
+// sitio, una de las dos se pone en rojo.
+func TestElFlujoDeCuentasSigueLaSesionEnVivo(t *testing.T) {
+	s, _ := servidorMultiusuario(t)
+	if err := s.usuarios.Alta("ana", "otra-contrasena-larga"); err != nil {
+		t.Fatalf("Alta(ana): %v", err)
+	}
+	testigo, err := s.sesiones.Abrir("ana")
+	if err != nil {
+		t.Fatalf("Abrir(ana): %v", err)
+	}
+
+	marcos, cancelar := s.cuentas.suscribir()
+	defer cancelar()
+
+	// Con la sesión de ana abierta: ella activa, juan no.
+	m := esperarMarco(t, marcos)
+	buscar := func(m marcoCuentas, nombre string) (filaCuenta, bool) {
+		for _, f := range m.Cuentas {
+			if f.Nombre == nombre {
+				return f, true
+			}
+		}
+		return filaCuenta{}, false
+	}
+
+	ana, ok := buscar(m, "ana")
+	if !ok {
+		t.Fatalf("el marco no trae a ana: %+v", m.Cuentas)
+	}
+	if ana.Texto != textoSesionActiva || ana.Veredicto != vOK {
+		t.Errorf("ana con sesión abierta -> texto %q veredicto %q; se esperaba %q/%q",
+			ana.Texto, ana.Veredicto, textoSesionActiva, vOK)
+	}
+	juan, ok := buscar(m, "juan")
+	if !ok {
+		t.Fatalf("el marco no trae a juan: %+v", m.Cuentas)
+	}
+	if juan.Texto != "" || juan.Veredicto != "" {
+		t.Errorf("juan sin sesión -> texto %q veredicto %q; se esperaban vacíos", juan.Texto, juan.Veredicto)
+	}
+
+	// Y AL CERRAR SESIÓN LA PASTILLA SE APAGA SOLA, que es literalmente el
+	// defecto que P-7 arregla: antes seguía diciendo «activa» hasta recargar.
+	s.sesiones.Cerrar(testigo)
+
+	plazo := time.Now().Add(2 * time.Second)
+	for time.Now().Before(plazo) {
+		m := esperarMarco(t, marcos)
+		if f, ok := buscar(m, "ana"); ok && f.Texto == "" && f.Veredicto == "" {
+			return
+		}
+	}
+	t.Fatal("tras cerrar la sesión de ana su pastilla siguió encendida en el flujo")
+}
+
+func esperarMarco(t *testing.T, marcos <-chan marcoCuentas) marcoCuentas {
+	t.Helper()
+	select {
+	case m := <-marcos:
+		return m
+	case <-time.After(2 * time.Second):
+		t.Fatal("no llegó ningún marco del flujo de cuentas")
+		return marcoCuentas{}
 	}
 }
 

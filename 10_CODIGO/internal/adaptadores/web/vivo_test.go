@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,10 +16,12 @@ import (
 	"nasd/internal/autenticacion"
 )
 
-// marcoDePrueba es un componer determinista: no toca el nodo, así que estas
+// abrirLectorDePrueba es un lector determinista: no toca el nodo, así que estas
 // pruebas miden el reparto y el ciclo de vida, no la lectura de /proc.
-func marcoDePrueba(sistema.Vivo) marcoVivo {
-	return marcoVivo{Nodo: []filaViva{{Clave: "temperatura", Valor: "50.0 °C"}}}
+func abrirLectorDePrueba() func() marcoVivo {
+	return func() marcoVivo {
+		return marcoVivo{Nodo: []filaViva{{Clave: "temperatura", Valor: "50.0 °C"}}}
+	}
 }
 
 // El muestreo NO puede seguir corriendo cuando nadie mira. Es la mitad del
@@ -26,7 +29,7 @@ func marcoDePrueba(sistema.Vivo) marcoVivo {
 // bucle sobreviviera a la última desconexión, la pantalla de estado costaría
 // cuatro lecturas por segundo para siempre, las mirara alguien o no.
 func TestSinEspectadoresElMuestreoSePara(t *testing.T) {
-	m := nuevoMuestreador(marcoDePrueba)
+	m := nuevoMuestreador(abrirLectorDePrueba)
 
 	marcos, cancelar := m.suscribir()
 	select {
@@ -62,7 +65,7 @@ func TestSinEspectadoresElMuestreoSePara(t *testing.T) {
 // Y al volver a haber espectadores tiene que arrancar OTRA VEZ. Sin esto, la
 // segunda visita a /estado mostraría una página congelada para siempre.
 func TestElMuestreoVuelveAArrancar(t *testing.T) {
-	m := nuevoMuestreador(marcoDePrueba)
+	m := nuevoMuestreador(abrirLectorDePrueba)
 
 	_, cancelar := m.suscribir()
 	cancelar()
@@ -92,7 +95,7 @@ func TestElMuestreoVuelveAArrancar(t *testing.T) {
 // Un espectador que no lee —pestaña en segundo plano, red atascada— NO puede
 // congelar a los demás. Por eso el reparto descarta marcos en vez de esperar.
 func TestUnEspectadorLentoNoDetieneALosDemas(t *testing.T) {
-	m := nuevoMuestreador(marcoDePrueba)
+	m := nuevoMuestreador(abrirLectorDePrueba)
 
 	// El lento se suscribe y jamás lee de su canal.
 	_, cancelarLento := m.suscribir()
@@ -115,10 +118,82 @@ func TestUnEspectadorLentoNoDetieneALosDemas(t *testing.T) {
 // Cancelar dos veces no puede romper nada: el manejador llama a cancelar por
 // defer, y una salida por error podría llamarlo antes.
 func TestCancelarDosVecesEsInofensivo(t *testing.T) {
-	m := nuevoMuestreador(marcoDePrueba)
+	m := nuevoMuestreador(abrirLectorDePrueba)
 	_, cancelar := m.suscribir()
 	cancelar()
 	cancelar()
+}
+
+// EL LECTOR SE PIDE EN CADA ARRANQUE DEL BUCLE, NO UNA SOLA VEZ. Es la razón de
+// que «abrir» sea una función que devuelve otra función, y es lo primero que se
+// pierde si alguien «simplifica» esa firma a un simple func() T.
+//
+// Por qué importa: el lector de /estado guarda la muestra de CPU anterior para
+// poder restar. Si naciera una sola vez al arrancar el servidor, tras un rato
+// sin nadie mirando la primera resta se haría contra una lectura de hace horas
+// y el marco inicial daría un porcentaje falso justo al abrir la pantalla —un
+// defecto que no rompe nada a gritos y que se vería como un número raro que
+// «se arregla solo» un cuarto de segundo después.
+func TestCadaArranqueDelBucleEstrenaLector(t *testing.T) {
+	var mu sync.Mutex
+	aperturas := 0
+
+	m := nuevoMuestreador(func() func() marcoVivo {
+		mu.Lock()
+		aperturas++
+		mu.Unlock()
+		return func() marcoVivo { return marcoVivo{} }
+	})
+
+	contar := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return aperturas
+	}
+
+	// Primer ciclo completo: se suscribe, llega un marco, se va.
+	marcos, cancelar := m.suscribir()
+	select {
+	case <-marcos:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no llegó ningún marco en el primer arranque")
+	}
+	cancelar()
+
+	esperarApagado(t, m)
+	if n := contar(); n != 1 {
+		t.Fatalf("tras el primer arranque el lector debía haberse abierto 1 vez, y fueron %d", n)
+	}
+
+	// Segundo ciclo: el bucle arranca de nuevo y DEBE pedir un lector nuevo.
+	marcos2, cancelar2 := m.suscribir()
+	defer cancelar2()
+	select {
+	case <-marcos2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no llegó ningún marco en el segundo arranque")
+	}
+
+	if n := contar(); n != 2 {
+		t.Fatalf("el segundo arranque debía estrenar lector (2 aperturas), y hubo %d: el estado del lector anterior se está reutilizando", n)
+	}
+}
+
+// esperarApagado bloquea hasta que el bucle se para de verdad, en lugar de
+// suponerlo: se entera en su siguiente tic, no en el acto.
+func esperarApagado(t *testing.T, m *muestreador[marcoVivo]) {
+	t.Helper()
+	plazo := time.Now().Add(2 * time.Second)
+	for time.Now().Before(plazo) {
+		m.mu.Lock()
+		activo := m.activo
+		m.mu.Unlock()
+		if !activo {
+			return
+		}
+		time.Sleep(intervaloVivo)
+	}
+	t.Fatal("el muestreo no se paró tras irse el último espectador")
 }
 
 // ---------------------------------------------------------------------------
