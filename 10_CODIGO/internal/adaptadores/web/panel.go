@@ -52,11 +52,101 @@ type filaUsuario struct {
 	Medido time.Time
 }
 
+// textoSesionActiva es lo que dice la pastilla cuando hay sesión abierta.
+//
+// ES UNA CONSTANTE Y NO UN LITERAL EN LA PLANTILLA porque desde P-7 hay DOS
+// cosas que pintan esa pastilla: el render del servidor al cargar la página y
+// el flujo en vivo que la actualiza después. Con el texto escrito en dos
+// sitios, cambiar uno y olvidar el otro haría que la pastilla cambiara de
+// palabra sola al primer tic, sin que nada fallara a gritos.
+const textoSesionActiva = "activa"
+
+// Sesion y Veredicto son lo que la PLANTILLA pinta, y salen de las mismas
+// constantes que marcoDeCuentas mete en el flujo. Ese es todo su motivo: que
+// la página cargada y el marco empujado no puedan decir cosas distintas.
+func (f filaUsuario) Sesion() string {
+	if !f.Activo {
+		return ""
+	}
+	return textoSesionActiva
+}
+
+func (f filaUsuario) Veredicto() veredicto {
+	if !f.Activo {
+		return ""
+	}
+	return vOK
+}
+
 type vistaAdministracion struct {
 	Usuarios []filaUsuario
 	Mensaje  string
 	EsError  bool
 	Csrf     string
+}
+
+// Sesión en vivo — P-7, ADR-0056.
+//
+// La pastilla de «Sesión» decía la verdad SOLO en el instante de cargar la
+// página: quien cerrara sesión seguía figurando como activo hasta que alguien
+// recargara a mano. Se empuja igual que /estado, por el mismo muestreador
+// genérico y al mismo ritmo.
+//
+// LO QUE NO VIAJA AQUÍ, Y ES DELIBERADO: el uso de disco. Es bajo demanda por
+// decisión de P-4 etapa 3 —recorre el árbol de cada cuenta— y tiene su propio
+// botón. Meterlo en el flujo desharía esa decisión en silencio y pondría el
+// bus USB, que es el recurso escaso del nodo (RES-02), a trabajar cuatro veces
+// por segundo por tener una pestaña abierta.
+
+// filaCuenta es una fila del flujo del panel. Copia la forma de filaViva —y no
+// un simple booleano— porque ADR-0017 pone el render en el servidor: el texto
+// de la pastilla y la clase de la fila se componen AQUÍ, exactamente como los
+// pinta la plantilla, para que la página con JavaScript y sin él no puedan
+// decir cosas distintas.
+type filaCuenta struct {
+	// Nombre es el ancla en el DOM (data-usuario), no un rótulo para pintar:
+	// el nombre ya está escrito en la fila y no cambia nunca.
+	Nombre    string    `json:"nombre"`
+	Texto     string    `json:"texto"`
+	Veredicto veredicto `json:"veredicto,omitempty"`
+}
+
+// marcoCuentas es lo que viaja en cada evento del flujo del panel. Van SIEMPRE
+// todas las filas y no solo las que cambiaron, por el mismo motivo que
+// marcoVivo: abajo se descarta el marco de un espectador lento, y con un
+// protocolo de diferencias ese espectador se quedaría con un valor viejo para
+// siempre.
+type marcoCuentas struct {
+	Cuentas []filaCuenta `json:"cuentas"`
+}
+
+// abrirLectorCuentas entrega el lector del flujo del panel. A diferencia del de
+// /estado no guarda nada entre marcos —no hay ninguna resta que hacer—, así que
+// devuelve el método tal cual.
+func (s *Servidor) abrirLectorCuentas() func() marcoCuentas {
+	return s.marcoDeCuentas
+}
+
+// marcoDeCuentas compone quién tiene sesión abierta AHORA.
+//
+// Las dos lecturas son de memoria pura —un cerrojo y una copia; ni un stat ni
+// un byte de disco—, que es lo que permite emitir a 250 ms sin coste apreciable.
+// ActivosPorUsuario ya descarta las sesiones caducadas, así que una que expira
+// se apaga sola en el tic siguiente sin depender del barrido de Purgar().
+func (s *Servidor) marcoDeCuentas() marcoCuentas {
+	activos := s.sesiones.ActivosPorUsuario()
+	lista := s.usuarios.Lista()
+
+	m := marcoCuentas{Cuentas: make([]filaCuenta, 0, len(lista))}
+	for _, u := range lista {
+		fila := filaCuenta{Nombre: u.Nombre}
+		if activos[u.Nombre] {
+			fila.Texto = textoSesionActiva
+			fila.Veredicto = vOK
+		}
+		m.Cuentas = append(m.Cuentas, fila)
+	}
+	return m
 }
 
 func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {

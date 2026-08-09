@@ -110,6 +110,9 @@ func TestSinSesionTodoResponde401(t *testing.T) {
 		// cierra — que es la clase de asimetría que D-21 obliga a comprobar
 		// vía por vía en lugar de darla por hecha.
 		{"GET", "/estado/flujo"},
+		// Y el del panel de administración, por el mismo motivo (P-7,
+		// ADR-0056): publica quién tiene sesión abierta ahora mismo.
+		{"GET", "/administracion/flujo"},
 	}
 	for _, c := range rutas {
 		w := httptest.NewRecorder()

@@ -10,8 +10,15 @@
 
 <header>
   <div class="cabecera-superior">
+    <!-- El latido, igual que en estado.html y con el MISMO CSS (P-7,
+         ADR-0056): si el flujo se cae, la pastilla de «Sesión» se queda
+         congelada con el último valor que llegó, y una pastilla que dice
+         «activa» sobre una sesión ya cerrada es exactamente el indicador que
+         miente que 00_RECTOR.md §12.5 lleva corrigiendo. Empieza oculto: sin
+         JavaScript no hay flujo que anunciar y la página es correcta igual. -->
     <div class="titulo-estado">
       <span class="titulo-pagina">Administración</span>
+      <span id="latido" class="latido" hidden></span>
     </div>
 
     <!-- La MISMA barra y la MISMA clase que listado.html y estado.html
@@ -57,11 +64,17 @@
 <h2>Cuentas</h2>
 <table class="datos tabla-cuentas">
   <thead><tr><th>Cuenta</th><th>Sesión</th><th>Uso de disco</th><th></th></tr></thead>
-  <tbody>
+  <tbody id="tabla-cuentas">
   {{range .Usuarios}}
-    <tr{{if .Activo}} class="v-ok"{{end}}>
+    <!-- data-usuario es el ANCLA del flujo en vivo (P-7), igual que data-clave
+         en estado.html: es un identificador, no un rótulo. Si cambia sin
+         cambiar cuentas.js, la pastilla deja de actualizarse y no falla nada a
+         gritos. El texto y la clase salen de Sesion/Veredicto —las mismas
+         constantes que viajan en el marco— para que esta carga y el primer tic
+         no puedan decir cosas distintas. -->
+    <tr data-usuario="{{.Nombre}}"{{if .Veredicto}} class="v-{{.Veredicto}}"{{end}}>
       <td class="rotulo">{{.Nombre}}</td>
-      <td class="estado"><span class="pastilla">{{if .Activo}}activa{{end}}</span></td>
+      <td class="estado"><span class="pastilla">{{.Sesion}}</span></td>
       <!-- Bajo demanda, no en vivo (P-4, etapa 3): se dice explícitamente
            CUÁNDO se midió, para no confundirlo con Cuenta/Sesión de al
            lado, que sí son de ahora mismo. -->
@@ -86,6 +99,7 @@
 
 </main>
 <script src="/estatico/menus.js"></script>
+<script src="/estatico/cuentas.js"></script>
 </body>
 </html>
 {{end}}

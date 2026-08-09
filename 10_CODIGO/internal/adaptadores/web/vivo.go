@@ -75,30 +75,54 @@ type marcoVivo struct {
 //     con mirar si el mapa está vacío: entre que el bucle decide salir y sale,
 //     una conexión nueva podría arrancar un segundo bucle y el nodo pasaría a
 //     muestrearse el doble de veces, en silencio y para siempre.
-type muestreador struct {
+//
+// # POR QUÉ ES GENÉRICO — ADR-0056
+//
+// Nació sirviendo solo a /estado. Cuando /administracion necesitó lo mismo
+// para su pastilla de sesión, había dos caminos: copiar estas cuarenta líneas
+// o parametrizar el marco. Se parametrizó, y el motivo no es la elegancia: es
+// que ESTA es la parte delicada del programa —los dos peores defectos del
+// proyecto fueron carreras (rector v1.11.0)— y una copia sería un quinto punto
+// de estado compartido con sus propias carreras posibles. Compartiéndolo, las
+// cuatro pruebas de vivo_test.go cubren las dos páginas a la vez.
+type muestreador[T any] struct {
 	mu      sync.Mutex
-	oyentes map[chan marcoVivo]struct{}
+	oyentes map[chan T]struct{}
 	activo  bool
 
-	// componer produce el marco. Se inyecta para que el muestreador no sepa
-	// nada del servidor y se pueda probar sin levantar uno entero.
-	componer func(sistema.Vivo) marcoVivo
+	// abrir entrega el lector que produce cada marco. Se inyecta para que el
+	// muestreador no sepa nada del servidor y se pueda probar sin levantar uno
+	// entero.
+	//
+	// LA DOBLE FUNCIÓN NO ES ADORNO, Y ES FÁCIL DE ROMPER AL SIMPLIFICARLA. El
+	// porcentaje de CPU no se lee, se RESTA entre dos muestras, así que el
+	// lector de /estado guarda la muestra anterior. Ese estado tiene que nacer
+	// cuando arranca el BUCLE, no cuando arranca el servidor: si naciera una
+	// sola vez, tras un rato sin espectadores la primera resta se haría contra
+	// una lectura rancia de hace horas y el marco inicial daría un porcentaje
+	// falso justo al abrir la pantalla. Con «abrir» se pide un lector nuevo en
+	// cada arranque del bucle, que es exactamente lo que hacía la versión no
+	// genérica al declarar «previa» dentro de bucle().
+	//
+	// El flujo de cuentas no guarda nada entre marcos: su «abrir» devuelve el
+	// método y ya está.
+	abrir func() func() T
 }
 
-func nuevoMuestreador(componer func(sistema.Vivo) marcoVivo) *muestreador {
-	return &muestreador{
-		oyentes:  make(map[chan marcoVivo]struct{}),
-		componer: componer,
+func nuevoMuestreador[T any](abrir func() func() T) *muestreador[T] {
+	return &muestreador[T]{
+		oyentes: make(map[chan T]struct{}),
+		abrir:   abrir,
 	}
 }
 
 // suscribir devuelve el canal por el que llegan los marcos y la función que
 // cancela la suscripción. La función DEBE llamarse: sin ella el oyente queda
 // en el mapa y el muestreo no se para nunca.
-func (m *muestreador) suscribir() (<-chan marcoVivo, func()) {
+func (m *muestreador[T]) suscribir() (<-chan T, func()) {
 	// Capacidad 1 y no 0: el bucle no puede quedarse esperando a que un
 	// espectador lento lea, porque los demás dependen de él.
-	c := make(chan marcoVivo, 1)
+	c := make(chan T, 1)
 
 	m.mu.Lock()
 	m.oyentes[c] = struct{}{}
@@ -123,20 +147,19 @@ func (m *muestreador) suscribir() (<-chan marcoVivo, func()) {
 }
 
 // bucle muestrea y reparte hasta que no queda nadie mirando.
-func (m *muestreador) bucle() {
-	// Primera muestra ANTES del primer tic: así el marco inicial ya trae el
-	// porcentaje de CPU medido en una ventana real, en lugar de estrenar la
-	// pantalla con un «no disponible» que se corrige un cuarto de segundo
-	// después.
-	previa := sistema.LeerCPU()
+func (m *muestreador[T]) bucle() {
+	// El lector se pide AQUÍ, al arrancar el bucle, y no al construir el
+	// muestreador: ver la nota de «abrir» más arriba. Para /estado esta línea
+	// es la que toma la primera muestra de CPU antes del primer tic, de modo
+	// que el marco inicial ya trae el porcentaje medido en una ventana real en
+	// lugar de estrenar la pantalla con un «no disponible».
+	leer := m.abrir()
 
 	t := time.NewTicker(intervaloVivo)
 	defer t.Stop()
 
 	for range t.C {
-		var v sistema.Vivo
-		v, previa = sistema.LeerVivo(previa)
-		marco := m.componer(v)
+		marco := leer()
 
 		m.mu.Lock()
 		if len(m.oyentes) == 0 {
@@ -159,9 +182,25 @@ func (m *muestreador) bucle() {
 	}
 }
 
-// flujoDeEstado sirve el flujo SSE. Va detrás de la sesión, como /estado y por
-// los mismos motivos (ver el encabezado de estado.go).
+// flujoDeEstado sirve el flujo SSE de /estado. Va detrás de la sesión, como
+// /estado y por los mismos motivos (ver el encabezado de estado.go).
 func (s *Servidor) flujoDeEstado(w http.ResponseWriter, r *http.Request) {
+	servirFlujo(s, w, r, s.muestreador)
+}
+
+// flujoDeCuentas sirve el flujo SSE de /administracion — ADR-0056. Misma
+// puerta que el resto del panel: solo el superusuario.
+func (s *Servidor) flujoDeCuentas(w http.ResponseWriter, r *http.Request) {
+	servirFlujo(s, w, r, s.cuentas)
+}
+
+// servirFlujo es la fontanería de SSE, común a los dos flujos: cabeceras,
+// suscripción, y un bucle que escribe marcos hasta que el cliente se va.
+//
+// VA COMO FUNCIÓN Y NO COMO MÉTODO porque los métodos de Go no admiten
+// parámetros de tipo propios. No hay ninguna intención de diseño detrás de esa
+// forma; es la única que el lenguaje permite.
+func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *muestreador[T]) {
 	rc := http.NewResponseController(w)
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -173,11 +212,11 @@ func (s *Servidor) flujoDeEstado(w http.ResponseWriter, r *http.Request) {
 	if err := rc.Flush(); err != nil {
 		// Sin Flush no hay flujo posible: cada marco se quedaría en el búfer.
 		// Mejor decirlo y cerrar que servir una conexión que nunca entrega.
-		s.reg.Warn("flujo de estado no disponible: el ResponseWriter no deja vaciar", "error", err)
+		s.reg.Warn("flujo en vivo no disponible: el ResponseWriter no deja vaciar", "error", err, "ruta", r.URL.Path)
 		return
 	}
 
-	marcos, cancelar := s.muestreador.suscribir()
+	marcos, cancelar := m.suscribir()
 	defer cancelar()
 
 	// EL PLAZO POR ACTIVIDAD DE ADR-0026 SE APLICA IGUAL QUE EN UNA DESCARGA, y
@@ -214,8 +253,24 @@ func (s *Servidor) flujoDeEstado(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// marcoDelServidor es lo que el muestreador inyecta: mide el servicio en el
-// mismo instante que el nodo, para que las dos tablas cuenten el mismo momento.
+// abrirLectorVivo entrega el lector del flujo de /estado. Se llama una vez por
+// arranque del bucle y ahí toma la primera muestra de CPU; el lector que
+// devuelve guarda esa muestra para poder RESTAR en el tic siguiente.
+//
+// «previa» solo la toca la goroutine del bucle —una por muestreador, y «activo»
+// lo garantiza—, así que no necesita cerrojo. No es un quinto punto de estado
+// compartido: es estado local de una goroutine.
+func (s *Servidor) abrirLectorVivo() func() marcoVivo {
+	previa := sistema.LeerCPU()
+	return func() marcoVivo {
+		var v sistema.Vivo
+		v, previa = sistema.LeerVivo(previa)
+		return s.marcoDelServidor(v)
+	}
+}
+
+// marcoDelServidor mide el servicio en el mismo instante que el nodo, para que
+// las dos tablas cuenten el mismo momento.
 func (s *Servidor) marcoDelServidor(v sistema.Vivo) marcoVivo {
 	nodo, servicio := filasVivas(v, s.instantaneaCompleta())
 	return marcoVivo{Nodo: nodo, Servicio: servicio}
