@@ -85,6 +85,20 @@ func TestLaBarraSoloOfreceAdministracionAlSuperusuario(t *testing.T) {
 	}
 }
 
+func TestLaPastillaDeConexionSoloApareceEnEstado(t *testing.T) {
+	s, _ := servidorMultiusuario(t)
+
+	administracion := peticionConSesion(t, s, "/administracion").Body.String()
+	if strings.Contains(administracion, `id="latido"`) {
+		t.Error("la página de administración muestra la pastilla de conexión")
+	}
+
+	estado := peticionConSesion(t, s, "/estado").Body.String()
+	if !strings.Contains(estado, `id="latido"`) {
+		t.Error("la página de estado perdió la pastilla de conexión")
+	}
+}
+
 // El alta desde el panel es la misma operación que «nasd --crear-usuario»:
 // la cuenta queda en el registro compartido, con la contraseña ya derivada.
 func TestAltaDeUsuarioDesdeElPanel(t *testing.T) {
