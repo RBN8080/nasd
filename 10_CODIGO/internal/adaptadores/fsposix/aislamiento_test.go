@@ -223,10 +223,13 @@ func TestMoverDentroDeLaCarpetaDeUnUsuarioSigueDentro(t *testing.T) {
 	}
 }
 
-// LA RAÍZ DE UN USUARIO NO SE TOCA POR LA VÍA NORMAL, ni siendo el
-// superusuario. Lo pidió así el responsable, y la regla vive en el servidor:
-// esconder el botón del listado no impediría la petición.
-func TestElSuperusuarioNoPuedeDestruirLaCarpetaDeUnUsuarioPorLaViaNormal(t *testing.T) {
+// EL CONTENEDOR DE USUARIOS EN SÍ NO SE TOCA POR LA VÍA NORMAL, ni siendo el
+// superusuario — ADR-0058. No es una restricción a él: es la protección del
+// MkdirAll que ParaUsuario hace en cada entrada de sesión. Si «homeUsers»
+// desapareciera o se sustituyera por un archivo, nadie podría volver a
+// entrar. La regla vive en el servidor: esconder el botón del listado no
+// impediría la petición.
+func TestElContenedorDeUsuariosNoSeTocaPorLaViaNormal(t *testing.T) {
 	base := nuevoVolumen(t)
 	juan, err := base.ParaUsuario("juan")
 	if err != nil {
@@ -236,13 +239,14 @@ func TestElSuperusuarioNoPuedeDestruirLaCarpetaDeUnUsuarioPorLaViaNormal(t *test
 	ctx := context.Background()
 
 	casos := map[string]func() error{
-		"borrar el contenedor":       func() error { return base.Borrar(ctx, ruta(t, SubHomeUsers)) },
-		"talar el contenedor":        func() error { return base.BorrarArbol(ctx, ruta(t, SubHomeUsers)) },
-		"borrar la raíz de juan":     func() error { return base.Borrar(ctx, ruta(t, SubHomeUsers+"/juan")) },
-		"talar la raíz de juan":      func() error { return base.BorrarArbol(ctx, ruta(t, SubHomeUsers+"/juan")) },
-		"mover la raíz de juan":      func() error { return base.Renombrar(ctx, ruta(t, SubHomeUsers+"/juan"), ruta(t, "botin")) },
-		"mover algo ENCIMA de juan":  func() error { return base.Renombrar(ctx, ruta(t, "otra"), ruta(t, SubHomeUsers+"/juan")) },
-		"crear el contenedor a mano": func() error { return base.CrearDirectorio(ctx, ruta(t, SubHomeUsers)) },
+		"borrar el contenedor": func() error { return base.Borrar(ctx, ruta(t, SubHomeUsers)) },
+		"talar el contenedor":  func() error { return base.BorrarArbol(ctx, ruta(t, SubHomeUsers)) },
+		"crear el contenedor a mano": func() error {
+			return base.CrearDirectorio(ctx, ruta(t, SubHomeUsers))
+		},
+		"mover algo ENCIMA del contenedor": func() error {
+			return base.Renombrar(ctx, ruta(t, "otra"), ruta(t, SubHomeUsers))
+		},
 	}
 	for nombre, hacer := range casos {
 		if err := hacer(); !errors.Is(err, almacen.ErrReservado) {
@@ -250,9 +254,54 @@ func TestElSuperusuarioNoPuedeDestruirLaCarpetaDeUnUsuarioPorLaViaNormal(t *test
 		}
 	}
 
-	// Y el archivo sigue ahí después de todos los intentos.
+	// Y el archivo de juan sigue ahí después de todos los intentos.
 	if _, err := juan.Estado(ctx, ruta(t, "importante.txt")); err != nil {
 		t.Fatalf("algún intento llegó a destruir datos: %v", err)
+	}
+}
+
+// EL SUPERUSUARIO SÍ ADMINISTRA LA RAÍZ DE UN USUARIO — decisión del
+// responsable el 2026-08-12 (ADR-0058, supersede en esto a ADR-0055). Antes
+// esResevado también bloqueaba «homeUsers/<quien>», y ese bloqueo salía por
+// la web como 500 «error interno», indistinguible de un fallo real (P-9).
+// Por SMB nunca hubo tal bloqueo: esta prueba iguala los dos caminos.
+func TestElSuperusuarioSiAdministraLaCarpetaDeUnUsuario(t *testing.T) {
+	base := nuevoVolumen(t)
+	ctx := context.Background()
+
+	casos := map[string]func(*testing.T){
+		"borrar la raíz de juan, vacía": func(t *testing.T) {
+			if _, err := base.ParaUsuario("juan"); err != nil {
+				t.Fatalf("ParaUsuario: %v", err)
+			}
+			if err := base.Borrar(ctx, ruta(t, SubHomeUsers+"/juan")); err != nil {
+				t.Errorf("Borrar la raíz de juan: %v", err)
+			}
+		},
+		"talar la raíz de juan, con contenido": func(t *testing.T) {
+			pedro, err := base.ParaUsuario("pedro")
+			if err != nil {
+				t.Fatalf("ParaUsuario: %v", err)
+			}
+			escribir(t, pedro, "cosas.txt", "de pedro")
+			if err := base.BorrarArbol(ctx, ruta(t, SubHomeUsers+"/pedro")); err != nil {
+				t.Errorf("BorrarArbol la raíz de pedro: %v", err)
+			}
+		},
+		"mover la raíz de ana a otro nombre": func(t *testing.T) {
+			if _, err := base.ParaUsuario("ana"); err != nil {
+				t.Fatalf("ParaUsuario: %v", err)
+			}
+			if err := base.Renombrar(ctx, ruta(t, SubHomeUsers+"/ana"), ruta(t, "botin")); err != nil {
+				t.Errorf("Renombrar la raíz de ana: %v", err)
+			}
+			if _, err := base.Estado(ctx, ruta(t, "botin")); err != nil {
+				t.Errorf("el destino no aparece tras mover: %v", err)
+			}
+		},
+	}
+	for nombre, hacer := range casos {
+		t.Run(nombre, hacer)
 	}
 }
 
