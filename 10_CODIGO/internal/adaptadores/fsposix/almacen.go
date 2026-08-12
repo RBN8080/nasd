@@ -42,8 +42,21 @@ const (
 	SubHomeUsers = "homeUsers"
 )
 
-// esReservado decide si una ruta es intocable por la vía normal: el
-// contenedor de usuarios o la carpeta raíz de uno de ellos (ADR-0055).
+// esReservado decide si una ruta es intocable por la vía normal: SOLO el
+// contenedor de usuarios en sí (ADR-0058, supersede en esto a ADR-0055).
+//
+// LA RAÍZ DE UN USUARIO YA NO ESTÁ AQUÍ. Hasta el 2026-08-12 esReservado
+// también bloqueaba «homeUsers/<quien>», y ese bloqueo era indistinguible
+// —para quien lo sufría— de un fallo real: la capa web lo traducía en 500
+// «error interno» (P-9), cuando era una negativa deliberada. El responsable
+// decidió que el superusuario puede administrar la carpeta de un usuario
+// igual que ya podía por SMB, que nunca conoció esta regla.
+//
+// EL CONTENEDOR SÍ SE QUEDA, y no por restringir al superusuario sino por
+// protegerlo A ÉL: ParaUsuario hace MkdirAll(homeUsers/<nombre>) en cada
+// entrada de sesión. Si «homeUsers» se borra o se sustituye por un archivo,
+// ESE MkdirAll falla y nadie puede volver a entrar — no es «no te dejo», es
+// «esto rompe el arranque de sesión de todos».
 //
 // SOLO APLICA AL ALMACÉN SIN PREFIJO, es decir, al del superusuario. Un
 // usuario nunca puede nombrar esas rutas —su prefijo lo mete dentro de su
@@ -58,10 +71,10 @@ func (a *Almacen) esReservado(r almacen.RutaSegura) bool {
 		return false
 	}
 	partes := strings.Split(r.Rel(), "/")
-	// «homeUsers» (el contenedor) y «homeUsers/<quien>» (una raíz de usuario).
-	// Más adentro sí se toca: las SUBCARPETAS de un usuario las administra
-	// tanto él como el superusuario, y eso es lo pedido.
-	return partes[0] == SubHomeUsers && len(partes) <= 2
+	// SOLO «homeUsers» exacto, el contenedor. La raíz de un usuario
+	// («homeUsers/<quien>») y todo lo de más adentro se administra ya
+	// desde la vía normal.
+	return partes[0] == SubHomeUsers && len(partes) == 1
 }
 
 // componenteSeguro comprueba que un nombre puede usarse como UN componente de
@@ -318,9 +331,9 @@ func (a *Almacen) CrearDirectorio(ctx context.Context, r almacen.RutaSegura) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
-	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
-	// interfaz: esconder un botón no impide la petición.
+	// ADR-0058: solo el CONTENEDOR de usuarios se protege aquí, para no
+	// romper el MkdirAll de ParaUsuario. La regla vive en el servidor, no
+	// en la interfaz: esconder un botón no impide la petición.
 	if a.esReservado(r) {
 		return almacen.ErrReservado
 	}

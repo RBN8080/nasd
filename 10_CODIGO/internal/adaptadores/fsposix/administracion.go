@@ -28,9 +28,9 @@ func (a *Almacen) Renombrar(ctx context.Context, origen, destino almacen.RutaSeg
 	if origen.EsRaiz() || destino.EsRaiz() {
 		return almacen.ErrRutaInvalida
 	}
-	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
-	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
-	// interfaz: esconder un botón no impide la petición.
+	// ADR-0058: solo el CONTENEDOR de usuarios se protege aquí, para no
+	// romper el MkdirAll de ParaUsuario. La regla vive en el servidor, no
+	// en la interfaz: esconder un botón no impide la petición.
 	if a.esReservado(origen) || a.esReservado(destino) {
 		return almacen.ErrReservado
 	}
@@ -88,9 +88,9 @@ func (a *Almacen) Borrar(ctx context.Context, r almacen.RutaSegura) error {
 	if r.EsRaiz() {
 		return almacen.ErrRutaInvalida // la raíz de datos no se borra
 	}
-	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
-	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
-	// interfaz: esconder un botón no impide la petición.
+	// ADR-0058: solo el CONTENEDOR de usuarios se protege aquí, para no
+	// romper el MkdirAll de ParaUsuario. La regla vive en el servidor, no
+	// en la interfaz: esconder un botón no impide la petición.
 	if a.esReservado(r) {
 		return almacen.ErrReservado
 	}
@@ -127,9 +127,9 @@ func (a *Almacen) BorrarArbol(ctx context.Context, r almacen.RutaSegura) error {
 	if r.EsRaiz() {
 		return almacen.ErrRutaInvalida
 	}
-	// ADR-0055: ni el contenedor de usuarios ni la raíz de uno de ellos se
-	// tocan por la vía normal. La regla vive AQUÍ, en el servidor, no en la
-	// interfaz: esconder un botón no impide la petición.
+	// ADR-0058: solo el CONTENEDOR de usuarios se protege aquí, para no
+	// romper el MkdirAll de ParaUsuario. La regla vive en el servidor, no
+	// en la interfaz: esconder un botón no impide la petición.
 	if a.esReservado(r) {
 		return almacen.ErrReservado
 	}

@@ -411,6 +411,14 @@ func (s *Servidor) fallo(w http.ResponseWriter, r *http.Request, err error) {
 		estado, mensaje = http.StatusConflict, "otro cliente está escribiendo ese archivo"
 	case errors.Is(err, almacen.ErrDesplazamiento):
 		estado, mensaje = http.StatusConflict, "desplazamiento incoherente"
+	case errors.Is(err, almacen.ErrReservado):
+		// ADR-0058. Antes caía al default y salía como 500 «error interno»
+		// (P-9): una negativa DELIBERADA del dominio —el contenedor de
+		// usuarios no se toca por la vía normal— se leía igual que un fallo
+		// real. 403 y no 404: la ruta existe y quien pide ya está
+		// autenticado, mismo criterio que soloSuperusuario.
+		estado, mensaje = http.StatusForbidden,
+			"esa carpeta la administra el panel de Usuarios; no se toca desde aquí"
 	}
 
 	// P5 y P7: el fallo se registra siempre, aunque el usuario vea poco.
