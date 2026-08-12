@@ -3,7 +3,7 @@
 #
 #   06_ACCESO_REMOTO.md §3   el diseño y por qué el túnel llega al NAS y no a la red
 #   ADR-0042                 la Fase 5 da acceso completo: web Y SMB
-#   ADR-0043                 puerto 61820/udp, con su justificación
+#   ADR-0057                 puerto 443/udp (supersede ADR-0043), con su justificación
 #   P4                       las claves NUNCA entran en el repositorio
 #
 # LA DECISIÓN QUE SOSTIENE TODO ESTO, y conviene entenderla antes de tocar nada:
@@ -29,7 +29,11 @@
 
 set -euo pipefail
 
-PUERTO=61820                 # ADR-0043
+# ADR-0057: 443/udp, porque es el que atraviesa las redes que filtran la salida
+# por puerto —el caso medido el 10/08 desde un local—. NO choca con el 443/tcp
+# de nasd: son sockets distintos. NO es una decisión de seguridad: WireGuard es
+# mudo sin clave en cualquier puerto, igual que ya decía ADR-0043.
+PUERTO=443
 RED_TUNEL=10.77.0
 NODO_TUNEL="$RED_TUNEL.1"
 DIR=/etc/wireguard
@@ -253,7 +257,7 @@ fi
 
 N_ESCUCHA=$(ss -ulnp 2>/dev/null | grep -c ":$PUERTO ")
 if [ "${N_ESCUCHA:-0}" -gt 0 ]; then
-  si "escuchando en $PUERTO/udp (ADR-0043)"
+  si "escuchando en $PUERTO/udp (ADR-0057)"
 else
   no "nada escucha en $PUERTO/udp"
 fi
@@ -300,9 +304,16 @@ fi
 echo
 aviso "FALTA CONFIGURAR CADA DISPOSITIVO; ESO NO ES AUTOMATIZABLE:"
 aviso ""
-aviso "  No configure DMZ ni redirección de puertos para WireGuard."
-aviso "  El acceso vigente funciona detrás del CGNAT mediante nas-mantener-nat"
-aviso "  (ADR-0044 y ADR-0045). Una redirección aquí sería una instrucción falsa."
+aviso "  EN EL ROUTER HAY DOS REGLAS, Y LAS DOS LLEVAN ESTE PUERTO ($PUERTO)."
+aviso "  Corregido el 2026-08-12: este aviso decía que en el router no hacía"
+aviso "  falta nada, y era FALSO — hay una redirección encendida desde el 31/07."
+aviso ""
+aviso "     Port Forwarding · NAS-WireGuard  · UDP · WAN y LAN → $PUERTO"
+aviso "     Filter Criteria · NASWGV6       · UDP · IPv6, destino ::38 → $PUERTO"
+aviso ""
+aviso "  Si cambia el puerto aquí y no allí, el acceso remoto muere EN SILENCIO."
+aviso "  NO toque NASHTTPSV6: es la web, es TCP, y no tiene que ver con esto."
+aviso "  NO active la DMZ: no es el mecanismo (ADR-0044) y quita una capa."
 aviso ""
 aviso "  CONFIGURAR CADA DISPOSITIVO"
 aviso "     Móviles — mostrar el QR y escanearlo desde la app WireGuard:"

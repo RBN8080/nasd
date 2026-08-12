@@ -356,19 +356,25 @@ else
     no "wg-quick@wg0 no habilitado: no sobrevivirá a un reinicio"
   fi
 
-  N_PUERTO=$(ss -ulnp 2>/dev/null | grep -c ':61820 ')
+  # ADR-0057 (supersede ADR-0043). Un solo sitio: cuando esto cambió de 61820 a
+  # 443 el 12/08, el puerto estaba escrito CUATRO veces en este bloque y el
+  # verificador habría reportado fallos falsos sin que nada estuviera roto.
+  # Es UDP: no tiene nada que ver con el 443/tcp de nasd que se comprueba arriba.
+  PUERTO_WG5=443
+
+  N_PUERTO=$(ss -ulnp 2>/dev/null | grep -c ":$PUERTO_WG5 ")
   if [ "${N_PUERTO:-0}" -gt 0 ]; then
-    si "escuchando en 61820/udp"
+    si "escuchando en $PUERTO_WG5/udp"
   else
-    no "nada escucha en 61820/udp"
+    no "nada escucha en $PUERTO_WG5/udp"
   fi
 
   REGLAS_WG=$(nft list ruleset 2>/dev/null)
-  N_WG=$(printf '%s' "$REGLAS_WG" | grep -c 'udp dport 61820 accept')
+  N_WG=$(printf '%s' "$REGLAS_WG" | grep -c "udp dport $PUERTO_WG5 accept")
   if [ "${N_WG:-0}" -gt 0 ]; then
-    si "el cortafuegos acepta 61820/udp"
+    si "el cortafuegos acepta $PUERTO_WG5/udp"
   else
-    no "el cortafuegos NO acepta 61820/udp: nadie podrá entrar"
+    no "el cortafuegos NO acepta $PUERTO_WG5/udp: nadie podrá entrar"
   fi
 
   # Que forward siga cerrado es la prueba de que el tunel NO alcanza el resto
@@ -521,10 +527,17 @@ else
   # abierto, hay que ver que el TLS negocia y que el certificado valida contra
   # el almacén del sistema. Se fuerza la resolución al nodo para no depender
   # de que la entrada desde Internet funcione (ADR-0044: hoy no funciona).
+  #
+  # POR [::1] Y NO POR 127.0.0.1, corregido el 2026-08-12: nasd enlaza el TLS en
+  # «[::]:443» y ese socket NO acepta IPv4, aunque bindv6only valga 0. Con
+  # 127.0.0.1 la conexión se rechazaba y esta comprobación llevaba quién sabe
+  # cuánto dando FALLO sobre un servicio sano —medido el mismo día: por [::1]
+  # responde 401 con el certificado validando—. Un verificador que miente en
+  # rojo es peor que no tenerlo: enseña a ignorar sus fallos.
   DOM_TLS=$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null)
   if [ -n "$DOM_TLS" ]; then
     COD=$(curl -sS -o /dev/null -w '%{http_code}:%{ssl_verify_result}' \
-      --resolve "$DOM_TLS.duckdns.org:443:127.0.0.1" \
+      --resolve "$DOM_TLS.duckdns.org:443:[::1]" \
       "https://$DOM_TLS.duckdns.org/" 2>/dev/null || echo "fallo:x")
     case "$COD" in
       401:0|200:0) si "TLS negocia y el certificado VALIDA (${COD%%:*})" ;;

@@ -2,7 +2,7 @@
 # Fase 5, paso 8 — mantener viva la ruta de entrada del túnel.
 #
 #   06_ACCESO_REMOTO §10   por qué hace falta, con la medición que lo sostiene
-#   ADR-0043               puerto 61820
+#   ADR-0057               puerto 443/udp (supersede ADR-0043)
 #   Charter §7.1.3         no abre ningún puerto: solo emite tráfico saliente
 #
 # Instala 14_mantener_nat.py como servicio de systemd. Idempotente.
@@ -56,7 +56,7 @@ User=$USUARIO
 Group=$USUARIO
 
 # CAP_NET_RAW es la ÚNICA capacidad, y hace falta por un motivo concreto: el
-# puerto 61820 lo tiene WireGuard, así que un socket normal no puede enlazarlo.
+# puerto del túnel lo tiene WireGuard, así que un socket normal no puede enlazarlo.
 # Uno en crudo sí puede EMITIR con ese puerto de origen, que es lo único que se
 # necesita. El proceso NO escucha nada.
 AmbientCapabilities=CAP_NET_RAW

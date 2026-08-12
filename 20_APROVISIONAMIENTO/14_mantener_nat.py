@@ -7,7 +7,9 @@ EL PROBLEMA QUE RESUELVE, medido el 2026-08-01 y no supuesto:
   (CGNAT: la WAN del router es 30.84.162.148 y el mundo ve 198.51.100.0).
   Medido con STUN desde este mismo puerto contra tres servidores distintos,
   el mapeo del operador es INDEPENDIENTE DEL DESTINO y PRESERVA EL PUERTO:
-  61820 sale como 61820. Es decir, la entrada desde fuera SÍ es posible.
+  el puerto sale igual que entra. Es decir, la entrada desde fuera SÍ es posible.
+  Vuelto a medir el 2026-08-12 con el 443, que es el puerto vigente (ADR-0057):
+  198.51.100.0:443 contra los tres servidores, con control positivo.
 
   Lo que no es posible es que sobreviva al silencio. Sin tráfico saliente
   caducan tres cosas a la vez:
@@ -25,11 +27,11 @@ EL PROBLEMA QUE RESUELVE, medido el 2026-08-01 y no supuesto:
 
 POR QUÉ UN SOCKET EN CRUDO Y NO UNO NORMAL:
 
-  El puerto 61820 lo tiene WireGuard. Un socket normal no puede enlazarlo, pero
+  El puerto lo tiene WireGuard. Un socket normal no puede enlazarlo, pero
   uno en crudo sí puede EMITIR con ese puerto de origen, que es lo único que
   hace falta: lo que refresca las tres asociaciones es el paquete que sale.
 
-  La respuesta del servidor STUN vuelve al 61820 y la recibe WireGuard, que la
+  La respuesta del servidor STUN vuelve a ese puerto y la recibe WireGuard, que la
   descarta por no ser un paquete válido suyo. Es inofensivo y además demuestra
   que el camino de vuelta funciona.
 
@@ -48,7 +50,7 @@ import struct
 import sys
 import time
 
-PUERTO = 61820
+PUERTO = 443  # ADR-0057, supersede ADR-0043
 # 20 s: por debajo del mínimo de 2 min que RFC 4787 exige a un NAT para UDP, y
 # por debajo del PersistentKeepalive de 25 s de los clientes, que es el valor
 # que ya demostró sostener el túnel de 13:51 a 14:10.

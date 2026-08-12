@@ -11,7 +11,7 @@ set -euo pipefail
 
 RED=192.168.1.0/24
 PUERTO_WEB=80   # ADR-0032
-PUERTO_WG=61820 # ADR-0043
+PUERTO_WG=443   # ADR-0057 (supersede ADR-0043). UDP: no choca con PUERTO_TLS, que es TCP
 PUERTO_TLS=443  # ADR-0048
 WG_CONF=/etc/wireguard/wg0.conf
 CERT_TLS=/etc/nas/tls/fullchain.pem
@@ -22,7 +22,7 @@ CERT_TLS=/etc/nas/tls/fullchain.pem
 # igual antes y después de la Fase 5 sin tener dos versiones.
 if [ -f "$WG_CONF" ]; then
   BLOQUE_WG="
-    # --- Fase 5, tunel WireGuard (ADR-0043) ---
+    # --- Fase 5, tunel WireGuard (ADR-0057) ---
     #
     # DESDE CUALQUIER ORIGEN, y no es un descuido: el responsable se conecta
     # desde redes que no se pueden enumerar de antemano. WireGuard no responde
@@ -50,7 +50,7 @@ if [ -f "$CERT_TLS" ]; then
   BLOQUE_TLS="
     # --- Fase 6, web expuesta (ADR-0048) ---
     #
-    # DESDE CUALQUIER ORIGEN, y a diferencia del 61820 esto SI es superficie
+    # DESDE CUALQUIER ORIGEN, y a diferencia del 443/udp esto SI es superficie
     # permanente y anonima: detras hay una web que responde a cualquiera, no
     # un WireGuard que calla sin clave. Se acepta porque ADR-0042 lo autoriza
     # y porque el certificado ya existe, que era su condicion.
