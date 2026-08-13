@@ -248,7 +248,7 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm a
 	// es un extra: sin rangos no se puede saltar dentro de un vídeo.
 	// El envoltorio con plazo por actividad es el de RNF-12, igual que en
 	// descargar(); ver manejadores.go para por qué se conserva.
-	http.ServeContent(escrituraDelegada{w, escrituraConPlazo(w, s.plazoInactividad)},
+	http.ServeContent(escrituraDelegada{w, escrituraConPlazo(w, s.plazoInactividad, s.tocadorDe(r))},
 		r, entrada.Nombre, entrada.Modificado, lector)
 }
 

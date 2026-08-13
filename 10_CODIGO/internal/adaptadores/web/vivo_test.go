@@ -297,6 +297,61 @@ func TestElFlujoSobreviveAlPlazoDeInactividad(t *testing.T) {
 	}
 }
 
+// EL AGUJERO QUE ABRE ADR-0059 SI NO SE CIERRA AQUÍ: exigirSesion solo se
+// ejecuta al ABRIR la conexión SSE, y este flujo puede vivir horas. Sin
+// comprobar la sesión EN CADA MARCO, una pestaña de /estado olvidada
+// seguiría recibiendo telemetría del nodo entero mucho después de que la
+// sesión hubiera caducado por inactividad.
+func TestElFlujoSeCierraCuandoLaSesionCaducaPorInactividad(t *testing.T) {
+	// Más de un tic (intervaloVivo = 250 ms) para que llegue al menos un
+	// marco antes de que se cumpla, y no tantos como para que la prueba
+	// tarde de más.
+	const inactividad = 400 * time.Millisecond
+	s := servidorConAuthYInactividad(t, inactividad)
+
+	srv := httptest.NewServer(s.Rutas())
+	defer srv.Close()
+
+	cookie := abrirSesionDePrueba(t, s.Rutas())
+
+	r, err := http.NewRequest("GET", srv.URL+"/estado/flujo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AddCookie(cookie)
+	r.Header.Set("Accept", "text/event-stream")
+
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatalf("no se pudo abrir el flujo: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /estado/flujo -> %d", resp.StatusCode)
+	}
+
+	lector := bufio.NewReader(resp.Body)
+	var marcos int
+	cerrado := false
+	limite := time.Now().Add(3 * time.Second)
+	for time.Now().Before(limite) {
+		linea, err := lector.ReadString('\n')
+		if err != nil {
+			cerrado = true
+			break
+		}
+		if datos, hay := strings.CutPrefix(strings.TrimSpace(linea), "data: "); hay && datos != "" {
+			marcos++
+		}
+	}
+	if !cerrado {
+		t.Fatal("el flujo siguió abierto mucho después de que la sesión caducara por inactividad")
+	}
+	if marcos == 0 {
+		t.Fatal("no llegó ni un marco antes del cierre: la prueba está mal calibrada, no comprueba lo que dice comprobar")
+	}
+}
+
 // La página y el flujo tienen que decir lo mismo, y no por disciplina de quien
 // edite después: por construcción, porque los compone la misma función.
 //

@@ -225,8 +225,26 @@ func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *
 	// conexión viva lo renueva 240 veces antes de acercarse al plazo; una
 	// conexión muerta deja de aceptar escrituras y el flujo se cierra solo, que
 	// es justo lo que se quiere. Verificado con TestElFlujoSobreviveAlPlazo.
-	escribir := escrituraConPlazo(w, s.plazoInactividad)
+	//
+	// SE PASA nil COMO TOCADOR, Y ES UNA DECISIÓN, NO UN OLVIDO (ADR-0059).
+	// Este envoltorio escribe cuatro veces por segundo; si cada una avisara a
+	// la sesión, una pestaña de /estado o /administracion abierta y olvidada
+	// haría que la sesión NUNCA caducara por inactividad, que es justo el
+	// requisito que ADR-0059 existe para cumplir. Un flujo abierto no es
+	// actividad de nadie — la caducidad de esta conexión concreta la impone
+	// el bucle de abajo, comprobando la sesión en cada marco.
+	escribir := escrituraConPlazo(w, s.plazoInactividad, nil)
 	cod := json.NewEncoder(escribir)
+
+	// testigo identifica la sesión que abrió este flujo. Se captura una vez,
+	// aquí: exigirSesion ya validó que hay cookie con una sesión vigente, así
+	// que el error solo puede venir de que el navegador la retire a mitad de
+	// conexión, y en ese caso no hay nada que comprobar en el bucle —sin
+	// cookie no hay testigo, y sesiones.Valida("") ya es false—.
+	testigo := ""
+	if c, err := r.Cookie(nombreCookie); err == nil {
+		testigo = c.Value
+	}
 
 	for {
 		select {
@@ -235,6 +253,16 @@ func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *
 			// registrar: es el final normal de toda conexión de este tipo.
 			return
 		case marco := <-marcos:
+			// LA SESIÓN SE COMPRUEBA EN CADA MARCO — ADR-0059. Sin esto, un
+			// flujo abierto antes de que la sesión caducara por inactividad
+			// seguiría entregando telemetría del nodo entero indefinidamente:
+			// exigirSesion solo se ejecuta al ABRIR la conexión SSE, y esta
+			// puede vivir horas. Valida() es una consulta pura —no cuenta
+			// como actividad—, así que comprobar aquí no alarga la sesión
+			// que se está comprobando.
+			if !s.sesiones.Valida(testigo) {
+				return
+			}
 			if _, err := escribir.Write([]byte("data: ")); err != nil {
 				return
 			}

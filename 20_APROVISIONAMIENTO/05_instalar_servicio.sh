@@ -94,6 +94,12 @@ volumen = "$PUNTO"
 direccion = "$IP"
 puerto = $PUERTO
 
+[sesion]
+# Tope deslizante de inactividad — ADR-0059. NO es plazos.inactividad_s de
+# abajo: aquel es el plazo de E/S de ADR-0026 dentro de UNA petición; este
+# es cuánto puede estar la sesión entera sin actividad antes de caducar.
+inactividad_s = 300
+
 [plazos]
 inactividad_s = 60
 EOF

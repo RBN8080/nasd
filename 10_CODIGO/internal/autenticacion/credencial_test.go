@@ -81,7 +81,7 @@ func TestValidaAceptaLaBuena(t *testing.T) {
 }
 
 func TestSesionesCicloCompleto(t *testing.T) {
-	s := NuevasSesiones(time.Hour)
+	s := NuevasSesiones(time.Hour, 0)
 
 	if s.Valida("") || s.Valida("inventado") {
 		t.Fatal("validó un testigo que no existe")
@@ -110,7 +110,7 @@ func TestSesionesCicloCompleto(t *testing.T) {
 }
 
 func TestSesionCaducaYSePurga(t *testing.T) {
-	s := NuevasSesiones(10 * time.Millisecond)
+	s := NuevasSesiones(10*time.Millisecond, 0)
 	tok, _ := s.Abrir("juan")
 	if !s.Valida(tok) {
 		t.Fatal("debía ser válida al abrirla")
@@ -122,7 +122,7 @@ func TestSesionCaducaYSePurga(t *testing.T) {
 
 	// Y la purga debe vaciar el mapa: sin ella crecería sin fin, que es la
 	// misma fuga que ya costó una revisión con las subidas.
-	s2 := NuevasSesiones(10 * time.Millisecond)
+	s2 := NuevasSesiones(10*time.Millisecond, 0)
 	for range 5 {
 		s2.Abrir("juan")
 	}
@@ -139,7 +139,7 @@ func TestSesionCaducaYSePurga(t *testing.T) {
 // asignarle una carpeta adivinando, y adivinar ahí significa enseñarle a
 // alguien la carpeta de otro (ADR-0055).
 func TestNoSeAbreUnaSesionSinUsuario(t *testing.T) {
-	s := NuevasSesiones(time.Hour)
+	s := NuevasSesiones(time.Hour, 0)
 	if _, err := s.Abrir(""); err == nil {
 		t.Fatal("se abrió una sesión sin usuario")
 	}
@@ -150,7 +150,7 @@ func TestNoSeAbreUnaSesionSinUsuario(t *testing.T) {
 
 // La sesión recuerda de quién es, y eso es lo que decide qué carpeta se ve.
 func TestLaSesionRecuerdaDeQuienEs(t *testing.T) {
-	s := NuevasSesiones(time.Hour)
+	s := NuevasSesiones(time.Hour, 0)
 	tok, err := s.Abrir("juan")
 	if err != nil {
 		t.Fatalf("Abrir: %v", err)
@@ -172,7 +172,7 @@ func TestLaSesionRecuerdaDeQuienEs(t *testing.T) {
 // El panel de administración (P-4, etapa 2) usa esto para mostrar quién
 // tiene sesión abierta ahora mismo.
 func TestActivosPorUsuario(t *testing.T) {
-	s := NuevasSesiones(time.Hour)
+	s := NuevasSesiones(time.Hour, 0)
 	if activos := s.ActivosPorUsuario(); len(activos) != 0 {
 		t.Fatalf("sin sesiones abiertas, ActivosPorUsuario() = %v", activos)
 	}
@@ -199,10 +199,113 @@ func TestActivosPorUsuario(t *testing.T) {
 
 // Y las caducadas no cuentan, aunque nadie las haya purgado todavía.
 func TestActivosPorUsuarioNoIncluyeCaducadas(t *testing.T) {
-	s := NuevasSesiones(10 * time.Millisecond)
+	s := NuevasSesiones(10*time.Millisecond, 0)
 	s.Abrir("juan")
 	time.Sleep(30 * time.Millisecond)
 	if activos := s.ActivosPorUsuario(); activos["juan"] {
 		t.Error("una sesión caducada salió como activa")
+	}
+}
+
+// --- ADR-0059: tope deslizante por inactividad ------------------------------
+
+// Sin Tocar, la sesión caduca por inactividad aunque el tope absoluto esté
+// lejísimos.
+func TestSesionCaducaPorInactividad(t *testing.T) {
+	s := NuevasSesiones(time.Hour, 10*time.Millisecond)
+	tok, _ := s.Abrir("juan")
+	if !s.Valida(tok) {
+		t.Fatal("debía ser válida al abrirla")
+	}
+	time.Sleep(30 * time.Millisecond)
+	if s.Valida(tok) {
+		t.Error("una sesión inactiva más allá del plazo sigue valiendo")
+	}
+}
+
+// Tocar es lo que hace deslizante el plazo: mientras llegue antes de que se
+// cumpla, la sesión no caduca por inactividad.
+func TestTocarRenuevaLaInactividad(t *testing.T) {
+	s := NuevasSesiones(time.Hour, 30*time.Millisecond)
+	tok, _ := s.Abrir("juan")
+
+	// Dos toques separados por menos del plazo deben mantenerla viva más
+	// tiempo del que el plazo por sí solo permitiría.
+	time.Sleep(20 * time.Millisecond)
+	s.Tocar(tok)
+	time.Sleep(20 * time.Millisecond)
+	if !s.Valida(tok) {
+		t.Fatal("Tocar no renovó la inactividad: la sesión caducó igual")
+	}
+
+	time.Sleep(40 * time.Millisecond)
+	if s.Valida(tok) {
+		t.Error("sin más toques, la sesión debía caducar")
+	}
+}
+
+// Tocar NUNCA resucita una sesión que ya no es vigente — ni por inactividad
+// ni por el tope absoluto. Es lo que hace seguro llamarlo desde una
+// escritura en curso: un toque que llega tarde no prolonga nada.
+func TestTocarNoResucitaUnaSesionCaducada(t *testing.T) {
+	s := NuevasSesiones(time.Hour, 10*time.Millisecond)
+	tok, _ := s.Abrir("juan")
+	time.Sleep(30 * time.Millisecond)
+	if s.Valida(tok) {
+		t.Fatal("precondición: debía estar ya caducada por inactividad")
+	}
+	s.Tocar(tok)
+	if s.Valida(tok) {
+		t.Error("Tocar resucitó una sesión ya caducada por inactividad")
+	}
+}
+
+// El tope absoluto gana aunque se toque sin parar: una sesión robada no se
+// prolonga sola con el uso del ladrón.
+func TestElTopeAbsolutoGanaAunqueSeToque(t *testing.T) {
+	s := NuevasSesiones(20*time.Millisecond, time.Hour)
+	tok, _ := s.Abrir("juan")
+
+	fin := time.Now().Add(35 * time.Millisecond)
+	for time.Now().Before(fin) {
+		s.Tocar(tok)
+		time.Sleep(2 * time.Millisecond)
+	}
+	if s.Valida(tok) {
+		t.Error("el tope absoluto no se impuso pese a tocar sin parar")
+	}
+}
+
+// inactividad <= 0 desactiva ese segundo reloj: es el comportamiento previo
+// a ADR-0059, y las pruebas y llamadas que no lo conocen no deben cambiar de
+// significado por su sola existencia.
+func TestInactividadCeroConservaElComportamientoAnterior(t *testing.T) {
+	s := NuevasSesiones(30*time.Millisecond, 0)
+	tok, _ := s.Abrir("juan")
+	time.Sleep(20 * time.Millisecond)
+	if !s.Valida(tok) {
+		t.Fatal("sin reloj de inactividad, una pausa corta no debe caducar la sesión")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if s.Valida(tok) {
+		t.Error("el tope absoluto debía seguir aplicando")
+	}
+}
+
+// Abiertas() y ActivosPorUsuario() cuentan VIGENTES, y una sesión inactiva
+// —aún sin purgar— no lo es.
+func TestAbiertasNoCuentaLasInactivas(t *testing.T) {
+	s := NuevasSesiones(time.Hour, 10*time.Millisecond)
+	s.Abrir("juan")
+	s.Abrir("ana")
+	if s.Abiertas() != 2 {
+		t.Fatalf("Abiertas() = %d; se esperaban 2 recién abiertas", s.Abiertas())
+	}
+	time.Sleep(30 * time.Millisecond)
+	if n := s.Abiertas(); n != 0 {
+		t.Errorf("Abiertas() = %d; las dos habían caducado por inactividad", n)
+	}
+	if activos := s.ActivosPorUsuario(); len(activos) != 0 {
+		t.Errorf("ActivosPorUsuario() = %v; ninguna debía seguir activa", activos)
 	}
 }

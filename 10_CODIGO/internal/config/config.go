@@ -72,6 +72,14 @@ type Config struct {
 	// exposición para un uso doméstico. [R]
 	DuracionSesion time.Duration
 
+	// InactividadSesion — RF-15, ADR-0059. Tope DESLIZANTE: sin actividad
+	// este tiempo, la sesión deja de ser válida aunque DuracionSesion siga
+	// lejos. Los dos relojes se aplican a la vez (internal/autenticacion).
+	// Cinco minutos, decidido por el responsable frente a un minuto: cada
+	// verificación de contraseña cuesta 3.2-3.6 s de PBKDF2 en el nodo
+	// (web.IteracionesPBKDF2), y un minuto castigaba la lectura normal.
+	InactividadSesion time.Duration
+
 	// DirectorioEstado es donde vive el registro de usuarios (ADR-0055).
 	//
 	// NO es el disco de datos, y la diferencia importa: en el disco de datos
@@ -109,7 +117,12 @@ func porDefecto() Config {
 		PlazoOcioso:      120 * time.Second,
 		PlazoInactividad: 60 * time.Second,
 		DuracionSesion:   7 * 24 * time.Hour,
-		DirectorioEstado: "/var/lib/nasd",
+		// El valor por defecto es el que manda en producción: el TOML del
+		// nodo lo instala 05_instalar_servicio.sh solo la PRIMERA vez
+		// (if [ ! -f "$CONFIG" ]), así que una clave nueva en el script no
+		// llega a un nodo que ya tiene su archivo — solo el binario la trae.
+		InactividadSesion: 5 * time.Minute,
+		DirectorioEstado:  "/var/lib/nasd",
 	}
 }
 
@@ -164,6 +177,17 @@ func Cargar(ruta string) (Config, error) {
 				return c, fmt.Errorf("sesion.duracion_horas: debe ser un entero positivo")
 			}
 			c.DuracionSesion = time.Duration(n) * time.Hour
+		}
+		// sesion.inactividad_s — ADR-0059. NO CONFUNDIR con
+		// plazos.inactividad_s: aquella es el plazo de E/S de ADR-0026 (se
+		// renueva por bloque de bytes dentro de UNA petición); esta es el
+		// tope deslizante de la SESIÓN entera (se renueva por petición).
+		if s, ok := v["sesion.inactividad_s"]; ok {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 {
+				return c, fmt.Errorf("sesion.inactividad_s: debe ser un entero positivo")
+			}
+			c.InactividadSesion = time.Duration(n) * time.Second
 		}
 		if s, ok := v["estado.directorio"]; ok {
 			c.DirectorioEstado = s
