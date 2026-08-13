@@ -111,6 +111,10 @@ type Opciones struct {
 	// alguien no serviría de nada y el fallo aparecería al intentar entrar.
 	Usuarios       *autenticacion.Registro
 	DuracionSesion time.Duration
+	// InactividadSesion — ADR-0059. Tope deslizante de la sesión, aparte del
+	// absoluto de DuracionSesion. Cero desactiva ese segundo reloj; ver
+	// autenticacion.NuevasSesiones.
+	InactividadSesion time.Duration
 	// Volumen es el punto de montaje del disco de datos (ADR-0019), necesario
 	// para informar de su ocupación y su salud en /estado.
 	Volumen string
@@ -174,7 +178,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		plazoInactividad:  o.PlazoInactividad,
 		subidas:           nuevoRegistroDeSubidas(),
 		credencial:        o.Credencial,
-		sesiones:          autenticacion.NuevasSesiones(o.DuracionSesion),
+		sesiones:          autenticacion.NuevasSesiones(o.DuracionSesion, o.InactividadSesion),
 		limitador:         nuevoLimitador(),
 		duracionSesion:    o.DuracionSesion,
 		contadores:        nuevosContadores(),

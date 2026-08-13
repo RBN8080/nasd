@@ -85,6 +85,33 @@ func servidorConAuth(t *testing.T) *Servidor {
 	return s
 }
 
+// servidorConAuthYInactividad es servidorConAuth con el reloj de
+// inactividad de ADR-0059 encendido, para las pruebas que necesitan
+// comprobar la caducidad deslizante y no solo la absoluta.
+func servidorConAuthYInactividad(t *testing.T, inactividad time.Duration) *Servidor {
+	t.Helper()
+	linea, err := autenticacion.Derivar(claveDePrueba, 1000)
+	if err != nil {
+		t.Fatalf("Derivar: %v", err)
+	}
+	s, err := Nuevo(Opciones{
+		Almacen:           almacenVacio{},
+		AlmacenDe:         almacenPorUsuarioDePrueba(almacenVacio{}),
+		PromoverUsuario:   promoverUsuarioDePrueba,
+		Registro:          slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		PlazoInactividad:  time.Minute,
+		Credencial:        linea,
+		Usuarios:          registroDePrueba(t),
+		DuracionSesion:    time.Hour,
+		InactividadSesion: inactividad,
+		Metricas:          metricasDePrueba(t),
+	})
+	if err != nil {
+		t.Fatalf("Nuevo: %v", err)
+	}
+	return s
+}
+
 // RF-15, criterio literal: «sin sesión válida, toda ruta distinta del
 // formulario de acceso responde 401 o 403».
 func TestSinSesionTodoResponde401(t *testing.T) {
@@ -280,5 +307,60 @@ func TestSalirInvalidaElTestigoEnElServidor(t *testing.T) {
 
 	if s.sesiones.Valida(tok) {
 		t.Fatal("el testigo sigue siendo válido en el servidor tras salir")
+	}
+}
+
+// --- ADR-0059: cierre de sesión por inactividad ------------------------------
+
+// Una petición tras el plazo de inactividad recibe 401 con el formulario,
+// exactamente como una sesión que nunca existió — RF-15 no distingue el
+// motivo.
+func TestSesionCaducaPorInactividadEnElMiddleware(t *testing.T) {
+	s := servidorConAuthYInactividad(t, 30*time.Millisecond)
+	h := s.Rutas()
+	tok, _ := s.sesiones.Abrir(autenticacion.NombreSuperusuario)
+	cookie := &http.Cookie{Name: nombreCookie, Value: tok}
+
+	time.Sleep(60 * time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.AddCookie(cookie)
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("petición tras el plazo de inactividad -> %d; RF-15 exige 401", w.Code)
+	}
+}
+
+// Cada petición cuenta como actividad y desliza el plazo: una serie de
+// peticiones más seguidas que el plazo mantiene la sesión viva más allá de
+// lo que el plazo por sí solo permitiría.
+func TestCadaPeticionRenuevaLaInactividad(t *testing.T) {
+	s := servidorConAuthYInactividad(t, 40*time.Millisecond)
+	h := s.Rutas()
+	tok, _ := s.sesiones.Abrir(autenticacion.NombreSuperusuario)
+	cookie := &http.Cookie{Name: nombreCookie, Value: tok}
+
+	pedir := func() int {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/", nil)
+		r.AddCookie(cookie)
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+
+	// Tres peticiones espaciadas por menos del plazo: el total (60 ms) supera
+	// el plazo (40 ms), pero cada una lo desliza antes de que se cumpla.
+	for i := range 3 {
+		time.Sleep(20 * time.Millisecond)
+		if c := pedir(); c == http.StatusUnauthorized {
+			t.Fatalf("petición %d dio 401; el deslizamiento no renovó a tiempo", i+1)
+		}
+	}
+
+	// Sin más peticiones, el plazo sí se cumple.
+	time.Sleep(60 * time.Millisecond)
+	if c := pedir(); c != http.StatusUnauthorized {
+		t.Errorf("tras dejar de pedir, la sesión debía haber caducado; dio %d", c)
 	}
 }

@@ -164,7 +164,7 @@ func (s *Servidor) descargar(w http.ResponseWriter, r *http.Request, alm almacen
 	// 10 MB de RSS.
 	//
 	// Lo que se corrige es la AFIRMACIÓN del documento, no el código.
-	http.ServeContent(escrituraDelegada{w, escrituraConPlazo(w, s.plazoInactividad)},
+	http.ServeContent(escrituraDelegada{w, escrituraConPlazo(w, s.plazoInactividad, s.tocadorDe(r))},
 		r, entrada.Nombre, entrada.Modificado, lector)
 }
 
@@ -286,7 +286,7 @@ func (s *Servidor) escribir(w http.ResponseWriter, r *http.Request, alm almacen.
 		return err
 	}
 	// Plazo por actividad sobre la lectura del cuerpo (ADR-0026).
-	n, err := io.Copy(ea, lecturaConPlazo(w, origen, s.plazoInactividad))
+	n, err := io.Copy(ea, lecturaConPlazo(w, origen, s.plazoInactividad, s.tocadorDe(r)))
 	if n > 0 {
 		s.contadores.bytesSubidos.Add(n)
 	}

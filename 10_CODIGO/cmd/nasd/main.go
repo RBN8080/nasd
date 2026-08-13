@@ -111,14 +111,15 @@ func ejecutar() error {
 		// La baja llama a esto ANTES de retirar la cuenta del registro
 		// (etapa 2, corrección del 06/08): la carpeta sale de homeUsers/ y
 		// queda como una más de la raíz.
-		PromoverUsuario:  alm.PromoverCarpetaDeUsuario,
-		Registro:         reg,
-		PlazoInactividad: cfg.PlazoInactividad,
-		Credencial:       credencial,
-		Usuarios:         usuarios,
-		DuracionSesion:   cfg.DuracionSesion,
-		Volumen:          cfg.Volumen,
-		Metricas:         metricasUso,
+		PromoverUsuario:   alm.PromoverCarpetaDeUsuario,
+		Registro:          reg,
+		PlazoInactividad:  cfg.PlazoInactividad,
+		Credencial:        credencial,
+		Usuarios:          usuarios,
+		DuracionSesion:    cfg.DuracionSesion,
+		InactividadSesion: cfg.InactividadSesion,
+		Volumen:           cfg.Volumen,
+		Metricas:          metricasUso,
 	})
 	if err != nil {
 		return err

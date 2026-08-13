@@ -273,7 +273,7 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request, alm almacen
 		return
 	}
 
-	n, err := io.Copy(sub.escritor, lecturaConPlazo(w, r.Body, s.plazoInactividad))
+	n, err := io.Copy(sub.escritor, lecturaConPlazo(w, r.Body, s.plazoInactividad, s.tocadorDe(r)))
 	// Se contabiliza lo transferido AUNQUE la subida se corte: los bytes
 	// cruzaron la red igual, y RF-12 hace que el siguiente PATCH continúe.
 	// Contarlos solo al confirmar escondería el trabajo de las reanudaciones.

@@ -168,6 +168,12 @@ func (s *Servidor) exigirSesion(siguiente http.Handler) http.Handler {
 			s.pedirAcceso(w, r, "")
 			return
 		}
+		// Cuenta como actividad AL TERMINAR la petición, no al empezar —
+		// ADR-0059—, para que una petición larga no se dé por acabada antes
+		// de tiempo. Una descarga o subida se toca además, y más seguido,
+		// desde dentro (ver plazos.go); este defer es el suelo que cubre
+		// todo lo demás: listar, navegar, borrar, administrar.
+		defer s.sesiones.Tocar(c.Value)
 		siguiente.ServeHTTP(w, r.WithContext(
 			context.WithValue(r.Context(), claveUsuario, usuario)))
 	})
@@ -185,6 +191,23 @@ var claveUsuario claveDeContexto
 func usuarioDe(r *http.Request) string {
 	u, _ := r.Context().Value(claveUsuario).(string)
 	return u
+}
+
+// tocadorDe entrega el cierre que cuenta actividad en ESTA sesión —
+// ADR-0059. Lee la cookie una vez y lo devuelve envuelto; sin cookie, un
+// cierre que no hace nada, para que llamarlo a ciegas en una transferencia
+// nunca sea un error.
+//
+// Es lo que consumen las descargas y subidas largas (plazos.go): una sola
+// petición HTTP puede durar minutos moviendo bytes sin que exigirSesion
+// vuelva a pasar por en medio, así que sin esto una transferencia de 4 GB
+// caducaría su propia sesión a mitad de camino.
+func (s *Servidor) tocadorDe(r *http.Request) func() {
+	c, err := r.Cookie(nombreCookie)
+	if err != nil {
+		return func() {}
+	}
+	return func() { s.sesiones.Tocar(c.Value) }
 }
 
 func (s *Servidor) pedirAcceso(w http.ResponseWriter, r *http.Request, aviso string) {
@@ -355,7 +378,16 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,                 // inalcanzable desde JavaScript
 		SameSite: http.SameSiteLaxMode, // frena el CSRF entre sitios
-		MaxAge:   int(s.duracionSesion.Seconds()),
+		// MaxAge lleva el tope ABSOLUTO (s.duracionSesion), NO el de
+		// inactividad de ADR-0059, y no es un descuido: el navegador no sabe
+		// nada de actividad, solo de tiempo transcurrido desde que se puso
+		// la cookie. Ponerle aquí el plazo corto la borraría a los 5 minutos
+		// DEL ACCESO, no de la última actividad, y echaría fuera a quien
+		// sigue usando la web. El servidor es el único que sabe cuándo hubo
+		// actividad, y por eso el plazo corto vive solo en Sesiones —el
+		// cliente conserva la cookie hasta el tope absoluto; qué hace el
+		// servidor con un testigo inactivo es cosa de exigirSesion.
+		MaxAge: int(s.duracionSesion.Seconds()),
 		// Secure SOLO si la petición llegó por TLS — ADR-0046, que supersede
 		// a ADR-0018.
 		//
