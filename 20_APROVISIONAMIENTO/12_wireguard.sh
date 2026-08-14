@@ -191,7 +191,7 @@ umask 077
 cat > "$DIR/wg0.conf" <<EOF
 # Generado por 20_APROVISIONAMIENTO/12_wireguard.sh — proyecto NAS.
 # P1: si un cambio no está en el script, no existe. NO editar a mano.
-# ADR-0043 (puerto) · ADR-0042 (alcance) · 06_ACCESO_REMOTO.md §3
+# ADR-0057 (puerto, supersede ADR-0043) · ADR-0042 (alcance) · 06_ACCESO_REMOTO.md §3
 #
 # Sin PostUp ni NAT a propósito: el túnel NO encamina nada. El cliente habla
 # con $NAS_IP, que es una dirección LOCAL de este nodo, así que el kernel la
