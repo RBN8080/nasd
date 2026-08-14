@@ -336,7 +336,7 @@ else
 fi
 
 echo
-echo "-- Fase 5: acceso remoto por WireGuard (ADR-0043) --"
+echo "-- Fase 5: acceso remoto por WireGuard (ADR-0057) --"
 
 # Solo se comprueba si el tunel esta instalado. Antes de la Fase 5 este bloque
 # no aplica y callarse es lo correcto: un FALLO por algo que aun no existe
