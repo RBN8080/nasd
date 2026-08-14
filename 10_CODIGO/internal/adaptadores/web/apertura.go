@@ -226,6 +226,13 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm a
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+escaparURL(entrada.Nombre))
 
+	// La CSP global (ADR-0060) trae frame-ancestors 'none' y X-Frame-Options:
+	// DENY — correcto para el resto de la web, pero visor.html EMBEBE este
+	// extremo del propio origen: <object> para el PDF, <iframe> para texto.
+	// Se relaja a SAMEORIGIN, ni más —nadie de fuera puede seguir
+	// embebiéndolo— ni menos —sin esto el propio visor se queda en blanco—.
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+
 	// SIN SANDBOX PARA EL PDF, Y NO ES UN OLVIDO.
 	//
 	// «default-src 'none'; sandbox» es el aislamiento correcto para un
@@ -234,9 +241,13 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm a
 	// de la página sino un componente interno, y restringirlo por esta vía
 	// deja el visor en blanco — es decir, rompe justo lo que RF-25 pide que
 	// funcione. Para el PDF el control es el MIME fijo, «nosniff» y que el
-	// documento no se ejecuta en el origen del NAS.
-	if tipo.Clase != "pdf" {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	// documento no se ejecuta en el origen del NAS. frame-ancestors 'self'
+	// va en los dos casos, PDF incluido: es lo que hace cumplible el
+	// X-Frame-Options de arriba para los navegadores que leen CSP.
+	if tipo.Clase == "pdf" {
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+	} else {
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox; frame-ancestors 'self'")
 	}
 
 	// Mismo motivo que en el listado: con dos escritores independientes
@@ -259,6 +270,12 @@ func (s *Servidor) mostrarNoCompatible(w http.ResponseWriter, ruta almacen.RutaS
 func (s *Servidor) renderVisor(w http.ResponseWriter, v vistaVisor, estado int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	// object-src 'self': esta es la ÚNICA página con un <object> (el PDF,
+	// visor.html). La CSP global (ADR-0060) trae object-src 'none', que
+	// dejaría el visor de PDF en blanco sin que ni siquiera pidiera
+	// /contenido. cspBase() reconstruye la política entera con ese único
+	// campo relajado — un Set parcial pisaría default-src/script-src/etc.
+	w.Header().Set("Content-Security-Policy", cspBase("'self'"))
 	w.WriteHeader(estado)
 	if err := s.plantillas.ExecuteTemplate(w, "visor.html", v); err != nil {
 		s.reg.Error("render del visor", "error", err)

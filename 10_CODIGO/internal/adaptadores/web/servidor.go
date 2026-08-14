@@ -288,7 +288,45 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("PATCH /subidas/{id}", s.conAlmacen(s.tusEnviar))
 	protegido.HandleFunc("DELETE /subidas/{id}", s.conAlmacen(s.tusDescartar))
 
-	return s.conRegistro(mux)
+	return s.conRegistro(s.conCabecerasSeguridad(mux))
+}
+
+// conCabecerasSeguridad fija cabeceras de aislamiento en TODA la web propia
+// del NAS — ADR-0060, tras el pentest externo del 2026-08-13.
+//
+// Hasta ahora solo /contenido las llevaba (ADR-0052): el NAS se defendía del
+// contenido SUBIDO pero no había declarado política sobre sus propias
+// páginas. El caso concreto que esto cierra es clickjacking sobre
+// /administracion, donde se dan de alta y de baja cuentas.
+//
+// SE FIJAN ANTES de llamar al manejador siguiente, a propósito: un manejador
+// que ponga sus propias cabeceras (Set, no Add) GANA, porque las escribe
+// después. Dos manejadores dependen de esto para relajar EXACTAMENTE un
+// campo sin heredar una CSP casi vacía por sobrescribir el valor entero:
+//   - renderVisor (apertura.go) necesita object-src 'self' — es la única
+//     página con un <object> (el PDF, visor.html).
+//   - servirContenido (apertura.go) relaja el framing a SAMEORIGIN, porque
+//     visor.html embebe /contenido del propio origen en <object> e <iframe>;
+//     conserva además su CSP más estricta, «default-src 'none'; sandbox»,
+//     sin que esta la pise.
+func (s *Servidor) conCabecerasSeguridad(siguiente http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", cspBase("'none'"))
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		siguiente.ServeHTTP(w, r)
+	})
+}
+
+// cspBase es la política por defecto de toda la web propia, con object-src
+// parametrizado: es el único campo que una página necesita relajar (el
+// visor de PDF), y una función evita que esa copia y la de aquí diverjan
+// solas con el tiempo si alguien cambia una y no la otra.
+func cspBase(objectSrc string) string {
+	return "default-src 'self'; script-src 'self'; style-src 'self'; " +
+		"img-src 'self'; frame-ancestors 'none'; base-uri 'none'; " +
+		"form-action 'self'; object-src " + objectSrc
 }
 
 // HTTPServer construye el http.Server con los plazos de ADR-0026.

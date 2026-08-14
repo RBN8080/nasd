@@ -249,3 +249,11 @@ async function consultarDesplazamiento(url) {
   if (!r.ok) throw new Error('la subida ya no existe en el servidor');
   return parseInt(r.headers.get('Upload-Offset') || '0', 10);
 }
+
+// El botón se engancha aquí y no con onclick="" en la plantilla: la CSP
+// global (ADR-0060) trae script-src 'self' sin 'unsafe-inline', que un
+// atributo de evento en línea incumple en silencio —el clic simplemente no
+// hace nada, sin error visible salvo en la consola—. Este script se carga al
+// final del body (listado.html), así que el botón ya existe en el DOM.
+const botonSubir = document.getElementById('boton-subir');
+if (botonSubir) botonSubir.addEventListener('click', iniciarSubida);
