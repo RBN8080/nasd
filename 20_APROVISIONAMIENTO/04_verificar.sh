@@ -79,7 +79,10 @@ echo
 echo "-- RNF-07: cortafuegos --"
 if command -v nft >/dev/null && sudo -n nft list ruleset 2>/dev/null | grep -q 'policy drop'; then
   si "política DENY por defecto"
-  sudo -n nft list ruleset | grep -E 'dport (22|445|8080)' | sed 's/^/        /'
+  # 80 y no 8080 desde ADR-0032; 443 se añade desde la Fase 6 (ADR-0048/ADR-0057,
+  # tcp y udp). Corregido 2026-08-13: seguía listando el 8080 retirado, así que
+  # esta comprobación llevaba semanas mostrando el ruleset a medias.
+  sudo -n nft list ruleset | grep -E 'dport (22|445|80|443)' | sed 's/^/        /'
 else
   dato "no se pudo leer el ruleset sin contraseña; compruebe con: sudo nft list ruleset"
 fi
