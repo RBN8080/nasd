@@ -41,6 +41,7 @@ package seguridad
 
 import (
 	"net/netip"
+	"slices"
 	"time"
 )
 
@@ -126,7 +127,62 @@ var (
 	// «por si acaso» que el estilo del proyecto prohíbe.
 	prefijoLAN   = netip.MustParsePrefix("192.168.1.0/24")
 	prefijoTunel = netip.MustParsePrefix("10.77.0.0/24")
+
+	// prefijosPropios son los /64 de las direcciones IPv6 globales del propio
+	// nodo. Se APRENDEN al arrancar (AprenderRedesPropias) en vez de
+	// escribirse aquí, y esa decisión tiene una historia de una hora:
+	//
+	// La primera versión de este paquete solo conocía las dos redes IPv4 de
+	// arriba, y con eso bastaba en las pruebas. En cuanto se desplegó, el
+	// historial real enseñó al iPhone del responsable —en su propia Wi-Fi,
+	// hablando IPv6 nativo desde 3fff:2a0:101e:3d82:…— clasificado como
+	// INTERNET. Es decir: la casa contada como si fuera un extraño, y en la
+	// única cifra que el responsable declaró importante.
+	//
+	// NO se escribe el prefijo literal porque lo delega el proveedor y puede
+	// rotar: quedaría una constante que un día deja de ser verdad EN SILENCIO
+	// y vuelve a contar la casa como Internet, que es el modo de fallo que
+	// este proyecto persigue. Preguntándoselo al sistema, el nodo se corrige
+	// solo el día que el operador cambie la delegación.
+	//
+	// ESTADO COMPARTIDO (ADR-0013), el quinto del programa y el más simple:
+	// se escribe UNA vez desde la raíz de composición antes de que exista
+	// ningún servidor, y a partir de ahí es de solo lectura. No lleva candado
+	// porque no hay un segundo escritor; si algún día lo hubiera, esto pasa a
+	// necesitar uno.
+	prefijosPropios []netip.Prefix
 )
+
+// AprenderRedesPropias registra como «de casa» los /64 de las direcciones
+// IPv6 globales del nodo. La llama la raíz de composición al arrancar.
+//
+// Devuelve lo aprendido para que quien la llame pueda registrarlo: si un día
+// esto queda vacío por un cambio de red, la clasificación se degrada sin
+// fallar —todo lo IPv6 de casa volvería a contarse como Internet— y hay que
+// poder verlo en el diario en lugar de descubrirlo en el panel.
+func AprenderRedesPropias(direcciones []netip.Addr) []netip.Prefix {
+	var out []netip.Prefix
+	for _, ip := range direcciones {
+		// Solo IPv6 global: las IPv4 ya las cubren los prefijos de arriba, y
+		// las locales de enlace (fe80::/10) no las usa nadie para hablar con
+		// el NAS.
+		if !ip.IsValid() || !ip.Is6() || ip.Is4In6() || !ip.IsGlobalUnicast() {
+			continue
+		}
+		// /64 es el tamaño de una red doméstica delegada por SLAAC (RFC 4291
+		// §2.5.1): el nodo y los demás aparatos de la casa comparten esos 64
+		// bits y difieren en los otros 64.
+		p, err := ip.Prefix(64)
+		if err != nil {
+			continue
+		}
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	prefijosPropios = out
+	return out
+}
 
 // ClasificarRed decide de qué red viene una dirección.
 //
@@ -150,6 +206,14 @@ func ClasificarRed(ip netip.Addr) Red {
 		return RedTunel
 	case ip.IsLoopback():
 		return RedNodo
+	}
+	// Lo aprendido al arrancar: el IPv6 de casa. Va DESPUÉS de los literales
+	// porque estos son ciertos siempre y aquello depende de lo que el
+	// proveedor delegue hoy.
+	for _, p := range prefijosPropios {
+		if p.Contains(ip) {
+			return RedLocal
+		}
 	}
 	return RedInternet
 }
