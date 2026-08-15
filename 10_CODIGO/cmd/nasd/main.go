@@ -11,9 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -396,33 +394,4 @@ func generarCredencial() error {
 	}
 	fmt.Println(linea)
 	return nil
-}
-
-// direccionesDelNodo devuelve las direcciones de las interfaces de este
-// equipo. Vive en la raiz de composicion y no en internal/seguridad porque es
-// una pregunta al SISTEMA, y ese paquete no debe saber que existen interfaces
-// de red: recibe direcciones ya resueltas, igual que web recibe el almacen ya
-// acotado en vez de construirlo.
-func direccionesDelNodo() []netip.Addr {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	var out []netip.Addr
-	for _, i := range interfaces {
-		dirs, err := i.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, d := range dirs {
-			n, ok := d.(*net.IPNet)
-			if !ok {
-				continue
-			}
-			if ip, ok := netip.AddrFromSlice(n.IP); ok {
-				out = append(out, ip.Unmap())
-			}
-		}
-	}
-	return out
 }
