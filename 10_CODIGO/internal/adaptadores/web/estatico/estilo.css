@@ -694,10 +694,10 @@ tr.v-fallo .rotulo {
   text-align: left;
 }
 
-/* Una ruta o una cifra larga parte donde haga falta antes que desbordar. */
-.datos .cifra {
-  overflow-wrap: anywhere;
-}
+/* «.datos .cifra» vivia aqui y hacia exactamente esto para una sola columna
+   de /estado. La regla general de mas abajo -toda celda de .datos- la dejo
+   sin trabajo el 14/08/2026, al arreglar el solapamiento de las IPv6, y se
+   retira en vez de quedarse como CSS que no cambia nada. */
 
 /* La accion solo existe cuando hay algo que hacer. Va SIEMPRE en el HTML —el
    flujo en vivo se limita a cambiarle el texto, sin crear ni destruir nodos— y
@@ -1172,8 +1172,27 @@ a.orden-activo {
   width: auto;
 }
 
-.tabla-cronologia .ruta,
-.tabla-cronologia .agente {
+/* EL SOLAPAMIENTO, y la regla es GENERAL a proposito.
+   Reportado sobre captura el 14/08/2026: una IPv6 se pintaba ENCIMA de
+   «Red local» en la tabla de origenes y encima de «GET» en la cronologia.
+
+   La causa no es de esas tablas: «.datos» usa table-layout fixed, que NO
+   ensancha una columna para que quepa su contenido, y una IPv6 no ofrece
+   ningun punto de corte -los «:» no rompen linea y tampoco los digitos-, asi
+   que el texto desborda la celda y se pinta sobre la vecina.
+
+   Por eso la regla va sobre TODA celda de «.datos» y no sobre la columna que
+   fallo: el mismo desbordamiento lo produce cualquier cadena larga sin
+   espacios, y este NAS esta lleno de ellas -rutas, nombres de archivo,
+   User-Agent, huellas-. Arreglar solo la columna de la IP habria dejado el
+   defecto esperando en las otras seis.
+
+   «anywhere» y no «break-word»: el primero permite ademas que la celda
+   ENCOJA por debajo de su palabra mas larga, que es lo que necesita un
+   reparto fijo; con break-word la columna conserva un ancho minimo igual al
+   token mas largo y el desbordamiento vuelve en pantallas estrechas. */
+.datos th,
+.datos td {
   overflow-wrap: anywhere;
 }
 
