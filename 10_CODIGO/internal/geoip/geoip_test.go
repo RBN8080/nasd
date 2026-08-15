@@ -185,3 +185,46 @@ func TestUnArchivoTruncadoSeRechaza(t *testing.T) {
 		t.Fatal("un archivo truncado debe rechazarse, no leerse a medias")
 	}
 }
+
+// TestUnPaisNoISOSeGuardaComoDesconocido.
+//
+// EL DEFECTO QUE SOLO ENSEÑÓ EL ARCHIVO COMPLETO. La primera versión
+// rechazaba cualquier país que no cupiera en dos bytes y abortaba la
+// preparación entera con «código de país "Unknown" más largo de 2». El
+// fragmento de muestra usado en las pruebas traía «None» —contemplado— pero
+// no «Unknown», que aparece en 5232 de los 714 387 rangos del archivo real.
+//
+// Tumbar la base entera por eso sería cambiar 714 387 rangos por el campo
+// menos importante de los tres: esos rangos SÍ tienen operador, que es lo
+// que de verdad hace interpretable una fila.
+func TestUnPaisNoISOSeGuardaComoDesconocido(t *testing.T) {
+	v4 := "1.0.0.0\t1.0.0.255\t111\tUnknown\tOperador con pais raro\n" +
+		"2.0.0.0\t2.0.0.255\t222\tNone\tOperador sin pais\n" +
+		"3.0.0.0\t3.0.0.255\t333\tUS\tOperador normal\n"
+	b := prepararDePrueba(t, v4, "")
+
+	if got := b.Cuantos(); got != 3 {
+		t.Fatalf("Cuantos() = %d: un país raro no debe descartar el rango, solo su país", got)
+	}
+	casos := []struct {
+		ip, pais string
+		asn      uint32
+	}{
+		{"1.0.0.1", "", 111},
+		{"2.0.0.1", "", 222},
+		{"3.0.0.1", "US", 333},
+	}
+	for _, c := range casos {
+		info, ok := b.Buscar(netip.MustParseAddr(c.ip))
+		if !ok {
+			t.Fatalf("%s no resuelve", c.ip)
+		}
+		if info.Pais != c.pais {
+			t.Errorf("%s: país = %q, se esperaba %q", c.ip, info.Pais, c.pais)
+		}
+		// Lo que importa: el OPERADOR se conserva aunque el país no.
+		if info.ASN != c.asn || info.Nombre == "" {
+			t.Errorf("%s: se perdió el operador (AS%d %q)", c.ip, info.ASN, info.Nombre)
+		}
+	}
+}
