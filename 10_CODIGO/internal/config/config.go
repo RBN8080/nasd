@@ -104,6 +104,17 @@ func (c Config) RutaUsoDisco() string {
 	return filepath.Join(c.DirectorioEstado, "uso-disco")
 }
 
+// RutaSeguridad es el historial de rechazos (internal/seguridad).
+//
+// Va en DirectorioEstado y no en el disco de datos por la misma razón que el
+// registro de usuarios: allí lo vería SMB, y este archivo lleva las
+// direcciones de origen de quien intenta entrar. Publicarlo por SMB sería
+// regalar el mapa de lo que se está observando — el mismo argumento con el
+// que ADR-0037 puso el diario en estado/ y no en datos/.
+func (c Config) RutaSeguridad() string {
+	return filepath.Join(c.DirectorioEstado, "seguridad")
+}
+
 // Valores de referencia [R] — no son criterio de aceptación (01_REQUISITOS §2).
 // Se sustituyen por medición cuando exista.
 func porDefecto() Config {

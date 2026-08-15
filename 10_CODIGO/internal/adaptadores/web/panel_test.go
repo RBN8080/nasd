@@ -37,6 +37,11 @@ func TestSoloElSuperusuarioAlcanzaLaAdministracion(t *testing.T) {
 		// continua (P-7, ADR-0056): si se quedara fuera de esta tabla, abriría
 		// por la puerta de al lado lo que la primera línea cierra.
 		{"GET", "/administracion/flujo"},
+		// El panel de seguridad entra en esta lista el MISMO día que nace,
+		// siguiendo la regla que csrf_test.go ya dejó escrita para los
+		// extremos que cambian algo. Aquí el motivo es más fuerte que en la
+		// administración de cuentas: publica de dónde se conecta cada quien.
+		{"GET", "/seguridad"},
 	} {
 		r := httptest.NewRequest(c.metodo, c.ruta, nil)
 		r.AddCookie(deJuan)
@@ -367,6 +372,7 @@ func servidorParaMetricas(t *testing.T, bytesPorUsuario map[string]int64) *Servi
 		Usuarios:         usuarios,
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
+		Seguridad:        seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -434,6 +440,7 @@ func TestRefrescarMetricasCuentaComoCeroLaCuentaSinCarpeta(t *testing.T) {
 		Usuarios:         usuarios,
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
+		Seguridad:        seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -476,6 +483,7 @@ func TestRefrescarMetricasContinuaSiUnaCuentaFalla(t *testing.T) {
 		Usuarios:         usuarios,
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
+		Seguridad:        seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)

@@ -106,6 +106,7 @@ func servidorMultiusuario(t *testing.T) (*Servidor, *reparto) {
 		Usuarios:         usuarios,
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
+		Seguridad:        seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -285,6 +286,7 @@ func TestQueLaCuentaExistaNoCambiaLaRespuesta(t *testing.T) {
 			Usuarios:        usuarios,
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
+			Seguridad:       seguridadDePrueba(t),
 		})
 		if err != nil {
 			t.Fatalf("Nuevo: %v", err)
@@ -407,6 +409,7 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 			Usuarios:        registroDePrueba(t),
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
+			Seguridad:       seguridadDePrueba(t),
 		}
 	}
 	sinAlmacenDe := base()
@@ -568,6 +571,7 @@ func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
 		Usuarios:         usuarios,
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
+		Seguridad:        seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
