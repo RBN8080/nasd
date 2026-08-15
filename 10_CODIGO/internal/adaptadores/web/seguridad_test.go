@@ -5,12 +5,14 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"nasd/internal/autenticacion"
+	"nasd/internal/geoip"
 	"nasd/internal/seguridad"
 )
 
@@ -431,5 +433,111 @@ func TestLaMismaRutaInexistenteSeClasificaIgualConSesionYSinElla(t *testing.T) {
 	}
 	if conSesion != seguridad.RutaInexistente {
 		t.Fatalf("motivo = %q; se esperaba «ruta inexistente»", conSesion.Etiqueta())
+	}
+}
+
+// --- Etapa 4: país y operador ------------------------------------------------
+
+// El panel funciona SIN base instalada. Es la razón de que GeoIP sea la única
+// dependencia opcional de web.Opciones: un nodo al que no se le ha ejecutado
+// 18_geoip.sh todavía no debe quedarse sin panel de seguridad.
+func TestElPanelFuncionaSinBaseDePaisYOperador(t *testing.T) {
+	s := servidorConAuth(t) // se construye sin GeoIP
+	if s.geo != nil {
+		t.Fatal("este servidor de prueba no debería tener base")
+	}
+	pedir(t, s, "GET", "/wp-login.php")
+
+	cuerpo := panelSeguridad(t, s, "")
+	// Sin base NO se pinta la columna: una columna vacía se leería como «no
+	// se sabe de nadie» cuando en realidad es «no se ha instalado la base».
+	if strings.Contains(cuerpo, "<th>Operador</th>") {
+		t.Error("sin base instalada no debe aparecer la columna de operador")
+	}
+	if !strings.Contains(cuerpo, "Orígenes") {
+		t.Error("el panel no se renderizó entero sin la base")
+	}
+}
+
+// Y con base, el origen de Internet sale resuelto — mientras que los de casa
+// NO se resuelven a propósito: una IP privada no tiene operador, y enseñar
+// «el operador» junto a los aparatos del responsable sería ruido en la única tabla
+// que existe para mirar hacia fuera.
+func TestSoloLosOrigenesDeInternetSeResuelven(t *testing.T) {
+	s := servidorConAuth(t)
+	s.geo = baseGeoDePrueba(t)
+	t.Cleanup(func() { s.geo.Cerrar() })
+
+	deFuera := httptest.NewRequest("GET", "/wp-login.php", nil)
+	deFuera.RemoteAddr = "8.8.8.8:44001"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), deFuera)
+
+	deCasa := httptest.NewRequest("GET", "/loquesea", nil)
+	deCasa.RemoteAddr = "192.168.1.18:5000"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), deCasa)
+
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.Contains(cuerpo, "<th>Operador</th>") {
+		t.Fatal("con base instalada debe aparecer la columna de operador")
+	}
+	if !strings.Contains(cuerpo, "GOOGLE") {
+		t.Error("el origen de Internet no se resolvió a su operador")
+	}
+	if !strings.Contains(cuerpo, "AS15169") {
+		t.Error("falta el número de AS, que es el identificador estable")
+	}
+}
+
+// baseGeoDePrueba arma una base mínima con los mismos fragmentos reales que
+// usa el paquete geoip, para no inventar datos.
+func baseGeoDePrueba(t *testing.T) *geoip.BaseDatos {
+	t.Helper()
+	ruta := filepath.Join(t.TempDir(), "geoip")
+	v4 := "8.8.8.0\t8.8.8.255\t15169\tUS\tGOOGLE\n" +
+		"198.51.100.0\t198.51.100.255\t64496\tMX\tOperador Domestico, S.A. de C.V.\n"
+	if _, err := geoip.Preparar(strings.NewReader(v4), strings.NewReader(""), ruta); err != nil {
+		t.Fatalf("Preparar: %v", err)
+	}
+	b, err := geoip.Abrir(ruta)
+	if err != nil {
+		t.Fatalf("Abrir: %v", err)
+	}
+	return b
+}
+
+// EL PANEL SE RENDERIZA ENTERO, y esta prueba existe por un defecto propio
+// que costó un rato encontrar: un comentario HTML dentro de seguridad.html
+// citaba la función «fecha» entre llaves dobles para explicar un criterio.
+// Go analiza las acciones ANTES de tratar el HTML, así que aquello no era
+// texto: era una llamada con cero argumentos.
+//
+// El síntoma es el peligroso: ExecuteTemplate falla A MITAD de escribir, la
+// cabecera 200 ya se envió, y el panel devuelve una página cortada con código
+// de éxito. Comprobar «responde 200» no detecta nada.
+//
+// Se ancla a la ÚLTIMA línea de la plantilla, siguiendo la lección que la
+// v1.39.0 dejó escrita al descubrir el mismo tipo de agujero en /estado: un
+// ancla de «se renderizó entero» no puede depender de una palabra que se
+// cambia por gusto estético.
+func TestElPanelDeSeguridadSeRenderizaEntero(t *testing.T) {
+	s := servidorConAuth(t)
+	s.geo = baseGeoDePrueba(t) // con base: ejercita las ramas de la columna
+	t.Cleanup(func() { s.geo.Cerrar() })
+
+	deFuera := httptest.NewRequest("GET", "/wp-login.php", nil)
+	deFuera.RemoteAddr = "8.8.8.8:44001"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), deFuera)
+
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.HasSuffix(strings.TrimSpace(cuerpo), "</html>") {
+		t.Fatalf("la página no llega a su última línea: se cortó el render.\nCola: %q",
+			cuerpo[max(0, len(cuerpo)-300):])
+	}
+	// Y las cuatro secciones, para que «entero» signifique algo más que que
+	// la etiqueta de cierre llegó.
+	for _, seccion := range []string{"Resumen", "Filtros", "Orígenes", "Cronología"} {
+		if !strings.Contains(cuerpo, "<h2>"+seccion+"</h2>") {
+			t.Errorf("falta la sección %q", seccion)
+		}
 	}
 }

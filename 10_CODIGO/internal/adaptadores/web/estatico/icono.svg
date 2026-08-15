@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="NAS">
+  <!-- Existe para CORTAR RUIDO, no por estética: sin un <link rel="icon">, todo
+       navegador pide /favicon.ico por su cuenta, esa ruta no existe, y cada
+       visita generaba un rechazo. En la primera tarde del panel de seguridad
+       eran 9 de 19 eventos -el 47%- entre favicon.ico y los apple-touch-icon
+       del iPhone: ruido propio tapando lo unico que ese panel existe para ver.
+       Se corta en el ORIGEN en vez de esconderlo con un filtro.
+       SVG y no PNG para que quepa en el binario como texto legible. -->
+  <rect width="32" height="32" rx="6" fill="#2f6f4f"/>
+  <rect x="7" y="9"  width="18" height="4" rx="1.5" fill="#eaf3ee"/>
+  <rect x="7" y="15" width="18" height="4" rx="1.5" fill="#eaf3ee"/>
+  <rect x="7" y="21" width="18" height="4" rx="1.5" fill="#eaf3ee"/>
+  <circle cx="10.5" cy="11" r="1" fill="#2f6f4f"/>
+  <circle cx="10.5" cy="17" r="1" fill="#2f6f4f"/>
+  <circle cx="10.5" cy="23" r="1" fill="#2f6f4f"/>
+</svg>

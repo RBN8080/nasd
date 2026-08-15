@@ -115,6 +115,22 @@ func (c Config) RutaSeguridad() string {
 	return filepath.Join(c.DirectorioEstado, "seguridad")
 }
 
+// RutaGeoIP es la base que resuelve una dirección a su país y su operador
+// (internal/geoip).
+//
+// A DIFERENCIA DE LAS ANTERIORES, ESTA NO VIVE EN DirectorioEstado sino en el
+// disco de datos, bajo estado/. El motivo es el tamaño: son ~35 MB que se
+// reescriben enteros cada vez que el temporizador refresca la base, y
+// DirectorioEstado (/var/lib) está en el medio de arranque, que es consumible
+// (P9). El disco de datos tiene 897 GB libres y no se desgasta por esto.
+//
+// Va en estado/ y NO en datos/ por lo mismo que el diario (ADR-0037):
+// ADR-0019 comparte por Samba únicamente datos/, y esto no tiene nada que
+// hacer ahí.
+func (c Config) RutaGeoIP() string {
+	return filepath.Join(c.Volumen, "estado", "geoip")
+}
+
 // Valores de referencia [R] — no son criterio de aceptación (01_REQUISITOS §2).
 // Se sustituyen por medición cuando exista.
 func porDefecto() Config {

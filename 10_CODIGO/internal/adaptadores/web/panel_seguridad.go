@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"nasd/internal/geoip"
 	"nasd/internal/seguridad"
 )
 
@@ -39,9 +40,24 @@ var ventanas = []struct {
 	{"Todo lo guardado", 0},
 }
 
+// filaOrigen es un origen agregado MAS su procedencia resuelta.
+//
+// Existe para que internal/seguridad no dependa de internal/geoip: aquel
+// paquete modela el hecho registrado y no tiene por que saber que existe una
+// base de operadores. Quien une las dos piezas es este adaptador, igual que
+// la raiz de composicion es quien une fsposix con web (ADR-0014).
+type filaOrigen struct {
+	seguridad.Origen
+	// Geo esta vacio cuando no hay base instalada, cuando el origen no es de
+	// Internet -una IP privada no tiene operador- o cuando la base no cubre
+	// ese rango. La plantilla distingue los tres casos de un dato real.
+	Geo      geoip.Info
+	TieneGeo bool
+}
+
 type vistaSeguridad struct {
 	Resumen  seguridad.Resumen
-	Origenes []seguridad.Origen
+	Origenes []filaOrigen
 	Eventos  []seguridad.Evento
 	// Filtro es lo aplicado, devuelto a la vista para que los campos del
 	// formulario conserven lo tecleado tras recargar.
@@ -62,6 +78,14 @@ type vistaSeguridad struct {
 	// dar a entender que eso es todo.
 	TopeCronologico int
 	HayMas          bool
+	// FechaGeo es cuando se preparo la base. Se publica porque se refresca
+	// una vez al mes y puede ir por detras de la realidad: una base vieja que
+	// no se anuncia es una afirmacion que dejo de ser verdad sin avisar.
+	FechaGeo time.Time
+	// HayGeo dice si la base esta instalada. La plantilla lo usa para NO
+	// pintar una columna vacia que se leeria como «no se sabe de nadie»
+	// cuando en realidad es «no se ha instalado la base».
+	HayGeo bool
 }
 
 // opcionFiltro es un valor para un <select>: la clave estable que viaja por
@@ -124,7 +148,9 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 
 	v := vistaSeguridad{
 		Resumen:         resumen,
-		Origenes:        origenes,
+		Origenes:        s.resolverProcedencia(origenes),
+		HayGeo:          s.geo != nil,
+		FechaGeo:        s.geo.Fecha(),
 		Eventos:         cronologia,
 		Horas:           int(horas),
 		IP:              f.IP,
@@ -216,4 +242,31 @@ func redDesde(s string) (seguridad.Red, bool) {
 		}
 	}
 	return seguridad.RedDesconocida, false
+}
+
+// resolverProcedencia averigua pais y operador de cada origen.
+//
+// SOLO PARA LOS DE INTERNET, y por dos razones que se sostienen solas: una
+// direccion privada -LAN, tunel, el propio nodo- no tiene operador que
+// resolver, y ademas ensenar «el operador» junto a los propios aparatos del
+// responsable seria ruido en la unica tabla que existe para mirar hacia
+// fuera.
+//
+// SE RESUELVE AL PINTAR Y NO AL ANOTAR, igual que las senales: es dato
+// derivado. Persistirlo en el evento congelaria el operador del dia en que
+// llego, y refrescar la base mensualmente no corregiria el historial. Asi,
+// cada vez que se mira se usa lo mejor que se sabe HOY.
+//
+// El coste es despreciable: son las ~20 lecturas de 16 bytes de una busqueda
+// binaria por cada direccion distinta mostrada, no por evento.
+func (s *Servidor) resolverProcedencia(origenes []seguridad.Origen) []filaOrigen {
+	filas := make([]filaOrigen, 0, len(origenes))
+	for _, o := range origenes {
+		f := filaOrigen{Origen: o}
+		if o.Red.DeFuera() {
+			f.Geo, f.TieneGeo = s.geo.Buscar(o.IP)
+		}
+		filas = append(filas, f)
+	}
+	return filas
 }

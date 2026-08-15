@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 	"nasd/internal/config"
+	"nasd/internal/geoip"
 	"nasd/internal/metricas"
 	"nasd/internal/seguridad"
 )
@@ -45,6 +47,9 @@ func ejecutar() error {
 		"da de alta una cuenta con ese nombre; lee su contraseña de la entrada estándar")
 	borrarUsuario := flag.String("borrar-usuario", "",
 		"da de baja una cuenta; NO toca sus archivos")
+	prepararGeoIP := flag.Bool("preparar-geoip", false,
+		"convierte los TSV de IPtoASN en la base que lee el panel de seguridad; "+
+			"uso: nasd --preparar-geoip <salida> <ip2asn-v4.tsv> <ip2asn-v6.tsv>")
 	flag.Parse()
 
 	if *generar {
@@ -55,6 +60,9 @@ func ejecutar() error {
 	}
 	if *borrarUsuario != "" {
 		return bajaDeUsuario(*rutaConfig, *borrarUsuario)
+	}
+	if *prepararGeoIP {
+		return prepararBaseGeoIP(flag.Args())
 	}
 
 	// RNF-13: registro estructurado en JSON hacia journald por la salida
@@ -118,14 +126,35 @@ func ejecutar() error {
 		reg.Warn("no se aprendió ninguna red IPv6 propia: el tráfico IPv6 de casa se contará como Internet")
 	}
 
+	// Base de país y operador — etapa 4. Es OPCIONAL, al contrario que las
+	// tres cargas anteriores: un nodo al que todavía no se le ha ejecutado
+	// 18_geoip.sh funciona exactamente igual, solo que el panel no enseña de
+	// dónde viene cada origen. Por eso un fallo aquí se anota y se sigue, y
+	// geoip.Buscar admite un receptor nulo a propósito.
+	var baseGeo *geoip.BaseDatos
+	if b, err := geoip.Abrir(cfg.RutaGeoIP()); err != nil {
+		if os.IsNotExist(err) {
+			reg.Info("sin base de país/operador: el panel no mostrará de dónde viene cada origen",
+				"ruta", cfg.RutaGeoIP(), "instalar_con", "20_APROVISIONAMIENTO/18_geoip.sh")
+		} else {
+			reg.Error("la base de país/operador no se pudo abrir; se sigue sin ella",
+				"ruta", cfg.RutaGeoIP(), "error", err)
+		}
+	} else {
+		baseGeo = b
+		defer baseGeo.Cerrar()
+		reg.Info("base de país/operador cargada", "rangos", baseGeo.Cuantos())
+	}
+
 	// Historial de rechazos — panel de seguridad, etapa 1.
 	//
 	// UN ARCHIVO ILEGIBLE AQUÍ NO IMPIDE ARRANCAR, y es una decisión distinta
-	// de la de las dos cargas anteriores: un registro de usuarios roto deja a
-	// gente sin poder entrar, así que allí se falla a gritos. Un historial de
-	// OBSERVACIÓN roto solo cuesta el historial, y cambiar un NAS sano por un
-	// archivo de registro sería el peor negocio posible. Se anota y se sigue
-	// con el anillo vacío, que CargarAnillo devuelve usable a propósito.
+	// de la de las cargas de usuarios y métricas: un registro de usuarios roto
+	// deja a gente sin poder entrar, así que allí se falla a gritos. Un
+	// historial de OBSERVACIÓN roto solo cuesta el historial, y cambiar un NAS
+	// sano por un archivo de registro sería el peor negocio posible. Se anota
+	// y se sigue con el anillo vacío, que CargarAnillo devuelve usable a
+	// propósito.
 	historial, err := seguridad.CargarAnillo(cfg.RutaSeguridad())
 	if err != nil {
 		reg.Error("el historial de seguridad no se pudo leer; se empieza vacío",
@@ -155,6 +184,7 @@ func ejecutar() error {
 		Volumen:           cfg.Volumen,
 		Metricas:          metricasUso,
 		Seguridad:         historial,
+		GeoIP:             baseGeo,
 	})
 	if err != nil {
 		return err
@@ -393,5 +423,70 @@ func generarCredencial() error {
 		return err
 	}
 	fmt.Println(linea)
+	return nil
+}
+
+// prepararBaseGeoIP implementa «nasd --preparar-geoip». Lo llama el
+// temporizador mensual de 18_geoip.sh, no una persona.
+//
+// SE AUTOCOMPRUEBA Y LO IMPRIME, y esa es la mitad que importa: una base
+// preparada «sin errores» puede estar perfectamente vacía o desordenada. Al
+// terminar resuelve cuatro direcciones cuya respuesta se conoce POR OTRA VÍA
+// —la IP pública de este nodo y su AAAA, más dos resolutores DNS públicos— y
+// las escribe. Así el operador ve el dato en vez de confiar en un «hecho».
+func prepararBaseGeoIP(args []string) error {
+	if len(args) != 3 {
+		return fmt.Errorf("uso: nasd --preparar-geoip <salida> <ip2asn-v4.tsv> <ip2asn-v6.tsv>")
+	}
+	salida, rutaV4, rutaV6 := args[0], args[1], args[2]
+
+	v4, err := os.Open(rutaV4)
+	if err != nil {
+		return err
+	}
+	defer v4.Close()
+	v6, err := os.Open(rutaV6)
+	if err != nil {
+		return err
+	}
+	defer v6.Close()
+
+	n, err := geoip.Preparar(v4, v6, salida)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("base de país/operador escrita en %s: %d rangos\n", salida, n)
+
+	// Un archivo con cuatro rangos se escribe «sin errores» igual que uno con
+	// medio millón. Un mínimo grosero distingue «funcionó» de «no leyó nada».
+	const minimoRazonable = 100_000
+	if n < minimoRazonable {
+		return fmt.Errorf("solo %d rangos, se esperaban más de %d: revise los TSV de entrada",
+			n, minimoRazonable)
+	}
+
+	b, err := geoip.Abrir(salida)
+	if err != nil {
+		return fmt.Errorf("la base recién escrita no se puede abrir: %w", err)
+	}
+	defer b.Cerrar()
+
+	fmt.Println("comprobación contra direcciones de respuesta conocida:")
+	for _, ancla := range []struct{ ip, esperado string }{
+		{"198.51.100.0", "la IP pública de este nodo (ADR-0044)"},
+		{"3fff:2a0:101e:3d82::38", "el AAAA de este nodo"},
+		{"8.8.8.8", "Google"},
+		{"1.1.1.1", "Cloudflare"},
+	} {
+		ip, err := netip.ParseAddr(ancla.ip)
+		if err != nil {
+			return err
+		}
+		info, ok := b.Buscar(ip)
+		if !ok {
+			return fmt.Errorf("%s (%s) no resuelve: la base está mal", ancla.ip, ancla.esperado)
+		}
+		fmt.Printf("  %-24s AS%-7d %-3s %s\n", ancla.ip, info.ASN, info.Pais, info.Nombre)
+	}
 	return nil
 }
