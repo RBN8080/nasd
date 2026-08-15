@@ -399,3 +399,37 @@ func TestElPanelDiceQueEstaRecortando(t *testing.T) {
 		t.Error("con el anillo lleno, el panel no avisa de que está recortando")
 	}
 }
+
+// EL DEFECTO DEL FAVICON, visto en la primera captura del panel en producción
+// y convertido en prueba.
+//
+// /favicon.ico lo pide TODO navegador, siempre. Sin sesión lo clasificaba
+// clasificarNegativa como «ruta inexistente»; con sesión llegaba al mux, que
+// responde 404 por su cuenta sin pasar por fallo(), y nadie lo marcaba: salía
+// como «Motivo desconocido». La MISMA petición, dos clasificaciones distintas
+// según si habías entrado — y una de ellas sin nombre, a perpetuidad, porque
+// el navegador nunca deja de pedirlo.
+func TestLaMismaRutaInexistenteSeClasificaIgualConSesionYSinElla(t *testing.T) {
+	s := servidorConAuth(t)
+
+	// Sin sesión.
+	if w := pedir(t, s, "GET", "/favicon.ico"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("sin sesión -> %d; se esperaba 401", w.Code)
+	}
+	sinSesion := ultimoEvento(t, s).Motivo
+
+	// Con sesión.
+	cookie, _ := sesionAbierta(t, s)
+	if w := pedir(t, s, "GET", "/favicon.ico", cookie); w.Code != http.StatusNotFound {
+		t.Fatalf("con sesión -> %d; se esperaba 404", w.Code)
+	}
+	conSesion := ultimoEvento(t, s).Motivo
+
+	if sinSesion != conSesion {
+		t.Fatalf("la misma ruta se clasificó como %q sin sesión y %q con ella",
+			sinSesion.Etiqueta(), conSesion.Etiqueta())
+	}
+	if conSesion != seguridad.RutaInexistente {
+		t.Fatalf("motivo = %q; se esperaba «ruta inexistente»", conSesion.Etiqueta())
+	}
+}

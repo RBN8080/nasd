@@ -256,14 +256,32 @@ func PorOrigen(eventos []Evento) []Origen {
 		a.o.Cuentas = ordenado(a.cuentas)
 
 		// LAS INFERENCIAS, aquí y en ningún otro sitio.
-		if len(a.sinRutaOK) >= umbralExploracion {
-			a.o.Senales = append(a.o.Senales, SenalExploracion)
-		}
-		if a.o.PorMotivo[CredencialIncorrecta] >= umbralFuerzaBruta {
-			a.o.Senales = append(a.o.Senales, SenalFuerzaBruta)
-		}
-		if a.ajenas > 0 {
-			a.o.Senales = append(a.o.Senales, SenalSoftwareAjeno)
+		//
+		// SOLO DESDE INTERNET, y lo enseñó la primera captura del panel en
+		// produccion: «Sondeo de software que aquí no existe» saltó sobre el
+		// PROPIO NODO porque el despliegue había probado /wp-login.php con
+		// curl. Una alarma roja sobre uno mismo, en la primera pantalla que
+		// vio el responsable.
+		//
+		// El argumento no es cosmético. Desde la LAN, el túnel o el propio
+		// nodo, quien pide YA tiene la casa o la clave: el túnel es mudo sin
+		// ella (06_ACCESO_REMOTO §3) y a la LAN se entra por la puerta. Una
+		// sospecha de intrusión desde ahí no informa de nada y gasta la
+		// credibilidad de las que sí importan — el defecto que 00_RECTOR.md
+		// §12.5 lleva persiguiendo en los verificadores de este proyecto.
+		//
+		// Los HECHOS se siguen registrando igual desde cualquier red: lo que
+		// no se emite es la interpretación.
+		if a.o.Red.DeFuera() {
+			if len(a.sinRutaOK) >= umbralExploracion {
+				a.o.Senales = append(a.o.Senales, SenalExploracion)
+			}
+			if a.o.PorMotivo[CredencialIncorrecta] >= umbralFuerzaBruta {
+				a.o.Senales = append(a.o.Senales, SenalFuerzaBruta)
+			}
+			if a.ajenas > 0 {
+				a.o.Senales = append(a.o.Senales, SenalSoftwareAjeno)
+			}
 		}
 		out = append(out, a.o)
 	}
@@ -334,7 +352,7 @@ func Resumir(eventos []Evento, origenes []Origen, ventana time.Duration, totalHi
 		}
 	}
 	for _, o := range origenes {
-		if o.Red == RedInternet {
+		if o.Red.DeFuera() {
 			r.DesdeFuera++
 		}
 		if len(o.Senales) > 0 {

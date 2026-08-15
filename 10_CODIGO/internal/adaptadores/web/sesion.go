@@ -184,6 +184,20 @@ func (s *Servidor) exigirSesion(protegido *http.ServeMux) http.Handler {
 		// desde dentro (ver plazos.go); este defer es el suelo que cubre
 		// todo lo demás: listar, navegar, borrar, administrar.
 		defer s.sesiones.Tocar(c.Value)
+		// LA MISMA PREGUNTA, AL OTRO LADO DE LA AUTENTICACIÓN, y hace falta
+		// por un defecto que se vio en la primera captura del panel en
+		// producción: /favicon.ico —que TODO navegador pide siempre— salía
+		// dos veces con dos motivos distintos. Sin sesión lo clasificaba
+		// clasificarNegativa como «ruta inexistente»; CON sesión llegaba al
+		// mux, que responde 404 por su cuenta sin pasar por fallo(), y nadie
+		// lo marcaba: aparecía como «Motivo desconocido».
+		//
+		// La misma petición no puede clasificarse distinto según si has
+		// entrado. Se marca aquí y el mux sigue respondiendo su 404 como
+		// siempre: esto no cambia ni una respuesta, solo lo que se apunta.
+		if _, patron := protegido.Handler(r); patron == "" {
+			marcarRechazo(r, seguridad.RutaInexistente)
+		}
 		protegido.ServeHTTP(w, r.WithContext(
 			context.WithValue(r.Context(), claveUsuario, usuario)))
 	})

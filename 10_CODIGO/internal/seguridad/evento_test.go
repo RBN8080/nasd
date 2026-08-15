@@ -17,7 +17,12 @@ func TestClasificarRed(t *testing.T) {
 		{"otro equipo de la LAN", "192.168.1.18", RedLocal},
 		{"túnel WireGuard", "10.77.0.3", RedTunel},
 		{"nodo del túnel", "10.77.0.1", RedTunel},
-		{"bucle local", "127.0.0.1", RedLocal},
+		// El propio nodo, SEPARADO de la LAN: son los verificadores y los curl
+		// del despliegue. En la primera captura del panel en producción, ::1 y
+		// 192.168.1.38 —la misma máquina— salían como dos orígenes vecinos del
+		// PC de casa, sin nada que lo explicara.
+		{"bucle local IPv4", "127.0.0.1", RedNodo},
+		{"bucle local IPv6", "::1", RedNodo},
 		{"Internet", "203.0.113.7", RedInternet},
 
 		// EL CASO QUE IMPORTA, y no es una rareza sino el camino NORMAL:
