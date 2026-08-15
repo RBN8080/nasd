@@ -48,9 +48,17 @@
 <h2>Resumen</h2>
 <table class="datos">
   <tbody>
+    <!-- «Desde Internet» VA PRIMERO, y es la única fila con veredicto. El
+         responsable declaró que lo que le importa es detectar intentos
+         externos, y en la primera versión esa cifra era la tercera de cinco,
+         indistinguible del resto — con todo lo demás siendo su propio PC. Lo
+         que importa va arriba y se lee sin saber de redes. -->
+    <tr{{if .Resumen.DesdeFuera}} class="g-aviso"{{end}}>
+      <td class="rotulo">Direcciones desde Internet</td>
+      <td class="num">{{if .Resumen.DesdeFuera}}{{.Resumen.DesdeFuera}}{{else}}ninguna{{end}}</td>
+    </tr>
     <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
     <tr><td class="rotulo">Direcciones distintas</td><td class="num">{{.Resumen.IPsUnicas}}</td></tr>
-    <tr><td class="rotulo">Direcciones desde Internet</td><td class="num">{{.Resumen.DesdeFuera}}</td></tr>
     <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
     <!-- «con alguna señal» y NO «ataques»: son sospechas derivadas, y el
          rótulo tiene que decirlo o la cifra se lee como un recuento de

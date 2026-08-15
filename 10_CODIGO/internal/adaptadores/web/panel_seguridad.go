@@ -186,7 +186,11 @@ func opcionesDeGravedad(elegido string) []opcionFiltro {
 
 func opcionesDeRed(elegido string) []opcionFiltro {
 	out := []opcionFiltro{{Valor: "", Etiqueta: "Cualquier origen", Elegido: elegido == ""}}
-	for _, red := range []seguridad.Red{seguridad.RedLocal, seguridad.RedTunel, seguridad.RedInternet} {
+	// Internet PRIMERO en el desplegable, por lo mismo que va primero en el
+	// resumen: es el filtro que el responsable va a querer casi siempre.
+	for _, red := range []seguridad.Red{
+		seguridad.RedInternet, seguridad.RedTunel, seguridad.RedLocal, seguridad.RedNodo,
+	} {
 		out = append(out, opcionFiltro{
 			Valor: red.String(), Etiqueta: red.Etiqueta(), Elegido: elegido == red.String(),
 		})
@@ -204,7 +208,9 @@ func gravedadDesde(s string) (seguridad.Gravedad, bool) {
 }
 
 func redDesde(s string) (seguridad.Red, bool) {
-	for _, red := range []seguridad.Red{seguridad.RedLocal, seguridad.RedTunel, seguridad.RedInternet} {
+	for _, red := range []seguridad.Red{
+		seguridad.RedInternet, seguridad.RedTunel, seguridad.RedLocal, seguridad.RedNodo,
+	} {
 		if red.String() == s {
 			return red, true
 		}

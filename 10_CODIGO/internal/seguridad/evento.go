@@ -67,6 +67,16 @@ type Red uint8
 
 const (
 	RedDesconocida Red = iota
+	// RedNodo es el propio nodo hablando consigo mismo (127.0.0.1, ::1).
+	//
+	// SE SEPARA DE RedLocal Y NO ES UN CAPRICHO: son los verificadores, las
+	// comprobaciones de despliegue y cualquier curl ejecutado por SSH. Es
+	// decir, casi siempre el responsable o un agente probando algo. Mezclarlo
+	// con «Red local» hizo que en la primera captura del panel el nodo
+	// apareciera junto al PC de casa como si fueran vecinos, y que ::1 y
+	// 192.168.1.38 —la MISMA máquina— salieran como dos orígenes distintos
+	// sin nada que lo explicara.
+	RedNodo
 	// RedLocal es la LAN doméstica: 192.168.1.0/24 (ADR-0018).
 	RedLocal
 	// RedTunel es WireGuard: 10.77.0.0/24 (06_ACCESO_REMOTO §3). Un rechazo
@@ -80,6 +90,8 @@ const (
 
 func (r Red) String() string {
 	switch r {
+	case RedNodo:
+		return "nodo"
 	case RedLocal:
 		return "lan"
 	case RedTunel:
@@ -95,6 +107,8 @@ func (r Red) String() string {
 // pinta y no pueden divergir.
 func (r Red) Etiqueta() string {
 	switch r {
+	case RedNodo:
+		return "El propio nodo"
 	case RedLocal:
 		return "Red local"
 	case RedTunel:
@@ -135,10 +149,19 @@ func ClasificarRed(ip netip.Addr) Red {
 	case prefijoTunel.Contains(ip):
 		return RedTunel
 	case ip.IsLoopback():
-		return RedLocal
+		return RedNodo
 	}
 	return RedInternet
 }
+
+// DeFuera responde de una vez la ÚNICA pregunta que el responsable declaró
+// importante: «¿esto viene de Internet?».
+//
+// Existe como método y no como comparación suelta porque hay ya cuatro sitios
+// que la hacen —el resumen, las señales, el filtro y la plantilla— y una
+// comparación repetida cuatro veces es una que alguien acaba escribiendo al
+// revés. Aquí solo puede estar bien o mal una vez.
+func (r Red) DeFuera() bool { return r == RedInternet }
 
 // Motivo es la regla que produjo el rechazo. Es un HECHO del servidor: cada
 // valor corresponde a un punto concreto del código que decidió negar.

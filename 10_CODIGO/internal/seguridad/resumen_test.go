@@ -273,3 +273,55 @@ func TestNingunaSenalAfirmaUnAtaque(t *testing.T) {
 		}
 	}
 }
+
+// LAS SEÑALES NO SE DISPARAN DESDE CASA, y esta prueba existe por un defecto
+// visto en la PRIMERA captura del panel en producción: «Sondeo de software que
+// aquí no existe» saltó sobre el propio nodo, porque la verificación del
+// despliegue había probado /wp-login.php con curl. Una alarma roja sobre uno
+// mismo, en la primera pantalla que vio el responsable.
+//
+// Desde la LAN, el túnel o el propio nodo, quien pide ya tiene la casa o la
+// clave. Una sospecha de intrusión desde ahí no informa y gasta la
+// credibilidad de las que sí importan.
+func TestLasSenalesSoloSeDisparanDesdeInternet(t *testing.T) {
+	base := time.Now()
+	// El mismo comportamiento —claramente de sondeo— desde cada red.
+	porRed := map[string]string{
+		"nodo":  "127.0.0.1",
+		"lan":   "192.168.1.18",
+		"tunel": "10.77.0.3",
+	}
+	for nombre, ip := range porRed {
+		t.Run("desde "+nombre, func(t *testing.T) {
+			var eventos []Evento
+			for i := range umbralExploracion + 5 {
+				eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Second),
+					ip, RutaInexistente, "/wp-login-"+strconv.Itoa(i)+".php"))
+			}
+			for i := range umbralFuerzaBruta + 3 {
+				eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Minute),
+					ip, CredencialIncorrecta, "/acceso"))
+			}
+			o := PorOrigen(eventos)
+			if len(o[0].Senales) != 0 {
+				t.Fatalf("desde %s (%s) se levantó la señal %q",
+					nombre, ip, o[0].Senales[0].Etiqueta())
+			}
+			// Pero los HECHOS se siguen registrando igual: lo que no se emite
+			// es la interpretación, no el dato.
+			if o[0].PorMotivo[CredencialIncorrecta] != umbralFuerzaBruta+3 {
+				t.Errorf("los hechos desde %s no se registraron completos", nombre)
+			}
+		})
+	}
+
+	// Y desde Internet, el MISMO comportamiento sí se marca.
+	var deFuera []Evento
+	for i := range umbralExploracion + 5 {
+		deFuera = append(deFuera, ev(base.Add(time.Duration(i)*time.Second),
+			"203.0.113.7", RutaInexistente, "/wp-login-"+strconv.Itoa(i)+".php"))
+	}
+	if len(PorOrigen(deFuera)[0].Senales) == 0 {
+		t.Fatal("desde Internet el mismo sondeo NO levantó ninguna señal")
+	}
+}
