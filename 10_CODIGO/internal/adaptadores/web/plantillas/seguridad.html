@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NAS — Seguridad</title>
+<link rel="icon" href="/estatico/icono.svg">
+<link rel="apple-touch-icon" href="/estatico/icono.svg">
 <link rel="stylesheet" href="/estatico/estilo.css">
 </head>
 <body>
@@ -115,15 +117,42 @@
 </form>
 
 <h2>Orígenes</h2>
+{{if .HayGeo}}
+<!-- La base se refresca una vez al mes, así que puede ir por detrás de la
+     realidad. Decirlo es lo que la hace honesta: mismo criterio que la fecha
+     de medición del uso de disco en /administracion.
+
+     CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de
+     tratar el HTML, así que una llave doble escrita aquí dentro NO es texto
+     — se ejecuta. Este mismo comentario citaba la función «fecha» entre
+     llaves para explicar el criterio y rompió la plantilla entera: el panel
+     devolvía 200 con la página cortada a la mitad, porque la cabecera ya se
+     había enviado cuando falló el render. -->
+<p class="nota">Operador y país según la base preparada el {{fecha .FechaGeo}}.</p>
+{{end}}
 <table class="datos tabla-origenes">
   <thead>
-    <tr><th>Dirección</th><th>Procedencia</th><th>Rechazos</th><th>Rutas</th><th>Primera</th><th>Última</th><th>Motivos</th></tr>
+    <tr><th>Dirección</th><th>Procedencia</th>{{if $.HayGeo}}<th>Operador</th>{{end}}<th>Rechazos</th><th>Rutas</th><th>Primera</th><th>Última</th><th>Motivos</th></tr>
   </thead>
   <tbody>
   {{range .Origenes}}
     <tr{{if .Destacar}} class="g-{{.Gravedad}}"{{end}}>
       <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
       <td>{{.Red.Etiqueta}}</td>
+      <!-- LA COLUMNA QUE HACE INTERPRETABLE LA FILA. «203.0.113.7» no le dice
+           nada a nadie; «DIGITALOCEAN-ASN · DE» sí. Solo aparece si la base
+           está instalada: una columna vacía se leería como «no se sabe de
+           nadie» cuando en realidad sería «no se ha instalado la base».
+           Los de casa no se resuelven a propósito —una IP privada no tiene
+           operador— y se dice, en vez de dejar el hueco. -->
+      {{if $.HayGeo}}
+      <td class="operador">
+        {{- if .TieneGeo}}<strong>{{.Geo.Nombre}}</strong>{{if .Geo.Pais}} · {{.Geo.Pais}}{{end}}
+          <span class="asn">AS{{.Geo.ASN}}</span>
+        {{- else if .Red.DeFuera}}<em>operador desconocido</em>
+        {{- else}}<span class="suave">—</span>{{end}}
+      </td>
+      {{end}}
       <td class="num">{{.Eventos}}</td>
       <td class="num">{{.RutasDistintas}}</td>
       <td class="num">{{fecha .Primera}}</td>
@@ -144,7 +173,7 @@
       </td>
     </tr>
   {{else}}
-    <tr><td colspan="7">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+    <tr><td colspan="{{if .HayGeo}}8{{else}}7{{end}}">Ningún rechazo en esta ventana con estos filtros.</td></tr>
   {{end}}
   </tbody>
 </table>

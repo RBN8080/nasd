@@ -18,6 +18,7 @@ import (
 
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/geoip"
 	"nasd/internal/metricas"
 	"nasd/internal/seguridad"
 )
@@ -74,6 +75,9 @@ type Servidor struct {
 	// contador único de contadores.cliente no podía dar. Acotado por
 	// construcción: es un anillo, no puede crecer.
 	seguridad *seguridad.Anillo
+	// geo resuelve un origen de Internet a su país y su operador. PUEDE SER
+	// NULA: sin base instalada el panel funciona igual, solo que sin ese dato.
+	geo *geoip.BaseDatos
 	// muestreador alimenta el flujo en vivo de /estado (ADR-0051). Solo mide
 	// mientras haya alguien mirando: sin espectadores no cuesta nada.
 	muestreador *muestreador[marcoVivo]
@@ -135,6 +139,15 @@ type Opciones struct {
 	// diría «no ha pasado nada» — una degradación silenciosa, y encima en la
 	// pieza cuyo único trabajo es no callarse.
 	Seguridad *seguridad.Anillo
+	// GeoIP resuelve un origen de Internet a su país y su operador.
+	//
+	// ES LA ÚNICA DEPENDENCIA OPCIONAL DE TODA ESTA ESTRUCTURA, y a propósito:
+	// un nodo al que todavía no se le ha instalado la base funciona
+	// exactamente igual, solo que el panel no dice de dónde viene cada
+	// origen. Nula es un valor válido —geoip.BaseDatos admite receptor nulo—
+	// y por eso Nuevo NO la exige, al revés que Usuarios, Metricas o
+	// Seguridad, cuya ausencia sí rompería algo en silencio.
+	GeoIP *geoip.BaseDatos
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -200,6 +213,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		volumen:           o.Volumen,
 		metricas:          o.Metricas,
 		seguridad:         o.Seguridad,
+		geo:               o.GeoIP,
 	}
 	s.muestreador = nuevoMuestreador(s.abrirLectorVivo)
 	s.cuentas = nuevoMuestreador(s.abrirLectorCuentas)

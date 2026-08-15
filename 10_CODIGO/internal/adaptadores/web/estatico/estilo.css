@@ -1273,3 +1273,17 @@ tr.g-atencion .rotulo {
 .senal > summary::before {
   content: "? ";
 }
+
+/* ——— Columna de operador del panel de seguridad ———
+   El nombre del operador es lo que hace interpretable una direccion, asi que
+   manda; el numero de AS va debajo y en pequeno porque es el identificador
+   estable -util para buscarlo fuera- pero no lo que se lee de un vistazo. */
+.tabla-origenes .operador .asn {
+  display: block;
+  font-size: var(--t-menor);
+  color: var(--suave);
+}
+
+.tabla-origenes .operador .suave {
+  color: var(--suave);
+}
