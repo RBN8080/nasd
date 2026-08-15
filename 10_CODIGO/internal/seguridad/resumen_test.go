@@ -1,0 +1,275 @@
+package seguridad
+
+import (
+	"net/netip"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func ev(t time.Time, ip string, m Motivo, ruta string) Evento {
+	e := Evento{
+		Momento: t,
+		Origen:  netip.MustParseAddr(ip),
+		Metodo:  "GET",
+		Ruta:    ruta,
+		Estado:  401,
+		Motivo:  m,
+	}
+	e.Red = ClasificarRed(e.Origen)
+	return e
+}
+
+// LA PRUEBA MÁS IMPORTANTE DE ESTE ARCHIVO, y existe por una instrucción
+// explícita del responsable: «no clasifiques automáticamente todo rechazo
+// como ataque».
+//
+// El caso que la motiva es real y frecuente: un móvil que reconecta y pide
+// varias veces la misma página sin cookie produce un puñado de 401. Si eso
+// disparara una señal, el panel gritaría todos los días y en un mes nadie lo
+// miraría — que es el modo de fallo que 00_RECTOR.md §12.5 lleva persiguiendo
+// en los verificadores de este proyecto.
+func TestElUsoNormalNoLevantaNingunaSenal(t *testing.T) {
+	base := time.Now()
+	var eventos []Evento
+	// El iPhone del responsable, por el túnel, sin cookie tras un rato.
+	for i := range 30 {
+		eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Second),
+			"10.77.0.3", SinSesion, "/"))
+	}
+	// Y alguien de casa que falla la contraseña un par de veces.
+	for i := range 2 {
+		eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Minute),
+			"192.168.1.18", CredencialIncorrecta, "/acceso"))
+	}
+
+	for _, o := range PorOrigen(eventos) {
+		if len(o.Senales) != 0 {
+			t.Fatalf("el uso normal de %v levantó la señal %q",
+				o.IP, o.Senales[0].Etiqueta())
+		}
+	}
+}
+
+// Y al revés: un escáner de verdad sí se marca. Sin esta mitad, la anterior
+// se cumpliría no señalando nunca nada.
+func TestUnEscanerDeVerdadSiSeMarca(t *testing.T) {
+	base := time.Now()
+	var eventos []Evento
+	for i := range umbralExploracion + 2 {
+		eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Second),
+			"203.0.113.7", RutaInexistente, "/ruta-inventada-"+strconv.Itoa(i)))
+	}
+
+	o := PorOrigen(eventos)
+	if len(o) != 1 {
+		t.Fatalf("se esperaba un solo origen, hay %d", len(o))
+	}
+	if !slices.Contains(o[0].Senales, SenalExploracion) {
+		t.Fatalf("un escáner con %d rutas distintas no levantó la señal", o[0].RutasDistintas)
+	}
+}
+
+// Muchas peticiones a LA MISMA ruta inexistente no son exploración: eso es un
+// cliente atascado reintentando, no un diccionario. La señal cuenta rutas
+// DISTINTAS, y esta prueba fija esa diferencia.
+func TestReintentarLaMismaRutaNoEsExploracion(t *testing.T) {
+	base := time.Now()
+	var eventos []Evento
+	for i := range 200 {
+		eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Second),
+			"203.0.113.7", RutaInexistente, "/favicon.ico"))
+	}
+	o := PorOrigen(eventos)
+	if slices.Contains(o[0].Senales, SenalExploracion) {
+		t.Fatal("200 peticiones a UNA sola ruta se marcaron como exploración")
+	}
+}
+
+// El umbral de fuerza bruta es el MISMO que el del limitador que de verdad
+// bloquea (maxIntentosFallidos = 5 en web/sesion.go). Si divergieran, el
+// panel avisaría antes o después de lo que el servidor hace, y habría que
+// explicar cuál de las dos cifras manda.
+func TestElUmbralDeFuerzaBrutaCoincideConElLimitadorReal(t *testing.T) {
+	if umbralFuerzaBruta != 5 {
+		t.Fatalf("umbralFuerzaBruta = %d y el limitador de web/sesion.go bloquea a los 5",
+			umbralFuerzaBruta)
+	}
+	base := time.Now()
+	var eventos []Evento
+	for i := range umbralFuerzaBruta {
+		eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Second),
+			"203.0.113.7", CredencialIncorrecta, "/acceso"))
+	}
+	if !slices.Contains(PorOrigen(eventos)[0].Senales, SenalFuerzaBruta) {
+		t.Fatal("al alcanzar el umbral del limitador la señal no aparece")
+	}
+}
+
+// El sondeo de software ajeno se decide por lo que este NAS ES, no por una
+// lista de sondas conocidas que caducaría sola.
+func TestSoftwareAjenoSeDecidePorLoQueElNodoNoEjecuta(t *testing.T) {
+	ajenas := []string{
+		"/wp-login.php", "/index.PHP", "/admin.asp", "/shell.jsp",
+		"/cgi-bin/test.cgi", "/copia.sql", "/.env", "/.git/config",
+		"/algo/.ssh/id_rsa", "/wp-admin/install.php",
+	}
+	for _, r := range ajenas {
+		if !rutaDeSoftwareAjeno(r) {
+			t.Errorf("%q debería marcarse: este NAS no ejecuta nada de eso", r)
+		}
+	}
+
+	// Y LO QUE NO PUEDE MARCARSE, que es la mitad que evita el falso
+	// positivo: son nombres de archivo perfectamente legítimos en un NAS
+	// doméstico, y marcarlos convertiría subir un PDF en una alarma.
+	propias := []string{
+		"/", "/ver/fotos", "/descargar/informe.pdf", "/abrir/musica.mp3",
+		"/estado", "/administracion", "/estatico/estilo.css",
+		"/ver/proyectos/entorno-de-pruebas", // contiene «entorno», no «.env»
+		"/descargar/git-guia.pdf",           // contiene «git», no «/.git»
+	}
+	for _, r := range propias {
+		if rutaDeSoftwareAjeno(r) {
+			t.Errorf("%q se marcó como software ajeno y es una ruta legítima del NAS", r)
+		}
+	}
+}
+
+// La gravedad de un origen es la MAYOR de sus eventos, no la media: un origen
+// con 200 rechazos de rutina y uno de atención tiene que salir arriba.
+func TestLaGravedadDeUnOrigenEsLaMayorDeSusEventos(t *testing.T) {
+	base := time.Now()
+	var eventos []Evento
+	for i := range 200 {
+		eventos = append(eventos, ev(base.Add(time.Duration(i)*time.Second),
+			"203.0.113.7", SinSesion, "/"))
+	}
+	eventos = append(eventos, ev(base, "203.0.113.7", TestigoCSRF, "/borrar"))
+
+	if got := PorOrigen(eventos)[0].Gravedad; got != Atencion {
+		t.Fatalf("gravedad = %q; un solo evento de atención entre 200 de rutina debe mandar", got)
+	}
+}
+
+// El orden tiene que ser determinista: sin un tercer criterio de desempate,
+// dos orígenes iguales salen en el orden aleatorio del recorrido del mapa y
+// la tabla baila entre recargas sin que nada haya cambiado.
+func TestElOrdenNoBailaEntreRecargas(t *testing.T) {
+	base := time.Now()
+	eventos := []Evento{
+		ev(base, "203.0.113.7", SinSesion, "/"),
+		ev(base, "203.0.113.8", SinSesion, "/"),
+		ev(base, "203.0.113.9", SinSesion, "/"),
+	}
+	primero := PorOrigen(eventos)
+	for range 20 {
+		otro := PorOrigen(eventos)
+		for i := range primero {
+			if primero[i].IP != otro[i].IP {
+				t.Fatalf("el orden cambió entre dos agrupaciones idénticas: %v vs %v",
+					primero[i].IP, otro[i].IP)
+			}
+		}
+	}
+}
+
+func TestFiltrosAcotanLoQueSeMira(t *testing.T) {
+	base := time.Now()
+	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a.Anotar(ev(base, "203.0.113.7", RutaInexistente, "/wp-login.php"))
+	a.Anotar(ev(base, "10.77.0.3", SinSesion, "/"))
+	a.Anotar(ev(base, "192.168.1.18", CredencialIncorrecta, "/acceso"))
+
+	motivo := SinSesion
+	casos := []struct {
+		nombre string
+		f      Filtro
+		quiero int
+	}{
+		{"sin filtro", Filtro{}, 3},
+		{"por IP exacta", Filtro{IP: "10.77.0.3"}, 1},
+		{"por prefijo de red", Filtro{IP: "203.0.113"}, 1},
+		{"por ruta", Filtro{Ruta: "acceso"}, 1},
+		{"por ruta sin distinguir mayúsculas", Filtro{Ruta: "WP-LOGIN"}, 1},
+		{"por motivo", Filtro{Motivo: &motivo}, 1},
+		{"por red", Filtro{Red: ptr(RedInternet)}, 1},
+		{"por gravedad", Filtro{Gravedad: ptr(Atencion)}, 0},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			if got := len(a.Filtrados(c.f)); got != c.quiero {
+				t.Fatalf("%d eventos, se esperaban %d", got, c.quiero)
+			}
+		})
+	}
+}
+
+// Filtrar por Rutina tiene que poder distinguirse de «no filtrar», y por eso
+// el campo es un puntero: Rutina es el valor cero de Gravedad.
+func TestFiltrarPorRutinaNoEsLoMismoQueNoFiltrar(t *testing.T) {
+	base := time.Now()
+	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a.Anotar(ev(base, "203.0.113.7", SinSesion, "/"))         // rutina
+	a.Anotar(ev(base, "203.0.113.7", TestigoCSRF, "/borrar")) // atención
+
+	if got := len(a.Filtrados(Filtro{Gravedad: ptr(Rutina)})); got != 1 {
+		t.Fatalf("filtrando por rutina salen %d eventos, se esperaba 1", got)
+	}
+	if got := len(a.Filtrados(Filtro{})); got != 2 {
+		t.Fatalf("sin filtrar salen %d eventos, se esperaban 2", got)
+	}
+}
+
+// El resumen no puede dejar creer que el anillo es toda la historia.
+func TestElResumenDiceCuantoNoEstaMostrando(t *testing.T) {
+	a := &Anillo{buf: make([]Evento, Capacidad)}
+	base := time.Now()
+	for i := range Capacidad + 500 {
+		a.Anotar(ev(base.Add(time.Duration(i)*time.Millisecond), "203.0.113.7", SinSesion, "/"))
+	}
+	eventos := a.Filtrados(Filtro{})
+	r := Resumir(eventos, PorOrigen(eventos), 24*time.Hour, a.Total())
+
+	if r.Eventos != Capacidad {
+		t.Fatalf("el resumen muestra %d eventos y el anillo guarda %d", r.Eventos, Capacidad)
+	}
+	if r.TotalHistorico != int64(Capacidad+500) {
+		t.Fatalf("total histórico = %d, se esperaban %d", r.TotalHistorico, Capacidad+500)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// NINGUNA SEÑAL PUEDE AFIRMAR UN ATAQUE, ni en su etiqueta ni en su
+// explicación. Es la instrucción del responsable convertida en invariante
+// comprobable, y vive aquí —sobre los textos del dominio— y no sobre el HTML
+// del panel, porque el aviso de cabecera de esa página SÍ usa la palabra, y
+// legítimamente: dice «esto registra rechazos, no ataques».
+//
+// Lo que se prohíbe es AFIRMARLO de un origen concreto.
+func TestNingunaSenalAfirmaUnAtaque(t *testing.T) {
+	senales := []Senal{SenalExploracion, SenalFuerzaBruta, SenalSoftwareAjeno}
+	for _, s := range senales {
+		texto := strings.ToLower(s.Etiqueta() + " " + s.Explicacion())
+		for _, prohibido := range []string{"ataque", "atacante", "intrusión", "intruso", "malicioso"} {
+			if strings.Contains(texto, prohibido) {
+				t.Errorf("la señal %q usa %q, y solo es una sospecha derivada",
+					s.Etiqueta(), prohibido)
+			}
+		}
+		// Y la otra mitad, que es la que la hace honesta: toda señal dice con
+		// qué se puede confundir. Una sospecha sin su falso positivo escrito
+		// al lado se lee como un veredicto.
+		if s.Explicacion() == "" {
+			t.Errorf("la señal %q no explica en qué se basa", s.Etiqueta())
+		}
+		if !strings.Contains(s.Explicacion(), "También lo produce") &&
+			!strings.Contains(s.Explicacion(), "no hay nada que comprometer") {
+			t.Errorf("la señal %q no dice con qué se puede confundir ni acota su alcance",
+				s.Etiqueta())
+		}
+	}
+}

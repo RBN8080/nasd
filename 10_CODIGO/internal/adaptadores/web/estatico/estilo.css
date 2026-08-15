@@ -1156,3 +1156,101 @@ a.orden-activo {
   font-weight: 700;
   text-decoration: underline;
 }
+
+/* ——— Panel de seguridad ———
+   TRES TABLAS ANCHAS EN UNA PAGINA QUE SE MIRA DESDE EL MOVIL. La regla base
+   «.datos { table-layout: fixed }» reparte con «.rotulo { width: 34% }», que
+   en una tabla de dos columnas es correcto y en una de siete deja las otras
+   seis apretadas contra el borde. Por eso estas dos tablas fijan su propio
+   reparto en lugar de heredarlo: es la misma leccion del descuadre del
+   05/08/2026 —el reparto se decide donde esta el problema, no por casualidad.
+
+   «main» ya tiene overflow-x auto, asi que las tres comparten UNA barra de
+   desplazamiento y no hay que anadir contenedores propios. */
+.tabla-origenes .rotulo,
+.tabla-cronologia .rotulo {
+  width: auto;
+}
+
+.tabla-cronologia .ruta,
+.tabla-cronologia .agente {
+  overflow-wrap: anywhere;
+}
+
+/* El agente ocupa lo que sobre y se lee en pequeno: identifica al cliente,
+   no es el dato principal de la fila. */
+.tabla-cronologia .agente {
+  font-size: var(--t-menor);
+  color: var(--suave);
+}
+
+/* Las filas NO se tinen de fondo, igual que en /estado (ver el comentario de
+   tr.v-atencion mas arriba): solo se marca el rotulo. Un fondo de color por
+   fila en una tabla de 200 filas convierte la pagina en un semaforo ilegible,
+   y ademas el color solo no lo lee quien no distingue esos colores — por eso
+   el motivo va SIEMPRE escrito con palabras en su propia columna. */
+tr.g-aviso .rotulo {
+  font-weight: 600;
+  color: var(--aviso-color);
+}
+
+tr.g-atencion .rotulo {
+  font-weight: 600;
+  color: var(--fallo-color);
+}
+
+/* ——— Filtros ———
+   Rejilla que se pliega sola: en el movil cae a una columna sin consulta de
+   medios, porque auto-fit + minmax ya hace ese trabajo. */
+.filtros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  align-items: end;
+  margin: 0.5rem 0;
+}
+
+.filtros label {
+  display: block;
+  font-size: var(--t-rotulo);
+  color: var(--suave);
+  margin-bottom: 0.15rem;
+}
+
+/* Los campos se dejan NATIVOS —sin fondo, borde ni radio propios— por la
+   regla de la v1.39.0: en WebKit basta cualquiera de los tres para apagar el
+   aspecto nativo del control y devolver un rectangulo gris. Solo se les da
+   ancho, que es lo unico que la rejilla necesita. */
+.filtros select,
+.filtros input {
+  width: 100%;
+  font: inherit;
+}
+
+.acciones-filtro {
+  display: flex;
+  gap: 0.5rem;
+  align-items: end;
+  margin: 0.35rem 0 0;
+}
+
+/* ——— Senales ———
+   Son INFERENCIAS, no hechos, y se pintan distinto de las pastillas de motivo
+   a proposito: una pastilla dice lo que paso, esto dice lo que alguien
+   sospecha. El <details> guarda dentro con que se puede confundir, que es lo
+   que impide que la sospecha se lea como un veredicto. */
+.senal {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: var(--t-menor);
+}
+
+.senal > summary {
+  cursor: pointer;
+  color: var(--aviso-color);
+  font-weight: 600;
+}
+
+.senal > summary::before {
+  content: "? ";
+}

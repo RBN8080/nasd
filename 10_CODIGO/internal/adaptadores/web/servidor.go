@@ -19,6 +19,7 @@ import (
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 	"nasd/internal/metricas"
+	"nasd/internal/seguridad"
 )
 
 //go:embed plantillas/*.html estatico/*
@@ -69,6 +70,10 @@ type Servidor struct {
 
 	// Observabilidad — Fase 4, charter §8.
 	contadores *contadores
+	// seguridad guarda los rechazos con su motivo — el detalle que el
+	// contador único de contadores.cliente no podía dar. Acotado por
+	// construcción: es un anillo, no puede crecer.
+	seguridad *seguridad.Anillo
 	// muestreador alimenta el flujo en vivo de /estado (ADR-0051). Solo mide
 	// mientras haya alguien mirando: sin espectadores no cuesta nada.
 	muestreador *muestreador[marcoVivo]
@@ -124,6 +129,12 @@ type Opciones struct {
 	// por la misma razón que Usuarios: sin él, /administracion no tendría
 	// dónde leer ni dónde publicar lo que mida.
 	Metricas *metricas.Registro
+	// Seguridad es el historial de rechazos. Obligatorio por el mismo
+	// criterio que las anteriores (P5): si faltara, el servidor arrancaría
+	// entero y sin ruido, y el defecto solo aparecería al abrir un panel que
+	// diría «no ha pasado nada» — una degradación silenciosa, y encima en la
+	// pieza cuyo único trabajo es no callarse.
+	Seguridad *seguridad.Anillo
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -160,6 +171,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.Metricas == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta Metricas (P-4, etapa 3)")
 	}
+	if o.Seguridad == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Seguridad (panel de seguridad, etapa 1)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -185,6 +199,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		veredictosPrevios: make(map[string]veredicto),
 		volumen:           o.Volumen,
 		metricas:          o.Metricas,
+		seguridad:         o.Seguridad,
 	}
 	s.muestreador = nuevoMuestreador(s.abrirLectorVivo)
 	s.cuentas = nuevoMuestreador(s.abrirLectorCuentas)
@@ -282,6 +297,16 @@ func (s *Servidor) Rutas() http.Handler {
 	// cierra (D-21).
 	protegido.HandleFunc("GET /administracion/flujo", s.soloSuperusuario(s.flujoDeCuentas))
 
+	// Panel de seguridad — etapa 2. MISMA envoltura que /estado y
+	// /administracion, y aquí el motivo es aún más fuerte: publica las
+	// direcciones de origen de todo el que ha tocado el nodo.
+	//
+	// UNA SOLA RUTA Y NINGÚN FLUJO, al contrario que las dos anteriores: no
+	// hay nada que cerrar «por la puerta de al lado» (D-21) porque no existe
+	// una segunda vía que publique lo mismo. Si algún día se le añade flujo,
+	// entra aquí envuelto igual y el mismo día.
+	protegido.HandleFunc("GET /seguridad", s.soloSuperusuario(s.verSeguridad))
+
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))
 	protegido.HandleFunc("HEAD /subidas/{id}", s.conAlmacen(s.tusEstado))
@@ -362,6 +387,7 @@ func (s *Servidor) conRegistro(siguiente http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inicio := time.Now()
 		cap := &capturaDeEstado{ResponseWriter: w, estado: http.StatusOK}
+		r, marcador := conMarcador(r)
 		siguiente.ServeHTTP(cap, r)
 		duracion := time.Since(inicio)
 
@@ -371,12 +397,31 @@ func (s *Servidor) conRegistro(siguiente http.Handler) http.Handler {
 		s.contadores.anotarRespuesta(cap.estado, cap.bytes, duracion,
 			clasificar(r.Method, r.URL.Path))
 
+		// Y el historial de seguridad, por ese MISMO motivo y en ese mismo
+		// sitio: un rechazo futuro que nadie clasifique aparecerá igualmente,
+		// como «desconocido», en vez de desaparecer.
+		//
+		// El corte es «>= 400» y no una lista de rutas o de motivos, para que
+		// coincida exactamente con lo que el contador de contadores.cliente
+		// lleva contando desde la Fase 4: este historial explica ESE número,
+		// y si contaran cosas distintas el panel se contradiría con /estado.
+		if cap.estado >= 400 {
+			s.anotarRechazo(r, marcador, cap.estado, inicio)
+		}
+
+		// «origen» faltaba, y era el agujero: de todos los 4xx del nodo no
+		// quedaba constancia de QUIÉN los pedía en ningún sitio —solo el
+		// acceso fallido, el cierre de sesión y las acciones del panel lo
+		// anotaban—. Sin eso, ninguna clasificación posterior es
+		// reconstruible a partir del diario, que por ADR-0037 es la fuente
+		// persistente de la verdad.
 		s.reg.Info("peticion",
 			"metodo", r.Method,
 			"ruta", r.URL.Path,
 			"estado", cap.estado,
 			"bytes", cap.bytes,
 			"ms", duracion.Milliseconds(),
+			"origen", origenDe(r),
 		)
 	})
 }

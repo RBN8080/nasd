@@ -11,6 +11,7 @@ import (
 
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/seguridad"
 )
 
 // Autenticación de la web — RF-15, D-14 / ADR-0021.
@@ -152,10 +153,14 @@ func origenDe(r *http.Request) string {
 // se responde 401 — no una redirección 303, que sería más cómoda pero
 // incumpliría el criterio— y el CUERPO del 401 lleva el formulario, así que
 // el navegador muestra algo usable sin falsear el código de estado.
-func (s *Servidor) exigirSesion(siguiente http.Handler) http.Handler {
+// El parámetro es el mux INTERNO y no un http.Handler cualquiera, y esa es
+// la única razón por la que se puede distinguir un sondeo de una visita:
+// preguntándole si la ruta existe ANTES de negar. Ver clasificarNegativa.
+func (s *Servidor) exigirSesion(protegido *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(nombreCookie)
 		if err != nil {
+			marcarRechazo(r, s.clasificarNegativa(protegido, r, seguridad.SinSesion))
 			s.pedirAcceso(w, r, "")
 			return
 		}
@@ -165,6 +170,11 @@ func (s *Servidor) exigirSesion(siguiente http.Handler) http.Handler {
 		// vez aparece una, lo que NO puede hacer es acabar mirando la carpeta
 		// del superusuario por descarte (ADR-0055).
 		if !vigente || usuario == "" {
+			// Traía cookie: es alguien que ESTUVO dentro y se le acabó el
+			// plazo (ADR-0059), no un desconocido. Los dos casos responden
+			// igual —401 con el formulario— pero significan cosas opuestas, y
+			// el panel los tiene que poder separar.
+			marcarRechazo(r, s.clasificarNegativa(protegido, r, seguridad.SesionCaducada))
 			s.pedirAcceso(w, r, "")
 			return
 		}
@@ -174,9 +184,35 @@ func (s *Servidor) exigirSesion(siguiente http.Handler) http.Handler {
 		// desde dentro (ver plazos.go); este defer es el suelo que cubre
 		// todo lo demás: listar, navegar, borrar, administrar.
 		defer s.sesiones.Tocar(c.Value)
-		siguiente.ServeHTTP(w, r.WithContext(
+		protegido.ServeHTTP(w, r.WithContext(
 			context.WithValue(r.Context(), claveUsuario, usuario)))
 	})
+}
+
+// clasificarNegativa distingue «no tiene sesión» de «esa ruta no existe».
+//
+// # POR QUÉ HACE FALTA, Y POR QUÉ NO SE PODÍA ANTES
+//
+// En Rutas(), «/» es el comodín y va envuelto en esta misma guarda. Eso
+// significa que una petición a /wp-login.php sin sesión NUNCA llega al mux
+// interno: se corta aquí y sale con el MISMO 401 que la primera visita del
+// día del responsable. Un sondeo de Internet y un uso normal producían el
+// mismo suceso, indistinguible, y ambos eran la mayor parte del contador de
+// «rechazadas» de /estado.
+//
+// Se le pregunta al mux interno si la ruta existe. No se ejecuta nada suyo:
+// Handler() solo resuelve el patrón, y un patrón vacío significa que no hay
+// ninguna ruta que la atienda.
+//
+// LO QUE SIGUE SIN CAMBIAR, y es deliberado: la RESPUESTA es la misma en los
+// dos casos —401 con el formulario—, nunca un 404. Decirle a quien sondea
+// cuáles de sus rutas existen sería enumerarle el servidor gratis. Lo que
+// cambia es lo que se APUNTA, no lo que se contesta.
+func (s *Servidor) clasificarNegativa(protegido *http.ServeMux, r *http.Request, siNoExistiera seguridad.Motivo) seguridad.Motivo {
+	if _, patron := protegido.Handler(r); patron == "" {
+		return seguridad.RutaInexistente
+	}
+	return siNoExistiera
 }
 
 // claveUsuario nombra al usuario dentro del contexto de la petición. Es de un
@@ -313,11 +349,13 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 	if ok, espera := s.limitador.permitido(origen); !ok {
 		s.reg.Warn("acceso bloqueado por intentos repetidos",
 			"origen", origen, "espera_s", int(espera.Seconds()))
+		marcarRechazo(r, seguridad.LimiteDeIntentos)
 		w.Header().Set("Retry-After", "300")
 		s.pedirAcceso(w, r, "Demasiados intentos fallidos. Espere unos minutos.")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
+		marcarRechazo(r, seguridad.PeticionMalformada)
 		s.pedirAcceso(w, r, "Petición inválida.")
 		return
 	}
@@ -346,6 +384,15 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 			anotado = "desconocido"
 		}
 		s.reg.Warn("intento de acceso fallido", "origen", origen, "usuario", anotado)
+		// El historial hereda la MISMA regla, y con más motivo: esto se
+		// escribe en un archivo de /var/lib que se lee entero al arrancar.
+		// Solo se apunta el nombre si la cuenta EXISTE; si no, no se apunta
+		// nada —ni siquiera «desconocido»—, porque el campo vacío ya lo dice
+		// y así no hay ninguna vía por la que lo tecleado llegue al disco.
+		if conocido {
+			marcarCuentaIntentada(r, usuario)
+		}
+		marcarRechazo(r, seguridad.CredencialIncorrecta)
 		s.pedirAccesoComo(w, r, nombreAceptable(usuario), avisoAccesoFallido)
 		return
 	}
@@ -501,6 +548,12 @@ func (s *Servidor) soloSuperusuario(siguiente http.HandlerFunc) http.HandlerFunc
 		if usuarioDe(r) != autenticacion.NombreSuperusuario {
 			s.reg.Warn("acceso a una ruta de administración sin serlo",
 				"usuario", usuarioDe(r), "ruta", r.URL.Path, "origen", origenDe(r))
+			// La cuenta SÍ se apunta aquí, al contrario que en el formulario
+			// de acceso: esta sesión ya está autenticada, así que el nombre es
+			// uno real del registro y no algo tecleado que pudiera ser una
+			// contraseña mal puesta.
+			marcarCuentaIntentada(r, usuarioDe(r))
+			marcarRechazo(r, seguridad.PermisoInsuficiente)
 			http.Error(w, "no autorizado", http.StatusForbidden)
 			return
 		}

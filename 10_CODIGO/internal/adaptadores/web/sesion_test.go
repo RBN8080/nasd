@@ -14,6 +14,7 @@ import (
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 	"nasd/internal/metricas"
+	"nasd/internal/seguridad"
 )
 
 const claveDePrueba = "contraseña-de-prueba-larga"
@@ -43,6 +44,18 @@ func metricasDePrueba(t *testing.T) *metricas.Registro {
 		t.Fatalf("metricas.CargarRegistro: %v", err)
 	}
 	return reg
+}
+
+// seguridadDePrueba entrega un historial vacío en un directorio temporal,
+// gemelo de metricasDePrueba y por el mismo motivo: web.Nuevo lo exige (P5) y
+// ninguna prueba de este paquete debe compartir archivo con otra.
+func seguridadDePrueba(t *testing.T) *seguridad.Anillo {
+	t.Helper()
+	a, err := seguridad.CargarAnillo(filepath.Join(t.TempDir(), "seguridad"))
+	if err != nil {
+		t.Fatalf("seguridad.CargarAnillo: %v", err)
+	}
+	return a
 }
 
 // almacenPorUsuarioDePrueba entrega SIEMPRE el mismo almacén.
@@ -78,6 +91,7 @@ func servidorConAuth(t *testing.T) *Servidor {
 		Usuarios:         registroDePrueba(t),
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
+		Seguridad:        seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -105,6 +119,7 @@ func servidorConAuthYInactividad(t *testing.T, inactividad time.Duration) *Servi
 		DuracionSesion:    time.Hour,
 		InactividadSesion: inactividad,
 		Metricas:          metricasDePrueba(t),
+		Seguridad:         seguridadDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -140,6 +155,9 @@ func TestSinSesionTodoResponde401(t *testing.T) {
 		// Y el del panel de administración, por el mismo motivo (P-7,
 		// ADR-0056): publica quién tiene sesión abierta ahora mismo.
 		{"GET", "/administracion/flujo"},
+		// Y el panel de seguridad, que publica las direcciones de origen de
+		// todo el que ha tocado el nodo.
+		{"GET", "/seguridad"},
 	}
 	for _, c := range rutas {
 		w := httptest.NewRecorder()
@@ -284,6 +302,7 @@ func TestSinCredencialNoArranca(t *testing.T) {
 			Usuarios:        registroDePrueba(t),
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
+			Seguridad:       seguridadDePrueba(t),
 		})
 		if err == nil {
 			t.Errorf("arrancó con una credencial inválida: %q", mala)

@@ -26,6 +26,7 @@ import (
 	"nasd/internal/autenticacion"
 	"nasd/internal/config"
 	"nasd/internal/metricas"
+	"nasd/internal/seguridad"
 )
 
 func main() {
@@ -98,6 +99,20 @@ func ejecutar() error {
 		return err
 	}
 
+	// Historial de rechazos — panel de seguridad, etapa 1.
+	//
+	// UN ARCHIVO ILEGIBLE AQUÍ NO IMPIDE ARRANCAR, y es una decisión distinta
+	// de la de las dos cargas anteriores: un registro de usuarios roto deja a
+	// gente sin poder entrar, así que allí se falla a gritos. Un historial de
+	// OBSERVACIÓN roto solo cuesta el historial, y cambiar un NAS sano por un
+	// archivo de registro sería el peor negocio posible. Se anota y se sigue
+	// con el anillo vacío, que CargarAnillo devuelve usable a propósito.
+	historial, err := seguridad.CargarAnillo(cfg.RutaSeguridad())
+	if err != nil {
+		reg.Error("el historial de seguridad no se pudo leer; se empieza vacío",
+			"ruta", cfg.RutaSeguridad(), "error", err)
+	}
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen: alm,
 		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
@@ -120,6 +135,7 @@ func ejecutar() error {
 		InactividadSesion: cfg.InactividadSesion,
 		Volumen:           cfg.Volumen,
 		Metricas:          metricasUso,
+		Seguridad:         historial,
 	})
 	if err != nil {
 		return err
@@ -131,6 +147,17 @@ func ejecutar() error {
 	// de las peticiones, para no bloquear listados ni calentar la CPU.
 	pararMantenimiento := s.Mantener(context.Background())
 	defer pararMantenimiento()
+
+	// El historial baja a disco cada minuto, no en cada rechazo: un sondeo
+	// puede producir decenas por segundo, y un fsync por cada uno convertiría
+	// este registro en el amplificador que castiga el disco. El volcado FINAL
+	// lo hace Mantener al cerrarse el canal, así que un apagado ordenado —el
+	// reinicio diario de P-11 incluido— no pierde nada.
+	pararHistorial := make(chan struct{})
+	defer close(pararHistorial)
+	go historial.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudo volcar el historial de seguridad", "error", err)
+	})
 
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()

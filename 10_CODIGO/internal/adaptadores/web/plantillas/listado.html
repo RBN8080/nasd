@@ -99,7 +99,7 @@
            cuentas. Solo para el superusuario, igual que «Estado»: esconderlo
            aquí es cortesía, el control de verdad es soloSuperusuario en el
            servidor. */}}
-      {{if .EsSuperusuario}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}
+      {{if .EsSuperusuario}}<a class="boton-barra" href="/administracion">Administración</a><a class="boton-barra" href="/seguridad">Seguridad</a>{{end}}
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>

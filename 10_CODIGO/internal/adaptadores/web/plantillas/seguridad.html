@@ -1,0 +1,187 @@
+{{define "seguridad.html"}}<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS — Seguridad</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+
+<header>
+  <div class="cabecera-superior">
+    <div class="titulo-estado">
+      <span class="titulo-pagina">Seguridad</span>
+    </div>
+    <!-- La MISMA barra y las MISMAS clases que listado.html, estado.html y
+         administracion.html. Ver el comentario junto a .cabecera-superior en
+         estilo.css: tener una clase propia aquí es lo que dejó a /estado sin
+         los arreglos de alineación que recibía la otra página. -->
+    <div class="barra-acciones">
+      <a class="boton-barra" href="/">Archivos</a>
+      <a class="boton-barra" href="/estado">Estado</a>
+      <a class="boton-barra" href="/administracion">Administración</a>
+      <form method="post" action="/salir" class="salir">
+        <button type="submit">Salir</button>
+      </form>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- EL AVISO QUE HACE HONESTA LA PÁGINA ENTERA, y va primero a propósito.
+     Sin él, un lector razonable daría por hecho que esto es un registro
+     completo, y no lo es: es una ventana de los últimos {{.Resumen.Eventos}}
+     rechazos guardados. El diario del nodo (ADR-0037) sí conserva la
+     historia entera. -->
+<p class="nota">
+  Esto registra <strong>peticiones web rechazadas</strong>, no ataques.
+  La mayoría de lo que aparece aquí es uso normal: abrir el NAS sin sesión
+  produce un rechazo, igual que un enlace antiguo.
+  {{if .Resumen.Truncado}}
+  Se conservan los <strong>{{.Resumen.Eventos}}</strong> más recientes de
+  <strong>{{.Resumen.TotalHistorico}}</strong> vistos desde que existe este registro.
+  {{end}}
+</p>
+
+<h2>Resumen</h2>
+<table class="datos">
+  <tbody>
+    <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
+    <tr><td class="rotulo">Direcciones distintas</td><td class="num">{{.Resumen.IPsUnicas}}</td></tr>
+    <tr><td class="rotulo">Direcciones desde Internet</td><td class="num">{{.Resumen.DesdeFuera}}</td></tr>
+    <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
+    <!-- «con alguna señal» y NO «ataques»: son sospechas derivadas, y el
+         rótulo tiene que decirlo o la cifra se lee como un recuento de
+         intrusiones. -->
+    <tr><td class="rotulo">Orígenes con alguna señal</td><td class="num">{{.Resumen.OrigenesConSenal}}</td></tr>
+  </tbody>
+</table>
+
+<h2>Filtros</h2>
+<!-- method="get": el filtro viaja en la URL, igual que el orden del listado
+     (P-3). Así un filtro concreto se puede guardar en marcadores y compartir,
+     y la página no guarda estado de nadie — la regla R1 de ADR-0015. -->
+<form method="get" action="/seguridad" class="filtros">
+  <label for="horas">Ventana</label>
+  <select id="horas" name="horas">
+    {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+  </select>
+
+  <label for="gravedad">Gravedad</label>
+  <select id="gravedad" name="gravedad">
+    {{range .Gravedades}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+  </select>
+
+  <label for="motivo">Motivo</label>
+  <select id="motivo" name="motivo">
+    {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+  </select>
+
+  <label for="red">Origen</label>
+  <select id="red" name="red">
+    {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+  </select>
+
+  <label for="ip">Dirección</label>
+  <input type="text" id="ip" name="ip" value="{{.IP}}" placeholder="203.0.113 o completa"
+     autocapitalize="off" autocorrect="off" spellcheck="false">
+
+  <label for="ruta">Ruta contiene</label>
+  <input type="text" id="ruta" name="ruta" value="{{.Ruta}}" placeholder="/acceso"
+     autocapitalize="off" autocorrect="off" spellcheck="false">
+
+  <div class="acciones-filtro">
+    <button type="submit" class="boton-barra">Filtrar</button>
+  </div>
+</form>
+
+<!-- «Quitar filtros» va en su PROPIO formulario y fuera del anterior: un
+     <form> dentro de otro es HTML inválido y los navegadores lo descartan en
+     silencio. Sigue siendo un botón y no un enlace, por la regla de la
+     v1.50.1: lo que se pulsa y vive junto a botones ES un botón, aunque por
+     dentro sea una navegación. Sin campos, un GET a /seguridad limpia todo. -->
+<form method="get" action="/seguridad" class="acciones-filtro">
+  <button type="submit" class="boton-barra">Quitar filtros</button>
+</form>
+
+<h2>Orígenes</h2>
+<table class="datos tabla-origenes">
+  <thead>
+    <tr><th>Dirección</th><th>Procedencia</th><th>Rechazos</th><th>Rutas</th><th>Primera</th><th>Última</th><th>Motivos</th></tr>
+  </thead>
+  <tbody>
+  {{range .Origenes}}
+    <tr class="g-{{.Gravedad}}">
+      <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
+      <td>{{.Red.Etiqueta}}</td>
+      <td class="num">{{.Eventos}}</td>
+      <td class="num">{{.RutasDistintas}}</td>
+      <td class="num">{{fecha .Primera}}</td>
+      <td class="num">{{fecha .Ultima}}</td>
+      <td>
+        {{range $motivo, $n := .PorMotivo}}<span class="pastilla">{{$motivo.Etiqueta}} · {{$n}}</span> {{end}}
+        {{if .Cuentas}}<span class="pastilla">cuentas: {{range .Cuentas}}{{.}} {{end}}</span>{{end}}
+        <!-- LAS SEÑALES VAN APARTE Y CON SU EXPLICACIÓN DENTRO, no como una
+             etiqueta más: son inferencias, no hechos, y cada una lleva
+             escrito con qué se puede confundir. Un <details> deja la
+             sospecha visible y su letra pequeña a un clic, sin JavaScript. -->
+        {{range .Senales}}
+        <details class="senal">
+          <summary>{{.Etiqueta}}</summary>
+          <p class="nota">{{.Explicacion}}</p>
+        </details>
+        {{end}}
+      </td>
+    </tr>
+  {{else}}
+    <tr><td colspan="7">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+<h2>Rutas más pedidas</h2>
+<table class="datos">
+  <thead><tr><th>Ruta</th><th>Veces</th></tr></thead>
+  <tbody>
+  {{range .Resumen.RutasMasPedidas}}
+    <tr><td class="rotulo">{{.Valor}}</td><td class="num">{{.Veces}}</td></tr>
+  {{else}}
+    <tr><td colspan="2">Nada que mostrar.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+<h2>Cronología</h2>
+{{if .HayMas}}
+<p class="nota">Se muestran los {{.TopeCronologico}} más recientes de {{.Resumen.Eventos}}. Acote con los filtros para ver el resto.</p>
+{{end}}
+<table class="datos tabla-cronologia">
+  <thead>
+    <tr><th>Momento</th><th>Dirección</th><th>Método</th><th>Ruta</th><th>Código</th><th>Motivo</th><th>Cliente</th></tr>
+  </thead>
+  <tbody>
+  {{range .Eventos}}
+    <tr class="g-{{.Motivo.Gravedad}}">
+      <td class="num">{{fecha .Momento}}</td>
+      <td class="rotulo">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</td>
+      <td>{{.Metodo}}</td>
+      <td class="ruta">{{.Ruta}}</td>
+      <td class="num">{{.Estado}}</td>
+      <td>{{.Motivo.Etiqueta}}{{if .Cuenta}} · {{.Cuenta}}{{end}}</td>
+      <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
+           automatizado a menudo no envía ninguno. Se dice, no se deja en
+           blanco como si faltara el dato por descuido. -->
+      <td class="agente">{{if .Agente}}{{.Agente}}{{else}}<em>sin identificar</em>{{end}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="7">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+</main>
+</body>
+</html>
+{{end}}

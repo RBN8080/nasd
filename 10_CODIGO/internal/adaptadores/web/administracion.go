@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"nasd/internal/almacen"
+	"nasd/internal/seguridad"
 )
 
 // Administración desde la web — RF-16, RF-17, RF-18, RF-19.
@@ -63,6 +64,7 @@ func (s *Servidor) exigirCSRF(w http.ResponseWriter, r *http.Request) bool {
 	if !s.sesiones.CsrfValido(c.Value, csrfRecibido(r)) {
 		s.reg.Warn("testigo CSRF inválido",
 			"origen", origenDe(r), "ruta", r.URL.Path, "metodo", r.Method)
+		marcarRechazo(r, seguridad.TestigoCSRF)
 		http.Error(w, "petición no autorizada", http.StatusForbidden)
 		return false
 	}

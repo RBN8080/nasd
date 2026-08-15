@@ -8,6 +8,7 @@ import (
 
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/seguridad"
 )
 
 type vistaListado struct {
@@ -227,6 +228,7 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request, alm al
 			csrfOK = s.sesiones.CsrfValido(cookie.Value, strings.TrimSpace(string(b)))
 			if !csrfOK {
 				s.reg.Warn("testigo CSRF inválido en subida multipart", "origen", origenDe(r))
+				marcarRechazo(r, seguridad.TestigoCSRF)
 				http.Error(w, "petición no autorizada", http.StatusForbidden)
 				return
 			}
@@ -250,6 +252,7 @@ func (s *Servidor) subirMultipart(w http.ResponseWriter, r *http.Request, alm al
 			// envía primero; si no llegó, la petición no viene de aquí.
 			if !csrfOK {
 				s.reg.Warn("subida multipart sin testigo CSRF previo", "origen", origenDe(r))
+				marcarRechazo(r, seguridad.TestigoCSRF)
 				http.Error(w, "petición no autorizada", http.StatusForbidden)
 				return
 			}
@@ -419,6 +422,27 @@ func (s *Servidor) fallo(w http.ResponseWriter, r *http.Request, err error) {
 		// autenticado, mismo criterio que soloSuperusuario.
 		estado, mensaje = http.StatusForbidden,
 			"esa carpeta la administra el panel de Usuarios; no se toca desde aquí"
+	}
+
+	// La clasificación de seguridad se deriva del MISMO switch de arriba, y no
+	// de una lista paralela: si algún día se añade un error de dominio nuevo,
+	// tendrá que pasar por aquí igual que pasa por el código de estado, y lo
+	// peor que puede ocurrir es que salga como «desconocido» en el panel —
+	// visible— en vez de desaparecer.
+	switch {
+	case errors.Is(err, almacen.ErrReservado):
+		marcarRechazo(r, seguridad.RecursoReservado)
+	case errors.Is(err, almacen.ErrNoExiste), errors.Is(err, almacen.ErrEnlaceExterno):
+		marcarRechazo(r, seguridad.RutaInexistente)
+	case errors.Is(err, almacen.ErrRutaInvalida):
+		// Un salto de ruta (CWE-22) entra por aquí: almacen.NuevaRuta lo
+		// rechaza antes de tocar nada. Es «malformada» y no un motivo propio
+		// porque el servidor solo sabe que la ruta era inválida; llamarlo
+		// «intento de escape» sería la clase de interpretación que este
+		// modelo deja fuera a propósito.
+		marcarRechazo(r, seguridad.PeticionMalformada)
+	case estado == http.StatusBadRequest:
+		marcarRechazo(r, seguridad.PeticionMalformada)
 	}
 
 	// P5 y P7: el fallo se registra siempre, aunque el usuario vea poco.
