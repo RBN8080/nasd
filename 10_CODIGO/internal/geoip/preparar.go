@@ -237,12 +237,22 @@ func parsearLinea(linea string) (registro, bool, error) {
 		return registro{}, false, fmt.Errorf("dirección de fin %q inválida: %w", campos[1], err)
 	}
 
+	// EL PAÍS SE ACEPTA SOLO SI ES UN CÓDIGO ISO DE DOS LETRAS; cualquier
+	// otra cosa se guarda como «no se sabe» en vez de tumbar la preparación.
+	//
+	// La primera versión fallaba con «código de país "Unknown" más largo de
+	// 2» y no llegaba a escribir nada. Lo destapó ejecutarlo contra el archivo
+	// REAL en el nodo, no las pruebas: el fragmento que se usó de muestra
+	// tenía «None» —que sí estaba contemplado— pero no «Unknown», que aparece
+	// en 5232 rangos del archivo completo. Se midió antes de decidir.
+	//
+	// Rechazar el lote entero por 5232 rangos de 714 387 sería cambiar toda la
+	// base por un campo que además es el menos importante de los tres: el
+	// OPERADOR es lo que hace interpretable una fila, y esos rangos sí lo
+	// tienen. Un país vacío la plantilla ya sabe no pintarlo.
 	pais := campos[3]
-	if pais == "None" {
+	if len(pais) != tamPais {
 		pais = ""
-	}
-	if len(pais) > tamPais {
-		return registro{}, false, fmt.Errorf("código de país %q más largo de %d", pais, tamPais)
 	}
 
 	return registro{
