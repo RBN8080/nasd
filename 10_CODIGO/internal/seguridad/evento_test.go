@@ -100,3 +100,61 @@ func TestTruncarAgenteNoParteUnaRuna(t *testing.T) {
 		}
 	}
 }
+
+// EL DEFECTO QUE SOLO ENSEÑARON LOS DATOS REALES, y por eso esta prueba
+// existe: en la primera tarde del panel en producción, el iPhone del
+// responsable —en su propia Wi-Fi, hablando IPv6 nativo desde el prefijo
+// doméstico— salió clasificado como INTERNET. La casa contada como un
+// extraño, y justo en la única cifra que él declaró importante.
+//
+// La causa era que este paquete solo conocía las dos redes IPv4.
+func TestElIPv6DeCasaNoSeCuentaComoInternet(t *testing.T) {
+	// Estado de paquete: se restaura al terminar para no contaminar al resto.
+	previos := prefijosPropios
+	t.Cleanup(func() { prefijosPropios = previos })
+
+	// El caso REAL, con el prefijo que el nodo publica en su AAAA.
+	delNodo := netip.MustParseAddr("3fff:2a0:101e:3d82::38")
+	iPhoneEnCasa := netip.MustParseAddr("3fff:2a0:101e:3d82:2d09:e0ce:7274:8bc4")
+
+	// Antes de aprender nada, el iPhone de casa parece de fuera.
+	prefijosPropios = nil
+	if ClasificarRed(iPhoneEnCasa) != RedInternet {
+		t.Fatal("sin aprender la red propia, el caso que motivó esta prueba no se reproduce")
+	}
+
+	// Aprendiendo del propio nodo, deja de parecerlo.
+	AprenderRedesPropias([]netip.Addr{delNodo})
+	if got := ClasificarRed(iPhoneEnCasa); got != RedLocal {
+		t.Fatalf("el iPhone en la Wi-Fi de casa se clasificó como %q", got.Etiqueta())
+	}
+	// Y lo que de verdad es de fuera lo sigue siendo: aprender la red propia
+	// no puede convertirse en un coladero que dé por buena media Internet.
+	for _, ajena := range []string{
+		"2001:db8::1",           // otra red cualquiera
+		"3fff:2a0:101e:3d83::1", // el /64 VECINO, un dígito de diferencia
+		"203.0.113.7",           // IPv4 pública
+	} {
+		if got := ClasificarRed(netip.MustParseAddr(ajena)); got != RedInternet {
+			t.Errorf("%s se clasificó como %q y viene de fuera", ajena, got.Etiqueta())
+		}
+	}
+}
+
+// Aprender no puede tragarse direcciones que no son de casa: fe80::/10 es
+// local de enlace y no la usa nadie para hablar con el NAS, y una IPv4 ya la
+// cubren los prefijos literales.
+func TestAprenderIgnoraLoQueNoEsIPv6Global(t *testing.T) {
+	previos := prefijosPropios
+	t.Cleanup(func() { prefijosPropios = previos })
+
+	got := AprenderRedesPropias([]netip.Addr{
+		netip.MustParseAddr("fe80::1"),        // local de enlace
+		netip.MustParseAddr("::1"),            // bucle
+		netip.MustParseAddr("192.168.1.38"),   // IPv4
+		netip.MustParseAddr("::ffff:1.2.3.4"), // IPv4 envuelta
+	})
+	if len(got) != 0 {
+		t.Fatalf("se aprendieron %v y ninguna es una IPv6 global de casa", got)
+	}
+}

@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -97,6 +99,25 @@ func ejecutar() error {
 	metricasUso, err := metricas.CargarRegistro(cfg.RutaUsoDisco())
 	if err != nil {
 		return err
+	}
+
+	// QUÉ ES «DE CASA» EN IPv6 SE LE PREGUNTA AL SISTEMA, no se escribe aquí.
+	//
+	// Lo destapó el historial real la primera tarde: el iPhone del
+	// responsable, en su propia Wi-Fi y hablando IPv6 nativo, salía
+	// clasificado como INTERNET, porque el paquete solo conocía las dos redes
+	// IPv4. Escribir aquí el prefijo delegado por el proveedor sería una
+	// constante que deja de ser verdad EN SILENCIO el día que rote.
+	//
+	// Va antes de cargar el historial a propósito: al releerlo se reclasifica
+	// cada evento guardado (ver eventoEnDisco.aEvento), así que si esto
+	// corriera después, todo lo ya escrito se recuperaría mal clasificado.
+	if propias := seguridad.AprenderRedesPropias(direccionesDelNodo()); len(propias) > 0 {
+		reg.Info("redes propias aprendidas", "prefijos", fmt.Sprint(propias))
+	} else {
+		// Se dice a gritos: sin esto, todo el IPv6 de casa se cuenta como
+		// Internet y la única cifra que le importa al responsable miente.
+		reg.Warn("no se aprendió ninguna red IPv6 propia: el tráfico IPv6 de casa se contará como Internet")
 	}
 
 	// Historial de rechazos — panel de seguridad, etapa 1.
@@ -375,4 +396,33 @@ func generarCredencial() error {
 	}
 	fmt.Println(linea)
 	return nil
+}
+
+// direccionesDelNodo devuelve las direcciones de las interfaces de este
+// equipo. Vive en la raiz de composicion y no en internal/seguridad porque es
+// una pregunta al SISTEMA, y ese paquete no debe saber que existen interfaces
+// de red: recibe direcciones ya resueltas, igual que web recibe el almacen ya
+// acotado en vez de construirlo.
+func direccionesDelNodo() []netip.Addr {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []netip.Addr
+	for _, i := range interfaces {
+		dirs, err := i.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, d := range dirs {
+			n, ok := d.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ip, ok := netip.AddrFromSlice(n.IP); ok {
+				out = append(out, ip.Unmap())
+			}
+		}
+	}
+	return out
 }
