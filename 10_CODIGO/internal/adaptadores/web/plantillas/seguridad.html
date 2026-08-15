@@ -121,7 +121,7 @@
   </thead>
   <tbody>
   {{range .Origenes}}
-    <tr class="g-{{.Gravedad}}">
+    <tr{{if .Destacar}} class="g-{{.Gravedad}}"{{end}}>
       <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
       <td>{{.Red.Etiqueta}}</td>
       <td class="num">{{.Eventos}}</td>
@@ -171,7 +171,7 @@
   </thead>
   <tbody>
   {{range .Eventos}}
-    <tr class="g-{{.Motivo.Gravedad}}">
+    <tr{{if .Destacar}} class="g-{{.Motivo.Gravedad}}"{{end}}>
       <td class="num">{{fecha .Momento}}</td>
       <td class="rotulo">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</td>
       <td>{{.Metodo}}</td>

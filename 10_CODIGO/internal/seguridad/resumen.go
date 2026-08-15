@@ -403,3 +403,39 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+// Destacar dice si una fila merece color en el panel.
+//
+// # POR QUÉ NO BASTA CON LA GRAVEDAD DEL MOTIVO
+//
+// Se vio en la primera captura real: casi toda la tabla salía en naranja
+// porque RutaInexistente es «aviso», y lo que la producía eran los
+// /favicon.ico y /apple-touch-icon.png que el iPhone y el Chrome del
+// responsable piden solos. Un panel donde casi todo está resaltado no resalta
+// nada — el mismo defecto que 00_RECTOR.md §12.5 persigue en los
+// verificadores de este proyecto.
+//
+// La gravedad del motivo NO cambia: es un hecho y sigue siendo la que es, y
+// el filtro por gravedad la sigue usando entera. Lo que cambia es el ÉNFASIS,
+// que es una decisión de presentación y por eso vive aquí y no en Motivo:
+//
+//   - Atención SIEMPRE se destaca, venga de donde venga. Son CSRF, permiso
+//     insuficiente, límite de intentos y recurso reservado: a ninguna se
+//     llega navegando, así que desde la propia LAN también dicen algo.
+//   - Desde Internet se destaca TODO, incluida la Rutina. No es una
+//     inconsistencia: el resumen ya trata «alguna dirección de Internet»
+//     como el propio objetivo del panel («ninguna» es el estado sano), así
+//     que un simple «sin sesión» desde fuera ya es la señal — es la única
+//     vez que se ve a alguien tocando la puerta, sea quien sea.
+//   - Aviso y Rutina desde casa NO se destacan. Una ruta inexistente o una
+//     contraseña fallada las produce cualquiera de casa todos los días.
+func (o Origen) Destacar() bool {
+	return o.Gravedad == Atencion || o.Red.DeFuera()
+}
+
+// Destacar, para una fila de la cronología. Mismo criterio y por eso mismo
+// nombre: si divergieran, la tabla de arriba y la de abajo resaltarían cosas
+// distintas del mismo suceso.
+func (e Evento) Destacar() bool {
+	return e.Motivo.Gravedad() == Atencion || e.Red.DeFuera()
+}

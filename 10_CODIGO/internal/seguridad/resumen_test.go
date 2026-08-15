@@ -325,3 +325,44 @@ func TestLasSenalesSoloSeDisparanDesdeInternet(t *testing.T) {
 		t.Fatal("desde Internet el mismo sondeo NO levantó ninguna señal")
 	}
 }
+
+// EL RUIDO QUE TAPA LO QUE IMPORTA, visto en la segunda captura del panel en
+// producción: casi toda la tabla salía en naranja porque RutaInexistente es
+// «aviso» y la producían los favicon.ico del propio iPhone. Destacar() separa
+// «esto es un hecho de gravedad aviso» —que Motivo.Gravedad() sigue diciendo
+// igual, y el filtro por gravedad lo sigue usando entero— de «esto merece
+// llamar la atención en la tabla».
+func TestDestacarSoloResaltaLoQueMereceAtencion(t *testing.T) {
+	base := time.Now()
+
+	casos := []struct {
+		nombre  string
+		red     string
+		motivo  Motivo
+		destaca bool
+	}{
+		{"aviso desde casa: NO destaca", "192.168.1.18", RutaInexistente, false},
+		{"aviso desde el túnel: NO destaca", "10.77.0.3", CredencialIncorrecta, false},
+		{"aviso desde el propio nodo: NO destaca", "127.0.0.1", RutaInexistente, false},
+		{"aviso desde Internet: SÍ destaca", "203.0.113.7", RutaInexistente, true},
+		{"atención desde casa: SÍ destaca", "192.168.1.18", TestigoCSRF, true},
+		{"atención desde Internet: SÍ destaca", "203.0.113.7", PermisoInsuficiente, true},
+		// Rutina desde Internet SÍ destaca, y no es una inconsistencia: el
+		// resumen ya trata «alguna dirección de Internet» como la señal —
+		// «ninguna» es el estado sano—, así que hasta un simple «sin sesión»
+		// desde fuera es la única vez que se ve a alguien tocando la puerta.
+		{"rutina desde Internet: SÍ destaca", "203.0.113.7", SinSesion, true},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			e := ev(base, c.red, c.motivo, "/algo")
+			if got := e.Destacar(); got != c.destaca {
+				t.Errorf("Evento.Destacar() = %v, se esperaba %v", got, c.destaca)
+			}
+			o := PorOrigen([]Evento{e})[0]
+			if got := o.Destacar(); got != c.destaca {
+				t.Errorf("Origen.Destacar() = %v, se esperaba %v", got, c.destaca)
+			}
+		})
+	}
+}
