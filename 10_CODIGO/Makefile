@@ -213,6 +213,29 @@ verificar-limpio:
 # Una puerta por la que el camino diario no pasa no es una puerta. Cuesta unos
 # segundos por despliegue; el defecto que evita costo un binario en produccion.
 desplegar: verificar verificar-limpio compilar
+	@# nas-miniatura PRIMERO, y sin reinicio propio: no es un servicio, es un
+	@# binario que nasd invoca bajo demanda. Desplegarlo antes que nasd evita
+	@# la ventana en la que nasd ya estaría sirviendo con un nas-miniatura
+	@# ausente o a medias — no es grave (la ruta degrada a 404, ADR-0063),
+	@# pero no cuesta nada evitarlo.
+	@# EL RESPALDO TOLERA LA AUSENCIA, Y ES DISTINTO DEL DE nasd A PROPÓSITO:
+	@# nasd SIEMPRE debe existir ya en un nodo EN PRODUCCIÓN, así que su
+	@# ausencia es una señal de que algo va mal y el respaldo falla adrede.
+	@# nas-miniatura es nuevo (RF-31): la primera vez que esto corre, no hay
+	@# nada que respaldar, y eso es normal, no un fallo.
+	ssh $(NODO) 'if [ -f /usr/local/bin/nas-miniatura ]; then \
+	  sudo install -m 0755 /usr/local/bin/nas-miniatura /usr/local/bin/nas-miniatura.previous; \
+	else \
+	  echo "primer despliegue de nas-miniatura: sin respaldo previo que hacer"; \
+	fi'
+	scp $(BIN_MINIATURA) $(NODO):/tmp/nas-miniatura
+	ssh $(NODO) 'sudo install -m 0755 /tmp/nas-miniatura /usr/local/bin/nas-miniatura'
+	@huella_local_min=$$(sha256sum $(BIN_MINIATURA) | cut -d' ' -f1); \
+	 huella_nodo_min=$$(ssh $(NODO) 'sha256sum /usr/local/bin/nas-miniatura' | cut -d' ' -f1); \
+	 test "$$huella_local_min" = "$$huella_nodo_min" \
+	   || (echo "ERROR: la huella de nas-miniatura NO coincide con la compilada"; exit 1); \
+	 echo "huella de nas-miniatura verificada  $$huella_local_min"
+
 	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO) /usr/local/bin/$(BINARIO).previous'
 	scp $(BINARIO) $(NODO):/tmp/$(BINARIO)
 	ssh $(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'
@@ -229,6 +252,14 @@ desplegar: verificar verificar-limpio compilar
 # —sin bin/— y la copia quedó donde el procedimiento no la busca. Un objetivo
 # no se equivoca de ruta bajo presión; una persona con el servicio caído, sí.
 volver:
+	@# nas-miniatura no tiene servicio propio que reiniciar: basta con que el
+	@# archivo vuelva a ser el de antes. Tolera que no exista un .previous
+	@# —el primer despliegue de RF-31 no dejó ninguno—, y no es un error.
+	ssh $(NODO) 'if [ -f /usr/local/bin/nas-miniatura.previous ]; then \
+	  sudo install -m 0755 /usr/local/bin/nas-miniatura.previous /usr/local/bin/nas-miniatura; \
+	else \
+	  echo "sin nas-miniatura.previous que restaurar"; \
+	fi'
 	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO).previous /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && systemctl is-active nasd'
 
 registro:
