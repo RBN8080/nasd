@@ -185,6 +185,12 @@ func ejecutar() error {
 		Metricas:          metricasUso,
 		Seguridad:         historial,
 		GeoIP:             baseGeo,
+		// Miniaturas EXIF — rector §7.nonies.bis. Siempre se pasa la ruta
+		// derivada, igual que RutaGeoIP: si nas-miniatura no está instalado
+		// en el nodo, el subproceso simplemente falla al primer intento y
+		// esa foto se sirve sin miniatura, sin que arrancar dependa de nada
+		// más (mismo criterio «opcional» que GeoIP).
+		DirMiniaturas: cfg.RutaMiniaturas(),
 	})
 	if err != nil {
 		return err

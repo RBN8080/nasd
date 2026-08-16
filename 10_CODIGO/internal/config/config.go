@@ -131,6 +131,21 @@ func (c Config) RutaGeoIP() string {
 	return filepath.Join(c.Volumen, "estado", "geoip")
 }
 
+// RutaMiniaturas es el directorio donde se cachean las miniaturas EXIF que
+// extrae nas-miniatura (10_CODIGO/nas-miniatura/miniatura.c), un programa
+// aparte en C sin dependencias — rector §7.nonies.bis, 2026-08-15.
+//
+// Mismo criterio que RutaGeoIP y por el mismo motivo: va en estado/ y no en
+// datos/ porque ADR-0019 comparte por Samba únicamente datos/, y una
+// miniatura generada por el servicio no es un archivo del usuario. A
+// diferencia de GeoIP, aquí el propio servicio ESCRIBE (GeoIP solo lee una
+// base que prepara un script aparte), pero el directorio sigue cayendo
+// dentro de ReadWritePaths=/srv/nas (05_instalar_servicio.sh) sin ampliar
+// ese permiso ni un centímetro.
+func (c Config) RutaMiniaturas() string {
+	return filepath.Join(c.Volumen, "estado", "miniaturas")
+}
+
 // Valores de referencia [R] — no son criterio de aceptación (01_REQUISITOS §2).
 // Se sustituyen por medición cuando exista.
 func porDefecto() Config {
