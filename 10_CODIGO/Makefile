@@ -13,6 +13,35 @@
 NODO    ?= rpi
 BINARIO := nasd
 
+# nas-miniatura (10_CODIGO/nas-miniatura/miniatura.c) — programa auxiliar en
+# C, sin dependencias, que extrae la miniatura EXIF incrustada de un JPEG sin
+# decodificar la imagen. Rector §7.nonies.bis / 00_RECTOR.md 2026-08-15.
+#
+# El binario se construye DENTRO de su propio directorio fuente
+# (nas-miniatura/nas-miniatura), no en la raíz de 10_CODIGO junto a $(BINARIO):
+# «nas-miniatura» a secas en la raíz colisionaría con el directorio del mismo
+# nombre que contiene miniatura.c.
+BIN_MINIATURA  := nas-miniatura/nas-miniatura
+SRC_MINIATURA  := nas-miniatura/miniatura.c
+
+# Compilador cruzado a aarch64-linux-musl. Elegido por el responsable sobre
+# la cadena oficial de ARM: una sola descarga, sin instalador, produce un
+# binario ESTATICO que no depende de nada del sistema del nodo, y no exige
+# sysroot porque miniatura.c no enlaza ninguna libreria.
+#
+# Igual que GCCBIN mas abajo: winget instala zig y modifica el PATH
+# persistente, pero esta sesion de shell arrancó ANTES de esa modificación y
+# no la ve hasta reiniciar la terminal (comprobado el 2026-08-15). Se apunta
+# a la ruta completa por la misma razón, no por descuido.
+#
+# Si esta ruta no existiera (paquete desinstalado o movido):
+#     winget install zig.zig
+ifeq ($(OS),Windows_NT)
+ZIG := /c/Users/usuario/AppData/Local/Microsoft/WinGet/Packages/zig.zig_Microsoft.Winget.Source_8wekyb3d8bbwe/zig-x86_64-windows-0.16.0/zig.exe
+else
+ZIG := zig
+endif
+
 # En Windows, make elige cmd.exe si no encuentra un sh, y ENTONCES TODAS las
 # reglas fallan con «no se reconoce como un comando interno o externo» — un
 # mensaje que senala a tee o a CGO_ENABLED y nunca a la causa real, que es el
@@ -30,13 +59,13 @@ SHELL       := C:/PROGRA~1/Git/bin/bash.exe
 .SHELLFLAGS := -lc
 endif
 
-.PHONY: todo verificar verificar-limpio carreras prueba compilar desplegar volver registro limpiar
+.PHONY: todo verificar verificar-c verificar-limpio carreras prueba compilar compilar-miniatura desplegar volver registro limpiar
 
 todo: verificar compilar
 
 # La equivalencia de utillaje que ADR-0013 dejó VINCULANTE al aceptar Go
 # como excepción al charter §6.1: advertencia = error.
-verificar:
+verificar: verificar-c
 	gofmt -l . | tee /dev/stderr | (! read)
 	go vet ./...
 	@echo ">> comprobando ADR-0025: ParseMultipartForm / FormFile prohibidos"
@@ -62,6 +91,31 @@ verificar:
 	@# solo existen en linux/arm64. Charter §6.1 deja el análisis estático como
 	@# «advertencia = error», y sin esta línea la puerta no lo cumplía.
 	GOOS=linux GOARCH=arm64 staticcheck ./...
+
+# Correccion de nas-miniatura (miniatura.c), sin CGO de por medio: es un
+# programa aparte, no un paquete Go, así que ni «go vet» ni «go test» lo
+# tocan. Se SALTA limpiamente si zig no está instalado, para no romper esta
+# puerta en una máquina donde solo se está tocando código Go — pero si zig
+# SÍ está, un fallo aquí detiene «verificar» igual que cualquier otro.
+#
+# Compila NATIVO (sin --target) y no cruzado a la Pi: el objetivo de esta
+# compilación es correr los desinfectantes de dirección y de comportamiento
+# indefinido contra el corpus de pruebas.sh, y para eso hace falta un binario
+# que se ejecute EN ESTA máquina. La compilación cruzada de producción va en
+# «compilar-miniatura», sin desinfectantes —no hay runtime de ASan para
+# aarch64-linux-musl estático— y es la que de verdad viaja al nodo.
+verificar-c:
+	@if [ ! -x "$(ZIG)" ] && ! command -v "$(ZIG)" >/dev/null 2>&1; then \
+	  echo ">> zig no está instalado: se omite verificar-c (make compilar SÍ lo exige)"; \
+	  exit 0; \
+	fi
+	@echo ">> nas-miniatura: compilando con desinfectantes y ejecutando el corpus"
+	"$(ZIG)" cc -std=c11 -Wall -Wextra -Werror -O0 -g \
+	  -fsanitize=address,undefined \
+	  -o nas-miniatura/miniatura_verificar $(SRC_MINIATURA)
+	bash nas-miniatura/pruebas/corpus.sh nas-miniatura/miniatura_verificar
+	@rm -f nas-miniatura/miniatura_verificar nas-miniatura/miniatura_verificar.exe \
+	  nas-miniatura/miniatura_verificar.pdb
 
 # El detector de carreras. Se separa de «verificar» porque tarda bastante más,
 # pero NO es opcional al cerrar un bloque: el programa tiene tres puntos de
@@ -90,10 +144,21 @@ prueba:
 	go test -v ./...
 
 # Binario estático ARM64. Sin CGO: se copia y corre, sin dependencias.
-compilar:
+compilar: compilar-miniatura
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 	  -trimpath -ldflags="-s -w" -o $(BINARIO) ./cmd/nasd
 	@ls -lh $(BINARIO)
+
+# nas-miniatura, cruzado a aarch64-linux-musl. «-static» además de musl
+# porque musl por sí solo no evita un enlazado dinámico contra su propia
+# libc; el binario que llega al nodo no debe depender de NADA que ya esté
+# instalado ahí — mismo principio que el binario de nasd, «se copia y
+# corre». Sin desinfectantes: no existe runtime de ASan/UBSan para este
+# objetivo estático; esa cobertura la da «verificar-c» sobre un build nativo.
+compilar-miniatura:
+	"$(ZIG)" cc -target aarch64-linux-musl -std=c11 -Wall -Wextra -Werror \
+	  -O2 -static -s -o $(BIN_MINIATURA) $(SRC_MINIATURA)
+	@ls -lh $(BIN_MINIATURA)
 
 # No se exige commitear cada retoque — el responsable lo pidio explicitamente
 # el 2026-08-04 para no llenar el historial de cambios triviales. Pero
@@ -170,4 +235,4 @@ registro:
 	ssh $(NODO) 'journalctl -u nasd -n 50 --no-pager -o cat'
 
 limpiar:
-	rm -f $(BINARIO)
+	rm -f $(BINARIO) $(BIN_MINIATURA)

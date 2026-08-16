@@ -152,9 +152,18 @@
            resuelve por IPv6 (08_WEB_EXPUESTA.md §2)— las imágenes SÍ abren en
            pestaña nueva. Por HTTP en la LAN abren en la misma, como el resto:
            degradado, no roto. «noopener» porque abrir con target sin él le
-           entrega a la página destino una referencia a esta. -->
+           entrega a la página destino una referencia a esta.
+
+           MINIATURA — rector §7.nonies.bis. «loading="lazy"» es del propio
+           navegador y es TODA la estrategia de carga: solo pide
+           /miniatura de las filas que entran en pantalla, así que abrir
+           una carpeta con 500 fotos no dispara 500 peticiones. No hace
+           falta una línea de JavaScript para esto. Si /miniatura no tiene
+           nada que ofrecer —sin miniatura EXIF, o la función ni siquiera
+           está configurada—, responde 404 y el navegador simplemente deja
+           el hueco vacío: no hay imagen rota, «onerror» de sobra. -->
       <td>{{if .EsDirectori}}<a class="dir" href="{{listadoCon .Ruta $.Orden}}">{{.Nombre}}/</a>
-          {{else}}{{$tipo := apertura .Nombre}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
+          {{else}}{{$tipo := apertura .Nombre}}{{if eq $tipo.Clase "imagen"}}<img class="miniatura" src="/miniatura/{{rutaURL .Ruta.Rel}}" alt="" loading="lazy">{{end}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>
       <td class="num acciones-fila">

@@ -94,6 +94,7 @@ func (s *Servidor) mantener(ctx context.Context) {
 		s.reg.Info("sesiones caducadas purgadas", "cuantas", n)
 	}
 	s.limitador.purgar()
+	s.miniaturaFallidas.purgar()
 	s.expirarParciales(ctx, s.almacenRaiz)
 	s.vigilar(ctx)
 }

@@ -95,6 +95,22 @@ type Servidor struct {
 	// medirlo; el adaptador NUNCA lo usa para construir rutas —esa puerta es
 	// almacen.NuevaRuta y no hay otra (ADR-0014)—.
 	volumen string
+
+	// dirMiniaturas es donde se cachean las miniaturas EXIF (miniatura.go).
+	// VACÍO significa «función no configurada»: servirMiniatura responde 404
+	// sin intentar nada, el mismo tratamiento que geo cuando es nulo — una
+	// pieza opcional se apaga sola, no rompe el arranque (P5).
+	dirMiniaturas string
+	// miniaturaSem es un semáforo de CAPACIDAD 1, no un límite arbitrario.
+	// MemoryMax=192M en 05_instalar_servicio.sh es del cgroup ENTERO,
+	// nasd y sus hijos juntos: dos generaciones a la vez ya arriesgan el
+	// techo, así que la concurrencia no se ajusta, se elimina.
+	miniaturaSem chan struct{}
+	// miniaturaFallidas recuerda, un rato, qué claves acaban de fallar —
+	// mismo patrón que limitadorAcceso (sesion.go), purgado por el mismo
+	// ciclo de 5 min (mantenimiento.go). Sin esto, un archivo sin miniatura
+	// aprovechable lanzaría un subproceso en CADA recarga de su carpeta.
+	miniaturaFallidas *fallosMiniatura
 }
 
 type Opciones struct {
@@ -127,6 +143,12 @@ type Opciones struct {
 	// Volumen es el punto de montaje del disco de datos (ADR-0019), necesario
 	// para informar de su ocupación y su salud en /estado.
 	Volumen string
+	// DirMiniaturas es donde se cachean las miniaturas EXIF (miniatura.go),
+	// normalmente cfg.RutaMiniaturas(). A DIFERENCIA de Metricas/Seguridad,
+	// PUEDE ir vacío sin que Nuevo falle: es una pieza opcional —mismo trato
+	// que GeoIP— y exigirla habría roto cada prueba de este paquete que
+	// construye Opciones sin conocer este campo.
+	DirMiniaturas string
 	// Metricas guarda el uso de disco medido bajo demanda por cuenta —
 	// P-4, etapa 3. Puede estar VACÍO —un nodo recién instalado, o donde
 	// nadie ha pulsado «Refrescar métricas» todavía— pero no puede faltar,
@@ -214,6 +236,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		metricas:          o.Metricas,
 		seguridad:         o.Seguridad,
 		geo:               o.GeoIP,
+		dirMiniaturas:     o.DirMiniaturas,
+		miniaturaSem:      make(chan struct{}, 1),
+		miniaturaFallidas: nuevoFallosMiniatura(),
 	}
 	s.muestreador = nuevoMuestreador(s.abrirLectorVivo)
 	s.cuentas = nuevoMuestreador(s.abrirLectorCuentas)
@@ -263,6 +288,10 @@ func (s *Servidor) Rutas() http.Handler {
 	// ordena «attachment».
 	protegido.HandleFunc("GET /abrir/{ruta...}", s.conAlmacen(s.abrirEnNavegador))
 	protegido.HandleFunc("GET /contenido/{ruta...}", s.conAlmacen(s.servirContenido))
+	// Miniatura EXIF incrustada — rector §7.nonies.bis, miniatura.go. Cuelga
+	// del MISMO conAlmacen que /contenido: hereda sesión y aislamiento por
+	// usuario (ADR-0055) sin una línea nueva de control de acceso.
+	protegido.HandleFunc("GET /miniatura/{ruta...}", s.conAlmacen(s.servirMiniatura))
 	protegido.HandleFunc("POST /subir", s.conAlmacen(s.subirMultipart))
 	protegido.HandleFunc("POST /directorio", s.conAlmacen(s.crearDirectorio))
 

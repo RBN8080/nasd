@@ -198,6 +198,18 @@ td {
   vertical-align: middle;
 }
 
+/* Miniatura EXIF junto al nombre — rector §7.nonies.bis. Tamaño fijo para
+   que la fila no salte de alto mientras carga: el hueco ya existe antes de
+   que llegue el byte. */
+img.miniatura {
+  width: 28px;
+  height: 28px;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  object-fit: cover;
+  border-radius: 3px;
+}
+
 td.num, th:not(:first-child) {
   text-align: right;
   white-space: nowrap;
