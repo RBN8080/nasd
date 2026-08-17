@@ -206,6 +206,25 @@ func ClasificarRed(ip netip.Addr) Red {
 		return RedTunel
 	case ip.IsLoopback():
 		return RedNodo
+	case ip.IsLinkLocalUnicast():
+		// fe80::/10 es LOCAL DEL ENLACE por definición de RFC 4291 §2.5.6: un
+		// router no la reenvía nunca, así que un paquete con ese origen no
+		// puede venir de Internet. Es un HECHO del protocolo, no una
+		// suposición sobre esta red.
+		//
+		// SE AÑADIÓ EL 2026-08-16 AL VERIFICAR ADR-0064 EN EL NODO, y no
+		// estaba de más: netip.Prefix.Contains devuelve FALSO para cualquier
+		// dirección con zona («fe80::…%2», que es como llegan las de enlace
+		// desde el socket), así que ninguno de los casos de arriba la
+		// reconocía y caía en Internet por el fallo cerrado del final.
+		//
+		// Antes de ADR-0064 apenas se notaba —solo clasificaba PETICIONES, y
+		// nadie navega contra una fe80—, pero ahora se clasifica CADA conexión
+		// TCP, y una sola de enlace habría contado como un extraño en la única
+		// cifra que el responsable declaró importante. Es el mismo defecto que
+		// ya tuvo el IPv6 de casa en la primera versión del panel, por otro
+		// camino.
+		return RedLocal
 	}
 	// Lo aprendido al arrancar: el IPv6 de casa. Va DESPUÉS de los literales
 	// porque estos son ciertos siempre y aquello depende de lo que el
