@@ -35,6 +35,14 @@ func TestSoloSeAnotaLoQueVieneDeInternet(t *testing.T) {
 		{"10.77.0.3", false, "el túnel: llegar hasta ahí ya exigió la clave"},
 		{"127.0.0.1", false, "el propio nodo"},
 		{"::1", false, "el propio nodo por IPv6"},
+		// Las dos de enlace, CON y SIN zona. La de zona es la forma real en
+		// que llegan desde el socket («fe80::…%2») y es la que se coló en
+		// producción el 2026-08-16: netip.Prefix.Contains devuelve falso ante
+		// cualquier dirección con zona, así que caía en Internet por el fallo
+		// cerrado. Un router no reenvía fe80::/10 (RFC 4291 §2.5.6): no puede
+		// venir de fuera.
+		{"fe80::4d82:7b81:f7c4:f192", false, "local del enlace"},
+		{"fe80::4d82:7b81:f7c4:f192%eth0", false, "local del enlace, con zona"},
 	}
 	for _, caso := range casos {
 		ip := netip.MustParseAddr(caso.ip)
