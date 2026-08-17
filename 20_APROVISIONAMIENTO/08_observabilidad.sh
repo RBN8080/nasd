@@ -305,6 +305,119 @@ else
   aviso "nasd.service no está instalado todavía."
 fi
 
+# ---------------------------------------------------------------------------
+# 4. Marca de arranque en ramoops — el discriminador de P-11
+# ---------------------------------------------------------------------------
+#
+# QUÉ PREGUNTA RESPONDE, Y POR QUÉ HOY NO SE PUEDE RESPONDER:
+#
+# P-11 se cerró el 2026-08-16 con la causa determinada —a la Pi se le va la
+# corriente— pero UNA ambigüedad quedó viva: `ramoops` no distingue un corte
+# de corriente de un cuelgue mudo. En los dos casos el núcleo no llega a
+# escribir nada, el búfer de consola queda vacío, y `systemd-pstore` se salta
+# con «ConditionDirectoryNotEmpty». Un búfer vacío no dice nada.
+#
+# La marca lo convierte en respuesta binaria. Tras el siguiente corte:
+#
+#   hay captura en /var/lib/systemd/pstore/  -> la RAM SOBREVIVIÓ  -> se colgó
+#   no hay nada                              -> la RAM se perdió   -> corriente
+#
+# ES UNA SOLA LÍNEA POR ARRANQUE, no un latido periódico. Un latido cada 30 s
+# añadiría 2880 líneas al diario cada día para decir algo que el diario ya
+# dice: `nas-vigilar-disco` escribe cada ~65 s, así que el instante del corte
+# ya está acotado a un minuto sin instrumentar nada.
+#
+# VA DESPUÉS de systemd-pstore a propósito: ese servicio MUEVE la captura
+# anterior y al desenlazarla BORRA la zona. Escribir antes sería escribir en
+# algo que se va a borrar.
+CONF_CONSOLA=/etc/sysctl.d/99-nas-consola.conf
+MARCA_SH=/usr/local/sbin/nas-marca-arranque.sh
+MARCA_UNIDAD=/etc/systemd/system/nas-marca-arranque.service
+
+echo
+echo "== 4. Marca de arranque en ramoops (discriminador de P-11) =="
+
+# El nivel de consola por omisión es 4: solo pasan los niveles 0-3, es decir
+# de «emerg» a «err». Sin subirlo, la marca tendría que emitirse como ERROR
+# para llegar a ramoops, y una línea rutinaria disfrazada de error ensucia
+# justo la herramienta con la que se buscan los errores de verdad.
+#
+# Se sube a 7 y no se toca nada más. En este nodo NO cuesta rendimiento:
+# `8250.nr_uarts=0` deja la UART apagada y /proc/consoles solo lista `tty1`
+# (sin pantalla) y `ramoops-1`. Y de propina, cualquier mensaje que el núcleo
+# sí llegue a emitir antes de un cuelgue queda capturado — hoy se perdería.
+cat > "$CONF_CONSOLA" <<'EOF'
+# Nivel de consola a 7 para que los mensajes del núcleo lleguen a ramoops.
+# Dueño: 20_APROVISIONAMIENTO/08_observabilidad.sh. 00_RECTOR.md §7.sexies.
+kernel.printk = 7 4 1 7
+EOF
+sysctl -q -p "$CONF_CONSOLA"
+
+cat > "$MARCA_SH" <<'EOF'
+#!/bin/sh
+# Marca el búfer de consola de ramoops para que NO quede vacío.
+#
+# Un búfer vacío tras un corte es ambiguo: lo producen igual un corte de
+# corriente y un cuelgue mudo. Con esta línea dentro, deja de serlo — si
+# reaparece en /var/lib/systemd/pstore/ tras el siguiente corte, la RAM
+# sobrevivió y el nodo se colgó; si no aparece nada, la RAM perdió la
+# corriente. 00_RECTOR.md §7.sexies.
+set -eu
+printf '<6>nas: marca de arranque %s\n' "$(date -Is)" > /dev/kmsg
+EOF
+chmod 0755 "$MARCA_SH"
+
+cat > "$MARCA_UNIDAD" <<'EOF'
+[Unit]
+Description=Marcar el buffer de ramoops para distinguir un corte de un cuelgue
+Documentation=file:///home/usuario/nas-aprovisionamiento/08_observabilidad.sh
+# DESPUES de systemd-pstore: ese servicio mueve la captura anterior y al
+# desenlazarla BORRA la zona. Escribir antes seria escribir en algo que se
+# va a borrar. Un systemd-pstore SALTADO tambien ordena, asi que esto vale
+# igual el dia que no haya captura previa que archivar.
+After=systemd-pstore.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nas-marca-arranque.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now nas-marca-arranque.service >/dev/null 2>&1 || true
+
+# COMPROBADO POR SU EFECTO, no por lo que diga el script: que el nivel esté
+# puesto, que ramoops siga siendo una consola registrada —sin eso la marca no
+# llega a ninguna parte— y que la línea exista de verdad en el anillo del
+# núcleo.
+NIVEL=$(cut -f1 /proc/sys/kernel/printk)
+if [ "$NIVEL" -ge 7 ]; then
+  verde "Nivel de consola: $NIVEL (la marca llega a ramoops)"
+else
+  rojo "Nivel de consola es $NIVEL: la marca NO llegaría a ramoops."
+  exit 1
+fi
+if grep -q ramoops /proc/consoles; then
+  verde "ramoops sigue registrado como consola"
+else
+  rojo "ramoops NO está registrado como consola: falta dtoverlay=ramoops en config.txt."
+  exit 1
+fi
+if dmesg | grep -q "nas: marca de arranque"; then
+  verde "Marca escrita y presente en el anillo del núcleo"
+else
+  rojo "La marca no aparece en dmesg."
+  exit 1
+fi
+
+echo
+aviso "LO QUE ESTA MARCA NO HACE: no evita ningún corte ni avisa de ninguno."
+aviso "  Solo hace legible el SIGUIENTE. La causa de P-11 ya está determinada"
+aviso "  (§7.sexies) y lo que queda es una acción física del responsable."
+
 echo
 verde "Paso completado."
 echo "Siguiente: sudo ./09_verificar_operacion.sh"
