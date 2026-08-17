@@ -217,6 +217,7 @@ func servidorConPlazo(t *testing.T, plazo time.Duration) *Servidor {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)

@@ -115,6 +115,18 @@ func (c Config) RutaSeguridad() string {
 	return filepath.Join(c.DirectorioEstado, "seguridad")
 }
 
+// RutaConexiones es el historial de conexiones entrantes de Internet
+// (internal/seguridad, ADR-0064). Mismo directorio y mismo argumento que
+// RutaSeguridad: son direcciones de quien toca la puerta, y por SMB serían el
+// mapa de lo que se está observando.
+//
+// ARCHIVO APARTE Y NO UNA SECCIÓN DEL ANTERIOR: son dos anillos con tamaños,
+// ritmos y contenidos distintos, y meterlos en el mismo archivo obligaría a
+// reescribir los dos cada vez que se ensuciara uno.
+func (c Config) RutaConexiones() string {
+	return filepath.Join(c.DirectorioEstado, "conexiones")
+}
+
 // RutaGeoIP es la base que resuelve una dirección a su país y su operador
 // (internal/geoip).
 //

@@ -373,6 +373,7 @@ func servidorParaMetricas(t *testing.T, bytesPorUsuario map[string]int64) *Servi
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -441,6 +442,7 @@ func TestRefrescarMetricasCuentaComoCeroLaCuentaSinCarpeta(t *testing.T) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -484,6 +486,7 @@ func TestRefrescarMetricasContinuaSiUnaCuentaFalla(t *testing.T) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)

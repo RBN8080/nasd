@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/netip"
 	"time"
@@ -101,6 +102,48 @@ func ipDe(r *http.Request) netip.Addr {
 		return netip.Addr{}
 	}
 	return ip
+}
+
+// anotarConexion registra toda conexión entrante de Internet, hable HTTP o no.
+// Es el http.Server.ConnState de los dos servidores (servidor.go).
+//
+// # POR QUÉ AQUÍ Y NO EN UN net.Listener ENVUELTO
+//
+// Se consideró envolver el listener de web.EscucharTLS, que es el otro sitio
+// por el que pasa toda conexión. Se descartó: solo cubriría el 443, y habría
+// que envolver también el del 80 por separado o dejar un hueco asimétrico —
+// exactamente el modo de fallo de D-21, donde una vía se verificó y la otra
+// no. ConnState lo pone HTTPServer, que construye los dos servidores, así que
+// ningún puerto futuro puede quedarse fuera por olvido. Es el mismo argumento
+// que ya justifica poner el registro y los contadores en conRegistro.
+//
+// # POR QUÉ EN StateNew Y NO AL CERRAR
+//
+// StateNew es el HECHO —«se aceptó una conexión desde X»— y se sabe entero en
+// ese instante. Esperar al cierre permitiría además decir si llegó a pedir
+// algo, pero eso exige recordar cada conexión viva en un mapa hasta que
+// muera: un sexto punto de estado compartido, con su candado, para responder
+// una pregunta que la tabla de rechazos ya contesta enseñando a esa misma
+// dirección. No se paga.
+//
+// NO FILTRA POR RED: eso lo hace Conexiones.Anotar, que descarta todo lo que
+// no venga de Internet. El filtro vive en un solo sitio a propósito.
+func (s *Servidor) anotarConexion(c net.Conn, estado http.ConnState) {
+	if estado != http.StateNew {
+		return
+	}
+	// RemoteAddr viene del socket y no de una cabecera, así que no se puede
+	// falsificar — la misma propiedad que hace fiable a ipDe, y por eso aquí
+	// tampoco se mira X-Forwarded-For.
+	dir, err := netip.ParseAddrPort(c.RemoteAddr().String())
+	if err != nil {
+		// Sin dirección legible no hay nada que anotar. No se registra en el
+		// diario: esto corre en el bucle de aceptación, y un origen capaz de
+		// provocar el fallo podría convertir el propio registro en su
+		// amplificador.
+		return
+	}
+	s.conexiones.Anotar(dir.Addr(), time.Now())
 }
 
 // anotarRechazo registra la petición negada. Solo lo llama conRegistro.

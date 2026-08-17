@@ -38,14 +38,63 @@
      rechazos guardados. El diario del nodo (ADR-0037) sí conserva la
      historia entera. -->
 <p class="nota">
-  Esto registra <strong>peticiones web rechazadas</strong>, no ataques.
-  La mayoría de lo que aparece aquí es uso normal: abrir el NAS sin sesión
-  produce un rechazo, igual que un enlace antiguo.
+  Esto registra <strong>lo que llega, no ataques</strong>. Arriba, quién abre
+  conexión desde Internet; abajo, qué peticiones se rechazaron y por qué.
+  La mayoría de lo de abajo es uso normal: abrir el NAS sin sesión produce un
+  rechazo, igual que un enlace antiguo.
+  <strong>La página abre mostrando solo Internet.</strong> La red local y el
+  túnel siguen enteros en el desplegable «Origen».
   {{if .Resumen.Truncado}}
   Se conservan los <strong>{{.Resumen.Eventos}}</strong> más recientes de
   <strong>{{.Resumen.TotalHistorico}}</strong> vistos desde que existe este registro.
   {{end}}
 </p>
+
+<!-- LAS CONEXIONES VAN PRIMERO, ANTES INCLUSO DEL RESUMEN, y es el cambio
+     que ordena la página entera: es lo único que el responsable declaró
+     querer ver («únicamente reporte conexiones entrantes en internet»), y
+     además es lo único que ve a quien toca el puerto sin llegar a pedir nada.
+     El 16/08 veinte direcciones de DRIFTNET recorrieron el 443 y las tablas
+     de abajo solo pudieron enseñar una. -->
+<h2>Conexiones desde Internet</h2>
+<p class="nota">
+  Cada vez que alguien de fuera <strong>abre una conexión</strong> al nodo, aunque
+  no llegue a pedir nada. Un sondeo que ofrece un TLS antiguo muere aquí: el
+  servidor lo rechaza antes de leer una sola petición, así que no aparece en las
+  tablas de rechazos de más abajo — solo en esta.
+  {{if .TotalConexiones}}
+  <strong>{{.Conexiones}}</strong> en esta ventana, de <strong>{{.TotalConexiones}}</strong>
+  vistas desde que existe este registro.
+  {{end}}
+</p>
+<table class="datos tabla-origenes">
+  <thead>
+    <tr><th>Dirección</th>{{if .HayGeo}}<th>Operador</th>{{end}}<th>Conexiones</th><th>Primera</th><th>Última</th></tr>
+  </thead>
+  <tbody>
+  {{range .Conectados}}
+    <!-- TODAS se destacan, sin excepción y sin gravedad que calcular: en esta
+         tabla no hay nada que no venga de fuera. Es el mismo criterio que
+         Origen.Destacar aplica a lo de Internet, pero aquí no hace falta
+         preguntarlo. -->
+    <tr class="g-aviso">
+      <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
+      {{if $.HayGeo}}
+      <td class="operador">
+        {{- if .TieneGeo}}<strong>{{.Geo.Nombre}}</strong>{{if .Geo.Pais}} · {{.Geo.Pais}}{{end}}
+          <span class="asn">AS{{.Geo.ASN}}</span>
+        {{- else}}<em>operador desconocido</em>{{end}}
+      </td>
+      {{end}}
+      <td class="num">{{.Conexiones}}</td>
+      <td class="num">{{fecha .Primera}}</td>
+      <td class="num">{{fecha .Ultima}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="{{if .HayGeo}}5{{else}}4{{end}}">Nadie de Internet ha abierto conexión en esta ventana.</td></tr>
+  {{end}}
+  </tbody>
+</table>
 
 <h2>Resumen</h2>
 <table class="datos">
