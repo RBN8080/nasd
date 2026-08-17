@@ -330,28 +330,29 @@ fi
 # VA DESPUÉS de systemd-pstore a propósito: ese servicio MUEVE la captura
 # anterior y al desenlazarla BORRA la zona. Escribir antes sería escribir en
 # algo que se va a borrar.
-CONF_CONSOLA=/etc/sysctl.d/99-nas-consola.conf
 MARCA_SH=/usr/local/sbin/nas-marca-arranque.sh
 MARCA_UNIDAD=/etc/systemd/system/nas-marca-arranque.service
 
 echo
 echo "== 4. Marca de arranque en ramoops (discriminador de P-11) =="
 
-# El nivel de consola por omisión es 4: solo pasan los niveles 0-3, es decir
-# de «emerg» a «err». Sin subirlo, la marca tendría que emitirse como ERROR
-# para llegar a ramoops, y una línea rutinaria disfrazada de error ensucia
-# justo la herramienta con la que se buscan los errores de verdad.
+# POR QUÉ EL NIVEL DE CONSOLA SE FIJA EN EL SCRIPT Y NO EN /etc/sysctl.d,
+# que fue el primer intento y NO FUNCIONÓ — medido al reiniciar el nodo,
+# no supuesto:
 #
-# Se sube a 7 y no se toca nada más. En este nodo NO cuesta rendimiento:
-# `8250.nr_uarts=0` deja la UART apagada y /proc/consoles solo lista `tty1`
-# (sin pantalla) y `ramoops-1`. Y de propina, cualquier mensaje que el núcleo
-# sí llegue a emitir antes de un cuelgue queda capturado — hoy se perdería.
-cat > "$CONF_CONSOLA" <<'EOF'
-# Nivel de consola a 7 para que los mensajes del núcleo lleguen a ramoops.
-# Dueño: 20_APROVISIONAMIENTO/08_observabilidad.sh. 00_RECTOR.md §7.sexies.
-kernel.printk = 7 4 1 7
-EOF
-sysctl -q -p "$CONF_CONSOLA"
+#   systemd-sysctl aplicó el archivo a los 19.85 s... y `plymouth-start`
+#   arrancó a los 20.08 s. Plymouth baja el nivel de consola mientras pinta
+#   el splash y al salir lo RESTAURA al valor original —4—, no al que
+#   hubiera puesto sysctl.d. Resultado: el archivo se aplicaba, `sysctl -n`
+#   lo confirmaba en caliente, y tras el siguiente reinicio el nivel volvía
+#   a 4 con la marca yendo solo a `dmesg` y NUNCA a ramoops.
+#
+#   El instrumento habría estado roto en silencio, y encima fallando hacia
+#   el lado peligroso: «sin captura» se lee como «confirma la corriente».
+#
+# Aquí hay UN SOLO DUEÑO y se aplica en el instante que importa. El archivo
+# de sysctl.d se retira: dejarlo sería un segundo dueño que además miente.
+rm -f /etc/sysctl.d/99-nas-consola.conf
 
 cat > "$MARCA_SH" <<'EOF'
 #!/bin/sh
@@ -363,6 +364,18 @@ cat > "$MARCA_SH" <<'EOF'
 # sobrevivió y el nodo se colgó; si no aparece nada, la RAM perdió la
 # corriente. 00_RECTOR.md §7.sexies.
 set -eu
+
+# El nivel por omisión es 4: solo pasan de «emerg» a «err». Sin subirlo, la
+# marca tendría que emitirse como ERROR para llegar a ramoops, y una línea
+# rutinaria disfrazada de error ensucia justo la herramienta con la que se
+# buscan los errores de verdad.
+#
+# Se fija JUSTO ANTES de escribir, y la unidad ordena esto después de que
+# plymouth se haya ido: es lo único que garantiza que el valor esté puesto
+# en el instante del write. En este nodo no cuesta rendimiento —
+# `8250.nr_uarts=0` deja la UART apagada y solo hay `tty1` sin pantalla— y
+# de propina deja capturado todo lo que el núcleo emita antes de un cuelgue.
+printf '7 4 1 7' > /proc/sys/kernel/printk
 printf '<6>nas: marca de arranque %s\n' "$(date -Is)" > /dev/kmsg
 EOF
 chmod 0755 "$MARCA_SH"
@@ -375,7 +388,12 @@ Documentation=file:///home/usuario/nas-aprovisionamiento/08_observabilidad.sh
 # desenlazarla BORRA la zona. Escribir antes seria escribir en algo que se
 # va a borrar. Un systemd-pstore SALTADO tambien ordena, asi que esto vale
 # igual el dia que no haya captura previa que archivar.
-After=systemd-pstore.service
+#
+# Y DESPUES de plymouth-quit, que es el defecto que costo un reinicio
+# encontrar: plymouth restaura el nivel de consola al salir (48 s) y borraba
+# el que pusiera cualquiera antes. Ordenar por detras de el es lo que hace
+# que el valor fijado por el script sobreviva al resto del arranque.
+After=systemd-pstore.service plymouth-quit.service
 
 [Service]
 Type=oneshot
@@ -398,6 +416,16 @@ if [ "$NIVEL" -ge 7 ]; then
   verde "Nivel de consola: $NIVEL (la marca llega a ramoops)"
 else
   rojo "Nivel de consola es $NIVEL: la marca NO llegaría a ramoops."
+  exit 1
+fi
+# La comprobación que de verdad importa, y que la primera versión NO tenía:
+# que la unidad vaya por detrás de plymouth. Sin esto el nivel se aplica, el
+# script lo confirma en caliente, y aun así el instrumento queda roto en el
+# siguiente arranque — que es exactamente lo que pasó el 2026-08-16.
+if systemctl show nas-marca-arranque.service -p After --value | grep -q plymouth-quit; then
+  verde "Ordenada por detrás de plymouth-quit (sin esto, el nivel se perdería al arrancar)"
+else
+  rojo "nas-marca-arranque NO va después de plymouth-quit: el instrumento fallaría en el próximo arranque."
   exit 1
 fi
 if grep -q ramoops /proc/consoles; then
