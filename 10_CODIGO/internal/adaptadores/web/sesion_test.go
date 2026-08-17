@@ -58,6 +58,18 @@ func seguridadDePrueba(t *testing.T) *seguridad.Anillo {
 	return a
 }
 
+// conexionesDePrueba acompaña a seguridadDePrueba: web.Nuevo exige las dos
+// piezas, y por el mismo motivo — sin ellas el panel enseñaría «no ha pasado
+// nada» sin una sola línea de aviso.
+func conexionesDePrueba(t *testing.T) *seguridad.Conexiones {
+	t.Helper()
+	c, err := seguridad.CargarConexiones(filepath.Join(t.TempDir(), "conexiones"))
+	if err != nil {
+		t.Fatalf("seguridad.CargarConexiones: %v", err)
+	}
+	return c
+}
+
 // almacenPorUsuarioDePrueba entrega SIEMPRE el mismo almacén.
 //
 // Vale porque lo que se comprueba en este paquete es el reparto —quién recibe
@@ -92,6 +104,7 @@ func servidorConAuth(t *testing.T) *Servidor {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -120,6 +133,7 @@ func servidorConAuthYInactividad(t *testing.T, inactividad time.Duration) *Servi
 		InactividadSesion: inactividad,
 		Metricas:          metricasDePrueba(t),
 		Seguridad:         seguridadDePrueba(t),
+		Conexiones:        conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)
@@ -303,6 +317,7 @@ func TestSinCredencialNoArranca(t *testing.T) {
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
 			Seguridad:       seguridadDePrueba(t),
+			Conexiones:      conexionesDePrueba(t),
 		})
 		if err == nil {
 			t.Errorf("arrancó con una credencial inválida: %q", mala)

@@ -55,6 +55,7 @@ func servidorConAlmacenReservado(t *testing.T) *Servidor {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
 		t.Fatalf("Nuevo: %v", err)

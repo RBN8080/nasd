@@ -75,6 +75,10 @@ type Servidor struct {
 	// contador único de contadores.cliente no podía dar. Acotado por
 	// construcción: es un anillo, no puede crecer.
 	seguridad *seguridad.Anillo
+	// conexiones guarda toda conexión entrante de INTERNET, hable HTTP o no.
+	// Es lo único que ve lo que muere en el saludo TLS, que es donde murieron
+	// 19 de los 20 sondeos del 2026-08-16 — ver internal/seguridad/conexiones.go.
+	conexiones *seguridad.Conexiones
 	// geo resuelve un origen de Internet a su país y su operador. PUEDE SER
 	// NULA: sin base instalada el panel funciona igual, solo que sin ese dato.
 	geo *geoip.BaseDatos
@@ -161,6 +165,12 @@ type Opciones struct {
 	// diría «no ha pasado nada» — una degradación silenciosa, y encima en la
 	// pieza cuyo único trabajo es no callarse.
 	Seguridad *seguridad.Anillo
+	// Conexiones es el historial de conexiones entrantes de Internet.
+	// Obligatorio por el MISMO criterio que Seguridad, y con más motivo: si
+	// faltara, el panel volvería a enseñar «1» donde hubo 20 y lo haría sin
+	// una sola línea en el diario. Es la degradación silenciosa que esta
+	// pieza existe para cerrar, así que no puede ser opcional.
+	Conexiones *seguridad.Conexiones
 	// GeoIP resuelve un origen de Internet a su país y su operador.
 	//
 	// ES LA ÚNICA DEPENDENCIA OPCIONAL DE TODA ESTA ESTRUCTURA, y a propósito:
@@ -209,6 +219,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.Seguridad == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta Seguridad (panel de seguridad, etapa 1)")
 	}
+	if o.Conexiones == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Conexiones (panel de seguridad, ADR-0064)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -235,6 +248,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		volumen:           o.Volumen,
 		metricas:          o.Metricas,
 		seguridad:         o.Seguridad,
+		conexiones:        o.Conexiones,
 		geo:               o.GeoIP,
 		dirMiniaturas:     o.DirMiniaturas,
 		miniaturaSem:      make(chan struct{}, 1),
@@ -419,6 +433,10 @@ func (s *Servidor) HTTPServer(direccion string, puerto int) *http.Server {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 		ErrorLog:          slog.NewLogLogger(s.reg.Handler(), slog.LevelWarn),
+		// ConnState ve lo que conRegistro NO PUEDE ver: una conexión que se
+		// acepta y muere en el saludo TLS nunca produce una petición HTTP, así
+		// que nunca llega al middleware. Ver anotarConexion.
+		ConnState: s.anotarConexion,
 	}
 }
 

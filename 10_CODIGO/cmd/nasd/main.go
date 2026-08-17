@@ -161,6 +161,15 @@ func ejecutar() error {
 			"ruta", cfg.RutaSeguridad(), "error", err)
 	}
 
+	// El historial de CONEXIONES entrantes de Internet (ADR-0064), que es lo
+	// único capaz de ver lo que muere en el saludo TLS. Mismo tratamiento del
+	// error y por el mismo motivo que el anterior.
+	conexiones, err := seguridad.CargarConexiones(cfg.RutaConexiones())
+	if err != nil {
+		reg.Error("el historial de conexiones no se pudo leer; se empieza vacío",
+			"ruta", cfg.RutaConexiones(), "error", err)
+	}
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen: alm,
 		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
@@ -184,6 +193,7 @@ func ejecutar() error {
 		Volumen:           cfg.Volumen,
 		Metricas:          metricasUso,
 		Seguridad:         historial,
+		Conexiones:        conexiones,
 		GeoIP:             baseGeo,
 		// Miniaturas EXIF — rector §7.nonies.bis. Siempre se pasa la ruta
 		// derivada, igual que RutaGeoIP: si nas-miniatura no está instalado
@@ -212,6 +222,12 @@ func ejecutar() error {
 	defer close(pararHistorial)
 	go historial.Mantener(pararHistorial, func(err error) {
 		reg.Error("no se pudo volcar el historial de seguridad", "error", err)
+	})
+	// El de conexiones comparte el canal de parada: los dos se vuelcan en el
+	// mismo apagado ordenado, y dos canales para un solo momento serían dos
+	// sitios donde olvidarse de cerrar uno.
+	go conexiones.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudo volcar el historial de conexiones", "error", err)
 	})
 
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

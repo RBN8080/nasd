@@ -55,10 +55,29 @@ type filaOrigen struct {
 	TieneGeo bool
 }
 
+// filaConectado es una dirección de Internet que abrió conexiones, con su
+// procedencia resuelta. Existe por lo mismo que filaOrigen: unir el hecho con
+// la base de operadores es trabajo del adaptador, no del dominio.
+type filaConectado struct {
+	seguridad.OrigenConectado
+	Geo      geoip.Info
+	TieneGeo bool
+}
+
 type vistaSeguridad struct {
-	Resumen  seguridad.Resumen
-	Origenes []filaOrigen
-	Eventos  []seguridad.Evento
+	Resumen seguridad.Resumen
+	// Conectados son las direcciones de Internet que ABRIERON CONEXIÓN, hayan
+	// llegado o no a pedir algo. Va aparte de Origenes y no mezclado con él
+	// porque son hechos de distinta naturaleza: aquello son rechazos de
+	// peticiones, esto son conexiones. Ver internal/seguridad/conexiones.go.
+	Conectados []filaConectado
+	// Conexiones son las de la ventana; TotalConexiones, las de siempre. Las
+	// dos cifras, por lo mismo que en el anillo de rechazos: un anillo lleno
+	// no debe leerse como «esto es todo lo que ha pasado».
+	Conexiones      int
+	TotalConexiones int64
+	Origenes        []filaOrigen
+	Eventos         []seguridad.Evento
 	// Filtro es lo aplicado, devuelto a la vista para que los campos del
 	// formulario conserven lo tecleado tras recargar.
 	Horas    int
@@ -128,7 +147,26 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	if g, ok := gravedadDesde(q.Get("gravedad")); ok {
 		f.Gravedad = &g
 	}
-	if red, ok := redDesde(q.Get("red")); ok {
+
+	// EL PANEL ABRE EN «INTERNET» Y NO EN «TODO», por encargo del responsable
+	// del 2026-08-16: «quisiera que lo de la lan y túnel wireguard quedara en
+	// segundo lugar y únicamente reporte conexiones entrantes en internet».
+	//
+	// Segundo lugar, NO fuera: la LAN y el túnel siguen enteros a una opción
+	// del desplegable. Lo que cambia es cuál es el estado limpio de la página.
+	// Antes había que acordarse de filtrar para ver lo único que se declaró
+	// importante, con la casa —que es casi todo el tráfico— tapándolo.
+	//
+	// q.Has y no q.Get: los dos devuelven "" para «no vino el parámetro» y
+	// para «vino vacío», y aquí significan lo contrario. El <select> manda
+	// siempre red= (vacío en «Cualquier origen»), así que elegir «todo» se
+	// distingue de no haber elegido nada. Consecuencia buscada: «Quitar
+	// filtros», que no manda campos, devuelve a Internet-solo.
+	redElegida := seguridad.RedInternet.String()
+	if q.Has("red") {
+		redElegida = q.Get("red")
+	}
+	if red, ok := redDesde(redElegida); ok {
 		f.Red = &red
 	}
 
@@ -146,9 +184,19 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		hayMas = true
 	}
 
+	// Las conexiones NO pasan por el Filtro: no tienen motivo, ni gravedad, ni
+	// ruta que filtrar, y son de Internet por construcción. Lo único que
+	// comparten con los rechazos es la VENTANA, y por eso es lo único que se
+	// les aplica — inventarles los demás filtros sería ofrecer controles que
+	// no pueden hacer nada.
+	conexiones := s.conexiones.Desde(f.Desde)
+
 	v := vistaSeguridad{
 		Resumen:         resumen,
 		Origenes:        s.resolverProcedencia(origenes),
+		Conectados:      s.resolverConectados(seguridad.PorOrigenConectado(conexiones)),
+		Conexiones:      len(conexiones),
+		TotalConexiones: s.conexiones.Total(),
 		HayGeo:          s.geo != nil,
 		FechaGeo:        s.geo.Fecha(),
 		Eventos:         cronologia,
@@ -157,11 +205,11 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		Ruta:            f.Ruta,
 		Motivo:          q.Get("motivo"),
 		Gravedad:        q.Get("gravedad"),
-		Red:             q.Get("red"),
+		Red:             redElegida,
 		Ventanas:        opcionesDeVentana(int(horas)),
 		Motivos:         opcionesDeMotivo(q.Get("motivo")),
 		Gravedades:      opcionesDeGravedad(q.Get("gravedad")),
-		Redes:           opcionesDeRed(q.Get("red")),
+		Redes:           opcionesDeRed(redElegida),
 		TopeCronologico: topeCronologico,
 		HayMas:          hayMas,
 	}
@@ -259,6 +307,20 @@ func redDesde(s string) (seguridad.Red, bool) {
 //
 // El coste es despreciable: son las ~20 lecturas de 16 bytes de una busqueda
 // binaria por cada direccion distinta mostrada, no por evento.
+// resolverConectados hace con las conexiones lo mismo que resolverProcedencia
+// con los rechazos. NO comprueba DeFuera: aquí todo es de Internet por
+// construcción del anillo, y repetir la comprobación daría a entender que
+// puede haber otra cosa.
+func (s *Servidor) resolverConectados(origenes []seguridad.OrigenConectado) []filaConectado {
+	filas := make([]filaConectado, 0, len(origenes))
+	for _, o := range origenes {
+		f := filaConectado{OrigenConectado: o}
+		f.Geo, f.TieneGeo = s.geo.Buscar(o.IP)
+		filas = append(filas, f)
+	}
+	return filas
+}
+
 func (s *Servidor) resolverProcedencia(origenes []seguridad.Origen) []filaOrigen {
 	filas := make([]filaOrigen, 0, len(origenes))
 	for _, o := range origenes {

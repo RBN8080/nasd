@@ -345,13 +345,26 @@ func TestLosFiltrosDelPanelAcotanDeVerdad(t *testing.T) {
 	delTunel.RemoteAddr = "10.77.0.3:51820"
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), delTunel)
 
-	// Sin filtro salen los dos.
-	todo := panelSeguridad(t, s, "")
-	if !strings.Contains(todo, "203.0.113.7") || !strings.Contains(todo, "10.77.0.3") {
-		t.Fatal("sin filtro deberían salir los dos orígenes")
+	// SIN PARÁMETROS EL PANEL ABRE EN INTERNET, no en «todo». Encargo del
+	// responsable del 2026-08-16; esta prueba afirmaba lo contrario y es la
+	// que destapó el cambio de contrato, que es justo para lo que está.
+	porOmision := panelSeguridad(t, s, "")
+	if !strings.Contains(porOmision, "203.0.113.7") {
+		t.Error("el panel por omisión perdió el origen de Internet")
+	}
+	if strings.Contains(porOmision, "10.77.0.3") {
+		t.Error("el panel por omisión enseñó el túnel; debe abrir solo con Internet")
 	}
 
-	// Filtrando por Internet, el del túnel desaparece.
+	// «Cualquier origen» —red= vacío, que es lo que manda el <select>— sí
+	// enseña los dos. Es la mitad que hace que la LAN y el túnel queden en
+	// segundo lugar y no fuera.
+	todo := panelSeguridad(t, s, "?red=")
+	if !strings.Contains(todo, "203.0.113.7") || !strings.Contains(todo, "10.77.0.3") {
+		t.Fatal("con «cualquier origen» deberían salir los dos")
+	}
+
+	// Y pedir Internet explícitamente da lo mismo que no pedir nada.
 	soloFuera := panelSeguridad(t, s, "?red=internet")
 	if !strings.Contains(soloFuera, "203.0.113.7") {
 		t.Error("el filtro por Internet perdió el origen externo")
@@ -360,8 +373,13 @@ func TestLosFiltrosDelPanelAcotanDeVerdad(t *testing.T) {
 		t.Error("el filtro por Internet dejó pasar un origen del túnel")
 	}
 
-	// Y por ruta.
-	porRuta := panelSeguridad(t, s, "?ruta=sondeo")
+	// Y por ruta. Va con red= vacío A PROPÓSITO: sin eso, el del túnel
+	// desaparecería por el filtro de red por omisión y esta comprobación
+	// pasaría sin haber probado nada del filtro de ruta.
+	porRuta := panelSeguridad(t, s, "?red=&ruta=sondeo")
+	if !strings.Contains(porRuta, "203.0.113.7") {
+		t.Error("el filtro por ruta perdió lo que sí la contiene")
+	}
 	if strings.Contains(porRuta, "10.77.0.3") {
 		t.Error("el filtro por ruta dejó pasar lo que no la contiene")
 	}

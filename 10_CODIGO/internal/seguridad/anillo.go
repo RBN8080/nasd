@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -276,50 +277,73 @@ func (a *Anillo) Volcar() error {
 	return nil
 }
 
-// guardar son los cuatro pasos de ADR-0024: temporal en el mismo directorio,
-// fsync del contenido, rename, fsync del directorio. Idéntico a
-// metricas.guardar, y por el mismo motivo: un archivo a medio escribir es un
-// historial ilegible, y el nodo ya perdió la corriente una vez.
+// guardar escribe el historial de rechazos.
 func (a *Anillo) guardar(eventos []Evento) error {
-	dir := filepath.Dir(a.ruta)
+	return escribirAtomico(a.ruta, ".seguridad-*", func(w io.Writer) error {
+		fmt.Fprintf(w, "# Historial de rechazos — anillo de %d eventos, del más antiguo al más reciente.\n", Capacidad)
+		fmt.Fprint(w, "# Un evento por línea, en JSON. NUNCA contiene contraseñas, cookies ni cuerpos (04_SEGURIDAD §6).\n")
+		enc := json.NewEncoder(w)
+		for _, e := range eventos {
+			if err := enc.Encode(deEvento(e)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// escribirAtomico son los cuatro pasos de ADR-0024: temporal en el mismo
+// directorio, fsync del contenido, rename, fsync del directorio. Un archivo a
+// medio escribir es un historial ilegible, y el nodo ya perdió la corriente
+// una vez.
+//
+// # POR QUÉ ES UNA FUNCIÓN Y NO ESTABA SUELTA EN CADA ANILLO
+//
+// Porque desde el 2026-08-16 hay DOS historiales en este paquete —rechazos y
+// conexiones— y esta danza es idéntica en los dos. Con una copia por anillo,
+// arreglar un paso en uno dejaría al otro sin arreglar y nadie se enteraría
+// hasta un corte de corriente. La segunda copia es el momento de extraerla; la
+// primera no lo era, y por eso hasta ahora vivía dentro de guardar.
+//
+// Sigue habiendo otra copia en internal/metricas, y se queda ahí a propósito:
+// unificarla obligaría a un paquete común que solo tendría esta función
+// dentro, y ese paquete no existe todavía porque una tercera copia no basta
+// para justificarlo.
+func escribirAtomico(ruta, patronTmp string, escribir func(io.Writer) error) error {
+	dir := filepath.Dir(ruta)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("preparar %q: %w", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".seguridad-*")
+	tmp, err := os.CreateTemp(dir, patronTmp)
 	if err != nil {
-		return fmt.Errorf("crear el temporal del historial de seguridad: %w", err)
+		return fmt.Errorf("crear el temporal de %q: %w", ruta, err)
 	}
 	nombreTmp := tmp.Name()
 	defer os.Remove(nombreTmp) // no-op si el rename salió bien
 
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
-		return fmt.Errorf("permisos del historial de seguridad: %w", err)
+		return fmt.Errorf("permisos de %q: %w", ruta, err)
 	}
 
 	w := bufio.NewWriter(tmp)
-	fmt.Fprintf(w, "# Historial de rechazos — anillo de %d eventos, del más antiguo al más reciente.\n", Capacidad)
-	w.WriteString("# Un evento por línea, en JSON. NUNCA contiene contraseñas, cookies ni cuerpos (04_SEGURIDAD §6).\n")
-	enc := json.NewEncoder(w)
-	for _, e := range eventos {
-		if err := enc.Encode(deEvento(e)); err != nil {
-			tmp.Close()
-			return fmt.Errorf("serializar el historial de seguridad: %w", err)
-		}
+	if err := escribir(w); err != nil {
+		tmp.Close()
+		return fmt.Errorf("serializar %q: %w", ruta, err)
 	}
 	if err := w.Flush(); err != nil {
 		tmp.Close()
-		return fmt.Errorf("escribir el historial de seguridad: %w", err)
+		return fmt.Errorf("escribir %q: %w", ruta, err)
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return fmt.Errorf("sincronizar el historial de seguridad: %w", err)
+		return fmt.Errorf("sincronizar %q: %w", ruta, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("cerrar el temporal del historial de seguridad: %w", err)
+		return fmt.Errorf("cerrar el temporal de %q: %w", ruta, err)
 	}
-	if err := os.Rename(nombreTmp, a.ruta); err != nil {
-		return fmt.Errorf("publicar el historial de seguridad: %w", err)
+	if err := os.Rename(nombreTmp, ruta); err != nil {
+		return fmt.Errorf("publicar %q: %w", ruta, err)
 	}
 	return sincronizarDir(dir)
 }

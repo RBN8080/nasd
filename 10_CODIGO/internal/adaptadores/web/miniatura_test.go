@@ -106,6 +106,7 @@ func servidorDeMiniatura(t *testing.T, doble func(ctx context.Context, entrada, 
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Conexiones:       conexionesDePrueba(t),
 		DirMiniaturas:    filepath.Join(t.TempDir(), "miniaturas"),
 	})
 	if err != nil {
