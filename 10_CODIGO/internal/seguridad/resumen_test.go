@@ -68,7 +68,7 @@ func TestUnEscanerDeVerdadSiSeMarca(t *testing.T) {
 		t.Fatalf("se esperaba un solo origen, hay %d", len(o))
 	}
 	if !slices.Contains(o[0].Senales, SenalExploracion) {
-		t.Fatalf("un escáner con %d rutas distintas no levantó la señal", o[0].RutasDistintas)
+		t.Fatalf("un escáner con %d rutas distintas no levantó la señal", umbralExploracion+2)
 	}
 }
 
@@ -190,13 +190,8 @@ func TestFiltrosAcotanLoQueSeMira(t *testing.T) {
 		quiero int
 	}{
 		{"sin filtro", Filtro{}, 3},
-		{"por IP exacta", Filtro{IP: "10.77.0.3"}, 1},
-		{"por prefijo de red", Filtro{IP: "203.0.113"}, 1},
-		{"por ruta", Filtro{Ruta: "acceso"}, 1},
-		{"por ruta sin distinguir mayúsculas", Filtro{Ruta: "WP-LOGIN"}, 1},
 		{"por motivo", Filtro{Motivo: &motivo}, 1},
 		{"por red", Filtro{Red: ptr(RedInternet)}, 1},
-		{"por gravedad", Filtro{Gravedad: ptr(Atencion)}, 0},
 	}
 	for _, c := range casos {
 		t.Run(c.nombre, func(t *testing.T) {
@@ -207,16 +202,23 @@ func TestFiltrosAcotanLoQueSeMira(t *testing.T) {
 	}
 }
 
-// Filtrar por Rutina tiene que poder distinguirse de «no filtrar», y por eso
-// el campo es un puntero: Rutina es el valor cero de Gravedad.
-func TestFiltrarPorRutinaNoEsLoMismoQueNoFiltrar(t *testing.T) {
+// Filtrar por «desconocido» tiene que poder distinguirse de «no filtrar», y por
+// eso el campo es un puntero: MotivoDesconocido es el valor cero de Motivo.
+//
+// Esta prueba defendía la misma propiedad sobre Gravedad, que era el otro campo
+// con valor cero legítimo. Al retirarse aquel filtro (ADR-0065) la propiedad no
+// desaparece —sigue habiendo un puntero que la necesita—, así que la prueba se
+// muda al campo que la conserva en vez de borrarse. Un motivo desconocido no es
+// una rareza: conRegistro anota así todo 4xx que ninguna guarda clasificó, y
+// verlo en el panel es lo que hace que se le ponga nombre.
+func TestFiltrarPorDesconocidoNoEsLoMismoQueNoFiltrar(t *testing.T) {
 	base := time.Now()
 	a := &Anillo{buf: make([]Evento, Capacidad)}
-	a.Anotar(ev(base, "203.0.113.7", SinSesion, "/"))         // rutina
-	a.Anotar(ev(base, "203.0.113.7", TestigoCSRF, "/borrar")) // atención
+	a.Anotar(ev(base, "203.0.113.7", MotivoDesconocido, "/"))
+	a.Anotar(ev(base, "203.0.113.7", TestigoCSRF, "/borrar"))
 
-	if got := len(a.Filtrados(Filtro{Gravedad: ptr(Rutina)})); got != 1 {
-		t.Fatalf("filtrando por rutina salen %d eventos, se esperaba 1", got)
+	if got := len(a.Filtrados(Filtro{Motivo: ptr(MotivoDesconocido)})); got != 1 {
+		t.Fatalf("filtrando por desconocido salen %d eventos, se esperaba 1", got)
 	}
 	if got := len(a.Filtrados(Filtro{})); got != 2 {
 		t.Fatalf("sin filtrar salen %d eventos, se esperaban 2", got)
@@ -231,7 +233,7 @@ func TestElResumenDiceCuantoNoEstaMostrando(t *testing.T) {
 		a.Anotar(ev(base.Add(time.Duration(i)*time.Millisecond), "203.0.113.7", SinSesion, "/"))
 	}
 	eventos := a.Filtrados(Filtro{})
-	r := Resumir(eventos, PorOrigen(eventos), 24*time.Hour, a.Total())
+	r := Resumir(eventos, PorOrigen(eventos), a.Total())
 
 	if r.Eventos != Capacidad {
 		t.Fatalf("el resumen muestra %d eventos y el anillo guarda %d", r.Eventos, Capacidad)

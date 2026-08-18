@@ -509,6 +509,11 @@ func (c *capturaDeEstado) Write(p []byte) (int, error) {
 // plazos.go dejarían de funcionar en silencio.
 func (c *capturaDeEstado) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
+// formatoFecha es el ÚNICO sitio donde se escribe cómo se ve una fecha en las
+// páginas. Lo comparten «fecha» e «intervalo»: con el literal repetido, cambiar
+// uno dejaría dos formatos distintos en la misma tabla.
+const formatoFecha = "2006-01-02 15:04"
+
 func funciones() template.FuncMap {
 	return template.FuncMap{
 		"tamano": func(n int64) string {
@@ -524,7 +529,23 @@ func funciones() template.FuncMap {
 			return strconv.FormatFloat(float64(n)/float64(div), 'f', 1, 64) +
 				" " + []string{"KB", "MB", "GB", "TB"}[exp]
 		},
-		"fecha": func(t time.Time) string { return t.Format("2006-01-02 15:04") },
+		"fecha": func(t time.Time) string { return t.Format(formatoFecha) },
+
+		// «Primera» y «Última» eran DOS columnas en el panel de seguridad y son
+		// un intervalo: se funden en una (ADR-0065).
+		//
+		// CUANDO LOS DOS EXTREMOS CAEN EN EL MISMO MINUTO SE ESCRIBE UNO SOLO,
+		// y no es cosmético: un sondeo entero cabe en un minuto —los veinte de
+		// DRIFTNET tardaron cinco—, así que el caso corriente pintaba la misma
+		// fecha dos veces con una flecha en medio. Repetir un dato para no
+		// decir nada es exactamente el relleno que este trabajo retira.
+		"intervalo": func(desde, hasta time.Time) string {
+			ini, fin := desde.Format(formatoFecha), hasta.Format(formatoFecha)
+			if ini == fin {
+				return ini
+			}
+			return ini + " → " + fin
+		},
 
 		// RF-25: el listado necesita saber, por cada entrada, si su nombre
 		// lleva a un visor o al mensaje, y con qué elemento se dibujaría.

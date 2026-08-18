@@ -145,6 +145,19 @@ body {
   min-height: var(--alto-control);
 }
 
+/* El filtro activo, al lado del titulo de /seguridad. Misma forma que el
+   latido de /estado y por el mismo motivo: es un adjetivo de la pantalla —dice
+   QUE se esta mirando— y no una linea aparte. Sin color propio: informa del
+   estado, no avisa de nada. */
+.filtro-activo {
+  display: inline-block;
+  font-size: var(--t-rotulo);
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--borde);
+  color: var(--suave);
+}
+
 .salir {
   float: none;
   margin: 0;
@@ -1230,6 +1243,16 @@ tr.g-atencion .rotulo {
   color: var(--fallo-color);
 }
 
+/* g-rutina EXISTE Y NO PINTA NADA, y esta escrito a proposito.
+   Origen.Destacar es cierto para TODO origen de Internet, incluidos los de
+   gravedad rutina, asi que la plantilla emite esta clase de verdad. Antes no
+   habia ninguna regla para ella: una fila «resaltada» que no se resaltaba, y
+   nada lo decia. Un simple «sin sesion» desde fuera es un hecho que merece
+   estar en la tabla, no una alarma que merezca color. */
+tr.g-rutina .rotulo {
+  font-weight: 600;
+}
+
 /* ——— Filtros ———
    Rejilla que se pliega sola: en el movil cae a una columna sin consulta de
    medios, porque auto-fit + minmax ya hace ese trabajo. */
@@ -1239,6 +1262,13 @@ tr.g-atencion .rotulo {
   gap: 0.35rem 0.75rem;
   align-items: end;
   margin: 0.5rem 0;
+}
+
+/* Cada rotulo con su control en una celda de la rejilla. Antes eran hermanos
+   sueltos y la rejilla podia separarlos al plegarse: el rotulo en una columna
+   y su desplegable en la de al lado. */
+.filtros > div {
+  min-width: 0;
 }
 
 .filtros label {
@@ -1252,8 +1282,7 @@ tr.g-atencion .rotulo {
    regla de la v1.39.0: en WebKit basta cualquiera de los tres para apagar el
    aspecto nativo del control y devolver un rectangulo gris. Solo se les da
    ancho, que es lo unico que la rejilla necesita. */
-.filtros select,
-.filtros input {
+.filtros select {
   width: 100%;
   font: inherit;
 }
@@ -1278,12 +1307,30 @@ tr.g-atencion .rotulo {
 
 .senal > summary {
   cursor: pointer;
+  color: var(--suave);
+}
+
+/* SOLO LAS SENALES QUE ALARMAN LLEVAN COLOR. La de «software que aqui no
+   existe» saltaba con UNA ruta ajena y su propio texto dice que no va dirigida
+   a este nodo: una alerta que se desmiente sola gasta la credibilidad de las
+   otras dos. Quien decide cual es cual es Senal.Destacar, no esta hoja. */
+.senal-aviso > summary {
   color: var(--aviso-color);
   font-weight: 600;
 }
 
 .senal > summary::before {
   content: "? ";
+}
+
+/* ——— Cronologia plegada ———
+   Es el bloque mas largo de la pagina y el que menos se mira: la tabla de
+   origenes ya dice agregado lo que esta dice suelto. Se pliega, no se retira,
+   porque el orden exacto y la ruta de cada suceso solo estan aqui. */
+.cronologia > summary {
+  cursor: pointer;
+  color: var(--suave);
+  margin-bottom: 0.5rem;
 }
 
 /* ——— Columna de operador del panel de seguridad ———

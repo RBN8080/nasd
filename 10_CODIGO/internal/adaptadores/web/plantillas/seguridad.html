@@ -14,6 +14,13 @@
   <div class="cabecera-superior">
     <div class="titulo-estado">
       <span class="titulo-pagina">Seguridad</span>
+      <!-- EL ESTADO DEL FILTRO VA DONDE SE MIRA PRIMERO, no contado en prosa.
+           Sustituye a la frase «la página abre mostrando solo Internet», que
+           existía únicamente porque el desplegable que lo demuestra queda
+           media pantalla más abajo (ADR-0065). Se compone en el servidor a
+           partir de las MISMAS listas que pintan los desplegables, así que no
+           puede decir una cosa mientras el control enseña otra. -->
+      <span class="filtro-activo">{{.FiltroActivo}}</span>
     </div>
     <!-- La MISMA barra y las MISMAS clases que listado.html, estado.html y
          administracion.html. Ver el comentario junto a .cabecera-superior en
@@ -32,53 +39,83 @@
 
 <main>
 
-<!-- EL AVISO QUE HACE HONESTA LA PÁGINA ENTERA, y va primero a propósito.
-     Sin él, un lector razonable daría por hecho que esto es un registro
-     completo, y no lo es: es una ventana de los últimos {{.Resumen.Eventos}}
-     rechazos guardados. El diario del nodo (ADR-0037) sí conserva la
-     historia entera. -->
+<!-- LA NOTA QUE HACE HONESTA LA PÁGINA ENTERA, en una línea.
+     Tenía cinco frases: el índice de la página —que ya dan los encabezados—,
+     la explicación de que abrir sin sesión produce un rechazo —que ya dice la
+     columna «Motivo»— y el estado del filtro, que ahora está arriba.
+     La cifra del historial se dice con Capacidad y no con los eventos de la
+     ventana: aquello llegaba a afirmar «se conservan los 3 más recientes de
+     5000», que es falso. Se conservan 2000. -->
 <p class="nota">
-  Esto registra <strong>lo que llega, no ataques</strong>. Arriba, quién abre
-  conexión desde Internet; abajo, qué peticiones se rechazaron y por qué.
-  La mayoría de lo de abajo es uso normal: abrir el NAS sin sesión produce un
-  rechazo, igual que un enlace antiguo.
-  <strong>La página abre mostrando solo Internet.</strong> La red local y el
-  túnel siguen enteros en el desplegable «Origen».
-  {{if .Resumen.Truncado}}
-  Se conservan los <strong>{{.Resumen.Eventos}}</strong> más recientes de
-  <strong>{{.Resumen.TotalHistorico}}</strong> vistos desde que existe este registro.
-  {{end}}
+  Hechos registrados, no ataques.
+  {{if .Resumen.Truncado}}Historial: <strong>{{.Capacidad}}</strong> rechazos
+  conservados de <strong>{{.Resumen.TotalHistorico}}</strong> vistos.{{end}}
 </p>
 
-<!-- LAS CONEXIONES VAN PRIMERO, ANTES INCLUSO DEL RESUMEN, y es el cambio
-     que ordena la página entera: es lo único que el responsable declaró
-     querer ver («únicamente reporte conexiones entrantes en internet»), y
-     además es lo único que ve a quien toca el puerto sin llegar a pedir nada.
-     El 16/08 veinte direcciones de DRIFTNET recorrieron el 443 y las tablas
-     de abajo solo pudieron enseñar una. -->
+<!-- LOS FILTROS VAN ARRIBA, ANTES DE LA PRIMERA TABLA.
+     Estaban debajo de «Conexiones desde Internet», que es justo la tabla que
+     NO gobiernan: las conexiones solo obedecen a la ventana, porque no tienen
+     motivo ni red que filtrar. Con el bloque debajo, cambiar «Motivo» dejaba
+     inmóvil la tabla de arriba y parecía una avería. -->
+<h2>Filtros</h2>
+<!-- method="get": el filtro viaja en la URL, igual que el orden del listado
+     (P-3). Así un filtro concreto se puede guardar en marcadores y compartir,
+     y la página no guarda estado de nadie — la regla R1 de ADR-0015.
+
+     Se retiraron las cajas de «Dirección» y «Ruta contiene» —el responsable
+     declaró por uso real que no le servían— y el desplegable «Gravedad», que
+     filtraba por una columna que esta página no enseña en ninguna tabla
+     (ADR-0065). Con ellos se fue el botón «Quitar filtros», cuya etiqueta
+     además mentía: no quitaba filtros, restauraba el de Internet. -->
+<form method="get" action="/seguridad" class="filtros">
+  <div>
+    <label for="red">Origen</label>
+    <select id="red" name="red">
+      {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+    </select>
+  </div>
+
+  <div>
+    <label for="horas">Ventana</label>
+    <select id="horas" name="horas">
+      {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+    </select>
+  </div>
+
+  <div>
+    <label for="motivo">Motivo</label>
+    <select id="motivo" name="motivo">
+      {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+    </select>
+  </div>
+
+  <div class="acciones-filtro">
+    <button type="submit" class="boton-barra">Filtrar</button>
+  </div>
+</form>
+
+<!-- LAS CONEXIONES VAN PRIMERAS, ANTES INCLUSO DEL RESUMEN: es lo único que el
+     responsable declaró querer ver, y lo único que ve a quien toca el puerto
+     sin llegar a pedir nada. El 16/08 veinte direcciones de DRIFTNET
+     recorrieron el 443 y las tablas de abajo solo pudieron enseñar una. -->
 <h2>Conexiones desde Internet</h2>
 <p class="nota">
-  Cada vez que alguien de fuera <strong>abre una conexión</strong> al nodo, aunque
-  no llegue a pedir nada. Un sondeo que ofrece un TLS antiguo muere aquí: el
-  servidor lo rechaza antes de leer una sola petición, así que no aparece en las
-  tablas de rechazos de más abajo — solo en esta.
-  {{if .TotalConexiones}}
-  <strong>{{.Conexiones}}</strong> en esta ventana, de <strong>{{.TotalConexiones}}</strong>
-  vistas desde que existe este registro.
-  {{end}}
+  Conexiones TCP aceptadas desde Internet, hayan emitido petición o no.
+  {{if .TotalConexiones}}<strong>{{.Conexiones}}</strong> en la ventana ·
+  <strong>{{.TotalConexiones}}</strong> en total.{{end}}
 </p>
 <table class="datos tabla-origenes">
   <thead>
-    <tr><th>Dirección</th>{{if .HayGeo}}<th>Operador</th>{{end}}<th>Conexiones</th><th>Primera</th><th>Última</th></tr>
+    <tr><th>Dirección</th>{{if .HayGeo}}<th>Operador</th>{{end}}<th>Conexiones</th><th>Actividad</th></tr>
   </thead>
   <tbody>
   {{range .Conectados}}
-    <!-- TODAS se destacan, sin excepción y sin gravedad que calcular: en esta
-         tabla no hay nada que no venga de fuera. Es el mismo criterio que
-         Origen.Destacar aplica a lo de Internet, pero aquí no hace falta
-         preguntarlo. -->
-    <tr class="g-aviso">
-      <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
+    <!-- SIN CLASE DE ÉNFASIS. Todas las filas la llevaban, y una tabla donde
+         se resalta el 100 % no resalta nada: es el semáforo siempre en ámbar
+         contra el que argumentan evaluarThrottled y Origen.Destacar. Que la
+         fila esté en esta tabla ya significa que viene de fuera. -->
+    <tr>
+      <td class="rotulo">{{.IP}}</td>
       {{if $.HayGeo}}
       <td class="operador">
         {{- if .TieneGeo}}<strong>{{.Geo.Nombre}}</strong>{{if .Geo.Pais}} · {{.Geo.Pais}}{{end}}
@@ -87,11 +124,10 @@
       </td>
       {{end}}
       <td class="num">{{.Conexiones}}</td>
-      <td class="num">{{fecha .Primera}}</td>
-      <td class="num">{{fecha .Ultima}}</td>
+      <td class="num">{{intervalo .Primera .Ultima}}</td>
     </tr>
   {{else}}
-    <tr><td colspan="{{if .HayGeo}}5{{else}}4{{end}}">Nadie de Internet ha abierto conexión en esta ventana.</td></tr>
+    <tr><td colspan="{{if .HayGeo}}4{{else}}3{{end}}">Nadie de Internet ha abierto conexión en esta ventana.</td></tr>
   {{end}}
   </tbody>
 </table>
@@ -99,95 +135,48 @@
 <h2>Resumen</h2>
 <table class="datos">
   <tbody>
-    <!-- «Desde Internet» VA PRIMERO, y es la única fila con veredicto. El
-         responsable declaró que lo que le importa es detectar intentos
-         externos, y en la primera versión esa cifra era la tercera de cinco,
-         indistinguible del resto — con todo lo demás siendo su propio PC. Lo
-         que importa va arriba y se lee sin saber de redes. -->
+    <!-- «Desde Internet» VA PRIMERA, y es la única fila con veredicto: es el
+         objetivo declarado del panel y se lee sin saber de redes.
+         Se retiraron «Direcciones distintas» —que era LA MISMA CIFRA con el
+         filtro por omisión, porque entonces todo origen es de Internet— y
+         «Orígenes con alguna señal», que contaba unas insignias visibles a
+         simple vista en la tabla de aquí abajo (ADR-0065). -->
     <tr{{if .Resumen.DesdeFuera}} class="g-aviso"{{end}}>
       <td class="rotulo">Direcciones desde Internet</td>
       <td class="num">{{if .Resumen.DesdeFuera}}{{.Resumen.DesdeFuera}}{{else}}ninguna{{end}}</td>
     </tr>
     <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
-    <tr><td class="rotulo">Direcciones distintas</td><td class="num">{{.Resumen.IPsUnicas}}</td></tr>
     <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
-    <!-- «con alguna señal» y NO «ataques»: son sospechas derivadas, y el
-         rótulo tiene que decirlo o la cifra se lee como un recuento de
-         intrusiones. -->
-    <tr><td class="rotulo">Orígenes con alguna señal</td><td class="num">{{.Resumen.OrigenesConSenal}}</td></tr>
   </tbody>
 </table>
-
-<h2>Filtros</h2>
-<!-- method="get": el filtro viaja en la URL, igual que el orden del listado
-     (P-3). Así un filtro concreto se puede guardar en marcadores y compartir,
-     y la página no guarda estado de nadie — la regla R1 de ADR-0015. -->
-<form method="get" action="/seguridad" class="filtros">
-  <label for="horas">Ventana</label>
-  <select id="horas" name="horas">
-    {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-  </select>
-
-  <label for="gravedad">Gravedad</label>
-  <select id="gravedad" name="gravedad">
-    {{range .Gravedades}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-  </select>
-
-  <label for="motivo">Motivo</label>
-  <select id="motivo" name="motivo">
-    {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-  </select>
-
-  <label for="red">Origen</label>
-  <select id="red" name="red">
-    {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-  </select>
-
-  <label for="ip">Dirección</label>
-  <input type="text" id="ip" name="ip" value="{{.IP}}" placeholder="203.0.113 o completa"
-     autocapitalize="off" autocorrect="off" spellcheck="false">
-
-  <label for="ruta">Ruta contiene</label>
-  <input type="text" id="ruta" name="ruta" value="{{.Ruta}}" placeholder="/acceso"
-     autocapitalize="off" autocorrect="off" spellcheck="false">
-
-  <div class="acciones-filtro">
-    <button type="submit" class="boton-barra">Filtrar</button>
-  </div>
-</form>
-
-<!-- «Quitar filtros» va en su PROPIO formulario y fuera del anterior: un
-     <form> dentro de otro es HTML inválido y los navegadores lo descartan en
-     silencio. Sigue siendo un botón y no un enlace, por la regla de la
-     v1.50.1: lo que se pulsa y vive junto a botones ES un botón, aunque por
-     dentro sea una navegación. Sin campos, un GET a /seguridad limpia todo. -->
-<form method="get" action="/seguridad" class="acciones-filtro">
-  <button type="submit" class="boton-barra">Quitar filtros</button>
-</form>
 
 <h2>Orígenes</h2>
 {{if .HayGeo}}
 <!-- La base se refresca una vez al mes, así que puede ir por detrás de la
-     realidad. Decirlo es lo que la hace honesta: mismo criterio que la fecha
-     de medición del uso de disco en /administracion.
+     realidad. Decirlo es lo que la hace honesta.
 
      CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de
      tratar el HTML, así que una llave doble escrita aquí dentro NO es texto
-     — se ejecuta. Este mismo comentario citaba la función «fecha» entre
+     — se ejecuta. Este mismo comentario citaba la función de fecha entre
      llaves para explicar el criterio y rompió la plantilla entera: el panel
      devolvía 200 con la página cortada a la mitad, porque la cabecera ya se
      había enviado cuando falló el render. -->
-<p class="nota">Operador y país según la base preparada el {{fecha .FechaGeo}}.</p>
+<p class="nota">Base de operadores: {{fecha .FechaGeo}}.</p>
 {{end}}
 <table class="datos tabla-origenes">
+  <!-- SIN COLUMNA «Procedencia»: con el filtro por omisión decía «Internet»
+       en todas las filas. Quien quiera verla cambia el desplegable «Origen»,
+       y entonces la etiqueta vuelve — ver el bloque condicional de abajo.
+       SIN COLUMNA «Rutas»: era la ENTRADA del umbral de exploración, cuya
+       CONCLUSIÓN ya se pinta como señal dos columnas más allá (ADR-0065). -->
   <thead>
-    <tr><th>Dirección</th><th>Procedencia</th>{{if $.HayGeo}}<th>Operador</th>{{end}}<th>Rechazos</th><th>Rutas</th><th>Primera</th><th>Última</th><th>Motivos</th></tr>
+    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th></tr>
   </thead>
   <tbody>
   {{range .Origenes}}
     <tr{{if .Destacar}} class="g-{{.Gravedad}}"{{end}}>
       <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
-      <td>{{.Red.Etiqueta}}</td>
+      {{if $.SinFiltroDeRed}}<td>{{.Red.Etiqueta}}</td>{{end}}
       <!-- LA COLUMNA QUE HACE INTERPRETABLE LA FILA. «203.0.113.7» no le dice
            nada a nadie; «DIGITALOCEAN-ASN · DE» sí. Solo aparece si la base
            está instalada: una columna vacía se leería como «no se sabe de
@@ -203,18 +192,19 @@
       </td>
       {{end}}
       <td class="num">{{.Eventos}}</td>
-      <td class="num">{{.RutasDistintas}}</td>
-      <td class="num">{{fecha .Primera}}</td>
-      <td class="num">{{fecha .Ultima}}</td>
+      <td class="num">{{intervalo .Primera .Ultima}}</td>
       <td>
         {{range $motivo, $n := .PorMotivo}}<span class="pastilla">{{$motivo.Etiqueta}} · {{$n}}</span> {{end}}
         {{if .Cuentas}}<span class="pastilla">cuentas: {{range .Cuentas}}{{.}} {{end}}</span>{{end}}
         <!-- LAS SEÑALES VAN APARTE Y CON SU EXPLICACIÓN DENTRO, no como una
              etiqueta más: son inferencias, no hechos, y cada una lleva
              escrito con qué se puede confundir. Un <details> deja la
-             sospecha visible y su letra pequeña a un clic, sin JavaScript. -->
+             sospecha visible y su letra pequeña a un clic, sin JavaScript.
+             El énfasis lo decide la señal: la de software ajeno informa pero
+             no alarma, porque su propio texto dice que no va dirigida a este
+             nodo. Ver Senal.Destacar. -->
         {{range .Senales}}
-        <details class="senal">
+        <details class="senal{{if .Destacar}} senal-aviso{{end}}">
           <summary>{{.Etiqueta}}</summary>
           <p class="nota">{{.Explicacion}}</p>
         </details>
@@ -222,12 +212,18 @@
       </td>
     </tr>
   {{else}}
-    <tr><td colspan="{{if .HayGeo}}8{{else}}7{{end}}">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+    <tr><td colspan="6">Ningún rechazo en esta ventana con estos filtros.</td></tr>
   {{end}}
   </tbody>
 </table>
 
-<h2>Rutas más pedidas</h2>
+<h2>Rutas más rechazadas</h2>
+<!-- «Más rechazadas» y no «más pedidas», que era lo que decía: esta tabla sale
+     del anillo de RECHAZOS, así que una ruta servida con éxito mil veces no
+     aparece aquí. El título anterior prometía otra cosa. -->
+{{if .HayMasRutas}}
+<p class="nota">Las {{.TopeRutas}} más frecuentes de {{.Resumen.RutasVistas}} rutas distintas.</p>
+{{end}}
 <table class="datos">
   <thead><tr><th>Ruta</th><th>Veces</th></tr></thead>
   <tbody>
@@ -240,32 +236,39 @@
 </table>
 
 <h2>Cronología</h2>
-{{if .HayMas}}
-<p class="nota">Se muestran los {{.TopeCronologico}} más recientes de {{.Resumen.Eventos}}. Acote con los filtros para ver el resto.</p>
-{{end}}
-<table class="datos tabla-cronologia">
-  <thead>
-    <tr><th>Momento</th><th>Dirección</th><th>Método</th><th>Ruta</th><th>Código</th><th>Motivo</th><th>Cliente</th></tr>
-  </thead>
-  <tbody>
-  {{range .Eventos}}
-    <tr{{if .Destacar}} class="g-{{.Motivo.Gravedad}}"{{end}}>
-      <td class="num">{{fecha .Momento}}</td>
-      <td class="rotulo">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</td>
-      <td>{{.Metodo}}</td>
-      <td class="ruta">{{.Ruta}}</td>
-      <td class="num">{{.Estado}}</td>
-      <td>{{.Motivo.Etiqueta}}{{if .Cuenta}} · {{.Cuenta}}{{end}}</td>
-      <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
-           automatizado a menudo no envía ninguno. Se dice, no se deja en
-           blanco como si faltara el dato por descuido. -->
-      <td class="agente">{{if .Agente}}{{.Agente}}{{else}}<em>sin identificar</em>{{end}}</td>
-    </tr>
-  {{else}}
-    <tr><td colspan="7">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+<!-- PLEGADA. Es el bloque más largo de la página y el que menos se mira: la
+     tabla de orígenes ya dice agregado lo que esta dice suelto, y el diario
+     del nodo (ADR-0037) guarda la historia completa. Lo que solo está aquí es
+     el orden exacto y la ruta de cada suceso, y por eso no se retira.
+     SIN COLUMNAS «Método» y «Código»: el verbo se deduce del motivo, y el
+     código es casi función de él —está al lado y en palabras— (ADR-0065). -->
+<details class="cronologia">
+  <summary>Ver los rechazos uno a uno</summary>
+  {{if .HayMas}}
+  <p class="nota">{{.TopeCronologico}} de {{.Resumen.Eventos}}. Acote la ventana para ver el resto.</p>
   {{end}}
-  </tbody>
-</table>
+  <table class="datos tabla-cronologia">
+    <thead>
+      <tr><th>Momento</th><th>Dirección</th><th>Ruta</th><th>Motivo</th><th>Cliente</th></tr>
+    </thead>
+    <tbody>
+    {{range .Eventos}}
+      <tr{{if .Destacar}} class="g-{{.Motivo.Gravedad}}"{{end}}>
+        <td class="num">{{fecha .Momento}}</td>
+        <td class="rotulo">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</td>
+        <td class="ruta">{{.Ruta}}</td>
+        <td>{{.Motivo.Etiqueta}}{{if .Cuenta}} · {{.Cuenta}}{{end}}</td>
+        <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
+             automatizado a menudo no envía ninguno. Se dice, no se deja en
+             blanco como si faltara el dato por descuido. -->
+        <td class="agente">{{if .Agente}}{{.Agente}}{{else}}<em>sin identificar</em>{{end}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="5">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</details>
 
 </main>
 </body>

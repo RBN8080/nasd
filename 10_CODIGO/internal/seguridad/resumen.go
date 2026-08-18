@@ -72,6 +72,25 @@ func (s Senal) Explicacion() string {
 	return ""
 }
 
+// Destacar dice si la señal merece énfasis visual.
+//
+// # POR QUÉ UNA DE LAS TRES SE CALLA
+//
+// SenalSoftwareAjeno dispara con UNA sola ruta ajena, y su propia Explicacion
+// termina diciendo que «es el rastreo indiscriminado que recibe cualquier
+// dirección pública, no algo dirigido a este nodo». Una alerta cuyo texto dice
+// que no es nada gasta la credibilidad de las que sí importan — el mismo
+// razonamiento con el que evaluarThrottled (web/estado.go) decidió no pintar en
+// ámbar permanente el límite térmico ya aceptado.
+//
+// La señal NO se retira: informa, y RF-29(7) exige que cada inferencia esté con
+// su explicación. Lo que pierde es el énfasis (ADR-0065).
+//
+// NO SE SUBE SU UMBRAL, que era la otra salida: fijar un número sin tráfico
+// suficiente medido sería adivinar, que es lo mismo que el responsable rechazó
+// en la etapa 5 del panel.
+func (s Senal) Destacar() bool { return s != SenalSoftwareAjeno }
+
 // Umbrales de las señales. Cada uno con su porqué, porque un número sin
 // justificar se cambia por gusto y entonces la señal deja de significar nada.
 const (
@@ -117,34 +136,20 @@ func rutaDeSoftwareAjeno(ruta string) bool {
 }
 
 // Filtro acota lo que se mira. Los punteros distinguen «sin filtrar» de
-// «filtrar por el valor cero», que en Motivo y Gravedad son valores legítimos
-// —MotivoDesconocido y Rutina— y se perderían con un valor plano.
+// «filtrar por el valor cero», que en Motivo es un valor legítimo
+// —MotivoDesconocido— y se perdería con un valor plano.
+//
+// SE QUEDÓ EN TRES CAMPOS (ADR-0065). Tenía siete: Hasta no lo fijó nunca
+// nadie, IP y Ruta alimentaban dos cajas de búsqueda que el responsable
+// declaró que no usaba, y Gravedad filtraba por algo que el panel no enseña.
 type Filtro struct {
-	Desde    time.Time
-	Hasta    time.Time
-	IP       string
-	Ruta     string
-	Motivo   *Motivo
-	Gravedad *Gravedad
-	Red      *Red
+	Desde  time.Time
+	Motivo *Motivo
+	Red    *Red
 }
 
 func (f Filtro) admite(e Evento) bool {
-	if !f.Hasta.IsZero() && e.Momento.After(f.Hasta) {
-		return false
-	}
-	// Por PREFIJO y no por igualdad: así «203.0.113» encuentra la red entera
-	// sin tener que teclear cada dirección.
-	if f.IP != "" && !strings.HasPrefix(e.Origen.String(), f.IP) {
-		return false
-	}
-	if f.Ruta != "" && !strings.Contains(strings.ToLower(e.Ruta), strings.ToLower(f.Ruta)) {
-		return false
-	}
 	if f.Motivo != nil && e.Motivo != *f.Motivo {
-		return false
-	}
-	if f.Gravedad != nil && e.Motivo.Gravedad() != *f.Gravedad {
 		return false
 	}
 	if f.Red != nil && e.Red != *f.Red {
@@ -179,12 +184,8 @@ type Origen struct {
 	// 300 eventos son 300 «sin sesión» de un móvil reconectando, y no 300
 	// intentos de contraseña.
 	PorMotivo map[Motivo]int
-	// RutasDistintas es la base de SenalExploracion, y se guarda el número y
-	// no el conjunto: para pintar la fila basta la cifra.
-	RutasDistintas int
-	Agentes        []string
-	Cuentas        []string
-	Senales        []Senal
+	Cuentas   []string
+	Senales   []Senal
 	// Gravedad es la MAYOR de sus eventos, no la media: un origen con 200
 	// rechazos de rutina y uno de atención merece mirarse, y promediar lo
 	// escondería.
@@ -198,11 +199,14 @@ type Origen struct {
 // pasó — para eso está la vista cronológica.
 func PorOrigen(eventos []Evento) []Origen {
 	type acumulado struct {
-		o         Origen
-		rutas     map[string]bool
-		agentes   map[string]bool
-		cuentas   map[string]bool
-		ajenas    int
+		o       Origen
+		cuentas map[string]bool
+		ajenas  int
+		// sinRutaOK son las rutas DISTINTAS que no existían, y es la base de
+		// SenalExploracion. No se confunda con un recuento de rutas a secas:
+		// aquel existía solo para pintar una columna que se retiró, porque
+		// enseñaba la ENTRADA de un umbral cuya CONCLUSIÓN ya se pintaba dos
+		// columnas más allá (ADR-0065).
 		sinRutaOK map[string]bool
 	}
 	porIP := make(map[netip.Addr]*acumulado)
@@ -216,8 +220,6 @@ func PorOrigen(eventos []Evento) []Origen {
 					Primera: e.Momento, Ultima: e.Momento,
 					PorMotivo: make(map[Motivo]int),
 				},
-				rutas:     make(map[string]bool),
-				agentes:   make(map[string]bool),
 				cuentas:   make(map[string]bool),
 				sinRutaOK: make(map[string]bool),
 			}
@@ -234,10 +236,6 @@ func PorOrigen(eventos []Evento) []Origen {
 		if g := e.Motivo.Gravedad(); g > a.o.Gravedad {
 			a.o.Gravedad = g
 		}
-		a.rutas[e.Ruta] = true
-		if e.Agente != "" {
-			a.agentes[e.Agente] = true
-		}
 		if e.Cuenta != "" {
 			a.cuentas[e.Cuenta] = true
 		}
@@ -251,8 +249,6 @@ func PorOrigen(eventos []Evento) []Origen {
 
 	out := make([]Origen, 0, len(porIP))
 	for _, a := range porIP {
-		a.o.RutasDistintas = len(a.rutas)
-		a.o.Agentes = ordenado(a.agentes)
 		a.o.Cuentas = ordenado(a.cuentas)
 
 		// LAS INFERENCIAS, aquí y en ningún otro sitio.
@@ -301,6 +297,10 @@ func PorOrigen(eventos []Evento) []Origen {
 	return out
 }
 
+// TopeRutas es cuántas rutas se listan en la tabla de rutas más rechazadas.
+// Exportada porque el adaptador web la necesita para poder DECIR que recorta.
+const TopeRutas = 10
+
 // Cuenta es un par «algo» y «cuántas veces», para las listas del resumen.
 type Cuenta struct {
 	Valor string
@@ -309,7 +309,6 @@ type Cuenta struct {
 
 // Resumen es la cabecera del panel: lo que se responde de un vistazo.
 type Resumen struct {
-	Ventana time.Duration
 	Eventos int
 	// TotalHistorico son los rechazos vistos desde siempre, que puede ser
 	// mucho mayor que lo que el anillo conserva. Se publica para que un
@@ -317,13 +316,15 @@ type Resumen struct {
 	TotalHistorico int64
 	Truncado       bool
 
-	IPsUnicas   int
-	DesdeFuera  int
-	PorGravedad map[Gravedad]int
-	PorMotivo   map[Motivo]int
-	PorRed      map[Red]int
+	IPsUnicas  int
+	DesdeFuera int
 
-	RutasMasPedidas      []Cuenta
+	RutasMasPedidas []Cuenta
+	// RutasVistas son cuántas rutas DISTINTAS hubo, que casi siempre es más
+	// que las TopeRutas que se pintan. Se publica para que la tabla pueda
+	// decir que está recortando, como ya hacía la cronología: dos tablas de
+	// la misma página no pueden tener distinta idea de la honestidad.
+	RutasVistas          int
 	AutenticacionFallida int
 	// OrigenesConSenal son los que alguna inferencia marcó. Es una CUENTA de
 	// sospechas, nunca de ataques confirmados.
@@ -331,21 +332,14 @@ type Resumen struct {
 }
 
 // Resumir compone la cabecera a partir de los eventos ya filtrados.
-func Resumir(eventos []Evento, origenes []Origen, ventana time.Duration, totalHistorico int64) Resumen {
+func Resumir(eventos []Evento, origenes []Origen, totalHistorico int64) Resumen {
 	r := Resumen{
-		Ventana:        ventana,
 		Eventos:        len(eventos),
 		TotalHistorico: totalHistorico,
 		IPsUnicas:      len(origenes),
-		PorGravedad:    make(map[Gravedad]int),
-		PorMotivo:      make(map[Motivo]int),
-		PorRed:         make(map[Red]int),
 	}
 	rutas := make(map[string]int)
 	for _, e := range eventos {
-		r.PorGravedad[e.Motivo.Gravedad()]++
-		r.PorMotivo[e.Motivo]++
-		r.PorRed[e.Red]++
 		rutas[e.Ruta]++
 		if e.Motivo == CredencialIncorrecta {
 			r.AutenticacionFallida++
@@ -359,7 +353,8 @@ func Resumir(eventos []Evento, origenes []Origen, ventana time.Duration, totalHi
 			r.OrigenesConSenal++
 		}
 	}
-	r.RutasMasPedidas = masFrecuentes(rutas, 10)
+	r.RutasMasPedidas = masFrecuentes(rutas, TopeRutas)
+	r.RutasVistas = len(rutas)
 	return r
 }
 

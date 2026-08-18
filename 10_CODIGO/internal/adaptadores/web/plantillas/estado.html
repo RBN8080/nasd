@@ -74,12 +74,10 @@
 <table class="datos">
   <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
   <tbody>
+  {{/* «Punto de montaje» se retiró (ADR-0065): era una constante de
+       configuración con una pastilla de estado permanentemente vacía. El punto
+       de cada volumen sigue en el JSON, junto a su dispositivo. */}}
   {{range .Lentos}}{{template "fila-dato" .}}{{end}}
-  <tr>
-    <td class="rotulo">Punto de montaje</td>
-    <td class="valor"><span class="cifra">{{.Volumen}}</span></td>
-    <td class="estado"><span class="pastilla"></span></td>
-  </tr>
   </tbody>
 </table>
 
