@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"nasd/internal/adaptadores/sistema"
@@ -316,7 +315,6 @@ func evaluarPorcentaje(clave, nombre string, valor, objetivo float64, siFalla ve
 // ---------------------------------------------------------------------------
 
 type vistaEstado struct {
-	Volumen string
 	// FilasNodo y FilasServicio son las dos tablas que se refrescan solas.
 	// La plantilla las pinta una vez y a partir de ahí las mantiene el flujo
 	// (ADR-0051); sin JavaScript se quedan en esta foto, que es correcta.
@@ -386,6 +384,24 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 		return filaViva(porClave[clave])
 	}
 
+	// conContexto pega las cifras crudas al valor de un indicador.
+	//
+	// TRES PARES DE FILAS DECÍAN LO MISMO DOS VECES: el conteo y su división.
+	// «Peticiones HTTP: N · correctas · rechazadas · con error» iba seguida de
+	// «Peticiones sin error (SLI-1): 99.87 %», que es esa misma fila dividida.
+	// Igual con listados y con subidas. Se fusionan en la fila del indicador,
+	// que es la que lleva veredicto y acción.
+	//
+	// LA FUSIÓN ES DE PRESENTACIÓN Y VIVE AQUÍ, no en evaluar(): allí el mismo
+	// indicador alimenta las alertas del diario (mantenimiento.go), donde el
+	// conteo sería ruido —lo accionable es el porcentaje— y donde el texto se
+	// lee sin tabla alrededor.
+	conContexto := func(clave, cifras string) filaViva {
+		f := deIndicador(clave)
+		f.Valor += " · " + cifras
+		return f
+	}
+
 	// --- El nodo ------------------------------------------------------------
 	cpu := sinMedida
 	if n.CPUOK {
@@ -400,10 +416,6 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 			frecuencia += " (por debajo del máximo)"
 		}
 	}
-	carga := sinMedida
-	if n.CargaOK {
-		carga = fmt.Sprintf("%.2f · %.2f · %.2f", n.Carga1, n.Carga5, n.Carga15)
-	}
 	encendido := sinMedida
 	if n.UptimeOK {
 		encendido = duracionLegible(n.Uptime)
@@ -414,36 +426,39 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 		deIndicador("memoria"),
 		contexto("cpu", "Uso de CPU", cpu),
 		contexto("frecuencia", "Frecuencia de CPU", frecuencia),
-		// El kernel solo recalcula la carga cada 5 s: esta fila cambia despacio
-		// aunque el flujo llegue cuatro veces por segundo, y eso es correcto.
-		contexto("carga", "Carga media (1 · 5 · 15 min)", carga),
+		// La CARGA MEDIA se retiró (ADR-0065): tres cifras con «Uso de CPU»
+		// justo encima, en un nodo de un solo usuario. Sigue en el JSON, que es
+		// donde la buscaría quien sepa leerla.
 		contexto("encendido", "Tiempo de actividad del nodo", encendido),
 	}
 
 	// --- El servicio --------------------------------------------------------
+	// PASÓ DE DOCE FILAS A CINCO (ADR-0065). Tres se fusionaron con su
+	// porcentaje —ver conContexto— y cuatro se retiraron por no contestar nada
+	// que esta pantalla deba contestar:
+	//
+	//   - «Intentos de acceso fallidos» duplicaba «Contraseñas incorrectas» de
+	//     /seguridad, con otra ventana y otro reinicio: dos números condenados
+	//     a discrepar.
+	//   - «Sesiones activas» daba un número donde /administracion da los
+	//     nombres, y en vivo.
+	//   - «Borrados registrados» se pone a cero al reiniciar y no dice qué,
+	//     cuándo ni quién. Sin papelera (D-15) la pregunta es real, pero la
+	//     contesta la auditoría de acciones —etapa 6 del panel—, no un contador.
+	//   - «Datos transferidos» se pone a cero al reiniciar y nadie actúa sobre
+	//     él. No es la «E/S» que exige el charter §8, que es de disco.
+	//
+	// LOS CUATRO CONTADORES SIGUEN ENTEROS en Instantanea y en el JSON: lo que
+	// se retira es la fila, no el dato. 05_OPERACION.md calcula los SLI de ahí.
 	servicio = []filaViva{
 		contexto("servicio-desde", "Tiempo de actividad del servicio", i.DesdeElArranque),
-		contexto("peticiones", "Peticiones HTTP",
-			fmt.Sprintf("%d · %d correctas · %d rechazadas · %d con error de servidor",
-				i.Peticiones, i.Exito, i.ErroresCliente, i.ErroresServidor)),
-		deIndicador("disponibilidad"),
-		contexto("listados", "Listados de directorio",
-			fmt.Sprintf("%d · %d por encima de 2 s", i.Listados, i.ListadosLentos)),
-		deIndicador("latencia"),
-		contexto("transferido", "Datos transferidos",
-			legibleBytes(uint64(i.BytesSubidos))+" subidos · "+
-				legibleBytes(uint64(i.BytesDescargados))+" descargados"),
-		contexto("subidas", "Subidas",
-			fmt.Sprintf("%d creadas · %d publicadas · %d fallidas · %d descartadas · %d expiradas",
-				i.SubidasCreadas, i.SubidasConfirmadas, i.SubidasFallidas,
-				i.SubidasDescartadas, i.SubidasExpiradas)),
-		deIndicador("integridad"),
+		conContexto("disponibilidad", fmt.Sprintf("%d peticiones · %d con error de servidor",
+			i.Peticiones, i.ErroresServidor)),
+		conContexto("latencia", fmt.Sprintf("%d listados · %d por encima de 2 s",
+			i.Listados, i.ListadosLentos)),
+		conContexto("integridad", fmt.Sprintf("%d publicadas · %d fallidas · %d descartadas · %d expiradas",
+			i.SubidasConfirmadas, i.SubidasFallidas, i.SubidasDescartadas, i.SubidasExpiradas)),
 		deIndicador("subidas-en-curso"),
-		contexto("sesiones", "Sesiones activas", strconv.Itoa(i.SesionesAbiertas)),
-		contexto("accesos-fallidos", "Intentos de acceso fallidos",
-			strconv.FormatInt(i.AccesosFallidos, 10)),
-		contexto("borrados", "Borrados registrados",
-			strconv.FormatInt(i.Borrados, 10)),
 	}
 	return nodo, servicio
 }
@@ -468,7 +483,6 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 
 	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
 	v := vistaEstado{
-		Volumen:       s.volumen,
 		FilasNodo:     filasNodo,
 		FilasServicio: filasServicio,
 		Lentos:        evaluarLentos(n),

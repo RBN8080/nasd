@@ -373,26 +373,28 @@ func TestLosFiltrosDelPanelAcotanDeVerdad(t *testing.T) {
 		t.Error("el filtro por Internet dejó pasar un origen del túnel")
 	}
 
-	// Y por ruta. Va con red= vacío A PROPÓSITO: sin eso, el del túnel
-	// desaparecería por el filtro de red por omisión y esta comprobación
-	// pasaría sin haber probado nada del filtro de ruta.
-	porRuta := panelSeguridad(t, s, "?red=&ruta=sondeo")
-	if !strings.Contains(porRuta, "203.0.113.7") {
-		t.Error("el filtro por ruta perdió lo que sí la contiene")
-	}
-	if strings.Contains(porRuta, "10.77.0.3") {
-		t.Error("el filtro por ruta dejó pasar lo que no la contiene")
-	}
+	// EL FILTRO POR RUTA SE PROBABA AQUÍ Y YA NO EXISTE (ADR-0065): el
+	// responsable declaró que ni esa caja ni la de dirección le servían.
+	// Quedan los filtros que sí se usan, y son los que esta prueba defiende.
 }
 
 // Un filtro con basura no puede reventar la página ni colar HTML: lo que
 // llega por la URL lo escribe quien pide, y vuelve escrito en el formulario.
 func TestUnFiltroConBasuraNoRompeNiInyecta(t *testing.T) {
 	s := servidorConAuth(t)
+	// «gravedad» e «ip» YA NO SON PARÁMETROS DE ESTA PÁGINA (ADR-0065), y se
+	// dejan en la URL a propósito: la prueba pasa a defender algo más fuerte
+	// que antes —que un parámetro retirado no se cuela por ningún resquicio—.
+	// Desde la retirada de las dos cajas de texto, la página no devuelve NADA
+	// de lo que llega por la URL: el rótulo del filtro activo se compone de las
+	// etiquetas propias del programa, no de lo que teclee quien pide.
 	cuerpo := panelSeguridad(t, s,
 		"?horas=no-es-un-numero&motivo=inventado&gravedad=x&red=y&ip=%3Cscript%3Ealert(1)%3C/script%3E")
 	if strings.Contains(cuerpo, "<script>alert(1)</script>") {
-		t.Fatal("lo tecleado en el filtro se devolvió sin escapar")
+		t.Fatal("un parámetro retirado se devolvió sin escapar")
+	}
+	if strings.Contains(cuerpo, "alert(1)") {
+		t.Fatal("un parámetro retirado se sigue devolviendo a la página")
 	}
 	// Y con parámetros ilegibles se cae a la ventana por omisión en vez de
 	// vaciar la página o fallar.
@@ -415,8 +417,16 @@ func TestElPanelDiceQueEstaRecortando(t *testing.T) {
 		})
 	}
 	cuerpo := panelSeguridad(t, s, "")
-	if !strings.Contains(cuerpo, "más recientes de") {
-		t.Error("con el anillo lleno, el panel no avisa de que está recortando")
+	// SE COMPRUEBAN LAS DOS CIFRAS Y NO UNA FRASE, y es la corrección que trajo
+	// ADR-0065: el texto anterior decía «los N más recientes de M» con N = los
+	// eventos DE LA VENTANA y no los que caben en el anillo, así que con
+	// «?horas=1» llegaba a afirmar «se conservan los 3 más recientes de 5000».
+	// Lo que la prueba defiende es que la cifra publicada sea la real.
+	if !strings.Contains(cuerpo, strconv.Itoa(seguridad.Capacidad)) {
+		t.Error("con el anillo lleno, el panel no dice cuántos rechazos conserva")
+	}
+	if !strings.Contains(cuerpo, strconv.Itoa(seguridad.Capacidad+10)) {
+		t.Error("con el anillo lleno, el panel no dice cuántos se han visto en total")
 	}
 }
 
@@ -557,5 +567,123 @@ func TestElPanelDeSeguridadSeRenderizaEntero(t *testing.T) {
 		if !strings.Contains(cuerpo, "<h2>"+seccion+"</h2>") {
 			t.Errorf("falta la sección %q", seccion)
 		}
+	}
+}
+
+// El rótulo del filtro activo SUSTITUYE a la prosa que explicaba que la página
+// abre filtrada a Internet (ADR-0065), así que tiene que decir la verdad y no
+// puede quedarse en blanco: si se vaciara, esa información se perdería sin que
+// nada fallara a gritos, que es el modo de fallo que este proyecto persigue.
+//
+// Se comprueba contra el TEXTO COMPUESTO y no contra los campos, porque el
+// defecto que importa es el de la pantalla: un rótulo que dice «Internet»
+// mientras el desplegable enseña otra cosa.
+func TestElRotuloDelFiltroDiceLoQueSeEstaMirando(t *testing.T) {
+	s := servidorConAuth(t)
+
+	if cuerpo := panelSeguridad(t, s, ""); !strings.Contains(cuerpo, "Internet · 24 horas") {
+		t.Error("el rótulo no anuncia el filtro por omisión")
+	}
+	if cuerpo := panelSeguridad(t, s, "?red=&horas=1"); !strings.Contains(cuerpo, "Cualquier origen · 1 hora") {
+		t.Error("el rótulo no siguió al desplegable")
+	}
+	// El motivo aparece SOLO cuando se ha elegido uno: «Todos los motivos» es
+	// la ausencia de filtro, y anunciarla en cada carga sería el mismo ruido
+	// que este trabajo viene a quitar.
+	conMotivo := panelSeguridad(t, s, "?motivo=credencial_incorrecta")
+	if !strings.Contains(conMotivo, "Internet · 24 horas · Credencial incorrecta") {
+		t.Error("el rótulo no anuncia el motivo elegido")
+	}
+	if strings.Contains(panelSeguridad(t, s, ""), "Todos los motivos ·") {
+		t.Error("el rótulo anuncia la ausencia de filtro como si fuera un filtro")
+	}
+}
+
+// La columna «Procedencia» solo se enseña cuando puede decir algo distinto en
+// cada fila. Con el filtro por omisión decía «Internet» en TODAS, que es una
+// columna constante: ocupa ancho y no informa (ADR-0065).
+//
+// No se retiró del todo porque en cuanto se mezclan redes vuelve a ser la que
+// distingue el móvil de casa de un extraño.
+func TestLaProcedenciaSoloApareceCuandoDistingue(t *testing.T) {
+	s := servidorConAuth(t)
+
+	deFuera := httptest.NewRequest("GET", "/sondeo", nil)
+	deFuera.RemoteAddr = "203.0.113.7:44001"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), deFuera)
+
+	if strings.Contains(panelSeguridad(t, s, ""), "<th>Procedencia</th>") {
+		t.Error("con el filtro por omisión la procedencia es constante y no debe enseñarse")
+	}
+	if !strings.Contains(panelSeguridad(t, s, "?red="), "<th>Procedencia</th>") {
+		t.Error("con «cualquier origen» la procedencia distingue y tiene que estar")
+	}
+}
+
+// «Sondeo de software que aquí no existe» INFORMA PERO NO ALARMA.
+//
+// Dispara con UNA sola ruta ajena y su propia explicación termina diciendo que
+// no va dirigida a este nodo: una alerta que se desmiente sola gasta la
+// credibilidad de las otras dos. Sigue apareciendo —RF-29(7) exige que la
+// inferencia esté con su explicación— y pierde el énfasis (ADR-0065).
+func TestLaSenalDeSoftwareAjenoInformaPeroNoAlarma(t *testing.T) {
+	s := servidorConAuth(t)
+
+	deFuera := httptest.NewRequest("GET", "/wp-login.php", nil)
+	deFuera.RemoteAddr = "203.0.113.7:44001"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), deFuera)
+
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.Contains(cuerpo, seguridad.SenalSoftwareAjeno.Etiqueta()) {
+		t.Fatal("la señal desapareció; solo tenía que perder el énfasis")
+	}
+	if strings.Contains(cuerpo, `class="senal senal-aviso"`) {
+		t.Error("la señal de software ajeno se sigue pintando como alerta")
+	}
+	// Y la mitad que impide que esta prueba se cumpla sola: las otras dos SÍ
+	// alarman. Sin esto, borrar la clase del CSS entero pasaría la prueba.
+	if !seguridad.SenalExploracion.Destacar() || !seguridad.SenalFuerzaBruta.Destacar() {
+		t.Error("las señales que sí alarman perdieron su énfasis")
+	}
+}
+
+// «Primera» y «Última» eran dos columnas y son un intervalo: se fundieron en
+// una (ADR-0065). Y cuando los dos extremos caen en el mismo minuto se escribe
+// UNO SOLO.
+//
+// No es cosmético, y por eso tiene prueba: un sondeo entero cabe en un minuto
+// —los veinte de DRIFTNET tardaron cinco—, así que el caso CORRIENTE es el de
+// los dos extremos iguales, y pintar la misma fecha dos veces con una flecha
+// en medio es repetir un dato para no decir nada.
+func TestElIntervaloNoRepiteLaMismaFechaDosVeces(t *testing.T) {
+	s := servidorConAuth(t)
+	base := time.Date(2026, 8, 16, 11, 49, 0, 0, time.Local)
+	anota := func(cuando time.Time) {
+		s.seguridad.Anotar(seguridad.Evento{
+			Momento: cuando,
+			Origen:  netip.MustParseAddr("203.0.113.7"),
+			Metodo:  "GET", Ruta: "/", Estado: 401, Motivo: seguridad.SinSesion,
+		})
+	}
+
+	// «horas=0» es «todo lo guardado». Va A PROPÓSITO y no la ventana por
+	// omisión: con una fecha fija de hace días, las 24 horas dejarían la tabla
+	// VACÍA y la primera comprobación se cumpliría sin haber probado nada —
+	// que es justo lo que pasó al escribir esta prueba.
+	anota(base)
+	anota(base.Add(30 * time.Second)) // el mismo minuto
+	primera := panelSeguridad(t, s, "?horas=0")
+	if !strings.Contains(primera, "2026-08-16 11:49") {
+		t.Fatal("la fila no llegó a la tabla; la comprobación de abajo no probaría nada")
+	}
+	if strings.Contains(primera, "→") {
+		t.Error("con los dos extremos en el mismo minuto se pintó un intervalo")
+	}
+
+	// Y la mitad que impide que la prueba se cumpla sola borrando la flecha:
+	// cuando de verdad hay recorrido, se dice.
+	anota(base.Add(5 * time.Minute))
+	if cuerpo := panelSeguridad(t, s, "?horas=0"); !strings.Contains(cuerpo, "2026-08-16 11:49 → 2026-08-16 11:54") {
+		t.Error("con recorrido real el intervalo no se enseña entero")
 	}
 }
