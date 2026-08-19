@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -685,5 +686,111 @@ func TestElIntervaloNoRepiteLaMismaFechaDosVeces(t *testing.T) {
 	anota(base.Add(5 * time.Minute))
 	if cuerpo := panelSeguridad(t, s, "?horas=0"); !strings.Contains(cuerpo, "2026-08-16 11:49 → 2026-08-16 11:54") {
 		t.Error("con recorrido real el intervalo no se enseña entero")
+	}
+}
+
+// EL CASO QUE ANTES ERA INVISIBLE, y es el motivo entero de ADR-0066: alguien
+// recorre puertos cerrados y se va sin llegar a hablar. El cortafuegos lo tira,
+// así que nunca hubo conexión ni petición, y hasta el sensor no lo veía nadie.
+//
+// Se comprueba en la MISMA fila que las otras dos capas: la escalera
+// paquete → conexión → rechazo es lo que hace legible la historia del 16/08.
+func TestUnEscaneoAPuertosCerradosApareceAunqueNoHablara(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+	ahora := time.Now().UTC().Format(time.RFC3339)
+	cuerpo := "# total-visto: 913\n" +
+		ahora + " 203.0.113.7 23 syn\n" +
+		ahora + " 203.0.113.7 2323 syn\n" +
+		ahora + " 192.168.1.23 445 syn\n" // de casa: NO debe salir
+	if err := os.WriteFile(s.rutaToques, []byte(cuerpo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panel := panelSeguridad(t, s, "")
+	if !strings.Contains(panel, "203.0.113.7") {
+		t.Fatal("el origen que solo envió paquetes no aparece: sigue siendo invisible")
+	}
+	if strings.Contains(panel, "192.168.1.23") {
+		t.Error("un toque de la LAN se coló en la tabla de Internet")
+	}
+	if !strings.Contains(panel, "<th>Paquetes</th>") {
+		t.Error("con sensor instalado debe existir la columna de paquetes")
+	}
+	// Los puertos distintos son lo que separa «un cliente reintentando» de
+	// «alguien recorriendo el nodo».
+	if !strings.Contains(panel, "puertos: 23 2323") {
+		t.Error("no se enseñan los puertos distintos que se tocaron")
+	}
+	// Y el total sobrevive al reinicio porque viaja en el archivo, no en
+	// memoria — que es justo lo que los otros dos anillos NO hacen.
+	if !strings.Contains(panel, "913") {
+		t.Error("no se publica el total de paquetes vistos desde siempre")
+	}
+}
+
+// Sin sensor instalado la columna NO se pinta a cero: se esconde. Una columna
+// de ceros se leería como «nadie me toca» cuando significa «no lo estoy
+// mirando» — mismo criterio que la columna de operador sin base de geoip.
+func TestSinSensorLaColumnaDePaquetesNoSePinta(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "no-existe")
+
+	panel := panelSeguridad(t, s, "")
+	if strings.Contains(panel, "<th>Paquetes</th>") {
+		t.Error("sin sensor no debe haber columna de paquetes")
+	}
+	if !strings.Contains(panel, "<h2>Orígenes</h2>") {
+		t.Error("sin sensor el resto de la página tiene que seguir entera")
+	}
+}
+
+// Las dos capas de Internet no aplican cuando se miran otras redes, así que sus
+// columnas desaparecen en vez de salir vacías. Mismo patrón que «Procedencia».
+func TestLasColumnasDeInternetSoloSalenConElFiltroEnInternet(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+	ahora := time.Now().UTC().Format(time.RFC3339)
+	if err := os.WriteFile(s.rutaToques,
+		[]byte("# total-visto: 1\n"+ahora+" 203.0.113.7 23 syn\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if p := panelSeguridad(t, s, ""); !strings.Contains(p, "<th>Conex.</th>") {
+		t.Error("con el filtro en Internet deben verse las conexiones")
+	}
+	todo := panelSeguridad(t, s, "?red=")
+	if strings.Contains(todo, "<th>Paquetes</th>") || strings.Contains(todo, "<th>Conex.</th>") {
+		t.Error("con «cualquier origen» esas dos capas no aplican y no deben pintarse")
+	}
+	if !strings.Contains(todo, "<th>Procedencia</th>") {
+		t.Error("con «cualquier origen» sí debe verse la procedencia")
+	}
+}
+
+// Un filtro que deja pasar justo lo que NO cumple es peor que no tenerlo.
+//
+// Las capas de paquetes y conexiones no saben de motivos —un paquete no tiene
+// ninguno—, así que al fundir las tablas apareció este defecto: filtrar por
+// «Credencial incorrecta» seguía enseñando cada dirección que solo había
+// enviado paquetes, con un 0 en la columna de rechazos.
+func TestElFiltroDeMotivoGobiernaLaTablaEntera(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+	ahora := time.Now().UTC().Format(time.RFC3339)
+	if err := os.WriteFile(s.rutaToques,
+		[]byte("# total-visto: 1\n"+ahora+" 203.0.113.7 23 syn\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sin filtro de motivo, quien solo envió paquetes tiene que verse: es el
+	// caso que ADR-0066 vino a hacer visible.
+	if p := panelSeguridad(t, s, ""); !strings.Contains(p, "203.0.113.7") {
+		t.Fatal("sin filtro de motivo debe verse quien solo envió paquetes")
+	}
+	// Con un motivo elegido, ya no: esa dirección no produjo ese motivo.
+	conMotivo := panelSeguridad(t, s, "?motivo=credencial_incorrecta")
+	if strings.Contains(conMotivo, "203.0.113.7") {
+		t.Error("el filtro de motivo dejó pasar una dirección sin ningún rechazo")
 	}
 }

@@ -127,6 +127,25 @@ func (c Config) RutaConexiones() string {
 	return filepath.Join(c.DirectorioEstado, "conexiones")
 }
 
+// RutaToques es el historial que deja nas-sensor — RF-33, ADR-0066.
+//
+// NO VA EN DirectorioEstado, y es la única ruta de este archivo que no lo hace:
+// ese directorio es el StateDirectory de nasd, y quien escribe aquí es OTRO
+// servicio, con su propio usuario y su propio StateDirectory. nasd solo LEE.
+//
+// Esa separación es lo que permite cumplir la condición del responsable de no
+// tocar lo que ya funciona: la unidad de nasd no cambia ni una directiva.
+// ProtectSystem=strict deja el sistema en solo lectura, no inaccesible, y el
+// directorio del sensor va con grupo «nas» para que esta lectura funcione sin
+// concederle a nasd ningún permiso nuevo.
+//
+// Literal y no configurable, por lo mismo que prefijoLAN en internal/seguridad:
+// una opción que nadie va a cambiar es exactamente el «por si acaso» que el
+// estilo de este proyecto prohíbe.
+func (c Config) RutaToques() string {
+	return "/var/lib/nas-sensor/toques"
+}
+
 // RutaGeoIP es la base que resuelve una dirección a su país y su operador
 // (internal/geoip).
 //

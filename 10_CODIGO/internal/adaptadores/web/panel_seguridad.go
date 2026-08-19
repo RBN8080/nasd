@@ -1,7 +1,10 @@
 package web
 
 import (
+	"cmp"
 	"net/http"
+	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,44 +44,85 @@ var ventanas = []struct {
 	{"Todo lo guardado", 0},
 }
 
-// filaOrigen es un origen agregado MAS su procedencia resuelta.
+// filaOrigen es UNA DIRECCION con todo lo que se sabe de ella, en las tres
+// capas — ADR-0065 y ADR-0066.
 //
-// Existe para que internal/seguridad no dependa de internal/geoip: aquel
-// paquete modela el hecho registrado y no tiene por que saber que existe una
-// base de operadores. Quien une las dos piezas es este adaptador, igual que
-// la raiz de composicion es quien une fsposix con web (ADR-0014).
+// # POR QUE UNA SOLA FILA Y NO TRES TABLAS
+//
+// Paquete, conexion y peticion son la MISMA pregunta a distinta profundidad, y
+// cada capa es superconjunto de la siguiente: todo rechazo tuvo una conexion, y
+// toda conexion empezo por un paquete. Con tres tablas hay que cruzar tres
+// filas a ojo para reconstruir una sola historia; en columnas se lee de un
+// vistazo, y es la historia del 16/08 la que lo demuestra:
+//
+//	2a06:4883:5000::65   DRIFTNET · GB   47 paq.   1 conex.   1 rech.
+//	185.220.14.7         OVH · FR        12 paq.   0 conex.   0 rech.
+//
+// La segunda fila es lo que antes era INVISIBLE: alguien recorrio puertos
+// cerrados y se fue sin llegar a hablar.
+//
+// NO SE MEZCLAN LAS CIFRAS, y eso es lo que respeta la regla de ADR-0064: son
+// tres hechos distintos en tres columnas distintas. Lo que aquel ADR prohibio
+// fue SUMARLOS -- que «Rechazos» contara cosas que no son rechazos --, no
+// ponerlos uno al lado del otro. El sujeto es el mismo: la direccion.
+//
+// Vive aqui y no en internal/seguridad para que aquel paquete no dependa de
+// internal/geoip: modela el hecho registrado y no tiene por que saber que
+// existe una base de operadores. Quien une las piezas es este adaptador, igual
+// que la raiz de composicion une fsposix con web (ADR-0014).
 type filaOrigen struct {
-	seguridad.Origen
+	IP  netip.Addr
+	Red seguridad.Red
 	// Geo esta vacio cuando no hay base instalada, cuando el origen no es de
 	// Internet -una IP privada no tiene operador- o cuando la base no cubre
 	// ese rango. La plantilla distingue los tres casos de un dato real.
 	Geo      geoip.Info
 	TieneGeo bool
+
+	// Capa 1 — PAQUETES. Solo de Internet y solo con sensor instalado.
+	Toques  int
+	Puertos []uint16
+
+	// Capa 2 — CONEXIONES. Solo de Internet por construccion del anillo.
+	Conexiones int
+
+	// Capa 3 — RECHAZOS, con todo lo que solo existe cuando hubo peticion.
+	Rechazos  int
+	PorMotivo map[seguridad.Motivo]int
+	Cuentas   []string
+	Senales   []seguridad.Senal
+	Gravedad  seguridad.Gravedad
+
+	Primera time.Time
+	Ultima  time.Time
 }
 
-// filaConectado es una dirección de Internet que abrió conexiones, con su
-// procedencia resuelta. Existe por lo mismo que filaOrigen: unir el hecho con
-// la base de operadores es trabajo del adaptador, no del dominio.
-type filaConectado struct {
-	seguridad.OrigenConectado
-	Geo      geoip.Info
-	TieneGeo bool
+// Destacar dice si la fila merece enfasis. Mismo criterio que tenia
+// seguridad.Origen y por el mismo motivo: la gravedad de atencion se destaca
+// venga de donde venga, y desde Internet se destaca todo, porque ver a alguien
+// de fuera tocando la puerta ya es la senal.
+func (f filaOrigen) Destacar() bool {
+	return f.Gravedad == seguridad.Atencion || f.Red.DeFuera()
 }
 
 type vistaSeguridad struct {
 	Resumen seguridad.Resumen
-	// Conectados son las direcciones de Internet que ABRIERON CONEXIÓN, hayan
-	// llegado o no a pedir algo. Va aparte de Origenes y no mezclado con él
-	// porque son hechos de distinta naturaleza: aquello son rechazos de
-	// peticiones, esto son conexiones. Ver internal/seguridad/conexiones.go.
-	Conectados []filaConectado
-	// Conexiones son las de la ventana; TotalConexiones, las de siempre. Las
-	// dos cifras, por lo mismo que en el anillo de rechazos: un anillo lleno
-	// no debe leerse como «esto es todo lo que ha pasado».
+	// Origenes es LA tabla de la página: una fila por dirección, con las tres
+	// capas en columnas. Ver filaOrigen.
+	Origenes []filaOrigen
+	Eventos  []seguridad.Evento
+
+	// Las cifras de cada capa, en la ventana y desde siempre. Las dos, por lo
+	// mismo en las tres: un anillo lleno no debe leerse como «esto es todo lo
+	// que ha pasado».
 	Conexiones      int
 	TotalConexiones int64
-	Origenes        []filaOrigen
-	Eventos         []seguridad.Evento
+	Toques          int
+	TotalToques     int64
+	// HayToques dice si el sensor está instalado. La plantilla lo usa para NO
+	// pintar una columna de ceros, que se leería como «nadie me toca» cuando
+	// significa «no lo estoy mirando» — mismo criterio que HayGeo.
+	HayToques bool
 	// FiltroActivo es el rótulo que acompaña al título: «Internet · 24 horas».
 	//
 	// Sustituye a la frase que explicaba en prosa que la página abre filtrada
@@ -101,6 +145,12 @@ type vistaSeguridad struct {
 	// vuelve a ser la que distingue el móvil de casa de un extraño. No se
 	// retira: se enseña cuando tiene algo que decir (ADR-0065).
 	SinFiltroDeRed bool
+	// SoloInternet es cierto cuando se mira EXACTAMENTE Internet, que es el
+	// filtro por omision. Decide si se ensenan las columnas de paquetes y
+	// conexiones: las dos capas son de Internet por construccion, asi que con
+	// cualquier otro filtro saldrian vacias, y una celda vacia se lee como
+	// «cero» cuando significa «esta pregunta no aplica aqui».
+	SoloInternet bool
 
 	Ventanas []opcionFiltro
 	Motivos  []opcionFiltro
@@ -220,6 +270,17 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// no pueden hacer nada.
 	conexiones := s.conexiones.Desde(f.Desde)
 
+	// LOS TOQUES SE LEEN DEL DISCO, no de memoria: quien los escribe es otro
+	// proceso (nas-sensor) y nasd solo lee. Un fallo aqui NO tumba la pagina --
+	// se anota en el diario y las columnas de esa capa se esconden, que es
+	// mejor que ensenar una cifra construida sobre lo que si se pudo leer.
+	hist, err := seguridad.LeerToques(s.rutaToques, f.Desde)
+	if err != nil {
+		s.reg.Warn("no se pudo leer el historial de toques",
+			"ruta", s.rutaToques, "error", err)
+	}
+	tocados := seguridad.PorOrigenTocado(hist.Toques)
+
 	// Las tres listas se construyen antes del literal porque el rótulo del
 	// filtro activo sale de ELLAS y no de los parámetros crudos de la URL: si
 	// salieran de sitios distintos, el rótulo podría decir «Internet» mientras
@@ -230,15 +291,18 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 
 	v := vistaSeguridad{
 		Resumen:         resumen,
-		Origenes:        s.resolverProcedencia(origenes),
-		Conectados:      s.resolverConectados(seguridad.PorOrigenConectado(conexiones)),
+		Origenes:        s.unirOrigenes(tocados, seguridad.PorOrigenConectado(conexiones), origenes, f.Motivo != nil),
 		Conexiones:      len(conexiones),
 		TotalConexiones: s.conexiones.Total(),
+		Toques:          len(hist.Toques),
+		TotalToques:     hist.Total,
+		HayToques:       hist.Hay,
 		HayGeo:          s.geo != nil,
 		FechaGeo:        s.geo.Fecha(),
 		Eventos:         cronologia,
 		FiltroActivo:    rotuloDeFiltro(redes, ventanas, motivos),
 		SinFiltroDeRed:  f.Red == nil,
+		SoloInternet:    f.Red != nil && *f.Red == seguridad.RedInternet,
 		Ventanas:        ventanas,
 		Motivos:         motivos,
 		Redes:           redes,
@@ -339,43 +403,111 @@ func redDesde(s string) (seguridad.Red, bool) {
 	return seguridad.RedDesconocida, false
 }
 
-// resolverProcedencia averigua pais y operador de cada origen.
+// unirOrigenes funde las TRES capas en una fila por direccion.
 //
-// SOLO PARA LOS DE INTERNET, y por dos razones que se sostienen solas: una
-// direccion privada -LAN, tunel, el propio nodo- no tiene operador que
-// resolver, y ademas ensenar «el operador» junto a los propios aparatos del
-// responsable seria ruido en la unica tabla que existe para mirar hacia
-// fuera.
+// La union se hace por direccion y no por ningun otro campo porque es lo unico
+// que las tres comparten: un paquete no tiene ruta, y una conexion no tiene
+// motivo. Una direccion puede aparecer en las tres, en dos o en una sola, y
+// cada combinacion significa algo distinto y legible:
 //
-// SE RESUELVE AL PINTAR Y NO AL ANOTAR, igual que las senales: es dato
-// derivado. Persistirlo en el evento congelaria el operador del dia en que
-// llego, y refrescar la base mensualmente no corregiria el historial. Asi,
-// cada vez que se mira se usa lo mejor que se sabe HOY.
+//	paquetes, conexiones y rechazos  ->  llego, hablo y se le nego algo
+//	paquetes y conexiones, sin rechazos -> murio en el saludo TLS (DRIFTNET)
+//	solo paquetes  ->  recorrio puertos cerrados y se fue
 //
-// El coste es despreciable: son las ~20 lecturas de 16 bytes de una busqueda
-// binaria por cada direccion distinta mostrada, no por evento.
-// resolverConectados hace con las conexiones lo mismo que resolverProcedencia
-// con los rechazos. NO comprueba DeFuera: aquí todo es de Internet por
-// construcción del anillo, y repetir la comprobación daría a entender que
-// puede haber otra cosa.
-func (s *Servidor) resolverConectados(origenes []seguridad.OrigenConectado) []filaConectado {
-	filas := make([]filaConectado, 0, len(origenes))
-	for _, o := range origenes {
-		f := filaConectado{OrigenConectado: o}
-		f.Geo, f.TieneGeo = s.geo.Buscar(o.IP)
-		filas = append(filas, f)
-	}
-	return filas
-}
-
-func (s *Servidor) resolverProcedencia(origenes []seguridad.Origen) []filaOrigen {
-	filas := make([]filaOrigen, 0, len(origenes))
-	for _, o := range origenes {
-		f := filaOrigen{Origen: o}
-		if o.Red.DeFuera() {
-			f.Geo, f.TieneGeo = s.geo.Buscar(o.IP)
+// Las dos primeras capas SOLO traen direcciones de Internet -- una por
+// construccion del anillo, la otra porque LeerToques descarta lo de casa --,
+// asi que con el filtro en cualquier otra red esas columnas quedan vacias y la
+// plantilla las esconde en vez de pintar ceros.
+// SOLO CON RECHAZOS: cuando hay un filtro de MOTIVO puesto, la tabla se acota a
+// las direcciones que produjeron ese motivo.
+//
+// Hace falta porque las otras dos capas no saben de motivos -- un paquete no
+// tiene ninguno -- y sin esto, filtrar por «Credencial incorrecta» seguiria
+// ensenando cada direccion que solo envio paquetes, con un 0 en la columna de
+// rechazos. Un filtro que deja pasar justo lo que no cumple es peor que no
+// tenerlo: el defecto que ADR-0065 acaba de retirar de esta misma pagina.
+func (s *Servidor) unirOrigenes(
+	tocados []seguridad.OrigenTocado,
+	conectados []seguridad.OrigenConectado,
+	origenes []seguridad.Origen,
+	soloConRechazos bool,
+) []filaOrigen {
+	porIP := make(map[netip.Addr]*filaOrigen)
+	dame := func(ip netip.Addr, red seguridad.Red) *filaOrigen {
+		f, ok := porIP[ip]
+		if !ok {
+			f = &filaOrigen{IP: ip, Red: red}
+			porIP[ip] = f
 		}
-		filas = append(filas, f)
+		return f
 	}
+	// Los instantes se funden en un solo intervalo: el mas temprano y el mas
+	// tardio de las tres capas. Sin esto, una fila con paquetes y rechazos
+	// tendria dos intervalos y habria que elegir cual mentir.
+	extender := func(f *filaOrigen, primera, ultima time.Time) {
+		if f.Primera.IsZero() || primera.Before(f.Primera) {
+			f.Primera = primera
+		}
+		if ultima.After(f.Ultima) {
+			f.Ultima = ultima
+		}
+	}
+
+	for _, o := range tocados {
+		f := dame(o.IP, seguridad.RedInternet)
+		f.Toques, f.Puertos = o.Toques, o.Puertos
+		extender(f, o.Primera, o.Ultima)
+	}
+	for _, o := range conectados {
+		f := dame(o.IP, seguridad.RedInternet)
+		f.Conexiones = o.Conexiones
+		extender(f, o.Primera, o.Ultima)
+	}
+	for _, o := range origenes {
+		f := dame(o.IP, o.Red)
+		// La red REAL la manda el rechazo: es la unica capa que la clasifica
+		// evento por evento, y las otras dos son de Internet por construccion.
+		f.Red = o.Red
+		f.Rechazos, f.PorMotivo = o.Eventos, o.PorMotivo
+		f.Cuentas, f.Senales, f.Gravedad = o.Cuentas, o.Senales, o.Gravedad
+		extender(f, o.Primera, o.Ultima)
+	}
+
+	filas := make([]filaOrigen, 0, len(porIP))
+	for _, f := range porIP {
+		if soloConRechazos && f.Rechazos == 0 {
+			continue
+		}
+		// LA GEO SE RESUELVE AL PINTAR Y SOLO PARA LOS DE INTERNET. Una
+		// direccion privada no tiene operador que buscar, y ensenar «el operador»
+		// junto a los propios aparatos del responsable seria ruido en la unica
+		// tabla que existe para mirar hacia fuera.
+		//
+		// Al pintar y no al anotar, igual que las senales: es dato derivado.
+		// Persistirlo congelaria el operador del dia en que llego, y refrescar
+		// la base cada mes no corregiria el historial. El coste es
+		// despreciable: una busqueda binaria por direccion mostrada, no por
+		// evento.
+		if f.Red.DeFuera() {
+			f.Geo, f.TieneGeo = s.geo.Buscar(f.IP)
+		}
+		filas = append(filas, *f)
+	}
+
+	slices.SortFunc(filas, func(x, y filaOrigen) int {
+		if c := cmp.Compare(y.Gravedad, x.Gravedad); c != 0 {
+			return c
+		}
+		// Luego la actividad TOTAL de las tres capas: quien mas ha tocado el
+		// nodo, sea en la capa que sea, va antes.
+		if c := cmp.Compare(y.Toques+y.Conexiones+y.Rechazos,
+			x.Toques+x.Conexiones+x.Rechazos); c != 0 {
+			return c
+		}
+		// Tercer criterio para que el orden sea DETERMINISTA: sin el, dos
+		// filas empatadas salen en el orden aleatorio del recorrido del mapa y
+		// la tabla baila entre recargas sin que nada haya cambiado.
+		return strings.Compare(x.IP.String(), y.IP.String())
+	})
 	return filas
 }
