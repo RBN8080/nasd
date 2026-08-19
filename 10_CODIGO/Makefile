@@ -71,6 +71,24 @@ SHELL       := C:/PROGRA~1/Git/bin/bash.exe
 .SHELLFLAGS := -lc
 endif
 
+# CÓMO SE EJECUTAN LAS PRUEBAS DE GO — cambia en Windows desde el 2026-08-19.
+#
+# Smart App Control está ACTIVO Y FORZADO en este PC y se niega a ejecutar
+# binarios sin firmar ni reputación, que es exactamente lo que Go enlaza para
+# cada paquete. La puerta se caía con «Una directiva de Control de aplicaciones
+# bloqueó este archivo», y no se arregla reintentando ni cambiando GOTMPDIR:
+# está medido en pruebas/go-test-en-wsl.sh, junto con los dos intentos que se
+# descartaron antes de llegar aquí.
+#
+# Dentro de WSL los binarios son de Linux y SAC no los mira. Y de paso las
+# pruebas pasan a correr sobre el MISMO sistema operativo que el nodo, que es
+# donde debieron correr siempre.
+ifeq ($(OS),Windows_NT)
+GO_TEST := bash pruebas/go-test-en-wsl.sh
+else
+GO_TEST := go test
+endif
+
 .PHONY: todo verificar verificar-c verificar-limpio carreras prueba compilar compilar-miniatura compilar-sensor desplegar volver registro limpiar
 
 todo: verificar compilar
@@ -98,7 +116,7 @@ verificar: verificar-c
 	  | grep -v "_test.go" | grep -v "PROHIBIDO" \
 	  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
 	  || (echo "ERROR: uso prohibido — vuelca a tmpfs, es decir a RAM (ADR-0025)"; exit 1)
-	go test ./...
+	$(GO_TEST) ./...
 	@# Se analiza para la plataforma REAL, no para la del host: hay avisos que
 	@# solo existen en linux/arm64. Charter §6.1 deja el análisis estático como
 	@# «advertencia = error», y sin esta línea la puerta no lo cumplía.
@@ -116,6 +134,16 @@ verificar: verificar-c
 # que se ejecute EN ESTA máquina. La compilación cruzada de producción va en
 # «compilar-miniatura», sin desinfectantes —no hay runtime de ASan para
 # aarch64-linux-musl estático— y es la que de verdad viaja al nodo.
+# EN WINDOWS ESTO CORRE DENTRO DE WSL DESDE EL 2026-08-19, y no por gusto:
+# Smart App Control esta activo y forzado en este PC, y se niega —de forma
+# ESTABLE, cinco de cinco— a ejecutar el binario que zig compila con
+# -fsanitize. No es el bloqueo intermitente que corpus.sh ya sortea esperando;
+# ese no se cura esperando. El corpus se ejecuta entero con los mismos
+# desinfectantes, solo que con gcc y sobre Linux. Ver pruebas/verificar-c-en-wsl.sh.
+ifeq ($(OS),Windows_NT)
+verificar-c:
+	bash pruebas/verificar-c-en-wsl.sh
+else
 verificar-c:
 	@if [ ! -x "$(ZIG)" ] && ! command -v "$(ZIG)" >/dev/null 2>&1; then \
 	  echo ">> zig no está instalado: se omite verificar-c (make compilar SÍ lo exige)"; \
@@ -135,6 +163,7 @@ verificar-c:
 	bash nas-sensor/pruebas/corpus.sh nas-sensor/arnes_verificar
 	@rm -f nas-sensor/arnes_verificar nas-sensor/arnes_verificar.exe \
 	  nas-sensor/arnes_verificar.pdb
+endif
 
 # El detector de carreras. Se separa de «verificar» porque tarda bastante más,
 # pero NO es opcional al cerrar un bloque: el programa tiene tres puntos de
@@ -160,7 +189,7 @@ carreras:
 endif
 
 prueba:
-	go test -v ./...
+	$(GO_TEST) -v ./...
 
 # Binario estático ARM64. Sin CGO: se copia y corre, sin dependencias.
 compilar: compilar-miniatura compilar-sensor
