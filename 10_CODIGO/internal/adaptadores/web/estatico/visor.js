@@ -12,6 +12,40 @@
 // dos (WHATWG HTML §4.8.11 y §8.9).
 'use strict';
 
+// Las flechas del teclado repiten lo que ya hacen los dos enlaces de la
+// galería. MEJORA PROGRESIVA EN SENTIDO ESTRICTO: no navega por su cuenta, va
+// a buscar el «href» que el servidor ya escribió y sigue ese. Si este archivo
+// no carga, los botones siguen ahí y no se pierde ninguna función.
+//
+// Va en su propio bloque, fuera del de compatibilidad, porque tiene que
+// funcionar TAMBIÉN cuando no hay medio que mostrar: un HEIC que Brave no
+// decodifica es justo el archivo del que uno quiere salir con la flecha.
+(function () {
+  function irA(selector) {
+    const enlace = document.querySelector(selector);
+    if (enlace) window.location.assign(enlace.href);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    // Con una tecla modificadora pulsada esto es un atajo del navegador
+    // —Alt+← es «atrás»—, y robárselo sería peor que no estar.
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    // CON EL VÍDEO ENFOCADO, LAS FLECHAS SON SUYAS: mueven la reproducción
+    // cinco segundos, que es lo que espera cualquiera que acabe de pulsar
+    // sobre el reproductor. Robárselas para cambiar de archivo dejaría un
+    // vídeo imposible de recorrer. Basta con pulsar fuera para recuperarlas.
+    // Los campos de texto van por lo mismo: allí las flechas mueven el cursor.
+    const foco = document.activeElement;
+    if (foco && (foco.isContentEditable ||
+                 /^(INPUT|TEXTAREA|SELECT|VIDEO|AUDIO)$/.test(foco.tagName))) return;
+
+    if (e.key === 'ArrowLeft') irA('.paso-anterior');
+    else if (e.key === 'ArrowRight') irA('.paso-siguiente');
+    else return;
+    e.preventDefault();
+  });
+})();
+
 (function () {
   const medio = document.querySelector('[data-visor]');
   if (!medio) return;

@@ -69,36 +69,48 @@ func ordenar(es []almacen.Entrada) { ordenarPor(es, porNombre) }
 // primero», dicho por el responsable— y aplica el criterio dentro de cada
 // grupo. Es estable respecto al criterio, no respecto a la lectura del disco.
 func ordenarPor(es []almacen.Entrada, c criterio) {
-	// slices.SortFunc no sirve tal cual: hace falta el criterio compuesto
-	// «directorios primero, luego lo que toque», y expresarlo en una función
-	// suelta lo hace comprobable por separado.
-	sortStable(es, func(a, b almacen.Entrada) bool {
-		if a.EsDirectori != b.EsDirectori {
-			return a.EsDirectori
+	sortStable(es, func(a, b almacen.Entrada) bool { return antesQue(a, b, c) })
+}
+
+// antesQue es EL criterio de orden del listado, escrito una sola vez.
+//
+// Estaba dentro de ordenarPor como función anónima. Sale a la luz porque el
+// visor necesita el MISMO criterio SIN ordenar nada: para saber cuál es la foto
+// anterior y cuál la siguiente basta comparar de dos en dos sobre el flujo del
+// directorio (ver vecinosDe en apertura.go). Con el criterio escrito en dos
+// sitios, ordenar el listado por fecha y pasar fotos por fecha podrían
+// discrepar, y ese defecto no se ve: se manifiesta como que las flechas «se
+// saltan una».
+//
+// Es un orden TOTAL sobre nombres distintos —el desempate final compara el
+// texto tal cual—, y de eso depende que vecinosDe encuentre exactamente un
+// anterior y un siguiente en lugar de un empate ambiguo.
+func antesQue(a, b almacen.Entrada, c criterio) bool {
+	if a.EsDirectori != b.EsDirectori {
+		return a.EsDirectori
+	}
+	switch c {
+	case porTamano:
+		// LAS CARPETAS NO SE ORDENAN POR TAMAÑO, y no es un olvido: la
+		// tabla no muestra ninguno para ellas —el dato que trae el
+		// sistema de archivos es el peso de la entrada de directorio, no
+		// el de su contenido—, así que ordenarlas por él saldría como un
+		// orden aleatorio sin columna que lo explique. Se quedan por
+		// nombre, que es el único orden suyo que el usuario puede ver.
+		if a.EsDirectori {
+			break
 		}
-		switch c {
-		case porTamano:
-			// LAS CARPETAS NO SE ORDENAN POR TAMAÑO, y no es un olvido: la
-			// tabla no muestra ninguno para ellas —el dato que trae el
-			// sistema de archivos es el peso de la entrada de directorio, no
-			// el de su contenido—, así que ordenarlas por él saldría como un
-			// orden aleatorio sin columna que lo explique. Se quedan por
-			// nombre, que es el único orden suyo que el usuario puede ver.
-			if a.EsDirectori {
-				break
-			}
-			if a.Tamano != b.Tamano {
-				return a.Tamano > b.Tamano
-			}
-		case porModificado:
-			if !a.Modificado.Equal(b.Modificado) {
-				return a.Modificado.After(b.Modificado)
-			}
+		if a.Tamano != b.Tamano {
+			return a.Tamano > b.Tamano
 		}
-		// Desempate —y criterio único de porNombre—: natural y estable, para
-		// que dos archivos del mismo tamaño no bailen entre recargas.
-		return compararNatural(a.Nombre, b.Nombre) < 0
-	})
+	case porModificado:
+		if !a.Modificado.Equal(b.Modificado) {
+			return a.Modificado.After(b.Modificado)
+		}
+	}
+	// Desempate —y criterio único de porNombre—: natural y estable, para
+	// que dos archivos del mismo tamaño no bailen entre recargas.
+	return compararNatural(a.Nombre, b.Nombre) < 0
 }
 
 // sortStable es una inserción binaria simple. Con el techo de 2000 entradas de

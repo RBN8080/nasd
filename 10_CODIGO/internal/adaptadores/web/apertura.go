@@ -15,6 +15,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -119,6 +120,23 @@ func urlDeListado(r almacen.RutaSegura) string {
 	return "/ver/" + escaparRutaURL(r.Rel())
 }
 
+// urlDeAbrirCon es urlDeListadoCon llevada al visor, y existe por el mismo
+// motivo: el orden vive en la URL (regla R1, ADR-0015), así que un enlace que
+// no lo lleve consigo lo pierde.
+//
+// Lo usan los tres enlaces que pueden dejarte en otra página con el orden
+// puesto: el nombre del archivo en el listado, y las dos flechas del visor. Sin
+// esto, mirar una carpeta por fecha y abrir una foto te devolvía a un listado
+// por nombre —defecto que ya existía en el «Volver» del visor antes de que
+// hubiera flechas—.
+func urlDeAbrirCon(r almacen.RutaSegura, c criterio) string {
+	u := "/abrir/" + escaparRutaURL(r.Rel())
+	if c == porNombre {
+		return u
+	}
+	return u + "?orden=" + string(c)
+}
+
 // urlDeListadoCon es urlDeListado llevándose el orden puesto.
 //
 // El responsable pidió que ordenar valga «también dentro de todas las
@@ -143,6 +161,83 @@ type vistaVisor struct {
 	// Tipo vacío significa «no se abre»: la plantilla dibuja entonces el
 	// mensaje de RF-25 y nada más.
 	Tipo tipoDeArchivo
+	// Orden es la columna por la que venía ordenado el listado del que se
+	// llegó. Decide el sentido de las flechas y viaja en cada enlace que sale
+	// de aquí, igual que en el listado.
+	Orden criterio
+	// Anterior y Siguiente son los vecinos de galería, o nil en los extremos.
+	// Nil y no la entrada vacía: en los extremos NO se dibuja flecha, y un
+	// control muerto se distingue mal de uno que no responde.
+	Anterior  *almacen.Entrada
+	Siguiente *almacen.Entrada
+}
+
+// esDeGaleria decide qué entra en la secuencia por la que pasan las flechas.
+//
+// FOTOS Y VÍDEOS EN UNA SOLA SECUENCIA, decidido por el responsable. El motivo
+// es lo que hay de verdad en este disco: una carpeta traída del iPhone
+// intercala .HEIC con los .MOV de las Live Photos, y unas flechas que se
+// saltaran los vídeos avanzarían en un orden que no es el que se ve en el
+// listado, sin decir por qué. Un vídeo abre pausado —«controls preload
+// metadata», visor.html—, así que llegar a uno no arranca nada solo.
+//
+// Se descartan las demás clases abribles a propósito: pasar de una foto al PDF
+// de al lado con la flecha no es lo que nadie espera de una galería.
+//
+// Los nombres que empiezan por punto se excluyen POR COHERENCIA con el
+// listado, que los oculta y los cuenta (verListado). Si no se excluyeran, las
+// flechas llevarían a archivos que la carpeta no enseña.
+func esDeGaleria(e almacen.Entrada) bool {
+	if e.EsDirectori || strings.HasPrefix(e.Nombre, ".") {
+		return false
+	}
+	tipo, ok := tipoAbrible(e.Nombre)
+	return ok && (tipo.Clase == "imagen" || tipo.Clase == "video")
+}
+
+// vecinosDe busca la entrada anterior y la siguiente a «actual» dentro de su
+// carpeta, bajo el mismo orden con el que se estaba mirando el listado.
+//
+// # NO ORDENA Y NO ACUMULA, Y ESA ES LA PROPIEDAD QUE LO HACE VIABLE
+//
+// El listado ordena porque tiene que pintar la carpeta entera, y por eso carga
+// con maxEntradasPorPagina y con la inserción binaria de sortStable. Aquí no
+// hace falta nada de eso: de todo el directorio interesan DOS entradas, y eso
+// es una pasada lineal con memoria constante —el mayor de los que van antes y
+// el menor de los que van después—. Se respeta el contrato del iterador de
+// RNF-04 mejor que el propio listado: no hay tope, no hay O(n²), y el coste no
+// crece con la carpeta más allá del readdir que el sistema de archivos ya hace.
+//
+// # UN ERROR AQUÍ NO SE LLEVA POR DELANTE LA FOTO
+//
+// Si el directorio no se puede recorrer se registra y se devuelven dos nil: se
+// pierden las flechas, que son una comodidad, y no la página, que es lo que se
+// pidió. Fallar entero cambiaría un adorno roto por un archivo inaccesible.
+func (s *Servidor) vecinosDe(ctx context.Context, alm almacen.Almacen, actual almacen.Entrada, c criterio) (anterior, siguiente *almacen.Entrada) {
+	for e, err := range alm.Listar(ctx, actual.Ruta.Padre()) {
+		if err != nil {
+			s.reg.Warn("vecinos del visor", "ruta", actual.Ruta.Rel(), "error", err)
+			return nil, nil
+		}
+		// El propio archivo se salta por RUTA y no por nombre: es la
+		// identidad que el resto del programa usa, y aquí las dos coinciden
+		// solo porque se está mirando un único directorio.
+		if !esDeGaleria(e) || e.Ruta.Rel() == actual.Ruta.Rel() {
+			continue
+		}
+		if antesQue(e, actual, c) {
+			if anterior == nil || antesQue(*anterior, e, c) {
+				v := e
+				anterior = &v
+			}
+			continue
+		}
+		if siguiente == nil || antesQue(e, *siguiente, c) {
+			v := e
+			siguiente = &v
+		}
+	}
+	return anterior, siguiente
 }
 
 // abrirEnNavegador entrega la PÁGINA del visor, nunca los bytes del archivo.
@@ -157,9 +252,10 @@ func (s *Servidor) abrirEnNavegador(w http.ResponseWriter, r *http.Request, alm 
 		s.fallo(w, r, err)
 		return
 	}
+	orden := criterioDe(r.URL.Query().Get("orden"))
 	tipo, ok := tipoAbrible(ruta.Nombre())
 	if !ok {
-		s.mostrarNoCompatible(w, ruta)
+		s.mostrarNoCompatible(w, ruta, orden)
 		return
 	}
 
@@ -179,12 +275,18 @@ func (s *Servidor) abrirEnNavegador(w http.ResponseWriter, r *http.Request, alm 
 			return
 		}
 		if !plausible {
-			s.mostrarNoCompatible(w, ruta)
+			s.mostrarNoCompatible(w, ruta, orden)
 			return
 		}
 	}
 
-	s.renderVisor(w, vistaVisor{Ruta: ruta, Nombre: entrada.Nombre, Tipo: tipo}, http.StatusOK)
+	v := vistaVisor{Ruta: ruta, Nombre: entrada.Nombre, Tipo: tipo, Orden: orden}
+	// Solo se recorre el directorio para lo que va a llevar flechas. Un PDF o
+	// un texto no forman galería, y ahí el readdir no compraría nada.
+	if esDeGaleria(entrada) {
+		v.Anterior, v.Siguiente = s.vecinosDe(r.Context(), alm, entrada, orden)
+	}
+	s.renderVisor(w, v, http.StatusOK)
 }
 
 // servirContenido es la ruta de BYTES PASIVOS. Solo entrega lo que está en la
@@ -199,7 +301,9 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm a
 	// en línea no llega ni a abrir un descriptor, aunque lo pidan a mano.
 	tipo, ok := tipoAbrible(ruta.Nombre())
 	if !ok {
-		s.mostrarNoCompatible(w, ruta)
+		// Sin orden que conservar: a /contenido se llega desde el «src» de un
+		// elemento del visor, nunca desde un listado ordenado.
+		s.mostrarNoCompatible(w, ruta, porNombre)
 		return
 	}
 	lector, entrada, err := alm.Abrir(r.Context(), ruta)
@@ -216,7 +320,7 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm a
 			return
 		}
 		if !plausible {
-			s.mostrarNoCompatible(w, ruta)
+			s.mostrarNoCompatible(w, ruta, porNombre)
 			return
 		}
 	}
@@ -263,8 +367,12 @@ func (s *Servidor) servirContenido(w http.ResponseWriter, r *http.Request, alm a
 		r, entrada.Nombre, entrada.Modificado, lector)
 }
 
-func (s *Servidor) mostrarNoCompatible(w http.ResponseWriter, ruta almacen.RutaSegura) {
-	s.renderVisor(w, vistaVisor{Ruta: ruta, Nombre: ruta.Nombre()}, http.StatusUnsupportedMediaType)
+// mostrarNoCompatible NO lleva flechas, y no es un olvido: aquí solo se llega
+// con algo que la lista positiva no sirve —un ZIP, un PDF que no lo es—, y eso
+// nunca forma parte de una galería. El orden sí viaja, para que el «Ok»
+// devuelva al listado tal y como estaba.
+func (s *Servidor) mostrarNoCompatible(w http.ResponseWriter, ruta almacen.RutaSegura, orden criterio) {
+	s.renderVisor(w, vistaVisor{Ruta: ruta, Nombre: ruta.Nombre(), Orden: orden}, http.StatusUnsupportedMediaType)
 }
 
 func (s *Servidor) renderVisor(w http.ResponseWriter, v vistaVisor, estado int) {

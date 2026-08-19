@@ -20,7 +20,7 @@
   <div class="cabecera-superior">
     <span class="titulo-pagina">{{.Nombre}}</span>
     <div class="barra-acciones">
-      <a class="boton-barra" href="{{listado .Ruta.Padre}}">Volver</a>
+      <a class="boton-barra" href="{{listadoCon .Ruta.Padre .Orden}}">Volver</a>
     </div>
   </div>
 </header>
@@ -43,6 +43,32 @@
             data-visor data-clase="texto"></iframe>
   {{end}}
 </main>
+
+<!-- LAS FLECHAS VIVEN FUERA DE #visor Y DE #cabecera-visor, Y ESO ES EL
+     REQUISITO, no una preferencia de maquetación: visor.js BORRA esos dos
+     elementos cuando el navegador declara que no puede con el formato (ver
+     noCompatible). Dentro de la cabecera, un HEIC del iPhone abierto en Brave
+     te dejaría sin flechas justo en el archivo que más falta hace saltarse.
+     Aquí sobreviven, y del que no se ve se pasa con un toque.
+
+     SON ENLACES, no botones con guion: pasar de foto es navegar, y así el
+     visor sigue funcionando entero sin JavaScript —igual que el «src» de
+     arriba—. visor.js solo añade el teclado encima.
+
+     No hay flecha en los extremos. Un control apagado se distingue mal de uno
+     que no responde, y aquí la ausencia ya dice lo que hay: se acabaron. -->
+{{if or .Anterior .Siguiente}}
+<nav class="galeria" aria-label="Navegación entre archivos">
+  {{with .Anterior}}
+  <a class="paso paso-anterior" rel="prev" href="{{abrirCon .Ruta $.Orden}}"
+     aria-label="Anterior: {{.Nombre}}" title="{{.Nombre}}">‹</a>
+  {{end}}
+  {{with .Siguiente}}
+  <a class="paso paso-siguiente" rel="next" href="{{abrirCon .Ruta $.Orden}}"
+     aria-label="Siguiente: {{.Nombre}}" title="{{.Nombre}}">›</a>
+  {{end}}
+</nav>
+{{end}}
 {{end}}
 
 <!-- RF-25 al pie de la letra: ÚNICAMENTE el mensaje y un botón «Ok» que sale
@@ -50,7 +76,7 @@
      vive en el menú de tres puntos del listado, y solo ahí. -->
 <main class="acceso no-compatible" id="no-compatible"{{if .Tipo.Clase}} hidden{{end}}>
   <p class="mensaje-no-compatible">Este archivo no se puede abrir en el navegador</p>
-  <p><a class="boton-barra" href="{{listado .Ruta.Padre}}">Ok</a></p>
+  <p><a class="boton-barra" href="{{listadoCon .Ruta.Padre .Orden}}">Ok</a></p>
 </main>
 
 {{if .Tipo.Clase}}<script src="/estatico/visor.js"></script>{{end}}

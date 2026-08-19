@@ -54,6 +54,15 @@ func (a *almacenDeApertura) Abrir(_ context.Context, r almacen.RutaSegura) (io.R
 	if !ok {
 		return nil, almacen.Entrada{}, almacen.ErrNoExiste
 	}
+	// SE DEVUELVE LA MISMA ENTRADA QUE VE Listar, que es lo que hace el
+	// adaptador real: las dos salen del mismo stat. Con una entrada a medias
+	// —sin fecha— el visor compararía la del archivo abierto contra el cero, y
+	// una prueba de orden por fecha pasaría por el motivo equivocado.
+	for _, e := range a.entradas {
+		if e.Ruta.Rel() == r.Rel() {
+			return lectorDeMemoria{bytes.NewReader(datos)}, e, nil
+		}
+	}
 	return lectorDeMemoria{bytes.NewReader(datos)}, almacen.Entrada{
 		Ruta: r, Nombre: r.Nombre(), Tamano: int64(len(datos)),
 	}, nil
