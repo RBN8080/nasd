@@ -158,7 +158,7 @@
            está configurada—, responde 404 y el navegador simplemente deja
            el hueco vacío: no hay imagen rota, «onerror» de sobra. -->
       <td>{{if .EsDirectori}}<a class="dir" href="{{listadoCon .Ruta $.Orden}}">{{.Nombre}}/</a>
-          {{else}}{{$tipo := apertura .Nombre}}{{if eq $tipo.Clase "imagen"}}<img class="miniatura" src="/miniatura/{{rutaURL .Ruta.Rel}}" alt="" loading="lazy">{{end}}<a href="/abrir/{{rutaURL .Ruta.Rel}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
+          {{else}}{{$tipo := apertura .Nombre}}{{if eq $tipo.Clase "imagen"}}<img class="miniatura" src="/miniatura/{{rutaURL .Ruta.Rel}}" alt="" loading="lazy">{{end}}<a href="{{abrirCon .Ruta $.Orden}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
       <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
       <td class="num">{{fecha .Modificado}}</td>
       <td class="num acciones-fila">

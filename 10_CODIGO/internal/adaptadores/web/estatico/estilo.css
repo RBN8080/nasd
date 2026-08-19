@@ -1175,6 +1175,54 @@ tr.v-fallo .rotulo {
   margin-bottom: var(--e-5);
 }
 
+/* ——— Pasar de foto sin volver al listado ———
+   Dos enlaces fijos a los lados, pensados PRIMERO PARA EL PULGAR: es como se
+   usa esta web y es lo que pidió el responsable.
+
+   «fixed» y no «absolute» dentro del visor, por un motivo concreto: una foto
+   vertical no llena el ancho y una horizontal no llena el alto, así que
+   anclarlas a la imagen las movería de sitio en cada archivo. Ancladas a la
+   ventana caen siempre bajo el mismo dedo, que es lo que permite pasar cinco
+   fotos seguidas sin mirar dónde hay que tocar.
+
+   El círculo es opaco —«--panel», el mismo de los menús— y no una
+   transparencia: debajo hay una foto cualquiera, y sobre un cielo claro un
+   gris translúcido desaparece. Es el único fondo opaco que el vocabulario ya
+   tenía, así que no se inventa un color nuevo. */
+.paso {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+
+  /* 3rem son 48 px, por encima del mínimo táctil de --tactil (44). La flecha
+     dibujada es pequeña; lo que se toca es todo el círculo. */
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: var(--t-h1);
+  line-height: 1;
+  text-decoration: none;
+  color: var(--texto);
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+}
+
+/* «env()» y no un valor fijo: en un iPhone en horizontal, el recorte de la
+   pantalla se come justo estos dos bordes, y una flecha bajo el notch no se
+   puede tocar. Donde no hay recorte, env() vale 0 y queda el margen normal. */
+.paso-anterior {
+  left: calc(var(--e-2) + env(safe-area-inset-left, 0px));
+}
+
+.paso-siguiente {
+  right: calc(var(--e-2) + env(safe-area-inset-right, 0px));
+}
+
 /* ——— Mover: el navegador de carpetas (RF-17, ADR-0054) ———
    Sustituye a un campo de texto donde se escribía la ruta a mano. Ese campo
    no falló por estrecho ni por mal rotulado: falló porque pedía algo que el

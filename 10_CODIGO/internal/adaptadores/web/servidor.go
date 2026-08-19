@@ -588,6 +588,10 @@ func funciones() template.FuncMap {
 		"listado": urlDeListado,
 		// Navegar sin perder la columna por la que se está ordenando (P-3).
 		"listadoCon": urlDeListadoCon,
+		// Lo mismo para el visor: el nombre del listado y las dos flechas de
+		// la galería llevan el orden consigo, o pasar fotos seguiría un
+		// criterio distinto del que se estaba viendo.
+		"abrirCon": urlDeAbrirCon,
 		// El navegador de carpetas de RF-17 enlaza a sí mismo en cada nivel,
 		// llevando siempre QUÉ se mueve y DÓNDE se está mirando. Construirlo
 		// en la plantilla a mano obligaría a escapar la consulta allí, que es
