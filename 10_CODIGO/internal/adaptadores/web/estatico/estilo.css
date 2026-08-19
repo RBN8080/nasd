@@ -17,7 +17,6 @@
 
   --borde: #8883;
   --tenue: #8881;
-  --suave: #8888;
 
   /* Semáforo. Desde el 05/08/2026 el veredicto NO tiñe la fila: solo pinta
      su pastilla. El responsable pidió quitar los fondos —«prácticamente solo
@@ -45,11 +44,69 @@
      salió BLANCO sobre una página en modo oscuro. Se declara a mano. */
   --panel: #fff;
 
-  /* Escala tipográfica: rótulo, menor, tabla, título. El cuerpo es 1rem. */
+  /* SUPERFICIE Y TINTA. Hasta el 19/08/2026 «body» no declaraba ni fondo ni
+     color: la página era el blanco o el negro por omisión del navegador. Un
+     blanco puro es lo que separa una página «sin estilo» de una acabada.
+
+     ESTO OBLIGA A DAR TOKENS AL MODO OSCURO, y no es un capricho: el resto de
+     la paleta son grises con alfa que funcionan porque es el fondo el que asoma
+     por debajo. En cuanto se fija un fondo claro hay que fijar también el
+     oscuro, o el oscuro quedaría compuesto contra un color que ya no existe.
+     Son tres tokens y no una paleta entera: los grises con alfa se quedan como
+     estaban, y el proyecto sigue sin tener dos paletas de verdad.
+
+     --suave PASA A SER OPACO Y SE OSCURECE, y esto corrige un defecto real de
+     accesibilidad: #8888 sobre blanco daba ~3.95:1 de contraste, por debajo del
+     4.5:1 que WCAG AA exige para texto normal — y lo usaba «.nota», o sea el
+     texto secundario de todo el panel. Los valores de abajo están comprobados:
+     5.8:1 en claro y 6.4:1 en oscuro. */
+  --fondo: #fbfaf8;
+  --texto: #1a1a19;
+  --suave: #63635e;
+
+  /* Escala tipográfica. El cuerpo es 1rem, y hasta el 19/08/2026 la escala SOLO
+     BAJABA: los cuatro pasos eran todos <= 1rem y el único encabezado con regla
+     era h2, a 1.05rem —un 5 % sobre el cuerpo—. Una página sin jerarquía de
+     encabezados se lee como una lista de párrafos aunque cada pieza esté bien.
+
+     La rampa es CONTENIDA a propósito: esto se lee en un iPhone y no es una
+     portada. h1 solo aparece en cuatro plantillas —acceso, baja, borrar y
+     mover—, todas tarjetas centradas; las páginas de trabajo empiezan en h2, y
+     por eso h2 es el que más se nota. */
   --t-rotulo: 0.78rem;
   --t-menor: 0.85rem;
   --t-tabla: 0.95rem;
   --t-titulo: 1.05rem;
+  --t-h2: 1.2rem;
+  --t-h1: 1.5rem;
+
+  /* ESCALA DE ESPACIADO, y llega tarde a propósito de nadie.
+     El bloque de arriba nació el 05/08/2026 porque los tamaños de letra habían
+     salido uno a uno y se veían como «fuentes distintas». Se curó la letra, se
+     curó el color… y el espacio se quedó sin curar: el 19/08/2026 había
+     74 declaraciones de padding/margin/gap con 26 VALORES DISTINTOS, de 0.1rem
+     a 4rem, y hasta con notación mezclada («.6rem» junto a «0.6rem»). Seis
+     escalones entre 0.5 y 0.75 que ningún ojo distingue, pero que juntos hacen
+     que la página se lea ajustada a mano en vez de diseñada.
+
+     Base de 0.25rem — 4 px con la raíz por omisión. La regla del archivo pasa a
+     cubrir también el espacio: no se escribe un valor suelto fuera de aquí, y la
+     desviación que sobreviva lleva su motivo escrito al lado. */
+  --e-0: 0.125rem;
+  --e-1: 0.25rem;
+  --e-2: 0.5rem;
+  --e-3: 0.75rem;
+  --e-4: 1rem;
+  --e-5: 1.5rem;
+  --e-6: 2rem;
+  --e-7: 3rem;
+  --e-8: 4rem;
+
+  /* Medida de línea. El cuerpo son 60rem y «.nota» no tenía tope, así que la
+     prosa corría a ~150 caracteres: el doble de lo que se lee cómodo. En «ch» y
+     no en rem porque lo que se acota son CARACTERES, y así sigue valiendo si
+     algún día cambia el cuerpo. */
+  --medida: 68ch;
 
   /* Objetivo táctil mínimo de las Human Interface Guidelines de Apple. La
      página se usa sobre todo desde el iPhone. */
@@ -66,7 +123,12 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root { --panel: #1c1c1e; }
+  :root {
+    --panel: #1c1c1e;
+    --fondo: #16161a;
+    --texto: #e8e8e5;
+    --suave: #9a9a95;
+  }
 }
 
 @media (max-width: 40rem) {
@@ -78,8 +140,25 @@
 body {
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0 auto;
-  padding: 1rem;
+  padding: var(--e-4);
   max-width: 60rem;
+  background: var(--fondo);
+  color: var(--texto);
+}
+
+/* LA PROSA SE ACOTA; LAS TABLAS NO. El tope va en los párrafos y no en «body»
+   porque las tablas de /seguridad y /estado necesitan los 60rem enteros: una de
+   ellas lleva ocho columnas. Acotar el contenedor las habría estrechado con
+   ellas, que es el error que hace ilegible justo lo que hay que leer.
+
+   Y SE SELECCIONA EN POSITIVO, no con «p» a secas. En estas plantillas «p» no
+   quiere decir «prosa»: también son migas de navegación, rutas en monoespaciada,
+   rótulos, un enlace de cancelar y el pie. Acotarlos a todos partió la línea
+   del pie por la mitad y habría descentrado el mensaje del visor. La lista
+   positiva se queda corta si alguien añade prosa nueva —y eso se ve—, mientras
+   que la negativa se equivoca en silencio sobre elementos que nadie miró. */
+p:not([class]), .nota, .oculto {
+  max-width: var(--medida);
 }
 
 /* ——— Cabecera (común a listado y estado) ———
@@ -92,11 +171,11 @@ body {
 .cabecera-superior {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--e-4);
   flex-wrap: wrap;
-  padding-bottom: 0.65rem;
+  padding-bottom: var(--e-3);
   border-bottom: 1px solid var(--borde);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--e-2);
 }
 
 /* La ruta pesa lo mismo que un control de la barra para que las dos mitades de
@@ -121,7 +200,7 @@ body {
    pegado al siguiente nombre. El margen no se colapsa. */
 .migas a::after {
   content: "/";
-  margin: 0 0.35rem;
+  margin: 0 var(--e-2);
   opacity: .5;
 }
 
@@ -140,7 +219,7 @@ body {
 .titulo-estado {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--e-3);
   flex-wrap: wrap;
   min-height: var(--alto-control);
 }
@@ -152,7 +231,7 @@ body {
 .filtro-activo {
   display: inline-block;
   font-size: var(--t-rotulo);
-  padding: 0.1rem 0.5rem;
+  padding: var(--e-0) var(--e-2);
   border-radius: 0.75rem;
   border: 1px solid var(--borde);
   color: var(--suave);
@@ -174,7 +253,7 @@ body {
    El botón destructivo SÍ los fija, más abajo, justo para NO parecer nativo. */
 input, button {
   font: inherit;
-  padding: 0.35rem 0.6rem;
+  padding: var(--e-2) var(--e-3);
 }
 
 button {
@@ -190,7 +269,7 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1.1rem 0;
+  margin: var(--e-5) 0;
   font-size: var(--t-tabla);
 }
 
@@ -200,13 +279,13 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--suave);
-  padding: 0.55rem 0.6rem;
+  padding: var(--e-3) var(--e-3);
   border-bottom: 1px solid var(--borde);
   text-align: left;
 }
 
 td {
-  padding: 0.5rem 0.6rem;
+  padding: var(--e-2) var(--e-3);
   border-bottom: 1px solid var(--borde);
   vertical-align: middle;
 }
@@ -217,7 +296,7 @@ td {
 img.miniatura {
   width: 28px;
   height: 28px;
-  margin-right: 0.5rem;
+  margin-right: var(--e-2);
   vertical-align: middle;
   object-fit: cover;
   border-radius: 3px;
@@ -241,13 +320,13 @@ a.dir {
   opacity: 0.55;
   font-style: italic;
   text-align: center;
-  padding: 2.5rem 1rem !important;
+  padding: var(--e-7) var(--e-4) !important;
   color: var(--suave);
 }
 
 /* ——— Mensajes ——— */
 .mensaje {
-  padding: 0.5rem 0.75rem;
+  padding: var(--e-2) var(--e-3);
   border-radius: 0.35rem;
   background: #0a01;
   border: 1px solid #0a04;
@@ -285,7 +364,7 @@ a.dir {
      más alto manda y los demás lo igualan, mida lo que mida en cada
      plataforma. */
   align-items: stretch;
-  gap: 0.6rem;
+  gap: var(--e-3);
   flex-wrap: wrap;
   /* SIEMPRE a la derecha, quepa o no quepa junto a la ruta.
      Con «justify-content: space-between» en el padre bastaba mientras las dos
@@ -349,7 +428,7 @@ a.dir {
   justify-content: center;
   min-height: var(--alto-control);
   font-size: var(--t-menor);
-  padding: 0.3rem 0.75rem;
+  padding: var(--e-2) var(--e-3);
   border: 1px solid var(--borde);
   border-radius: 0.4rem;
   background: var(--tenue);
@@ -397,24 +476,24 @@ a.dir {
   /* Tope duro: pase lo que pase con el contenido, un panel nunca es más ancho
      que la pantalla menos los márgenes de la página. */
   max-width: calc(100vw - 2rem);
-  padding: 0.85rem;
+  padding: var(--e-4);
   border: 1px solid var(--borde);
   border-radius: 0.5rem;
   background: var(--panel);
   box-shadow: 0 0.5rem 1.5rem #0005;
   display: grid;
-  gap: 0.7rem;
+  gap: var(--e-3);
   text-align: left;
 }
 
 .menu-panel form {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--e-2);
 }
 
 .menu-panel label {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--e-1);
   font-size: var(--t-rotulo);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -472,14 +551,14 @@ a.dir {
   justify-content: center;
   min-height: var(--alto-control);
   border-top: 1px solid var(--borde);
-  padding-top: 0.6rem;
+  padding-top: var(--e-3);
   text-decoration: none;
 }
 
 /* ——— Subida, dentro de su panel ——— */
 #zona-subida {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--e-2);
 }
 
 #zona-subida input[type=file] {
@@ -499,8 +578,15 @@ a.dir {
    medio: 1,1 del margen de la tabla más 2,5 de este margen. Ese hueco es lo que
    el responsable marcó en verde el 05/08/2026. Se quita la segunda raya y el
    margen baja a lo que hace falta para que el pie respire. */
+/* LA LÍNEA DEL PIE, que el responsable echó en falta al ver la pasada de
+   diseño. Cierra la página igual que «.cabecera-superior» la abre, con el mismo
+   borde y el mismo token: el pie dice qué binario está corriendo, y eso no es
+   contenido de la página sino información sobre ella. Separarlo lo dice sin
+   escribirlo. */
 .pie {
-  margin-top: 0.9rem;
+  margin-top: var(--e-5);
+  padding-top: var(--e-3);
+  border-top: 1px solid var(--borde);
   font-family: ui-monospace, monospace;
   font-size: var(--t-rotulo);
   letter-spacing: 0.02em;
@@ -522,15 +608,15 @@ a.dir {
   list-style: none;
   padding: 0;
   width: 100%;
-  margin-top: 0.75rem;
+  margin-top: var(--e-3);
 }
 
 #progreso li {
   display: grid;
   grid-template-columns: 1fr auto auto;
-  gap: 0.75rem;
+  gap: var(--e-3);
   align-items: center;
-  padding: 0.45rem 0;
+  padding: var(--e-2) 0;
   border-bottom: 1px solid var(--borde);
   font-size: var(--t-menor);
 }
@@ -543,24 +629,24 @@ a.dir {
 
 #progreso button {
   font-size: var(--t-rotulo);
-  padding: 0.15rem 0.45rem;
-  margin-left: 0.2rem;
+  padding: var(--e-1) var(--e-2);
+  margin-left: var(--e-1);
 }
 
 /* ——— Formulario de acceso ——— */
 .acceso {
   max-width: 22rem;
-  margin: 4rem auto;
+  margin: var(--e-8) auto;
 }
 
 .acceso h1 {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--e-5);
   text-align: center;
 }
 
 .acceso form {
   display: grid;
-  gap: .6rem;
+  gap: var(--e-3);
 }
 
 /* La etiqueta va PEGADA a su casilla y separada de la anterior. Sin esto, con
@@ -569,7 +655,7 @@ a.dir {
 .acceso label {
   font-weight: 600;
   font-size: var(--t-menor);
-  margin-top: .4rem;
+  margin-top: var(--e-2);
 }
 
 .acceso label:first-of-type {
@@ -583,7 +669,7 @@ a.dir {
 }
 
 .acceso button {
-  margin-top: .8rem;
+  margin-top: var(--e-4);
   height: var(--alto-control);
 }
 
@@ -604,7 +690,7 @@ a.dir {
    pantalla. Cambiar de usuario es la salida, no la acción principal, y por eso
    se lee como enlace y no como botón. */
 .cambiar {
-  margin: 1rem 0 0;
+  margin: var(--e-4) 0 0;
   text-align: center;
   font-size: var(--t-menor);
 }
@@ -637,15 +723,15 @@ button.destructivo {
 
 button.destructivo {
   border: 2px solid var(--fallo-color);
-  padding: 0.5rem 1rem;
+  padding: var(--e-2) var(--e-4);
   background: var(--fallo-fondo);
 }
 
 .peligro {
   border: 2px solid var(--fallo-color);
   border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 1rem 0;
+  padding: var(--e-3) var(--e-4);
+  margin: var(--e-4) 0;
   background: var(--fallo-fondo);
 }
 
@@ -655,9 +741,18 @@ button.destructivo {
   font-size: 1.1em;
 }
 
+h1 {
+  font-size: var(--t-h1);
+  line-height: 1.25;
+  margin: 0 0 var(--e-4);
+}
+
 h2 {
-  font-size: var(--t-titulo);
-  margin: 1.75rem 0 0.35rem;
+  font-size: var(--t-h2);
+  line-height: 1.3;
+  /* MUCHO AIRE ARRIBA Y POCO ABAJO, que es lo que agrupa un encabezado con lo
+     que titula en vez de dejarlo flotando entre dos bloques. */
+  margin: var(--e-6) 0 var(--e-2);
 }
 
 /* ——— Estado (Fase 4) ———
@@ -729,7 +824,7 @@ tr.v-fallo .rotulo {
    es el CSS quien la esconde mientras esta vacia. */
 .accion {
   display: block;
-  margin-top: 0.25rem;
+  margin-top: var(--e-1);
   font-size: var(--t-menor);
   opacity: 0.85;
 }
@@ -754,7 +849,7 @@ tr.v-fallo .rotulo {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 600;
-  padding: 0.1rem 0.5rem;
+  padding: var(--e-0) var(--e-2);
   border-radius: 0.75rem;
   border: 1px solid var(--borde);
   white-space: nowrap;
@@ -785,7 +880,7 @@ tr.v-fallo .rotulo {
 .nota {
   font-size: var(--t-menor);
   color: var(--suave);
-  margin: 0.2rem 0 0;
+  margin: var(--e-1) 0 0;
 }
 
 .avisos {
@@ -801,7 +896,7 @@ tr.v-fallo .rotulo {
 .latido {
   display: inline-block;
   font-size: var(--t-rotulo);
-  padding: 0.1rem 0.5rem;
+  padding: var(--e-0) var(--e-2);
   border-radius: 0.75rem;
   border: 1px solid var(--borde);
   color: var(--suave);
@@ -867,8 +962,8 @@ tr.v-fallo .rotulo {
   .datos tr {
     display: grid;
     grid-template-columns: 1fr auto;
-    gap: 0.1rem 0.75rem;
-    padding: 0.65rem 0;
+    gap: var(--e-0) var(--e-3);
+    padding: var(--e-3) 0;
     border-bottom: 1px solid var(--borde);
   }
 
@@ -954,8 +1049,8 @@ tr.v-fallo .rotulo {
      de aire. A 0.3rem cabe sin esconder ninguna columna. */
   .archivos th,
   .archivos td {
-    padding-left: 0.3rem;
-    padding-right: 0.3rem;
+    padding-left: var(--e-2);
+    padding-right: var(--e-2);
   }
 
   .boton-puntos {
@@ -983,7 +1078,7 @@ tr.v-fallo .rotulo {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 0.75rem;
+  margin-top: var(--e-3);
 }
 
 .visor > * {
@@ -1021,7 +1116,7 @@ tr.v-fallo .rotulo {
 
 .mensaje-no-compatible {
   font-size: var(--t-titulo);
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--e-5);
 }
 
 /* ——— Mover: el navegador de carpetas (RF-17, ADR-0054) ———
@@ -1034,15 +1129,15 @@ tr.v-fallo .rotulo {
    parten. No se inventa una disposición nueva. */
 .mover {
   max-width: 34rem;
-  margin: 3rem auto;
+  margin: var(--e-7) auto;
 }
 
 .mover h1 {
-  margin-bottom: 0.35rem;
+  margin-bottom: var(--e-2);
 }
 
 .rotulo-destino {
-  margin-top: 1.25rem;
+  margin-top: var(--e-5);
   font-size: var(--t-rotulo);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -1055,12 +1150,12 @@ tr.v-fallo .rotulo {
 .migas-mover a + a::before {
   content: "/";
   color: var(--suave);
-  margin: 0 0.15rem;
+  margin: 0 var(--e-1);
 }
 
 .lista-carpetas {
   list-style: none;
-  margin: 0.5rem 0 0;
+  margin: var(--e-2) 0 0;
   padding: 0;
   border: 1px solid var(--borde);
   border-radius: 0.5rem;
@@ -1079,22 +1174,22 @@ tr.v-fallo .rotulo {
    botón de tres puntos. */
 .lista-carpetas a {
   display: block;
-  padding: 0.6rem 0.85rem;
+  padding: var(--e-3) var(--e-4);
   min-height: var(--alto-control);
   text-decoration: none;
 }
 
 .lista-carpetas .oculto {
   display: block;
-  padding: 0.6rem 0.85rem;
+  padding: var(--e-3) var(--e-4);
 }
 
 .acciones-mover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.6rem;
-  margin-top: 1.25rem;
+  gap: var(--e-3);
+  margin-top: var(--e-5);
 }
 
 /* El menú de «Crear carpeta» se ancla a su botón, que aquí no está en una
@@ -1134,7 +1229,7 @@ tr.v-fallo .rotulo {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--suave);
-  margin-bottom: 0.35rem;
+  margin-bottom: var(--e-2);
 }
 
 .borrado .ruta-destacada {
@@ -1144,7 +1239,7 @@ tr.v-fallo .rotulo {
 
 .cancelar {
   text-align: center;
-  margin-top: 0.9rem;
+  margin-top: var(--e-4);
 }
 
 /* El botón destructivo ocupa el ancho de la caja, como los del resto de la
@@ -1259,9 +1354,9 @@ tr.g-rutina .rotulo {
 .filtros {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.35rem 0.75rem;
+  gap: var(--e-2) var(--e-3);
   align-items: end;
-  margin: 0.5rem 0;
+  margin: var(--e-2) 0;
 }
 
 /* Cada rotulo con su control en una celda de la rejilla. Antes eran hermanos
@@ -1275,7 +1370,7 @@ tr.g-rutina .rotulo {
   display: block;
   font-size: var(--t-rotulo);
   color: var(--suave);
-  margin-bottom: 0.15rem;
+  margin-bottom: var(--e-1);
 }
 
 /* Los campos se dejan NATIVOS —sin fondo, borde ni radio propios— por la
@@ -1289,9 +1384,9 @@ tr.g-rutina .rotulo {
 
 .acciones-filtro {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--e-2);
   align-items: end;
-  margin: 0.35rem 0 0;
+  margin: var(--e-2) 0 0;
 }
 
 /* ——— Senales ———
@@ -1301,7 +1396,7 @@ tr.g-rutina .rotulo {
    que impide que la sospecha se lea como un veredicto. */
 .senal {
   display: block;
-  margin-top: 0.3rem;
+  margin-top: var(--e-2);
   font-size: var(--t-menor);
 }
 
@@ -1330,7 +1425,7 @@ tr.g-rutina .rotulo {
 .cronologia > summary {
   cursor: pointer;
   color: var(--suave);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--e-2);
 }
 
 /* ——— Columna de operador del panel de seguridad ———

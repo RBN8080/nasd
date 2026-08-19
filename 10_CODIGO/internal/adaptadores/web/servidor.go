@@ -295,7 +295,7 @@ func (s *Servidor) Rutas() http.Handler {
 	mux.HandleFunc("GET /acceso", s.mostrarAcceso)
 	mux.HandleFunc("POST /acceso", s.procesarAcceso)
 	mux.HandleFunc("POST /salir", s.salir)
-	mux.Handle("GET /estatico/", http.FileServerFS(recursos))
+	mux.HandleFunc("GET /estatico/", servirEstatico)
 	mux.Handle("/", s.exigirSesion(protegido))
 
 	// TODO LO QUE TOCA ARCHIVOS VA ENVUELTO EN conAlmacen, que le entrega al
