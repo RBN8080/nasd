@@ -195,3 +195,115 @@ func TestTodosLosMotivosSobrevivenAlDisco(t *testing.T) {
 		t.Fatal("una clave desconocida no debe darse por buena")
 	}
 }
+
+// EL TOTAL HISTORICO TIENE QUE SOBREVIVIR A UN REINICIO, y hasta el 2026-08-18
+// no lo hacia: releer() ponia «total = len(leidos)» y el archivo no guardaba la
+// cifra, asi que tras arrancar el panel decia «de N vistas desde que existe
+// este registro» con N acotado a Capacidad.
+//
+// No era teorico: en este nodo se midieron 15 arranques en 14 dias, asi que esa
+// frase era falsa casi siempre. Decia «desde el ultimo corte de luz» creyendo
+// decir «desde siempre».
+func TestElTotalHistoricoSobreviveAUnReinicio(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "seguridad")
+	a, err := CargarAnillo(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	const vistos = Capacidad + 500
+	for i := range vistos {
+		a.Anotar(evento(base.Add(time.Duration(i)*time.Millisecond), "203.0.113.7", SinSesion))
+	}
+	if err := a.Volcar(); err != nil {
+		t.Fatal(err)
+	}
+
+	otro, err := CargarAnillo(ruta) // el «reinicio»
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := otro.Total(); got != vistos {
+		t.Errorf("tras reiniciar, el total dice %d y se habian visto %d", got, vistos)
+	}
+	// Y lo CONSERVADO sigue siendo el anillo, no el total: son dos cifras
+	// distintas y el panel las enseña como tales.
+	if got := len(otro.Desde(time.Time{})); got != Capacidad {
+		t.Errorf("se conservan %d eventos, deberian ser %d", got, Capacidad)
+	}
+}
+
+func TestElTotalDeConexionesSobreviveAUnReinicio(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "conexiones")
+	c, err := CargarConexiones(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	const vistas = Capacidad + 300
+	for i := range vistas {
+		c.Anotar(netip.MustParseAddr("203.0.113.7"), base.Add(time.Duration(i)*time.Millisecond))
+	}
+	if err := c.Volcar(); err != nil {
+		t.Fatal(err)
+	}
+
+	otro, err := CargarConexiones(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := otro.Total(); got != vistas {
+		t.Errorf("tras reiniciar, el total dice %d y se habian visto %d", got, vistas)
+	}
+}
+
+// UN ARCHIVO ESCRITO POR LA VERSION ANTERIOR no trae la marca. No es un error:
+// se cae a lo unico que se puede afirmar —lo guardado— y desde el primer
+// volcado la cifra ya es la real.
+//
+// El archivo viejo se FABRICA con el serializador de verdad y quitandole la
+// linea de la marca, en vez de escribir el JSON a mano: escribirlo a mano ya
+// fallo una vez al inventarse los nombres de los campos, y una prueba que se
+// cae por su propio andamio no dice nada del codigo.
+//
+// Sin esta prueba, el arreglo podria haber dejado ilegibles los dos archivos
+// que YA existen en el nodo.
+func TestUnHistorialSinLaMarcaSigueLeyendose(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "seguridad")
+	a, err := CargarAnillo(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now()
+	for i := range 3 {
+		a.Anotar(evento(base.Add(time.Duration(i)*time.Second), "203.0.113.7", SinSesion))
+	}
+	if err := a.Volcar(); err != nil {
+		t.Fatal(err)
+	}
+
+	crudo, err := os.ReadFile(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sinMarca []string
+	for _, l := range strings.Split(string(crudo), "\n") {
+		if !strings.HasPrefix(l, marcaTotal) {
+			sinMarca = append(sinMarca, l)
+		}
+	}
+	if len(sinMarca) == len(strings.Split(string(crudo), "\n")) {
+		t.Fatal("el volcado no escribió la marca; esta prueba no probaría nada")
+	}
+	if err := os.WriteFile(ruta, []byte(strings.Join(sinMarca, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	otro, err := CargarAnillo(ruta)
+	if err != nil {
+		t.Fatalf("un historial anterior a la marca debe seguir leyéndose: %v", err)
+	}
+	if got := otro.Total(); got != 3 {
+		t.Errorf("sin marca, el total debe caer a lo guardado (3) y dice %d", got)
+	}
+}

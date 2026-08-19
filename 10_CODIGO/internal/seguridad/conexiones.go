@@ -121,7 +121,10 @@ func (c *Conexiones) releer() error {
 	}
 	defer f.Close()
 
-	var leidas []Conexion
+	var (
+		leidas []Conexion
+		total  int64
+	)
 	s := bufio.NewScanner(f)
 	// Una línea aquí es mucho más corta que la de un Evento —dos campos, sin
 	// texto libre del cliente— pero se deja el mismo buffer: un archivo
@@ -130,6 +133,9 @@ func (c *Conexiones) releer() error {
 	for n := 1; s.Scan(); n++ {
 		linea := strings.TrimSpace(s.Text())
 		if linea == "" || strings.HasPrefix(linea, "#") {
+			if n, ok := totalDeCabecera(linea); ok {
+				total = n
+			}
 			continue
 		}
 		var d conexionEnDisco
@@ -151,7 +157,10 @@ func (c *Conexiones) releer() error {
 	}
 	copy(c.buf, leidas)
 	c.siguiente = len(leidas) % Capacidad
-	c.total = int64(len(leidas))
+	// El maximo de los dos, por lo mismo que en Anillo.releer: un archivo sin
+	// la marca es anterior al 2026-08-18, y un total menor que lo guardado
+	// seria un archivo inconsistente.
+	c.total = max(total, int64(len(leidas)))
 	return nil
 }
 
@@ -246,12 +255,16 @@ func (c *Conexiones) Volcar() error {
 	for i := cuantas - 1; i >= 0; i-- {
 		orden = append(orden, c.buf[(c.siguiente-1-i+Capacidad)%Capacidad])
 	}
+	// El total se copia DENTRO del candado, con el resto: la escritura ocurre
+	// fuera, y leerlo alli seria una carrera con quien este anotando.
+	total := c.total
 	c.sucio = false
 	c.mu.Unlock()
 
 	err := escribirAtomico(c.ruta, ".conexiones-*", func(w io.Writer) error {
 		fmt.Fprintf(w, "# Conexiones entrantes de Internet — anillo de %d, de la más antigua a la más reciente.\n", Capacidad)
 		fmt.Fprint(w, "# Una por línea, en JSON. Solo instante y dirección: nada más se sabe al aceptar.\n")
+		fmt.Fprintf(w, "%s%d\n", marcaTotal, total)
 		enc := json.NewEncoder(w)
 		for _, cx := range orden {
 			if err := enc.Encode(deConexion(cx)); err != nil {
