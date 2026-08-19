@@ -883,6 +883,52 @@ tr.v-fallo .rotulo {
   margin: var(--e-1) 0 0;
 }
 
+/* ——— Leyenda de una tabla ———
+   REPORTADO SOBRE CAPTURA EL 19/08/2026, en «Origenes» de /seguridad: la
+   explicacion de las columnas quedaba en una columna estrecha de gris con
+   media pagina vacia a su derecha, y debajo «Base de operadores» gastando una
+   linea entera para decir una fecha. Cinco lineas de texto suave entre el
+   encabezado y la tabla que titulan, y la tabla empujada hacia abajo.
+
+   NO SE ARREGLA ENSANCHANDO LA PROSA. Quitarle el tope a «.nota» devolveria
+   las lineas de ~150 caracteres que la pasada de diseño acaba de retirar —ver
+   «--medida»—, que es cambiar un defecto por el que se acababa de corregir.
+   Se arregla poniendo el DATO donde estaba el hueco: la explicacion conserva
+   su medida legible y el metadato se ancla al extremo derecho, con lo que la
+   banda ocupa el ancho de la tabla sin que ninguna linea se alargue.
+
+   «baseline» y no «center»: los dos son texto, y lo que debe coincidir es la
+   linea sobre la que se apoyan, no el centro de sus cajas —que difieren en
+   cuanto la explicacion pasa de una linea. «wrap» deja que en el movil el
+   metadato caiga debajo por si solo, sin consulta de medios. */
+.leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--e-1) var(--e-5);
+}
+
+/* El margen lo lleva la banda, no cada parrafo: dentro son celdas de una fila
+   y un margen suelto la descuadraria contra la linea base. */
+.leyenda .nota {
+  margin: 0;
+}
+
+/* El metadato no se estira ni se parte: es corto y su sitio es el extremo. */
+.leyenda-dato {
+  flex: none;
+}
+
+/* LA TABLA SUBE HASTA SU LEYENDA. «table» lleva --e-5 arriba para separarse
+   del bloque ANTERIOR, y una leyenda no es un bloque anterior: es el rotulo de
+   esta misma tabla. Ese 1.5rem en medio es lo que la dejaba flotando aparte de
+   lo que explica. Solo aplica cuando van pegadas, asi que ninguna otra tabla
+   de ninguna otra pagina cambia. */
+.leyenda + table {
+  margin-top: var(--e-3);
+}
+
 .avisos {
   font-size: var(--t-menor);
   opacity: 0.8;
@@ -1387,6 +1433,20 @@ tr.g-rutina .rotulo {
   gap: var(--e-2);
   align-items: end;
   margin: var(--e-2) 0 0;
+}
+
+/* EL BOTON OCUPA SU CELDA ENTERA, y es lo que cierra la fila de filtros.
+   Reportado sobre captura el 19/08/2026: la rejilla SI llegaba al borde —los
+   cuatro tramos de «auto-fit» se reparten el ancho completo—, pero el boton se
+   quedaba en su ancho natural pegado a la izquierda del suyo, asi que la fila
+   parecia terminar a media pagina mientras la tabla que gobierna llegaba hasta
+   el final. El hueco no era de la rejilla sino de lo que habia dentro.
+
+   Ocupando la celda, los cuatro controles forman una banda del mismo ancho que
+   la tabla. Y en el movil, donde la rejilla cae a una columna, el boton queda
+   ademas a ancho completo, que es lo que quiere un objetivo tactil. */
+.acciones-filtro > button {
+  width: 100%;
 }
 
 /* ——— Senales ———

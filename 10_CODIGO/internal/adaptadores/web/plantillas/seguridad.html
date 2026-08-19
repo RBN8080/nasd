@@ -111,25 +111,31 @@
      cifras se han ido al Resumen, que es donde un numero tiene su etiqueta al
      lado; aqui queda lo unico que la tabla no puede ensenar por si sola, que
      es que significan sus columnas. -->
-<p class="nota">
-  Quién ha tocado el nodo, de lo más insistente a lo menos. Las tres cifras de
-  cada fila son la misma visita a distinta profundidad: el paquete llegó, la
-  conexión se estableció, el rechazo pidió algo y no se le dio.
-  {{if .HuecoDePaquetes}}El registro de paquetes empieza el
-  {{fecha .PaquetesDesde}}, más tarde que los otros dos: una visita anterior a
-  esa hora aparece con conexiones y sin paquetes.{{end}}
-</p>
-{{if .HayGeo}}
-<!-- La base se refresca una vez al mes, asi que puede ir por detras de la
-     realidad. Decirlo es lo que la hace honesta.
+<!-- LA EXPLICACION Y EL METADATO, EN UNA SOLA BANDA DEL ANCHO DE LA TABLA.
+     Eran dos parrafos sueltos: la explicacion acotada a su medida legible con
+     media pagina vacia a la derecha, y «Base de operadores» ocupando una linea
+     entera para decir una fecha. Ver .leyenda en estilo.css. -->
+<div class="leyenda">
+  <p class="nota">
+    Quién ha tocado el nodo, de lo más insistente a lo menos. Las tres cifras de
+    cada fila son la misma visita a distinta profundidad: el paquete llegó, la
+    conexión se estableció, el rechazo pidió algo y no se le dio.
+    {{if .HuecoDePaquetes}}El registro de paquetes empieza el
+    {{fecha .PaquetesDesde}}, más tarde que los otros dos: una visita anterior a
+    esa hora aparece con conexiones y sin paquetes.{{end}}
+  </p>
+  {{if .HayGeo}}
+  <!-- La base se refresca una vez al mes, asi que puede ir por detras de la
+       realidad. Decirlo es lo que la hace honesta.
 
-     CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de tratar
-     el HTML, asi que una llave doble escrita aqui dentro NO es texto: se
-     ejecuta. Este mismo comentario citaba la funcion de fecha entre llaves y
-     rompio la plantilla entera -- el panel devolvia 200 con la pagina cortada a
-     la mitad, porque la cabecera ya se habia enviado cuando fallo el render. -->
-<p class="nota">Base de operadores: {{fecha .FechaGeo}}.</p>
-{{end}}
+       CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de tratar
+       el HTML, asi que una llave doble escrita aqui dentro NO es texto: se
+       ejecuta. Este mismo comentario citaba la funcion de fecha entre llaves y
+       rompio la plantilla entera -- el panel devolvia 200 con la pagina cortada a
+       la mitad, porque la cabecera ya se habia enviado cuando fallo el render. -->
+  <p class="nota leyenda-dato">Base de operadores: {{fecha .FechaGeo}}.</p>
+  {{end}}
+</div>
 <table class="datos tabla-origenes">
   <!-- COLUMNAS CONDICIONALES, y las tres por el mismo motivo: una columna que
        dice lo mismo en todas las filas, o que esta vacia por construccion, no
