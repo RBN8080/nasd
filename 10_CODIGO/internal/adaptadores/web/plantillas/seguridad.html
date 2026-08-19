@@ -52,11 +52,12 @@
   conservados de <strong>{{.Resumen.TotalHistorico}}</strong> vistos.{{end}}
 </p>
 
-<!-- LOS FILTROS VAN ARRIBA, ANTES DE LA PRIMERA TABLA.
-     Estaban debajo de «Conexiones desde Internet», que es justo la tabla que
-     NO gobiernan: las conexiones solo obedecen a la ventana, porque no tienen
-     motivo ni red que filtrar. Con el bloque debajo, cambiar «Motivo» dejaba
-     inmóvil la tabla de arriba y parecía una avería. -->
+<!-- LOS FILTROS VAN ARRIBA, ANTES DE LA TABLA QUE GOBIERNAN. Estaban debajo, y
+     debajo de la unica tabla que NO obedecia a la mitad de ellos, asi que
+     cambiar «Motivo» dejaba inmovil lo de arriba y parecia una averia.
+     Las capas de paquetes y conexiones no saben de motivos -un paquete no tiene
+     ninguno-, asi que con un motivo elegido la tabla se acota a las direcciones
+     que SI lo produjeron. Ver soloConRechazos en panel_seguridad.go. -->
 <h2>Filtros</h2>
 <!-- method="get": el filtro viaja en la URL, igual que el orden del listado
      (P-3). Así un filtro concreto se puede guardar en marcadores y compartir,
@@ -94,83 +95,48 @@
   </div>
 </form>
 
-<!-- LAS CONEXIONES VAN PRIMERAS, ANTES INCLUSO DEL RESUMEN: es lo único que el
-     responsable declaró querer ver, y lo único que ve a quien toca el puerto
-     sin llegar a pedir nada. El 16/08 veinte direcciones de DRIFTNET
-     recorrieron el 443 y las tablas de abajo solo pudieron enseñar una. -->
-<h2>Conexiones desde Internet</h2>
-<p class="nota">
-  Conexiones TCP aceptadas desde Internet, hayan emitido petición o no.
-  {{if .TotalConexiones}}<strong>{{.Conexiones}}</strong> en la ventana ·
-  <strong>{{.TotalConexiones}}</strong> en total.{{end}}
-</p>
-<table class="datos tabla-origenes">
-  <thead>
-    <tr><th>Dirección</th>{{if .HayGeo}}<th>Operador</th>{{end}}<th>Conexiones</th><th>Actividad</th></tr>
-  </thead>
-  <tbody>
-  {{range .Conectados}}
-    <!-- SIN CLASE DE ÉNFASIS. Todas las filas la llevaban, y una tabla donde
-         se resalta el 100 % no resalta nada: es el semáforo siempre en ámbar
-         contra el que argumentan evaluarThrottled y Origen.Destacar. Que la
-         fila esté en esta tabla ya significa que viene de fuera. -->
-    <tr>
-      <td class="rotulo">{{.IP}}</td>
-      {{if $.HayGeo}}
-      <td class="operador">
-        {{- if .TieneGeo}}<strong>{{.Geo.Nombre}}</strong>{{if .Geo.Pais}} · {{.Geo.Pais}}{{end}}
-          <span class="asn">AS{{.Geo.ASN}}</span>
-        {{- else}}<em>operador desconocido</em>{{end}}
-      </td>
-      {{end}}
-      <td class="num">{{.Conexiones}}</td>
-      <td class="num">{{intervalo .Primera .Ultima}}</td>
-    </tr>
-  {{else}}
-    <tr><td colspan="{{if .HayGeo}}4{{else}}3{{end}}">Nadie de Internet ha abierto conexión en esta ventana.</td></tr>
-  {{end}}
-  </tbody>
-</table>
+<!-- LA TABLA VA PRIMERA, ANTES INCLUSO DEL RESUMEN: es lo unico que el
+     responsable declaro querer ver, y ahora ademas es lo unico que ve a quien
+     toca el puerto sin llegar a hablar. El 16/08 veinte direcciones de DRIFTNET
+     recorrieron el 443 y el panel solo pudo ensenar una.
 
-<h2>Resumen</h2>
-<table class="datos">
-  <tbody>
-    <!-- «Desde Internet» VA PRIMERA, y es la única fila con veredicto: es el
-         objetivo declarado del panel y se lee sin saber de redes.
-         Se retiraron «Direcciones distintas» —que era LA MISMA CIFRA con el
-         filtro por omisión, porque entonces todo origen es de Internet— y
-         «Orígenes con alguna señal», que contaba unas insignias visibles a
-         simple vista en la tabla de aquí abajo (ADR-0065). -->
-    <tr{{if .Resumen.DesdeFuera}} class="g-aviso"{{end}}>
-      <td class="rotulo">Direcciones desde Internet</td>
-      <td class="num">{{if .Resumen.DesdeFuera}}{{.Resumen.DesdeFuera}}{{else}}ninguna{{end}}</td>
-    </tr>
-    <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
-    <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
-  </tbody>
-</table>
-
+     UNA SOLA TABLA CON LAS TRES CAPAS EN COLUMNAS (ADR-0066). Paquete,
+     conexion y peticion son la misma pregunta a distinta profundidad, y cada
+     una es superconjunto de la siguiente. Con tres tablas habia que cruzar tres
+     filas a ojo para reconstruir una sola historia. Las cifras NO se mezclan:
+     son tres columnas distintas, que es lo que ADR-0064 exigia al prohibir
+     sumarlas. -->
 <h2>Orígenes</h2>
+<p class="nota">
+  Quién ha tocado el nodo, de lo más insistente a lo menos.
+  {{if .HayToques}}<strong>{{.Toques}}</strong> paquetes ·{{end}}
+  <strong>{{.Conexiones}}</strong> conexiones ·
+  <strong>{{.Resumen.Eventos}}</strong> rechazos en esta ventana.
+  {{if .HayToques}}Desde siempre: <strong>{{.TotalToques}}</strong> paquetes y
+  <strong>{{.TotalConexiones}}</strong> conexiones.{{end}}
+</p>
 {{if .HayGeo}}
-<!-- La base se refresca una vez al mes, así que puede ir por detrás de la
+<!-- La base se refresca una vez al mes, asi que puede ir por detras de la
      realidad. Decirlo es lo que la hace honesta.
 
-     CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de
-     tratar el HTML, así que una llave doble escrita aquí dentro NO es texto
-     — se ejecuta. Este mismo comentario citaba la función de fecha entre
-     llaves para explicar el criterio y rompió la plantilla entera: el panel
-     devolvía 200 con la página cortada a la mitad, porque la cabecera ya se
-     había enviado cuando falló el render. -->
+     CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de tratar
+     el HTML, asi que una llave doble escrita aqui dentro NO es texto: se
+     ejecuta. Este mismo comentario citaba la funcion de fecha entre llaves y
+     rompio la plantilla entera -- el panel devolvia 200 con la pagina cortada a
+     la mitad, porque la cabecera ya se habia enviado cuando fallo el render. -->
 <p class="nota">Base de operadores: {{fecha .FechaGeo}}.</p>
 {{end}}
 <table class="datos tabla-origenes">
-  <!-- SIN COLUMNA «Procedencia»: con el filtro por omisión decía «Internet»
-       en todas las filas. Quien quiera verla cambia el desplegable «Origen»,
-       y entonces la etiqueta vuelve — ver el bloque condicional de abajo.
-       SIN COLUMNA «Rutas»: era la ENTRADA del umbral de exploración, cuya
-       CONCLUSIÓN ya se pinta como señal dos columnas más allá (ADR-0065). -->
+  <!-- COLUMNAS CONDICIONALES, y las tres por el mismo motivo: una columna que
+       dice lo mismo en todas las filas, o que esta vacia por construccion, no
+       informa de nada y ademas se lee como un cero.
+         Procedencia  solo con «Cualquier origen»: con el filtro por omision
+                      diria «Internet» en todas.
+         Operador     solo con base instalada.
+         Paquetes y Conexiones  solo con el filtro EN Internet: las dos capas
+                      son de Internet por construccion. -->
   <thead>
-    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th></tr>
+    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th></tr>
   </thead>
   <tbody>
   {{range .Origenes}}
@@ -178,11 +144,9 @@
       <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
       {{if $.SinFiltroDeRed}}<td>{{.Red.Etiqueta}}</td>{{end}}
       <!-- LA COLUMNA QUE HACE INTERPRETABLE LA FILA. «203.0.113.7» no le dice
-           nada a nadie; «DIGITALOCEAN-ASN · DE» sí. Solo aparece si la base
-           está instalada: una columna vacía se leería como «no se sabe de
-           nadie» cuando en realidad sería «no se ha instalado la base».
-           Los de casa no se resuelven a propósito —una IP privada no tiene
-           operador— y se dice, en vez de dejar el hueco. -->
+           nada a nadie; «DIGITALOCEAN-ASN · DE» si. Los de casa no se resuelven
+           a proposito -una IP privada no tiene operador- y se dice, en vez de
+           dejar el hueco. -->
       {{if $.HayGeo}}
       <td class="operador">
         {{- if .TieneGeo}}<strong>{{.Geo.Nombre}}</strong>{{if .Geo.Pais}} · {{.Geo.Pais}}{{end}}
@@ -191,18 +155,25 @@
         {{- else}}<span class="suave">—</span>{{end}}
       </td>
       {{end}}
-      <td class="num">{{.Eventos}}</td>
+      {{if and $.SoloInternet $.HayToques}}<td class="num">{{.Toques}}</td>{{end}}
+      {{if $.SoloInternet}}<td class="num">{{.Conexiones}}</td>{{end}}
+      <td class="num">{{.Rechazos}}</td>
       <td class="num">{{intervalo .Primera .Ultima}}</td>
       <td>
+        <!-- Los puertos van de pastilla y no de columna propia: casi siempre
+             estan vacios -un rechazo no trae puerto- y una columna vacia en la
+             mayoria de las filas es ancho regalado. Es el mismo sitio y el
+             mismo trato que «cuentas». -->
+        {{if .Puertos}}<span class="pastilla">puertos: {{range .Puertos}}{{.}} {{end}}</span>{{end}}
         {{range $motivo, $n := .PorMotivo}}<span class="pastilla">{{$motivo.Etiqueta}} · {{$n}}</span> {{end}}
         {{if .Cuentas}}<span class="pastilla">cuentas: {{range .Cuentas}}{{.}} {{end}}</span>{{end}}
-        <!-- LAS SEÑALES VAN APARTE Y CON SU EXPLICACIÓN DENTRO, no como una
-             etiqueta más: son inferencias, no hechos, y cada una lleva
-             escrito con qué se puede confundir. Un <details> deja la
-             sospecha visible y su letra pequeña a un clic, sin JavaScript.
-             El énfasis lo decide la señal: la de software ajeno informa pero
-             no alarma, porque su propio texto dice que no va dirigida a este
-             nodo. Ver Senal.Destacar. -->
+        <!-- LAS SENALES VAN APARTE Y CON SU EXPLICACION DENTRO, no como una
+             etiqueta mas: son inferencias, no hechos, y cada una lleva escrito
+             con que se puede confundir. Un <details> deja la sospecha visible y
+             su letra pequena a un clic, sin JavaScript. El enfasis lo decide la
+             senal: la de software ajeno informa pero no alarma, porque su
+             propio texto dice que no va dirigida a este nodo. Ver
+             Senal.Destacar. -->
         {{range .Senales}}
         <details class="senal{{if .Destacar}} senal-aviso{{end}}">
           <summary>{{.Etiqueta}}</summary>
@@ -212,8 +183,22 @@
       </td>
     </tr>
   {{else}}
-    <tr><td colspan="6">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+    <tr><td colspan="8">Nadie ha tocado el nodo en esta ventana con estos filtros.</td></tr>
   {{end}}
+  </tbody>
+</table>
+
+<h2>Resumen</h2>
+<table class="datos">
+  <tbody>
+    <!-- «Desde Internet» va primera y es la unica fila con veredicto: es el
+         objetivo declarado del panel y se lee sin saber de redes. -->
+    <tr{{if .Resumen.DesdeFuera}} class="g-aviso"{{end}}>
+      <td class="rotulo">Direcciones desde Internet</td>
+      <td class="num">{{if .Resumen.DesdeFuera}}{{.Resumen.DesdeFuera}}{{else}}ninguna{{end}}</td>
+    </tr>
+    <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
+    <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
   </tbody>
 </table>
 

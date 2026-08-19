@@ -24,6 +24,18 @@ BINARIO := nasd
 BIN_MINIATURA  := nas-miniatura/nas-miniatura
 SRC_MINIATURA  := nas-miniatura/miniatura.c
 
+# nas-sensor, por el mismo criterio y en su propio directorio (ADR-0066).
+#
+# SON DOS FUENTES Y NO UNA, y esa separacion es lo que hace comprobable la
+# parte peligrosa: analisis.c examina bytes que escribe un extrano y NO
+# incluye nada de Linux, asi que compila y corre con desinfectantes en este
+# PC; sensor.c abre el socket AF_PACKET y solo compila para el nodo. Sin ese
+# corte, el corpus habria que ejecutarlo en WSL o en el propio nodo, es
+# decir: en la practica no se ejecutaria.
+BIN_SENSOR     := nas-sensor/nas-sensor
+SRC_SENSOR     := nas-sensor/analisis.c nas-sensor/sensor.c
+SRC_ANALISIS   := nas-sensor/analisis.c nas-sensor/pruebas/arnes.c
+
 # Compilador cruzado a aarch64-linux-musl. Elegido por el responsable sobre
 # la cadena oficial de ARM: una sola descarga, sin instalador, produce un
 # binario ESTATICO que no depende de nada del sistema del nodo, y no exige
@@ -59,7 +71,7 @@ SHELL       := C:/PROGRA~1/Git/bin/bash.exe
 .SHELLFLAGS := -lc
 endif
 
-.PHONY: todo verificar verificar-c verificar-limpio carreras prueba compilar compilar-miniatura desplegar volver registro limpiar
+.PHONY: todo verificar verificar-c verificar-limpio carreras prueba compilar compilar-miniatura compilar-sensor desplegar volver registro limpiar
 
 todo: verificar compilar
 
@@ -116,6 +128,13 @@ verificar-c:
 	bash nas-miniatura/pruebas/corpus.sh nas-miniatura/miniatura_verificar
 	@rm -f nas-miniatura/miniatura_verificar nas-miniatura/miniatura_verificar.exe \
 	  nas-miniatura/miniatura_verificar.pdb
+	@echo ">> nas-sensor: compilando el analisis con desinfectantes y ejecutando el corpus"
+	"$(ZIG)" cc -std=c11 -Wall -Wextra -Werror -O0 -g \
+	  -fsanitize=address,undefined \
+	  -o nas-sensor/arnes_verificar $(SRC_ANALISIS)
+	bash nas-sensor/pruebas/corpus.sh nas-sensor/arnes_verificar
+	@rm -f nas-sensor/arnes_verificar nas-sensor/arnes_verificar.exe \
+	  nas-sensor/arnes_verificar.pdb
 
 # El detector de carreras. Se separa de «verificar» porque tarda bastante más,
 # pero NO es opcional al cerrar un bloque: el programa tiene tres puntos de
@@ -144,7 +163,7 @@ prueba:
 	go test -v ./...
 
 # Binario estático ARM64. Sin CGO: se copia y corre, sin dependencias.
-compilar: compilar-miniatura
+compilar: compilar-miniatura compilar-sensor
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 	  -trimpath -ldflags="-s -w" -o $(BINARIO) ./cmd/nasd
 	@ls -lh $(BINARIO)
@@ -159,6 +178,15 @@ compilar-miniatura:
 	"$(ZIG)" cc -target aarch64-linux-musl -std=c11 -Wall -Wextra -Werror \
 	  -O2 -static -s -o $(BIN_MINIATURA) $(SRC_MINIATURA)
 	@ls -lh $(BIN_MINIATURA)
+
+# nas-sensor, cruzado igual que nas-miniatura y por los mismos motivos:
+# estatico para que no dependa de nada del sistema del nodo, y sin
+# desinfectantes porque no existe runtime de ASan para este objetivo -- esa
+# cobertura la da verificar-c sobre el analisis compilado de forma nativa.
+compilar-sensor:
+	"$(ZIG)" cc -target aarch64-linux-musl -std=c11 -Wall -Wextra -Werror \
+	  -O2 -static -s -o $(BIN_SENSOR) $(SRC_SENSOR)
+	@ls -lh $(BIN_SENSOR)
 
 # No se exige commitear cada retoque — el responsable lo pidio explicitamente
 # el 2026-08-04 para no llenar el historial de cambios triviales. Pero
@@ -236,6 +264,29 @@ desplegar: verificar verificar-limpio compilar
 	   || (echo "ERROR: la huella de nas-miniatura NO coincide con la compilada"; exit 1); \
 	 echo "huella de nas-miniatura verificada  $$huella_local_min"
 
+	@# nas-sensor. TOLERA QUE NO HAYA UNIDAD: el binario se puede desplegar
+	@# antes de que 19_sensor.sh haya corrido nunca en el nodo, y eso no es un
+	@# fallo -- es el primer despliegue. Sin unidad no hay nada que reiniciar y
+	@# nasd sigue funcionando igual, solo que sin la capa de paquetes.
+	ssh $(NODO) 'if [ -f /usr/local/bin/nas-sensor ]; then \
+	  sudo install -m 0755 /usr/local/bin/nas-sensor /usr/local/bin/nas-sensor.previous; \
+	else \
+	  echo "primer despliegue de nas-sensor: sin respaldo previo que hacer"; \
+	fi'
+	scp $(BIN_SENSOR) $(NODO):/tmp/nas-sensor
+	ssh $(NODO) 'sudo install -m 0755 /tmp/nas-sensor /usr/local/bin/nas-sensor; \
+	  if systemctl list-unit-files nas-sensor.service >/dev/null 2>&1 \
+	     && systemctl is-enabled nas-sensor.service >/dev/null 2>&1; then \
+	    sudo systemctl restart nas-sensor && systemctl is-active nas-sensor; \
+	  else \
+	    echo "nas-sensor.service no instalado todavia: ejecute 20_APROVISIONAMIENTO/19_sensor.sh"; \
+	  fi'
+	@huella_local_sen=$$(sha256sum $(BIN_SENSOR) | cut -d' ' -f1); \
+	 huella_nodo_sen=$$(ssh $(NODO) 'sha256sum /usr/local/bin/nas-sensor' | cut -d' ' -f1); \
+	 test "$$huella_local_sen" = "$$huella_nodo_sen" \
+	   || (echo "ERROR: la huella de nas-sensor NO coincide con la compilada"; exit 1); \
+	 echo "huella de nas-sensor verificada  $$huella_local_sen"
+
 	ssh $(NODO) 'sudo install -m 0755 /usr/local/bin/$(BINARIO) /usr/local/bin/$(BINARIO).previous'
 	scp $(BINARIO) $(NODO):/tmp/$(BINARIO)
 	ssh $(NODO) 'sudo install -m 0755 /tmp/$(BINARIO) /usr/local/bin/$(BINARIO) && sudo systemctl restart nasd && sleep 1 && systemctl is-active nasd'
@@ -266,4 +317,4 @@ registro:
 	ssh $(NODO) 'journalctl -u nasd -n 50 --no-pager -o cat'
 
 limpiar:
-	rm -f $(BINARIO) $(BIN_MINIATURA)
+	rm -f $(BINARIO) $(BIN_MINIATURA) $(BIN_SENSOR)

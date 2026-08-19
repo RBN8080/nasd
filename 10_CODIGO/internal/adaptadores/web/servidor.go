@@ -82,6 +82,11 @@ type Servidor struct {
 	// geo resuelve un origen de Internet a su país y su operador. PUEDE SER
 	// NULA: sin base instalada el panel funciona igual, solo que sin ese dato.
 	geo *geoip.BaseDatos
+	// rutaToques es el historial que deja nas-sensor (RF-33, ADR-0066). Es una
+	// RUTA y no una estructura porque nasd no es quien escribe: lee el archivo
+	// al pintar la página y no guarda nada entre cargas. PUEDE ir vacía —nodo
+	// sin sensor—, y entonces el panel esconde esas columnas.
+	rutaToques string
 	// muestreador alimenta el flujo en vivo de /estado (ADR-0051). Solo mide
 	// mientras haya alguien mirando: sin espectadores no cuesta nada.
 	muestreador *muestreador[marcoVivo]
@@ -165,6 +170,11 @@ type Opciones struct {
 	// diría «no ha pasado nada» — una degradación silenciosa, y encima en la
 	// pieza cuyo único trabajo es no callarse.
 	Seguridad *seguridad.Anillo
+	// RutaToques es el historial de nas-sensor. A DIFERENCIA de Seguridad y
+	// Conexiones puede ir VACÍA sin que Nuevo falle: el sensor es una pieza
+	// opcional, igual que GeoIP, y exigirla habría roto cada prueba de este
+	// paquete que construye Opciones sin conocer este campo.
+	RutaToques string
 	// Conexiones es el historial de conexiones entrantes de Internet.
 	// Obligatorio por el MISMO criterio que Seguridad, y con más motivo: si
 	// faltara, el panel volvería a enseñar «1» donde hubo 20 y lo haría sin
@@ -249,6 +259,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		metricas:          o.Metricas,
 		seguridad:         o.Seguridad,
 		conexiones:        o.Conexiones,
+		rutaToques:        o.RutaToques,
 		geo:               o.GeoIP,
 		dirMiniaturas:     o.DirMiniaturas,
 		miniaturaSem:      make(chan struct{}, 1),

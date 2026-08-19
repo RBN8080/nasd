@@ -194,6 +194,7 @@ func ejecutar() error {
 		Metricas:          metricasUso,
 		Seguridad:         historial,
 		Conexiones:        conexiones,
+		RutaToques:        cfg.RutaToques(),
 		GeoIP:             baseGeo,
 		// Miniaturas EXIF — rector §7.nonies.bis. Siempre se pasa la ruta
 		// derivada, igual que RutaGeoIP: si nas-miniatura no está instalado
