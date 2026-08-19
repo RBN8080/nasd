@@ -112,17 +112,44 @@ type vistaSeguridad struct {
 	Origenes []filaOrigen
 	Eventos  []seguridad.Evento
 
-	// Las cifras de cada capa, en la ventana y desde siempre. Las dos, por lo
-	// mismo en las tres: un anillo lleno no debe leerse como «esto es todo lo
-	// que ha pasado».
-	Conexiones      int
-	TotalConexiones int64
-	Toques          int
-	TotalToques     int64
+	// Las cifras de cada capa EN LA VENTANA, que el Resumen pinta como tres
+	// filas etiquetadas.
+	Conexiones int
+	Toques     int
+	// TotalConexiones son las conexiones desde que existe el registro, y se
+	// pinta SOLO cuando supera a las de la ventana —para eso está
+	// HayMasConexiones—. Ese es el caso en el que la cifra informa: dice que
+	// hay historia que esta vista no enseña. Cuando coinciden, repetir el
+	// mismo número con otra etiqueta era ruido, y es lo que había.
+	//
+	// Sobrevive a un reinicio desde el arreglo del 18/08 (totalDeCabecera).
+	// EL DE PAQUETES NO SE PINTA, y no por simetría mal entendida: nas-sensor
+	// no relee su archivo, así que su «desde siempre» volvía a cero en cada
+	// arranque suyo. Un número falso no se enseña con una etiqueta más
+	// prudente; se quita, y en su lugar va PaquetesDesde, que sí es verdad.
+	TotalConexiones  int64
+	HayMasConexiones bool
 	// HayToques dice si el sensor está instalado. La plantilla lo usa para NO
 	// pintar una columna de ceros, que se leería como «nadie me toca» cuando
 	// significa «no lo estoy mirando» — mismo criterio que HayGeo.
 	HayToques bool
+
+	// PaquetesDesde y HuecoDePaquetes existen porque LAS TRES COLUMNAS NO
+	// TIENEN LA MISMA MEMORIA, y callarlo convierte la tabla en una
+	// contradicción.
+	//
+	// nas-sensor no relee su archivo al arrancar: cada reinicio suyo vacía la
+	// capa de paquetes, mientras los dos anillos de Go recuperan la suya. Con
+	// 15 arranques en 14 días medidos en este nodo, ese desajuste es el estado
+	// NORMAL, no un caso raro. El efecto visible es una fila con «0 paquetes ·
+	// 1 conexiones», que niega la escalera que la propia tabla enseña.
+	//
+	// La respuesta NO es esconder el desajuste ni pintar un cero: es decir
+	// desde cuándo alcanza la capa de abajo. Es el mismo criterio que HayGeo y
+	// que la fecha de la base de operadores — una cifra sin su alcance es una
+	// afirmación sin respaldo.
+	PaquetesDesde   time.Time
+	HuecoDePaquetes bool
 	// FiltroActivo es el rótulo que acompaña al título: «Internet · 24 horas».
 	//
 	// Sustituye a la frase que explicaba en prosa que la página abre filtrada
@@ -290,27 +317,29 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	redes := opcionesDeRed(redElegida)
 
 	v := vistaSeguridad{
-		Resumen:         resumen,
-		Origenes:        s.unirOrigenes(tocados, seguridad.PorOrigenConectado(conexiones), origenes, f.Motivo != nil),
-		Conexiones:      len(conexiones),
-		TotalConexiones: s.conexiones.Total(),
-		Toques:          len(hist.Toques),
-		TotalToques:     hist.Total,
-		HayToques:       hist.Hay,
-		HayGeo:          s.geo != nil,
-		FechaGeo:        s.geo.Fecha(),
-		Eventos:         cronologia,
-		FiltroActivo:    rotuloDeFiltro(redes, ventanas, motivos),
-		SinFiltroDeRed:  f.Red == nil,
-		SoloInternet:    f.Red != nil && *f.Red == seguridad.RedInternet,
-		Ventanas:        ventanas,
-		Motivos:         motivos,
-		Redes:           redes,
-		TopeCronologico: topeCronologico,
-		HayMas:          hayMas,
-		TopeRutas:       seguridad.TopeRutas,
-		HayMasRutas:     resumen.RutasVistas > seguridad.TopeRutas,
-		Capacidad:       seguridad.Capacidad,
+		Resumen:          resumen,
+		Origenes:         s.unirOrigenes(tocados, seguridad.PorOrigenConectado(conexiones), origenes, f.Motivo != nil),
+		Conexiones:       len(conexiones),
+		TotalConexiones:  s.conexiones.Total(),
+		HayMasConexiones: s.conexiones.Total() > int64(len(conexiones)),
+		Toques:           len(hist.Toques),
+		HayToques:        hist.Hay,
+		PaquetesDesde:    hist.Desde,
+		HuecoDePaquetes:  hist.Hay && !hist.Desde.IsZero() && hist.Desde.After(f.Desde),
+		HayGeo:           s.geo != nil,
+		FechaGeo:         s.geo.Fecha(),
+		Eventos:          cronologia,
+		FiltroActivo:     rotuloDeFiltro(redes, ventanas, motivos),
+		SinFiltroDeRed:   f.Red == nil,
+		SoloInternet:     f.Red != nil && *f.Red == seguridad.RedInternet,
+		Ventanas:         ventanas,
+		Motivos:          motivos,
+		Redes:            redes,
+		TopeCronologico:  topeCronologico,
+		HayMas:           hayMas,
+		TopeRutas:        seguridad.TopeRutas,
+		HayMasRutas:      resumen.RutasVistas > seguridad.TopeRutas,
+		Capacidad:        seguridad.Capacidad,
 	}
 
 	w.Header().Set("Cache-Control", "no-store")

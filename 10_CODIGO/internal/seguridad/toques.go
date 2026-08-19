@@ -104,9 +104,25 @@ type Historial struct {
 	Hay    bool
 	Toques []Toque
 	// Total son los toques CAPTURADOS desde siempre, tal como el sensor los
-	// publica en su cabecera. A diferencia de los otros dos anillos SOBREVIVE A
-	// UN REINICIO, porque viaja en el archivo y no en memoria.
+	// publica en su cabecera.
+	//
+	// «DESDE SIEMPRE» ES DESDE QUE ARRANCÓ EL SENSOR, NO DESDE QUE EXISTE EL
+	// REGISTRO, y la diferencia es real: nas-sensor abre su archivo en modo
+	// escritura y NUNCA lo relee, así que un reinicio devuelve esta cifra a
+	// cero. Los dos anillos de Go sí releen (ver totalDeCabecera), de modo que
+	// las tres columnas del panel NO tienen la misma memoria. Quien pinta debe
+	// contarlo en vez de dejar que el lector suponga que son comparables; para
+	// eso está Desde.
 	Total int64
+	// Desde es el instante de la línea MÁS ANTIGUA del archivo, contada antes
+	// de descartar lo de casa.
+	//
+	// Es la profundidad real de la capa de paquetes. Sin ella el panel puede
+	// enseñar una fila con conexiones y CERO paquetes —porque el sensor se
+	// reinició después de aquella visita— y eso se lee como que la escalera
+	// paquete → conexión → rechazo está rota, cuando lo que pasa es que la
+	// hoja de abajo empieza más tarde.
+	Desde time.Time
 }
 
 // LeerToques lee el historial que deja nas-sensor y devuelve SOLO lo de
@@ -127,6 +143,7 @@ func LeerToques(ruta string, desde time.Time) (Historial, error) {
 	var (
 		leidos []Toque
 		total  int64
+		primer time.Time
 	)
 	s := bufio.NewScanner(f)
 	s.Buffer(make([]byte, 0, 4*1024), 4*1024)
@@ -148,6 +165,13 @@ func LeerToques(ruta string, desde time.Time) (Historial, error) {
 		if err != nil {
 			return Historial{}, fmt.Errorf("historial de toques, línea %d: %w", n, err)
 		}
+		// La profundidad se mide ANTES de descartar lo de casa: lo que interesa
+		// es desde cuándo hay registro, no desde cuándo hay registro de fuera.
+		// Se toma el mínimo en vez de fiarse de que la primera línea sea la más
+		// antigua, porque el orden lo garantiza otro programa.
+		if primer.IsZero() || t.Momento.Before(primer) {
+			primer = t.Momento
+		}
 		leidos = append(leidos, t)
 	}
 	if err := s.Err(); err != nil {
@@ -167,7 +191,7 @@ func LeerToques(ruta string, desde time.Time) (Historial, error) {
 		}
 		out = append(out, t)
 	}
-	return Historial{Hay: true, Toques: out, Total: total}, nil
+	return Historial{Hay: true, Toques: out, Total: total, Desde: primer}, nil
 }
 
 // deLinea analiza «instante origen puerto tipo».
