@@ -139,8 +139,8 @@ func LeerToques(ruta string, desde time.Time) (Historial, error) {
 			continue
 		}
 		if strings.HasPrefix(linea, "#") {
-			if v, ok := strings.CutPrefix(linea, "# total-visto: "); ok {
-				total, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			if n, ok := totalDeCabecera(linea); ok {
+				total = n
 			}
 			continue
 		}

@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -109,6 +110,34 @@ func CargarAnillo(ruta string) (*Anillo, error) {
 	return a, nil
 }
 
+// marcaTotal es la cabecera que lleva el total historico en los TRES
+// historiales de este paquete.
+//
+// EXISTE PORQUE EL TOTAL SE PERDIA EN CADA ARRANQUE. Hasta el 2026-08-18,
+// releer() hacia «total = len(leidos)» y el archivo no guardaba la cifra: tras
+// un reinicio, el panel decia «de N vistas desde que existe este registro» con
+// N acotado a Capacidad. Con 15 arranques en 14 dias medidos en este nodo, esa
+// frase era falsa casi siempre — decia «desde el ultimo corte de luz» creyendo
+// decir «desde siempre», que es justo el modo de fallo que este proyecto
+// persigue: una afirmacion que deja de ser verdad sin avisar.
+//
+// La estreno nas-sensor (ADR-0066) y se trae aqui para que los tres historiales
+// digan la verdad de la misma forma.
+const marcaTotal = "# total-visto: "
+
+// totalDeCabecera lee la marca, si la linea la trae.
+func totalDeCabecera(linea string) (int64, bool) {
+	v, ok := strings.CutPrefix(linea, marcaTotal)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 func (a *Anillo) releer() error {
 	f, err := os.Open(a.ruta)
 	if errors.Is(err, os.ErrNotExist) {
@@ -124,7 +153,10 @@ func (a *Anillo) releer() error {
 	// el cliente quiera, dos puntos y saltos de línea incluidos. Un separador
 	// artesanal sería una inyección esperando a ocurrir; el escapado de JSON
 	// ya está resuelto y probado en la biblioteca estándar.
-	var leidos []Evento
+	var (
+		leidos []Evento
+		total  int64
+	)
 	s := bufio.NewScanner(f)
 	// Una línea no puede pasar del tamaño de un evento con sus topes; se deja
 	// holgura para el escapado de JSON, que en el peor caso multiplica por 6
@@ -133,6 +165,9 @@ func (a *Anillo) releer() error {
 	for n := 1; s.Scan(); n++ {
 		linea := strings.TrimSpace(s.Text())
 		if linea == "" || strings.HasPrefix(linea, "#") {
+			if n, ok := totalDeCabecera(linea); ok {
+				total = n
+			}
 			continue
 		}
 		var e eventoEnDisco
@@ -158,7 +193,12 @@ func (a *Anillo) releer() error {
 	}
 	copy(a.buf, leidos)
 	a.siguiente = len(leidos) % Capacidad
-	a.total = int64(len(leidos))
+	// EL MAXIMO DE LOS DOS, y las dos mitades tienen su motivo. Un archivo SIN
+	// la marca es uno escrito antes del 2026-08-18: se cae a lo unico que se
+	// puede afirmar, que es lo guardado, y desde el primer volcado la cifra ya
+	// es la real. Y un total menor que lo guardado seria un archivo
+	// inconsistente: nunca puede haber mas eventos conservados que vistos.
+	a.total = max(total, int64(len(leidos)))
 	return nil
 }
 
@@ -265,7 +305,7 @@ func (a *Anillo) Volcar() error {
 	a.sucio = false
 	a.mu.Unlock()
 
-	if err := a.guardar(orden); err != nil {
+	if err := a.guardar(orden, a.Total()); err != nil {
 		// Volver a marcarlo sucio para que el siguiente intento lo reintente.
 		// Sin esto, un fallo transitorio de disco perdería en silencio todo lo
 		// anotado hasta entonces.
@@ -278,10 +318,11 @@ func (a *Anillo) Volcar() error {
 }
 
 // guardar escribe el historial de rechazos.
-func (a *Anillo) guardar(eventos []Evento) error {
+func (a *Anillo) guardar(eventos []Evento, total int64) error {
 	return escribirAtomico(a.ruta, ".seguridad-*", func(w io.Writer) error {
 		fmt.Fprintf(w, "# Historial de rechazos — anillo de %d eventos, del más antiguo al más reciente.\n", Capacidad)
 		fmt.Fprint(w, "# Un evento por línea, en JSON. NUNCA contiene contraseñas, cookies ni cuerpos (04_SEGURIDAD §6).\n")
+		fmt.Fprintf(w, "%s%d\n", marcaTotal, total)
 		enc := json.NewEncoder(w)
 		for _, e := range eventos {
 			if err := enc.Encode(deEvento(e)); err != nil {
