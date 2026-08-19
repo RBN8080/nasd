@@ -1,0 +1,17 @@
+{{/* LA CABECERA DE LAS NUEVE PAGINAS, EN UN SOLO SITIO.
+
+     Hasta el 19/08/2026 estas siete lineas estaban COPIADAS nueve veces,
+     identicas salvo el <title>. Este proyecto ya pago ese error una vez y esta
+     escrito en el propio CSS: /estado tenia clase propia para su barra de
+     acciones "y por eso se le olvidaban los arreglos que se le hacian a la del
+     listado". Nueve copias del <head> era el mismo defecto esperando turno.
+
+     Recibe el titulo ya compuesto, para que la pagina que lo tiene dinamico
+     -listado- pueda pasarlo con printf sin que esta plantilla sepa nada de su
+     modelo de datos. */}}
+{{define "cabeza"}}<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.}}</title>
+<link rel="icon" href="/estatico/icono.svg">
+<link rel="apple-touch-icon" href="/estatico/icono.svg">
+<link rel="stylesheet" href="/estatico/estilo.css">{{end}}
