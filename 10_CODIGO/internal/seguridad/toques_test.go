@@ -200,3 +200,43 @@ func TestUnEscaneoNoFalseaLaCuentaAunqueAcorteLosPuertos(t *testing.T) {
 			len(out[0].Puertos), topePuertos)
 	}
 }
+
+// Desde es la PROFUNDIDAD REAL de la capa de paquetes, y se mide antes de
+// descartar lo de casa.
+//
+// Existe porque nas-sensor no relee su archivo al arrancar: su historial se
+// vacia en cada reinicio suyo mientras los dos anillos de Go recuperan el suyo
+// del disco. Sin esta cifra el panel ensena una fila con conexiones y cero
+// paquetes, que se lee como que la escalera paquete -> conexion -> rechazo esta
+// rota. Ver el comentario de Historial.
+func TestDesdeEsLaLineaMasAntiguaAunqueSeaDeCasa(t *testing.T) {
+	ruta := archivoDeToques(t,
+		"2026-08-19T04:39:55Z 192.168.1.18 22 syn",
+		"2026-08-19T05:10:00Z 203.0.113.7 443 syn",
+	)
+	h, err := LeerToques(ruta, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiero := time.Date(2026, 8, 19, 4, 39, 55, 0, time.UTC)
+	if !h.Desde.Equal(quiero) {
+		t.Errorf("Desde = %v; se esperaba %v (la linea de casa, que es la mas antigua)",
+			h.Desde, quiero)
+	}
+	// Y lo que se devuelve para pintar sigue siendo solo lo de Internet.
+	if len(h.Toques) != 1 {
+		t.Fatalf("toques = %d; se esperaba 1", len(h.Toques))
+	}
+}
+
+// Sin sensor no hay profundidad que declarar, y Desde debe quedar en cero para
+// que el panel no invente un comienzo. Mismo criterio que Hay.
+func TestSinSensorNoHayProfundidad(t *testing.T) {
+	h, err := LeerToques(filepath.Join(t.TempDir(), "no-existe"), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Desde.IsZero() {
+		t.Errorf("Desde = %v; sin archivo no se conoce comienzo alguno", h.Desde)
+	}
+}

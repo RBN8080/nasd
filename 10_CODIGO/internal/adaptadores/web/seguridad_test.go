@@ -722,10 +722,67 @@ func TestUnEscaneoAPuertosCerradosApareceAunqueNoHablara(t *testing.T) {
 	if !strings.Contains(panel, "puertos: 23 2323") {
 		t.Error("no se enseñan los puertos distintos que se tocaron")
 	}
-	// Y el total sobrevive al reinicio porque viaja en el archivo, no en
-	// memoria — que es justo lo que los otros dos anillos NO hacen.
-	if !strings.Contains(panel, "913") {
-		t.Error("no se publica el total de paquetes vistos desde siempre")
+	// EL «913» YA NO SE PINTA, Y ESTA PRUEBA AFIRMABA LO CONTRARIO DE LO QUE
+	// PASA. Decía que el total de paquetes «sobrevive al reinicio porque viaja
+	// en el archivo»: nas-sensor abre su historial en modo escritura y NUNCA lo
+	// relee, así que su cabecera vuelve a cero en cada arranque suyo. Se
+	// comprobó en el nodo el 18/08 — un despliegue lo bajó de 38 a 10.
+	if strings.Contains(panel, "913") {
+		t.Error("se sigue pintando el total de paquetes, que vuelve a cero en cada arranque del sensor")
+	}
+}
+
+// LA CONTRADICCIÓN QUE VIO EL RESPONSABLE EN PANTALLA: «0 paquetes ·
+// 1 conexiones», que niega la escalera que la propia tabla enseña.
+//
+// No era un fallo de redacción. La capa de paquetes se había vaciado en un
+// reinicio del sensor mientras las otras dos recuperaban la suya del disco, así
+// que la tabla comparaba tres columnas con memorias distintas sin decirlo. Con
+// 15 arranques en 14 días medidos aquí, ese estado es el NORMAL.
+//
+// El panel no puede evitar el hueco, pero sí tiene que declararlo.
+func TestSeDeclaraDesdeCuandoAlcanzaElRegistroDePaquetes(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+	// El sensor arrancó hace una hora; la ventana por omisión son 24. Todo lo
+	// anterior tiene conexiones y rechazos, pero no puede tener paquetes.
+	arranque := time.Now().UTC().Add(-time.Hour)
+	cuerpo := "# total-visto: 3\n" +
+		arranque.Format(time.RFC3339) + " 192.168.1.23 445 syn\n" +
+		arranque.Add(time.Minute).Format(time.RFC3339) + " 203.0.113.7 443 syn\n"
+	if err := os.WriteFile(s.rutaToques, []byte(cuerpo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panel := panelSeguridad(t, s, "")
+	if !strings.Contains(panel, "El registro de paquetes empieza el") {
+		t.Fatal("el panel no dice desde cuándo alcanza la capa de paquetes: " +
+			"una fila con conexiones y cero paquetes se lee como una contradicción")
+	}
+	// LA LÍNEA DE CASA MARCA EL COMIENZO, y es deliberado: la profundidad del
+	// registro no depende de que lo que se anotara fuera de Internet. Tomarla
+	// del primer toque EXTERNO diría que el registro empieza más tarde de lo
+	// que empieza, que es la misma clase de mentira que se está corrigiendo.
+	if !strings.Contains(panel, arranque.Local().Format("2006-01-02 15:04")) {
+		t.Error("la profundidad se está midiendo después de descartar lo de casa")
+	}
+}
+
+// El aviso NO debe salir cuando no hay hueco: un panel que se explica cuando no
+// hace falta enseña a no leerlo. Es el mismo criterio que esconde la columna de
+// operador sin geo y el que retiró la frase que explicaba el filtro.
+func TestSinHuecoElPanelNoSeExplica(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+	// El registro empieza ANTES que la ventana: no hay nada que declarar.
+	viejo := time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339)
+	cuerpo := "# total-visto: 3\n" + viejo + " 203.0.113.7 443 syn\n"
+	if err := os.WriteFile(s.rutaToques, []byte(cuerpo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if panel := panelSeguridad(t, s, ""); strings.Contains(panel, "El registro de paquetes empieza el") {
+		t.Error("se avisa de un hueco que no existe")
 	}
 }
 

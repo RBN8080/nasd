@@ -107,13 +107,22 @@
      son tres columnas distintas, que es lo que ADR-0064 exigia al prohibir
      sumarlas. -->
 <h2>Orígenes</h2>
+<!-- ESTE ROTULO EXPLICA LA TABLA; NO REPITE SUS CIFRAS.
+     Antes decia «0 paquetes · 1 conexiones · 1 rechazos en esta ventana.
+     Desde siempre: 8 paquetes y 1 conexiones»: seis numeros seguidos, sin
+     etiqueta que dijera que son tres profundidades y no tres cosas sumables,
+     y con dos bases de tiempo distintas en una frase. Quien no hubiera
+     construido esto no podia leerlo, y quien si, veia una contradiccion. Las
+     cifras se han ido al Resumen, que es donde un numero tiene su etiqueta al
+     lado; aqui queda lo unico que la tabla no puede ensenar por si sola, que
+     es que significan sus columnas. -->
 <p class="nota">
-  Quién ha tocado el nodo, de lo más insistente a lo menos.
-  {{if .HayToques}}<strong>{{.Toques}}</strong> paquetes ·{{end}}
-  <strong>{{.Conexiones}}</strong> conexiones ·
-  <strong>{{.Resumen.Eventos}}</strong> rechazos en esta ventana.
-  {{if .HayToques}}Desde siempre: <strong>{{.TotalToques}}</strong> paquetes y
-  <strong>{{.TotalConexiones}}</strong> conexiones.{{end}}
+  Quién ha tocado el nodo, de lo más insistente a lo menos. Las tres cifras de
+  cada fila son la misma visita a distinta profundidad: el paquete llegó, la
+  conexión se estableció, el rechazo pidió algo y no se le dio.
+  {{if .HuecoDePaquetes}}El registro de paquetes empieza el
+  {{fecha .PaquetesDesde}}, más tarde que los otros dos: una visita anterior a
+  esa hora aparece con conexiones y sin paquetes.{{end}}
 </p>
 {{if .HayGeo}}
 <!-- La base se refresca una vez al mes, asi que puede ir por detras de la
@@ -197,6 +206,15 @@
       <td class="rotulo">Direcciones desde Internet</td>
       <td class="num">{{if .Resumen.DesdeFuera}}{{.Resumen.DesdeFuera}}{{else}}ninguna{{end}}</td>
     </tr>
+    <!-- LAS TRES CAPAS, UNA POR FILA Y EN ORDEN DE PROFUNDIDAD. Estaban en el
+         rotulo de «Origenes» como una tirada de numeros; aqui cada cifra lleva
+         su etiqueta al lado y se lee sin haber leido nada antes.
+         «sin sensor» y no un cero cuando nas-sensor no esta instalado, por lo
+         mismo que la columna se esconde: un cero afirmaria que nadie toca el
+         nodo cuando lo que pasa es que nadie esta mirando. -->
+    <tr><td class="rotulo">Paquetes de Internet</td><td class="num">{{if .HayToques}}{{.Toques}}{{else}}sin sensor{{end}}</td></tr>
+    <tr><td class="rotulo">Conexiones aceptadas</td><td class="num">{{.Conexiones}}</td></tr>
+    {{if .HayMasConexiones}}<tr><td class="rotulo">Conexiones desde siempre</td><td class="num">{{.TotalConexiones}}</td></tr>{{end}}
     <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
     <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
   </tbody>
