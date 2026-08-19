@@ -540,7 +540,21 @@ func funciones() template.FuncMap {
 			return strconv.FormatFloat(float64(n)/float64(div), 'f', 1, 64) +
 				" " + []string{"KB", "MB", "GB", "TB"}[exp]
 		},
-		"fecha": func(t time.Time) string { return t.Format(formatoFecha) },
+		// .Local() Y NO EL VALOR TAL CUAL, y hace falta desde ADR-0066.
+		//
+		// Los dos anillos guardan la hora con el desfase local, porque nacen de
+		// time.Now() dentro de nasd. El historial del sensor la guarda en UTC,
+		// porque lo escribe otro programa que no tiene por que compartir zona.
+		// Format pinta cada una EN SU PROPIA zona, asi que el mismo instante
+		// salia con dos horas distintas segun de que capa viniera.
+		//
+		// No es teorico: el 18/08 a las 20:23 llego el primer origen de Internet
+		// y su fila iba a pintarse «2026-08-19 02:23 -> 2026-08-18 20:23» -- un
+		// intervalo corriendo HACIA ATRAS, con el SYN dos segundos DESPUES de la
+		// peticion que provoco. Se vio al cruzar las tres capas a mano, no en
+		// las pruebas: hasta entonces ninguna fila habia tenido datos de las dos
+		// procedencias a la vez.
+		"fecha": func(t time.Time) string { return t.Local().Format(formatoFecha) },
 
 		// «Primera» y «Última» eran DOS columnas en el panel de seguridad y son
 		// un intervalo: se funden en una (ADR-0065).
@@ -551,7 +565,10 @@ func funciones() template.FuncMap {
 		// fecha dos veces con una flecha en medio. Repetir un dato para no
 		// decir nada es exactamente el relleno que este trabajo retira.
 		"intervalo": func(desde, hasta time.Time) string {
-			ini, fin := desde.Format(formatoFecha), hasta.Format(formatoFecha)
+			// .Local() en los dos extremos, por lo mismo que en «fecha»: sin
+			// eso, un intervalo que empieza en el sensor y acaba en un anillo
+			// mezcla UTC con hora local y se lee al reves.
+			ini, fin := desde.Local().Format(formatoFecha), hasta.Local().Format(formatoFecha)
 			if ini == fin {
 				return ini
 			}

@@ -794,3 +794,42 @@ func TestElFiltroDeMotivoGobiernaLaTablaEntera(t *testing.T) {
 		t.Error("el filtro de motivo dejó pasar una dirección sin ningún rechazo")
 	}
 }
+
+// EL MISMO INSTANTE TIENE QUE PINTARSE CON LA MISMA HORA, venga de la capa que
+// venga. Los dos anillos guardan la hora con desfase local —nacen de time.Now()
+// dentro de nasd— y el sensor la guarda en UTC, porque lo escribe otro programa.
+//
+// Sin convertir, la fila del primer origen de Internet real (18/08, 20:23) se
+// pintaba «2026-08-19 02:23 → 2026-08-18 20:23»: un intervalo corriendo HACIA
+// ATRÁS, con el SYN dos segundos DESPUÉS de la petición que provocó.
+//
+// No lo cazó ninguna prueba porque hasta entonces ninguna fila había tenido
+// datos de las dos procedencias a la vez. Esta la fija.
+func TestElIntervaloNoMezclaZonasHorarias(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+
+	// El SYN, en UTC, como lo escribe el sensor.
+	ahora := time.Now().UTC()
+	if err := os.WriteFile(s.rutaToques,
+		[]byte("# total-visto: 1\n"+ahora.Format(time.RFC3339)+" 203.0.113.7 443 syn\n"),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	// El rechazo, dos segundos después y en hora local, como lo escribe nasd.
+	s.seguridad.Anotar(seguridad.Evento{
+		Momento: ahora.Add(2 * time.Second).Local(),
+		Origen:  netip.MustParseAddr("203.0.113.7"),
+		Metodo:  "GET", Ruta: "/", Estado: 401, Motivo: seguridad.SinSesion,
+	})
+
+	cuerpo := panelSeguridad(t, s, "")
+	local := ahora.Local().Format("2006-01-02 15:04")
+	utc := ahora.Format("2006-01-02 15:04")
+	if !strings.Contains(cuerpo, local) {
+		t.Errorf("la fila no se pinta en hora local (%s)", local)
+	}
+	if local != utc && strings.Contains(cuerpo, utc) {
+		t.Errorf("se coló la hora en UTC (%s): el mismo instante sale con dos horas", utc)
+	}
+}
