@@ -26,6 +26,34 @@ trap 'rm -rf "$DIR"' EXIT
 
 ok=0; mal=0
 
+# EL BINARIO RECIEN COMPILADO NO SIEMPRE SE PUEDE EJECUTAR TODAVIA (Windows).
+#
+# Reproducido el 2026-08-19: de doce vueltas seguidas a «make verificar-c»,
+# tres fallaron ENTERAS con codigo 126 -«existe pero no es ejecutable»- en
+# todos los casos a la vez, y las otras nueve pasaron limpias. No es el codigo:
+# es que el antivirus abre el .exe en cuanto zig lo escribe y lo retiene unas
+# decimas. En este mismo arbol hay otra prueba del mismo bloqueo -Go deja un
+# «.exe~» cuando no puede reemplazar el binario en uso-.
+#
+# IMPORTA porque «desplegar» depende de «verificar»: una puerta que se niega al
+# azar ensena a repetirla hasta que pase, y asi es como un fallo de verdad
+# acaba colandose. El fallo era seguro -126 nunca aprueba nada- pero el habito
+# que crea no lo es.
+#
+# Se espera a que ARRANQUE, no un «sleep» fijo: sin argumentos el arnes sale
+# con error de uso, y eso ya demuestra que el sistema lo deja correr.
+esperar_ejecutable() {
+  local intento
+  for intento in 1 2 3 4 5 6 7 8 9 10; do
+    "$BIN" >/dev/null 2>&1
+    [ $? != 126 ] && return 0
+    sleep 0.3
+  done
+  echo "FALLO: $BIN sigue sin poder ejecutarse (codigo 126) tras 3 segundos." >&2
+  exit 1
+}
+esperar_ejecutable
+
 # --- Trozos reutilizables --------------------------------------------------
 # Cabecera IPv4 de 20 bytes, protocolo TCP (06), origen 192.168.1.23.
 IP4_TCP='\x45\x00\x00\x3c\x1c\x46\x40\x00\x40\x06\x00\x00\xc0\xa8\x01\x17\xcb\x00\x71\x07'
