@@ -179,10 +179,17 @@ endif
 #
 # Si esta ruta no existiera (paquete desinstalado o movido):
 #     winget install BrechtSanders.WinLibs.POSIX.UCRT
+# EN WINDOWS TAMBIEN VA POR WSL desde el 2026-08-19, y por la misma razon que
+# «verificar»: el binario instrumentado que produce -race es otro ejecutable sin
+# firmar, y Smart App Control lo rechaza igual.
+#
+# Se gana algo mas que esquivar el bloqueo: alli el CGO lo da el gcc del propio
+# sistema, asi que GCCBIN —la ruta a mano de un gcc que winget dejo fuera del
+# PATH— deja de hacer falta. Se conserva SOLO para la rama que no es Windows,
+# donde nunca se uso.
 ifeq ($(OS),Windows_NT)
-GCCBIN := /c/Users/usuario/AppData/Local/Microsoft/WinGet/Packages/BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe/mingw64/bin
 carreras:
-	PATH="$(GCCBIN):$$PATH" CGO_ENABLED=1 go test -race -count=1 ./...
+	bash pruebas/go-test-en-wsl.sh -race -count=1 ./...
 else
 carreras:
 	CGO_ENABLED=1 go test -race -count=1 ./...
