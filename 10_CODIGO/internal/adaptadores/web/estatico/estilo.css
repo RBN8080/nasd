@@ -890,21 +890,26 @@ tr.v-fallo .rotulo {
    linea entera para decir una fecha. Cinco lineas de texto suave entre el
    encabezado y la tabla que titulan, y la tabla empujada hacia abajo.
 
-   NO SE ARREGLA ENSANCHANDO LA PROSA. Quitarle el tope a «.nota» devolveria
-   las lineas de ~150 caracteres que la pasada de diseño acaba de retirar —ver
-   «--medida»—, que es cambiar un defecto por el que se acababa de corregir.
-   Se arregla poniendo el DATO donde estaba el hueco: la explicacion conserva
-   su medida legible y el metadato se ancla al extremo derecho, con lo que la
-   banda ocupa el ancho de la tabla sin que ninguna linea se alargue.
+   PRIMER INTENTO, DESCARTADO POR EL RESPONSABLE: mover solo el metadato al
+   extremo y conservar la medida de «--medida» en la explicacion. Llenaba el
+   hueco de la derecha pero dejaba la explicacion en CINCO lineas, y lo que el
+   pidio fue subir el texto. Su correccion, sobre captura: «te pedi que
+   hicieras el texto hacia arriba».
+
+   ASI QUE LA LEYENDA SE EXCEPTUA DE «--medida», A PROPOSITO. Ese tope existe
+   para prosa que se LEE seguida —parrafos de ayuda, avisos—, y a 68ch esta
+   explicacion ocupaba cinco lineas con media pagina vacia al lado. Una leyenda
+   no se lee seguida: se consulta una vez para entender las columnas de la
+   tabla que tiene debajo. Ensancharla la baja a dos lineas y sube la tabla
+   tres, que es el objetivo. El tope SIGUE vigente para todo lo demas: la
+   excepcion es esta clase y solo esta.
 
    «baseline» y no «center»: los dos son texto, y lo que debe coincidir es la
-   linea sobre la que se apoyan, no el centro de sus cajas —que difieren en
-   cuanto la explicacion pasa de una linea. «wrap» deja que en el movil el
-   metadato caiga debajo por si solo, sin consulta de medios. */
+   linea sobre la que se apoyan, no el centro de sus cajas. «wrap» deja que en
+   el movil el metadato caiga debajo por si solo, sin consulta de medios. */
 .leyenda {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
   align-items: baseline;
   gap: var(--e-1) var(--e-5);
 }
@@ -913,10 +918,15 @@ tr.v-fallo .rotulo {
    y un margen suelto la descuadraria contra la linea base. */
 .leyenda .nota {
   margin: 0;
+  flex: 1;
+  max-width: none;
 }
 
-/* El metadato no se estira ni se parte: es corto y su sitio es el extremo. */
-.leyenda-dato {
+/* El metadato no se estira ni se parte: es corto y su sitio es el extremo.
+   Se cualifica con «.leyenda» para GANARLE en especificidad a la regla de
+   arriba; con «.leyenda-dato» a secas, el «flex: 1» de «.leyenda .nota» lo
+   estiraba y la fecha se separaba de su borde. */
+.leyenda .leyenda-dato {
   flex: none;
 }
 
