@@ -904,6 +904,15 @@ tr.v-fallo .rotulo {
    tres, que es el objetivo. El tope SIGUE vigente para todo lo demas: la
    excepcion es esta clase y solo esta.
 
+   SEGUNDO REPORTE, SOBRE CAPTURA, EL 20/08/2026: la misma columna estrecha en
+   «Bloqueos puestos», con una flecha marcando el hueco que quedaba hasta el
+   borde derecho de la tabla. La clase no cambia; se le aplica tambien alli y a
+   «Apartados por conducta», que es su gemela y solo aparece cuando el nodo ha
+   apartado a alguien. Los tres rotulos hacen el mismo trabajo —explicar las
+   columnas de la tabla que tienen debajo—, asi que arreglar uno solo habria
+   dejado dos anchos distintos para la misma cosa en la misma pagina. Sigue
+   siendo UNA excepcion, no una por tabla.
+
    «baseline» y no «center»: los dos son texto, y lo que debe coincidir es la
    linea sobre la que se apoyan, no el centro de sus cajas. «wrap» deja que en
    el movil el metadato caiga debajo por si solo, sin consulta de medios. */
