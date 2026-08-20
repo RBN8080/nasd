@@ -30,8 +30,8 @@
       {{/* Quien llega a /estado ya es el superusuario —soloSuperusuario lo
            exige—, así que aquí no hace falta ningún {{if}}: a diferencia de
            la barra del listado, esta página nunca la ve nadie más. */}}
-      <a class="boton-barra" href="/administracion">Administración</a>
-      <a class="boton-barra" href="/seguridad">Seguridad</a>
+      {{if .PuedeAdministrar}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}
+      <a class="boton-barra" href="/seguridad">Seguridad{{if .Novedades}} <span class="pastilla">{{.Novedades}}</span>{{end}}</a>
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>

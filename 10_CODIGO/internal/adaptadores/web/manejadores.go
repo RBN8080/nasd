@@ -37,6 +37,21 @@ type vistaListado struct {
 	// impide la petición. Quien la impide es soloSuperusuario en la tabla de
 	// rutas. Esto existe para no ofrecer una puerta que va a responder 403.
 	EsSuperusuario bool
+	// PuedeAdministrar decide si el menú de cada fila ofrece renombrar, mover
+	// y borrar, y si la barra lleva a Administración — las dos cosas cuelgan
+	// de la MISMA regla (acotadoPorRed, sesion.go), y «administración» es como
+	// la tabla de rutas de servidor.go llama ya a las tres de la fila.
+	//
+	// Misma mitad del control que la línea de arriba, y por el mismo motivo:
+	// quien de verdad niega es soloDesdeDentro en la tabla de rutas. Esto
+	// existe para no ofrecer un botón que va a responder 403.
+	//
+	// Para quien NO es superusuario vale siempre cierto: la regla no le
+	// alcanza, porque su sesión ya está enraizada en su carpeta (ADR-0055).
+	PuedeAdministrar bool
+	// Novedades es la marca del botón «Seguridad» de la barra. Cero no pinta
+	// nada: una pastilla con un 0 sería ruido permanente.
+	Novedades int
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -62,7 +77,9 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		EsHTTPS: r.TLS != nil,
 		Orden:   criterioDe(r.URL.Query().Get("orden")),
 
-		EsSuperusuario: usuarioDe(r) == autenticacion.NombreSuperusuario,
+		EsSuperusuario:   usuarioDe(r) == autenticacion.NombreSuperusuario,
+		PuedeAdministrar: !acotadoPorRed(r),
+		Novedades:        s.novedades.Cuantas(),
 	}
 
 	n := 0

@@ -104,6 +104,9 @@ func servidorDeMover(t *testing.T) (*Servidor, *almacenDeMover) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -116,7 +119,7 @@ func postConSesion(t *testing.T, s *Servidor, ruta string, campos url.Values) *h
 	t.Helper()
 	cookie, csrf := sesionAbierta(t, s)
 	campos.Set("csrf", csrf)
-	r := httptest.NewRequest(http.MethodPost, ruta, strings.NewReader(campos.Encode()))
+	r := desdeCasa(httptest.NewRequest(http.MethodPost, ruta, strings.NewReader(campos.Encode())))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()

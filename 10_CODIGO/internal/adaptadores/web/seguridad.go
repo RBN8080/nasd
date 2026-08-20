@@ -143,7 +143,38 @@ func (s *Servidor) anotarConexion(c net.Conn, estado http.ConnState) {
 		// amplificador.
 		return
 	}
-	s.conexiones.Anotar(dir.Addr(), time.Now())
+	ahora := time.Now()
+	s.conexiones.Anotar(dir.Addr(), ahora)
+
+	// LA PUERTA, y la propiedad que la justifica escrita donde se cumple:
+	//
+	//   AL APARTADO SE LE ANOTA IGUAL. Colgar no puede llevarse por delante el
+	//   registro, así que aquí NO puede haber un «return» antes de Anotar.
+	//
+	// Bloquear en el cortafuegos habría hecho INVISIBLE al bloqueado —los dos
+	// anillos viven dentro de este proceso y un paquete descartado por el
+	// núcleo no llega—, y con dos únicos orígenes externos en 19 días eso
+	// significaba quedarse ciego justo sobre lo único que este nodo ha visto.
+	// Anotando igual se conserva la conexión en el panel, con su cuenta de
+	// frenados, y aun así el apartado deja de hablar. Lo comprueba
+	// TestAlApartadoSeLeAnotaLaConexionYDespuesSeLeCuelga mirando el anillo de
+	// conexiones, no el HTML: en el HTML esta dirección saldría igual por estar
+	// en la tabla de apartados, y la prueba pasaría sin demostrar nada.
+	//
+	// Se comprueba SOLO lo de Internet: la casa y el túnel no se cierran nunca,
+	// pase lo que pase. Es la misma barandilla que Evaluar aplica al apartar,
+	// repetida aquí a propósito — que la casa no se quede fuera no puede
+	// depender de que otra función haya hecho bien su parte.
+	if !seguridad.ClasificarRed(dir.Addr()).DeFuera() {
+		return
+	}
+	if s.cuarentena.Frena(dir.Addr(), ahora) || s.lista.Bloquea(dir.Addr(), ahora) {
+		// Sin registrar nada en el diario: esto corre en el bucle de
+		// aceptación, y un origen capaz de provocar una línea por conexión
+		// convertiría el registro en su amplificador. Lo que hay que saber
+		// —cuántas veces se le ha frenado— lo lleva el propio apartado.
+		_ = c.Close()
+	}
 }
 
 // anotarRechazo registra la petición negada. Solo lo llama conRegistro.

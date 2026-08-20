@@ -24,7 +24,7 @@
     <div class="barra-acciones">
       <a class="boton-barra" href="/">Archivos</a>
       <a class="boton-barra" href="/estado">Estado</a>
-      <a class="boton-barra" href="/administracion">Administración</a>
+      {{if .PuedeAdministrar}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>
@@ -46,6 +46,79 @@
   {{if .Resumen.Truncado}}Historial: <strong>{{.Capacidad}}</strong> rechazos
   conservados de <strong>{{.Resumen.TotalHistorico}}</strong> vistos.{{end}}
 </p>
+
+<!-- LO ÚNICO DE ESTA PÁGINA QUE NO ES HISTORIA.
+     Va arriba del todo y fuera de los filtros a propósito: los filtros
+     gobiernan lo que PASÓ, y esto es lo que está pasando ahora. Filtrarlo por
+     una ventana de 24 horas escondería a un apartado de anteayer que sigue
+     apartado, que es justo lo que aquí hay que ver.
+     Solo aparece si hay algo. Una tabla vacía titulada «Apartados» se lee como
+     «no me estoy defendiendo», cuando lo que dice es «no ha hecho falta». -->
+{{if .Apartados}}
+<h2>Apartados por conducta</h2>
+<p class="nota">
+  Los puso el nodo solo y caducan solos. Mientras están, sus conexiones se
+  anotan y se cierran: se les sigue viendo llegar.
+</p>
+<table class="datos">
+  <thead>
+    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th></th></tr>
+  </thead>
+  <tbody>
+    {{range .Apartados}}
+    <tr class="g-aviso">
+      <td class="rotulo">{{.IP}}</td>
+      <td>{{.Senal.Etiqueta}}</td>
+      <td class="num">{{fecha .Hasta}}</td>
+      {{/* La cifra que permite retirar lo que no sirve: un apartado con cero
+           frenados no ha protegido de nada todavía. */}}
+      <td class="num">{{.Frenados}}</td>
+      <td class="num">
+        <form method="post" action="/seguridad/soltar">
+          <input type="hidden" name="csrf" value="{{$.Csrf}}">
+          <input type="hidden" name="ip" value="{{.IP}}">
+          <button type="submit">Soltar</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{if .Bloqueos}}
+<h2>Bloqueos puestos</h2>
+<p class="nota">
+  Los puso usted. Cada uno lleva su motivo escrito y cuántas veces ha servido:
+  <strong>uno con cero frenados no ha protegido de nada todavía</strong>, y esa
+  es la cifra con la que se decide retirarlo.
+</p>
+<table class="datos">
+  <thead>
+    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th></th></tr>
+  </thead>
+  <tbody>
+    {{range .Bloqueos}}
+    <tr>
+      <td class="rotulo">{{.Etiqueta}}</td>
+      <td>{{.Alcance.Etiqueta}}{{if gt (len .Tramos) 1}} · {{len .Tramos}} tramos{{end}}</td>
+      <td>{{.Motivo}}</td>
+      {{/* «Sin caducidad» se dice con palabras y no con una celda vacía: una
+           regla permanente es una decisión, y tiene que leerse como tal. */}}
+      <td class="num">{{if .Caduca.IsZero}}<span class="suave">sin caducidad</span>{{else}}{{fecha .Caduca}}{{end}}</td>
+      <td class="num">{{.Frenados}}</td>
+      <td class="num">
+        <form method="post" action="/seguridad/retirar">
+          <input type="hidden" name="csrf" value="{{$.Csrf}}">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button type="submit">Retirar</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
 
 <!-- LOS FILTROS VAN ARRIBA, ANTES DE LA TABLA QUE GOBIERNAN. Estaban debajo, y
      debajo de la unica tabla que NO obedecia a la mitad de ellos, asi que
@@ -146,7 +219,7 @@
          Paquetes y Conexiones  solo con el filtro EN Internet: las dos capas
                       son de Internet por construccion. -->
   <thead>
-    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th></tr>
+    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th><th></th></tr>
   </thead>
   <tbody>
   {{range .Origenes}}
@@ -191,9 +264,17 @@
         </details>
         {{end}}
       </td>
+      <!-- LA ACCION, DONDE ESTA LA EVIDENCIA. Solo para lo de Internet: la
+           casa y el tunel no se bloquean nunca —lo impide tambien la
+           barandilla del servidor— y ofrecer el enlace seria prometer algo
+           que se va a rechazar. Es un enlace y no un boton porque no cambia
+           nada: lleva a la pantalla que ENSEÑA que se bloquearia. -->
+      <td class="num">
+        {{if and .IP.IsValid .Red.DeFuera}}<a href="/seguridad/bloquear?ip={{.IP}}">Bloquear…</a>{{end}}
+      </td>
     </tr>
   {{else}}
-    <tr><td colspan="8">Nadie ha tocado el nodo en esta ventana con estos filtros.</td></tr>
+    <tr><td colspan="9">Nadie ha tocado el nodo en esta ventana con estos filtros.</td></tr>
   {{end}}
   </tbody>
 </table>

@@ -55,6 +55,9 @@ func servidorConAlmacenReservado(t *testing.T) *Servidor {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -85,11 +88,11 @@ func TestBorrarUnaRutaReservadaSaleComo403YNoComo500(t *testing.T) {
 
 	// El cuerpo tiene que decir POR QUÉ, no solo "error interno": quien lo
 	// lea debe poder distinguir "está protegido" de "algo se rompió".
-	r := httptest.NewRequest("POST", "/borrar", strings.NewReader(url.Values{
+	r := desdeCasa(httptest.NewRequest("POST", "/borrar", strings.NewReader(url.Values{
 		"ruta":       {"homeUsers"},
 		"confirmado": {"si"},
 		"csrf":       {csrf},
-	}.Encode()))
+	}.Encode())))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()

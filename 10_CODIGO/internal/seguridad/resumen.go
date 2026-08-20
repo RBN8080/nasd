@@ -38,6 +38,35 @@ const (
 	SenalSoftwareAjeno
 )
 
+// String es la clave estable de una señal, separada de Etiqueta por el mismo
+// motivo que en Motivo: la etiqueta se reescribe por gusto, y desde que la
+// cuarentena persiste QUÉ señal apartó a alguien, guardar la etiqueta dejaría
+// ilegible el archivo ya escrito al cambiar una palabra.
+func (s Senal) String() string {
+	switch s {
+	case SenalExploracion:
+		return "exploracion"
+	case SenalFuerzaBruta:
+		return "fuerza_bruta"
+	case SenalSoftwareAjeno:
+		return "software_ajeno"
+	}
+	return "desconocida"
+}
+
+// SenalDesde recupera una señal de su forma estable. Mismo contrato que
+// MotivoDesde, incluido el booleano: sin él, un archivo escrito por una
+// versión futura con señales nuevas se leería como si todas fueran la
+// primera del enum, en silencio.
+func SenalDesde(s string) (Senal, bool) {
+	for x := SenalExploracion; x <= SenalSoftwareAjeno; x++ {
+		if x.String() == s {
+			return x, true
+		}
+	}
+	return SenalExploracion, false
+}
+
 func (s Senal) Etiqueta() string {
 	switch s {
 	case SenalExploracion:

@@ -257,3 +257,122 @@ func descomponer(reg [tamRegistro]byte) Info {
 	info.Nombre = string(bytes.TrimRight(reg[p:p+tamNombre], "\x00"))
 	return info
 }
+
+// Rango es un tramo anunciado de la base, con lo que se sabe de él.
+//
+// # POR QUÉ RANGO Y NO PREFIJO
+//
+// La base guarda tramos [Desde, Hasta] porque es como los publica IPtoASN, y
+// convertirlos a prefijos CIDR exigiría partir cada uno en varios —un tramo
+// arbitrario no es un prefijo— con un algoritmo que hay que escribir bien y
+// que no aporta nada aquí: quien consume esto no configura nftables, comprueba
+// si una dirección cae dentro. Y para eso, un tramo es MÁS exacto que un
+// prefijo: no redondea.
+//
+// Un prefijo escrito a mano («2602:fa5d::/44») sigue sirviendo, porque un
+// prefijo ES un tramo — netip.Prefix da sus dos extremos.
+type Rango struct {
+	Desde netip.Addr
+	Hasta netip.Addr
+	Info  Info
+}
+
+// Contiene dice si la dirección cae dentro del tramo.
+func (r Rango) Contiene(ip netip.Addr) bool {
+	if !r.Desde.IsValid() || !r.Hasta.IsValid() || !ip.IsValid() {
+		return false
+	}
+	v := netip.AddrFrom16(ip.As16())
+	return v.Compare(netip.AddrFrom16(r.Desde.As16())) >= 0 &&
+		v.Compare(netip.AddrFrom16(r.Hasta.As16())) <= 0
+}
+
+// BuscarRango es Buscar devolviendo además los extremos del tramo.
+//
+// Existe porque el panel necesita PROPONER un alcance —«el rango de este
+// operador»—, y para eso no basta con saber de quién es la dirección: hay que
+// poder enseñar exactamente qué se va a bloquear antes de bloquearlo.
+func (b *BaseDatos) BuscarRango(ip netip.Addr) (Rango, bool) {
+	if b == nil || !ip.IsValid() {
+		return Rango{}, false
+	}
+	objetivo := ip.As16()
+	i := sort.Search(b.n, func(i int) bool {
+		lo, err := b.inicioDe(i)
+		if err != nil {
+			return true
+		}
+		return bytes.Compare(lo[:], objetivo[:]) > 0
+	})
+	if i == 0 {
+		return Rango{}, false
+	}
+	var reg [tamRegistro]byte
+	if _, err := b.f.ReadAt(reg[:], desplazamiento(i-1)); err != nil {
+		return Rango{}, false
+	}
+	if bytes.Compare(objetivo[:], reg[tamLo:tamLo+tamHi]) > 0 {
+		return Rango{}, false
+	}
+	return rangoDe(reg), true
+}
+
+// RangosDe devuelve TODOS los tramos anunciados por un operador.
+//
+// # POR QUÉ UNA PASADA COMPLETA, Y POR QUÉ SE PUEDE PERMITIR
+//
+// El archivo está ordenado por dirección, no por operador, así que los tramos
+// de un mismo AS están desperdigados: no hay búsqueda binaria posible y hay
+// que mirarlos todos. Con ~600 000 registros de 86 bytes son unos 50 MB de
+// lectura secuencial.
+//
+// Se paga UNA vez, cuando alguien pulsa «bloquear el operador» y hay que
+// componerle la propuesta, y NUNCA al servir una petición. Es la misma razón
+// por la que el país y el operador de cada fila se resuelven al pintar y no al
+// anotar (ADR-0062).
+//
+// Se lee por bloques y no registro a registro: 600 000 ReadAt de 86 bytes
+// serían 600 000 llamadas al sistema para lo mismo.
+//
+// LO QUE ESTO NO PUEDE SABER: si el operador anuncia mañana un tramo nuevo,
+// aquí no está. Por eso quien lo use guarda la FECHA de la base junto al
+// resultado — un alcance congelado que se sabe de cuándo es, en vez de uno
+// que cambia solo sin que nadie lo decida.
+func (b *BaseDatos) RangosDe(asn uint32) ([]Rango, error) {
+	if b == nil || asn == 0 {
+		return nil, nil
+	}
+	const porBloque = 512 // 512 × 86 B ≈ 44 KB por lectura
+	var (
+		out []Rango
+		buf = make([]byte, porBloque*tamRegistro)
+	)
+	for i := 0; i < b.n; i += porBloque {
+		cuantos := min(porBloque, b.n-i)
+		trozo := buf[:cuantos*tamRegistro]
+		if _, err := b.f.ReadAt(trozo, desplazamiento(i)); err != nil {
+			return out, fmt.Errorf("recorrer la base en el registro %d: %w", i, err)
+		}
+		for j := range cuantos {
+			var reg [tamRegistro]byte
+			copy(reg[:], trozo[j*tamRegistro:])
+			p := tamLo + tamHi
+			if binary.BigEndian.Uint32(reg[p:p+tamASN]) != asn {
+				continue
+			}
+			out = append(out, rangoDe(reg))
+		}
+	}
+	return out, nil
+}
+
+func rangoDe(reg [tamRegistro]byte) Rango {
+	var lo, hi [16]byte
+	copy(lo[:], reg[:tamLo])
+	copy(hi[:], reg[tamLo:tamLo+tamHi])
+	return Rango{
+		Desde: netip.AddrFrom16(lo).Unmap(),
+		Hasta: netip.AddrFrom16(hi).Unmap(),
+		Info:  descomponer(reg),
+	}
+}

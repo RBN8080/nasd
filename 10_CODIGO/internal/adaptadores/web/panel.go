@@ -83,6 +83,8 @@ type vistaAdministracion struct {
 	Mensaje  string
 	EsError  bool
 	Csrf     string
+	// Novedades es la marca del botón «Seguridad». Misma que en el listado.
+	Novedades int
 }
 
 // Sesión en vivo — P-7, ADR-0056.
@@ -155,9 +157,10 @@ func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {
 	// último «Refrescar métricas»—: cargar el panel nunca recorre disco.
 	medidas := s.metricas.Todas()
 	v := vistaAdministracion{
-		Mensaje: r.URL.Query().Get("msg"),
-		EsError: r.URL.Query().Get("err") != "",
-		Csrf:    s.csrfDe(r),
+		Novedades: s.novedades.Cuantas(),
+		Mensaje:   r.URL.Query().Get("msg"),
+		EsError:   r.URL.Query().Get("err") != "",
+		Csrf:      s.csrfDe(r),
 	}
 	for _, u := range s.usuarios.Lista() {
 		fila := filaUsuario{Nombre: u.Nombre, Activo: activos[u.Nombre]}

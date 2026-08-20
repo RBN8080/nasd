@@ -79,6 +79,15 @@ type Servidor struct {
 	// Es lo único que ve lo que muere en el saludo TLS, que es donde murieron
 	// 19 de los 20 sondeos del 2026-08-16 — ver internal/seguridad/conexiones.go.
 	conexiones *seguridad.Conexiones
+	// cuarentena decide a quién se le cierra la puerta sin que nadie mire.
+	// Se consulta en anotarConexion, que es por donde pasa toda conexión de
+	// los dos servidores.
+	cuarentena *seguridad.Cuarentena
+	// lista son los bloqueos manuales. Se consulta en el mismo sitio que la
+	// cuarentena y por la misma puerta.
+	lista *seguridad.Lista
+	// novedades cuenta lo que ha pasado desde la última visita al panel.
+	novedades *seguridad.Novedades
 	// geo resuelve un origen de Internet a su país y su operador. PUEDE SER
 	// NULA: sin base instalada el panel funciona igual, solo que sin ese dato.
 	geo *geoip.BaseDatos
@@ -181,6 +190,22 @@ type Opciones struct {
 	// una sola línea en el diario. Es la degradación silenciosa que esta
 	// pieza existe para cerrar, así que no puede ser opcional.
 	Conexiones *seguridad.Conexiones
+	// Novedades es la marca de «hay algo que no había visto» de la barra.
+	// Obligatoria: si faltara, la marca no se encendería nunca y nadie se
+	// enteraría de que no se enciende.
+	Novedades *seguridad.Novedades
+	// Lista son los bloqueos puestos a mano. Obligatoria por el mismo criterio
+	// que Cuarentena: si faltara, el panel ofrecería un botón de bloquear que
+	// no bloquea nada, que es peor que no ofrecerlo.
+	Lista *seguridad.Lista
+	// Cuarentena es la lista de direcciones apartadas por conducta.
+	//
+	// OBLIGATORIA, por el mismo criterio que Seguridad y Conexiones: es un
+	// CONTROL, no un adorno. Si pudiera faltar, el nodo dejaría de defenderse
+	// solo por la noche y no habría una sola línea en ningún sitio que lo
+	// dijera — la degradación silenciosa que P5 obliga a convertir en un
+	// arranque fallido.
+	Cuarentena *seguridad.Cuarentena
 	// GeoIP resuelve un origen de Internet a su país y su operador.
 	//
 	// ES LA ÚNICA DEPENDENCIA OPCIONAL DE TODA ESTA ESTRUCTURA, y a propósito:
@@ -232,6 +257,15 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.Conexiones == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta Conexiones (panel de seguridad, ADR-0064)")
 	}
+	if o.Cuarentena == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Cuarentena (respuesta automática por conducta)")
+	}
+	if o.Lista == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Lista (bloqueos puestos a mano)")
+	}
+	if o.Novedades == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Novedades (la marca de la barra)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -259,6 +293,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		metricas:          o.Metricas,
 		seguridad:         o.Seguridad,
 		conexiones:        o.Conexiones,
+		cuarentena:        o.Cuarentena,
+		lista:             o.Lista,
+		novedades:         o.Novedades,
 		rutaToques:        o.RutaToques,
 		geo:               o.GeoIP,
 		dirMiniaturas:     o.DirMiniaturas,
@@ -326,11 +363,20 @@ func (s *Servidor) Rutas() http.Handler {
 	// Compartirlo con renombrar obligaba a adivinar la intención mirando si
 	// el texto llevaba una barra, y en uso real se adivinó mal. /renombrar
 	// conserva SOLO el renombrado, que es lo que su nombre dice.
-	protegido.HandleFunc("GET /mover/{ruta...}", s.conAlmacen(s.verMover))          // RF-17, paso 1
-	protegido.HandleFunc("POST /mover", s.conAlmacen(s.mover))                      // RF-17, paso 2
-	protegido.HandleFunc("POST /renombrar", s.conAlmacen(s.renombrar))              // RF-16
-	protegido.HandleFunc("GET /borrar/{ruta...}", s.conAlmacen(s.confirmarBorrado)) // RF-18, paso 1
-	protegido.HandleFunc("POST /borrar", s.conAlmacen(s.borrar))                    // RF-18, paso 2
+	//
+	// LAS CINCO VAN ENVUELTAS EN soloDesdeDentro: al superusuario se le niegan
+	// desde Internet, porque la confirmación de RF-18 es «la única barrera del
+	// sistema» y desde fuera está a una contraseña de distancia (ver sesion.go).
+	// Un usuario normal pasa de largo por esa envoltura y no nota nada.
+	//
+	// LAS PÁGINAS DE PASO TAMBIÉN, y no es celo: negar en el POST y no en el
+	// GET dejaría rellenar el formulario entero para fallar al final, que es
+	// la forma de que una regla correcta se lea como una avería.
+	protegido.HandleFunc("GET /mover/{ruta...}", s.soloDesdeDentro(s.conAlmacen(s.verMover)))          // RF-17, paso 1
+	protegido.HandleFunc("POST /mover", s.soloDesdeDentro(s.conAlmacen(s.mover)))                      // RF-17, paso 2
+	protegido.HandleFunc("POST /renombrar", s.soloDesdeDentro(s.conAlmacen(s.renombrar)))              // RF-16
+	protegido.HandleFunc("GET /borrar/{ruta...}", s.soloDesdeDentro(s.conAlmacen(s.confirmarBorrado))) // RF-18, paso 1
+	protegido.HandleFunc("POST /borrar", s.soloDesdeDentro(s.conAlmacen(s.borrar)))                    // RF-18, paso 2
 
 	// Observabilidad — Fase 4, RF-24. Va DENTRO de lo protegido: ver estado.go.
 	//
@@ -353,17 +399,24 @@ func (s *Servidor) Rutas() http.Handler {
 	// el disco—, así que ninguna lleva conAlmacen; refrescarMetricas SÍ lee
 	// disco (P-4, etapa 3), pero por su propia puerta —s.abrirAlmacen, una
 	// vez por cuenta— y no por el almacén acotado a quien pregunta.
-	protegido.HandleFunc("GET /administracion", s.soloSuperusuario(s.verAdministracion))
-	protegido.HandleFunc("POST /administracion/alta", s.soloSuperusuario(s.altaUsuario))
-	protegido.HandleFunc("GET /administracion/baja/{nombre}", s.soloSuperusuario(s.confirmarBaja))
-	protegido.HandleFunc("POST /administracion/baja", s.soloSuperusuario(s.bajaUsuario))
-	protegido.HandleFunc("POST /administracion/refrescar", s.soloSuperusuario(s.refrescarMetricas))
+	//
+	// EL PANEL ENTERO VA TAMBIÉN EN soloDesdeDentro, no solo el alta y la baja.
+	// Decidir quién puede entrar es la operación más consecuente de esta web
+	// —lo dice ya 04_SEGURIDAD §2.ter al exigirle reautenticación—, así que la
+	// autoridad que la ejerce se acota igual que la que destruye. Y se envuelve
+	// vía por vía, incluidas la lectura y el refresco: dejar una sola abierta
+	// sería la asimetría que D-21 obliga a comprobar en vez de suponer.
+	protegido.HandleFunc("GET /administracion", s.soloSuperusuario(s.soloDesdeDentro(s.verAdministracion)))
+	protegido.HandleFunc("POST /administracion/alta", s.soloSuperusuario(s.soloDesdeDentro(s.altaUsuario)))
+	protegido.HandleFunc("GET /administracion/baja/{nombre}", s.soloSuperusuario(s.soloDesdeDentro(s.confirmarBaja)))
+	protegido.HandleFunc("POST /administracion/baja", s.soloSuperusuario(s.soloDesdeDentro(s.bajaUsuario)))
+	protegido.HandleFunc("POST /administracion/refrescar", s.soloSuperusuario(s.soloDesdeDentro(s.refrescarMetricas)))
 	// El flujo en vivo del panel — P-7, ADR-0056. Se cierra igual que la
 	// página que alimenta y por el mismo motivo que /estado/flujo: publica
 	// exactamente lo mismo y encima de forma continua, así que dejarlo fuera
 	// abriría por la puerta de al lado lo que la línea de /administracion
 	// cierra (D-21).
-	protegido.HandleFunc("GET /administracion/flujo", s.soloSuperusuario(s.flujoDeCuentas))
+	protegido.HandleFunc("GET /administracion/flujo", s.soloSuperusuario(s.soloDesdeDentro(s.flujoDeCuentas)))
 
 	// Panel de seguridad — etapa 2. MISMA envoltura que /estado y
 	// /administracion, y aquí el motivo es aún más fuerte: publica las
@@ -374,6 +427,16 @@ func (s *Servidor) Rutas() http.Handler {
 	// una segunda vía que publique lo mismo. Si algún día se le añade flujo,
 	// entra aquí envuelto igual y el mismo día.
 	protegido.HandleFunc("GET /seguridad", s.soloSuperusuario(s.verSeguridad))
+	// La primera ACCIÓN de este panel: soltar a quien el nodo apartó solo.
+	// No lleva soloDesdeDentro a propósito —ver soltarApartado—: es reversible
+	// y su caso de uso es justo el de alguien que está fuera de casa.
+	protegido.HandleFunc("POST /seguridad/soltar", s.soloSuperusuario(s.soltarApartado))
+	// El bloqueo manual: proponer, aplicar y retirar. Tampoco llevan
+	// soloDesdeDentro —ver soltarApartado— y las tres exigen testigo CSRF
+	// porque las tres cambian algo.
+	protegido.HandleFunc("GET /seguridad/bloquear", s.soloSuperusuario(s.verBloqueo))
+	protegido.HandleFunc("POST /seguridad/bloquear", s.soloSuperusuario(s.bloquear))
+	protegido.HandleFunc("POST /seguridad/retirar", s.soloSuperusuario(s.retirarBloqueo))
 
 	// Núcleo del protocolo tus — ADR-0027.
 	protegido.HandleFunc("POST /subidas", s.conAlmacen(s.tusCrear))

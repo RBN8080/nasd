@@ -209,6 +209,21 @@ type vistaSeguridad struct {
 	// pintar una columna vacia que se leeria como «no se sabe de nadie»
 	// cuando en realidad es «no se ha instalado la base».
 	HayGeo bool
+	// Apartados son las direcciones que el nodo ha apartado SOLO, por
+	// conducta. Es lo único de esta página que no es historia: es estado
+	// vigente, y por eso se pinta arriba del todo y con su acción al lado.
+	Apartados []seguridad.Apartado
+	// Bloqueos son las entradas puestas a mano. Como los apartados, es estado
+	// vigente y no historia, así que tampoco obedece a los filtros.
+	Bloqueos []seguridad.Entrada
+	// Csrf viaja porque esta página dejó de ser de solo lectura el día que
+	// se le pudo soltar a alguien.
+	Csrf string
+	// PuedeAdministrar decide si la barra lleva a Administración. Misma regla
+	// que en el listado y en /estado (acotadoPorRed, sesion.go). Esta página
+	// se ve desde Internet a propósito —mirar quién toca el nodo es justo lo
+	// que se quiere poder hacer desde fuera— y por eso necesita la distinción.
+	PuedeAdministrar bool
 }
 
 // opcionFiltro es un valor para un <select>: la clave estable que viaja por
@@ -226,6 +241,47 @@ type opcionFiltro struct {
 // filas que un Pi 3B+ tiene que renderizar y un móvil tiene que descargar —
 // para no decir nada que la tabla de orígenes no diga ya mejor agregado.
 const topeCronologico = 200
+
+// soltarApartado retira una dirección de la cuarentena antes de que caduque.
+//
+// # POR QUÉ NO PIDE LA CONTRASEÑA OTRA VEZ
+//
+// La baja de una cuenta sí la pide (RF-27, 04_SEGURIDAD §2.ter) porque no se
+// deshace. Esto se deshace solo: si la conducta sigue, la siguiente evaluación
+// vuelve a apartar a la misma dirección en menos de un minuto. Cobrar una
+// derivación de 3.6 s por un gesto reversible sería confundir la ceremonia
+// con el control.
+//
+// # POR QUÉ SE PUEDE HACER DESDE INTERNET
+//
+// No lleva soloDesdeDentro, al revés que borrar o administrar cuentas. Soltar
+// a alguien no destruye nada, y el caso de uso es exactamente el contrario al
+// que aquella regla protege: alguien que se ha quedado fuera por error tiene
+// que poder arreglarlo desde donde esté.
+func (s *Servidor) soltarApartado(w http.ResponseWriter, r *http.Request) {
+	if !s.exigirCSRF(w, r) {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		marcarRechazo(r, seguridad.PeticionMalformada)
+		http.Error(w, "formulario ilegible", http.StatusBadRequest)
+		return
+	}
+	ip, err := netip.ParseAddr(r.PostForm.Get("ip"))
+	if err != nil {
+		marcarRechazo(r, seguridad.PeticionMalformada)
+		http.Error(w, "dirección ilegible", http.StatusBadRequest)
+		return
+	}
+	// Se registra SOLO si había algo que soltar: un diario que anota
+	// «soltado» ante una dirección que nunca estuvo apartada convierte el
+	// registro en algo que no se puede leer para reconstruir qué pasó.
+	if s.cuarentena.Soltar(ip) {
+		s.reg.Info("apartado soltado a mano",
+			"origen", ip.String(), "usuario", usuarioDe(r), "desde", origenDe(r))
+	}
+	http.Redirect(w, r, "/seguridad", http.StatusSeeOther)
+}
 
 func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -317,6 +373,10 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	redes := opcionesDeRed(redElegida)
 
 	v := vistaSeguridad{
+		PuedeAdministrar: !acotadoPorRed(r),
+		Apartados:        s.cuarentena.Vigentes(time.Now()),
+		Bloqueos:         s.lista.Vigentes(time.Now()),
+		Csrf:             s.csrfDe(r),
 		Resumen:          resumen,
 		Origenes:         s.unirOrigenes(tocados, seguridad.PorOrigenConectado(conexiones), origenes, f.Motivo != nil),
 		Conexiones:       len(conexiones),
@@ -341,6 +401,11 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		HayMasRutas:      resumen.RutasVistas > seguridad.TopeRutas,
 		Capacidad:        seguridad.Capacidad,
 	}
+
+	// LA VISITA SE SELLA AL PINTAR, y con eso la marca de la barra se apaga.
+	// Va aquí y no en la barra: mirar el panel es lo que significa «ya lo he
+	// visto», y la barra se pinta en páginas donde no se ha visto nada.
+	s.novedades.Visto(time.Now())
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

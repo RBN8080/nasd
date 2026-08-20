@@ -327,6 +327,13 @@ type vistaEstado struct {
 	// Peor es el veredicto más grave de todos: lo que se lee de un vistazo.
 	Peor   veredicto
 	Avisos []string
+	// PuedeAdministrar decide si la barra lleva a Administración. Misma regla
+	// y mismo motivo que en el listado (acotadoPorRed, sesion.go): esta página
+	// SÍ se ve desde Internet, así que sin esto ofrecería un enlace que
+	// responde 403 — el botón muerto que ADR-0055 ya evitó para «Estado».
+	PuedeAdministrar bool
+	// Novedades es la marca del botón «Seguridad». Misma que en el listado.
+	Novedades int
 	// Version es lo único que queda en el pie: qué binario está corriendo.
 	// Viene por campos —nombre, revisión, fecha, huella— y no como una sola
 	// cadena, para que la plantilla pueda impedir que se rompa uno por dentro
@@ -483,12 +490,14 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 
 	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
 	v := vistaEstado{
-		FilasNodo:     filasNodo,
-		FilasServicio: filasServicio,
-		Lentos:        evaluarLentos(n),
-		Peor:          peorDe(indicadores),
-		Avisos:        n.Avisos,
-		Version:       versionDelBinario(),
+		PuedeAdministrar: !acotadoPorRed(r),
+		Novedades:        s.novedades.Cuantas(),
+		FilasNodo:        filasNodo,
+		FilasServicio:    filasServicio,
+		Lentos:           evaluarLentos(n),
+		Peor:             peorDe(indicadores),
+		Avisos:           n.Avisos,
+		Version:          versionDelBinario(),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.plantillas.ExecuteTemplate(w, "estado.html", v); err != nil {

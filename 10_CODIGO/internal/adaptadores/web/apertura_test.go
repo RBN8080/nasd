@@ -90,6 +90,9 @@ func servidorDeApertura(t *testing.T) (*Servidor, *almacenDeApertura) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -115,7 +118,7 @@ func (a *almacenDeApertura) agregar(t *testing.T, nombre string, datos []byte) a
 func peticionConSesion(t *testing.T, s *Servidor, ruta string) *httptest.ResponseRecorder {
 	t.Helper()
 	cookie, _ := sesionAbierta(t, s)
-	r := httptest.NewRequest(http.MethodGet, ruta, nil)
+	r := desdeCasa(httptest.NewRequest(http.MethodGet, ruta, nil))
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	s.Rutas().ServeHTTP(w, r)
@@ -129,7 +132,7 @@ func peticionConSesion(t *testing.T, s *Servidor, ruta string) *httptest.Respons
 func peticionConSesionHTTPS(t *testing.T, s *Servidor, ruta string) *httptest.ResponseRecorder {
 	t.Helper()
 	cookie, _ := sesionAbierta(t, s)
-	r := httptest.NewRequest(http.MethodGet, ruta, nil)
+	r := desdeCasa(httptest.NewRequest(http.MethodGet, ruta, nil))
 	r.AddCookie(cookie)
 	r.TLS = &tls.ConnectionState{}
 	w := httptest.NewRecorder()

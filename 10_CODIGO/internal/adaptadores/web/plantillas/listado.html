@@ -95,8 +95,14 @@
       {{/* «Administración» — P-4, etapa 2 (ADR-0055). Alta y baja de
            cuentas. Solo para el superusuario, igual que «Estado»: esconderlo
            aquí es cortesía, el control de verdad es soloSuperusuario en el
-           servidor. */}}
-      {{if .EsSuperusuario}}<a class="boton-barra" href="/administracion">Administración</a><a class="boton-barra" href="/seguridad">Seguridad</a>{{end}}
+           servidor.
+           Y ADEMÁS solo desde dentro: decidir quién entra es la operación más
+           consecuente de esta web, así que desde Internet no se ofrece — la
+           niega soloDesdeDentro (sesion.go), esto solo evita el botón muerto.
+           «Seguridad» NO cuelga de esa regla, a propósito: mirar quién toca el
+           nodo es justo lo que uno quiere poder hacer desde fuera, y no cambia
+           nada. */}}
+      {{if .EsSuperusuario}}{{if .PuedeAdministrar}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}<a class="boton-barra" href="/seguridad">Seguridad{{if .Novedades}} <span class="pastilla">{{.Novedades}}</span>{{end}}</a>{{end}}
       <form method="post" action="/salir" class="salir">
         <button type="submit">Salir</button>
       </form>
@@ -176,6 +182,14 @@
               <button type="submit">Descargar</button>
             </form>
             {{end}}
+            {{/* RENOMBRAR, MOVER Y BORRAR CUELGAN DE acotadoPorRed (sesion.go).
+                 Desde Internet, y solo al superusuario, no se ofrecen: RF-18
+                 dice que la confirmación de borrado es «la única barrera del
+                 sistema» y desde fuera esa barrera está a una contraseña de
+                 distancia. Esconderlas no es el control —lo es soloDesdeDentro
+                 en la tabla de rutas—, es no ofrecer un botón que va a
+                 responder 403. */}}
+            {{if $.PuedeAdministrar}}
             <form method="post" action="/renombrar">
               <input type="hidden" name="csrf" value="{{$.Csrf}}">
               <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
@@ -205,6 +219,11 @@
               <button type="submit">Mover…</button>
             </form>
             <a class="destructivo" href="/borrar/{{rutaURL .Ruta.Rel}}">Borrar</a>
+            {{else}}
+            {{/* El menú no se queda vacío: dice DÓNDE se puede, que es lo que
+                 convierte una ausencia desconcertante en una regla legible. */}}
+            <p class="nota">Renombrar, mover y borrar: solo desde casa o por el túnel.</p>
+            {{end}}
           </div>
         </details>
       </td>
