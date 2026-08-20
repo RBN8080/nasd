@@ -1,0 +1,102 @@
+{{define "bloquear.html"}}<!doctype html>
+<html lang="es">
+<head>
+{{template "cabeza" "NAS — Bloquear"}}
+</head>
+<body>
+
+<header>
+  <div class="cabecera-superior">
+    <div class="titulo-estado">
+      <span class="titulo-pagina">Bloquear</span>
+      <span class="filtro-activo">{{.IP}}{{if .TieneGeo}} · AS{{.Geo.ASN}} {{.Geo.Nombre}} · {{.Geo.Pais}}{{end}}</span>
+    </div>
+    <div class="barra-acciones">
+      <a class="boton-barra" href="/seguridad">Cancelar</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+{{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
+
+<!-- LAS TRES OPCIONES SE ENSEÑAN JUNTAS Y YA CALCULADAS.
+     El defecto que originó esta pantalla fue elegir el alcance a ciegas: un
+     /48 que parecía cubrir al operador y cubría 1 de sus 11 redes. Un menú
+     obliga a elegir antes de ver; una tabla deja comparar. La columna
+     «Tramos» es la que destapa un alcance insuficiente. -->
+<h2>Qué se bloquea</h2>
+<table class="datos">
+  <thead>
+    <tr><th>Alcance</th><th>Cubre</th><th>Tramos</th><th>Paquetes</th><th>Conex.</th><th>Rechazos</th></tr>
+  </thead>
+  <tbody>
+    {{range .Propuestas}}
+    <tr>
+      <td class="rotulo">{{.Alcance.Etiqueta}}</td>
+      <td>{{if .Disponible}}{{.Cubre}}{{else}}<span class="suave">{{.Porque}}</span>{{end}}</td>
+      <td class="num">{{if .Disponible}}{{.Tramos}}{{else}}—{{end}}</td>
+      <td class="num">{{if .Disponible}}{{.Paquetes}}{{else}}—{{end}}</td>
+      <td class="num">{{if .Disponible}}{{.Conexiones}}{{else}}—{{end}}</td>
+      <td class="num">{{if .Disponible}}{{.Rechazos}}{{else}}—{{end}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+
+<!-- LO QUE ESTA PÁGINA SABE Y LO QUE NO, dicho antes de que nadie pulse.
+     Las tres cifras son lo que la regla HABRÍA frenado en la ventana, contado
+     sobre lo que de verdad pasó. Lo que el nodo NO puede saber es si alguna de
+     esas conexiones era suya: el historial guarda instante y dirección, no de
+     quién era la sesión. Callarlo dejaría creer que un cero garantiza que no
+     se corta nada propio. -->
+<p class="nota">
+  Cifras de los últimos {{.Ventana}}, sobre el historial real del nodo.
+  <strong>El nodo no puede distinguir cuáles de esas conexiones eran suyas</strong>:
+  si ha entrado desde esa red, compruébelo antes de aplicar. La red desde la que
+  está mirando ahora sí está protegida — un alcance que la incluya se rechaza.
+</p>
+
+<h2>Aplicar</h2>
+<form method="post" action="/seguridad/bloquear" class="filtros">
+  <input type="hidden" name="csrf" value="{{.Csrf}}">
+  <input type="hidden" name="ip" value="{{.IP}}">
+
+  <div>
+    <label for="alcance">Alcance</label>
+    <select id="alcance" name="alcance">
+      {{range .Propuestas}}{{if .Disponible}}
+      <option value="{{.Alcance}}">{{.Alcance.Etiqueta}} — {{.Cubre}}</option>
+      {{end}}{{end}}
+    </select>
+  </div>
+
+  <div>
+    <label for="dias">Caduca</label>
+    <select id="dias" name="dias">
+      {{range .Caducidades}}<option value="{{.Dias}}">{{.Etiqueta}}</option>{{end}}
+    </select>
+  </div>
+
+  <!-- EL MOTIVO ES OBLIGATORIO, y lo exige el servidor: «required» aquí es
+       cortesía para no mandar un formulario que va a volver con un aviso.
+       Lo pidió el propio responsable al preparar el bloqueo de AS44382: «el
+       motivo tiene que quedar escrito o dentro de dos sesiones nadie sabrá
+       por qué». -->
+  <div>
+    <label for="motivo">Por qué</label>
+    <input type="text" id="motivo" name="motivo" required
+           placeholder="Reputación del operador; barrido del 16/08; …">
+  </div>
+
+  <div class="acciones-filtro">
+    <button type="submit" class="boton-barra">Bloquear</button>
+    <a class="boton-barra" href="/seguridad">Cancelar</a>
+  </div>
+</form>
+
+</main>
+</body>
+</html>
+{{end}}

@@ -127,6 +127,39 @@ func (c Config) RutaConexiones() string {
 	return filepath.Join(c.DirectorioEstado, "conexiones")
 }
 
+// RutaCuarentena es la lista de direcciones apartadas por conducta
+// (internal/seguridad). Mismo directorio y mismo argumento que las dos de
+// arriba: son direcciones de quien toca la puerta.
+//
+// A DIFERENCIA DE ELLAS, ESTO NO ES OBSERVACIÓN SINO DECISIÓN: dice a quién se
+// le está cerrando la puerta ahora mismo. Por eso importa que sobreviva al
+// arranque —15 en 14 días medidos— y por eso vive en un archivo propio: los
+// anillos se reescriben enteros cada minuto y esto casi nunca cambia.
+func (c Config) RutaCuarentena() string {
+	return filepath.Join(c.DirectorioEstado, "cuarentena")
+}
+
+// RutaLista son los bloqueos puestos a mano desde el panel.
+//
+// APARTE DE LA CUARENTENA, y no por simetría: son dos cosas con dueño
+// distinto. La cuarentena la escribe el nodo y se puede perder sin más
+// consecuencia que volver a apartar a quien insista; esto lo escribe una
+// persona, lleva su motivo redactado y perderlo sería perder una decisión que
+// nadie puede reconstruir.
+func (c Config) RutaLista() string {
+	return filepath.Join(c.DirectorioEstado, "bloqueos")
+}
+
+// RutaNovedades guarda cuándo se miró el panel de seguridad por última vez.
+//
+// Es UN dato y aun así tiene archivo propio: lo escribe alguien al MIRAR, no
+// al pasar algo, así que su ritmo no se parece al de nada más. Meterlo en la
+// lista de bloqueos obligaría a reescribir las decisiones cada vez que se abre
+// una página.
+func (c Config) RutaNovedades() string {
+	return filepath.Join(c.DirectorioEstado, "novedades")
+}
+
 // RutaToques es el historial que deja nas-sensor — RF-33, ADR-0066.
 //
 // NO VA EN DirectorioEstado, y es la única ruta de este archivo que no lo hace:

@@ -107,6 +107,9 @@ func servidorMultiusuario(t *testing.T) (*Servidor, *reparto) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -141,10 +144,30 @@ func cookieLlamada(cookies []*http.Cookie, nombre string) *http.Cookie {
 }
 
 // listadoCon pide el listado con esas cookies y devuelve el cuerpo.
+// desdeCasa fija el origen de una petición de prueba en la LAN.
+//
+// httptest.NewRequest deja RemoteAddr en 192.0.2.1 —TEST-NET-1, RFC 5737—,
+// que ClasificarRed lee, correctamente, como INTERNET. Desde que existe
+// soloDesdeDentro (sesion.go) eso cambia el significado de media batería: una
+// prueba que solo quería decir «el responsable borra un archivo» estaría
+// diciendo «el responsable borra desde un hotel», que es un caso DISTINTO y
+// que hoy se niega a propósito.
+//
+// Sin esto, además, algunas pruebas seguirían en verde por el motivo
+// equivocado: las de CSRF esperan 403, y lo recibirían de la regla nueva sin
+// que el testigo llegara a comprobarse nunca.
+//
+// Las pruebas de la regla EN SÍ no usan este ayudante: fijan el origen a mano,
+// porque el origen es justo lo que están comprobando.
+func desdeCasa(r *http.Request) *http.Request {
+	r.RemoteAddr = "192.168.1.18:5000"
+	return r
+}
+
 func listadoCon(t *testing.T, h http.Handler, cookies ...*http.Cookie) string {
 	t.Helper()
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/", nil)
+	r := desdeCasa(httptest.NewRequest("GET", "/", nil))
 	for _, c := range cookies {
 		if c != nil {
 			r.AddCookie(c)
@@ -288,6 +311,9 @@ func TestQueLaCuentaExistaNoCambiaLaRespuesta(t *testing.T) {
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
 			Seguridad:       seguridadDePrueba(t),
+			Cuarentena:      cuarentenaDePrueba(t),
+			Lista:           listaDePrueba(t),
+			Novedades:       novedadesDePrueba(t),
 			Conexiones:      conexionesDePrueba(t),
 		})
 		if err != nil {
@@ -412,6 +438,9 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
 			Seguridad:       seguridadDePrueba(t),
+			Cuarentena:      cuarentenaDePrueba(t),
+			Lista:           listaDePrueba(t),
+			Novedades:       novedadesDePrueba(t),
 			Conexiones:      conexionesDePrueba(t),
 		}
 	}
@@ -575,6 +604,9 @@ func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {

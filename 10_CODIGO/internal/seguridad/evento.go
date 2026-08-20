@@ -287,6 +287,15 @@ const (
 	RecursoReservado
 	// PeticionMalformada — el 400 de un cuerpo o unos parámetros ilegibles.
 	PeticionMalformada
+	// SoloDesdeDentro — la operación existe, la sesión es válida y aun así se
+	// niega porque llega desde Internet: destruir o administrar cuentas exige
+	// la LAN o el túnel cuando quien pide es el superusuario.
+	//
+	// SE AÑADE AL FINAL Y NO EN SU SITIO «LÓGICO», igual que los anteriores:
+	// el valor numérico no se persiste —String() es lo que baja al archivo—
+	// pero MotivoDesde recorre el rango, así que insertar en medio movería
+	// el tope y es un descuido que no hace falta arriesgar.
+	SoloDesdeDentro
 )
 
 // clave es el texto estable con el que un motivo se persiste y viaja por la
@@ -313,6 +322,8 @@ func (m Motivo) String() string {
 		return "recurso_reservado"
 	case PeticionMalformada:
 		return "peticion_malformada"
+	case SoloDesdeDentro:
+		return "solo_desde_dentro"
 	}
 	return "desconocido"
 }
@@ -322,7 +333,7 @@ func (m Motivo) String() string {
 // archivo de una versión futura con motivos nuevos se leería como si todos
 // fueran desconocidos y nadie se enteraría.
 func MotivoDesde(s string) (Motivo, bool) {
-	for m := MotivoDesconocido; m <= PeticionMalformada; m++ {
+	for m := MotivoDesconocido; m <= SoloDesdeDentro; m++ {
 		if m.String() == s {
 			return m, true
 		}
@@ -351,6 +362,8 @@ func (m Motivo) Etiqueta() string {
 		return "Recurso reservado"
 	case PeticionMalformada:
 		return "Petición malformada"
+	case SoloDesdeDentro:
+		return "Solo desde dentro"
 	}
 	return "Motivo desconocido"
 }
@@ -400,6 +413,20 @@ func (m Motivo) Gravedad() Gravedad {
 		// Una contraseña mal la falla cualquiera; una ruta inexistente puede
 		// ser un enlace viejo. Ninguna dice nada suelta — dicen mucho
 		// repetidas, y de eso se encarga la agregación, no la etiqueta.
+		return Aviso
+	case SoloDesdeDentro:
+		// AVISO, y no es una calibración perezosa entre Rutina y Atención.
+		//
+		// Rutina la escondería, y esto no sucede todos los días. Atención
+		// gritaría cada vez que el responsable pulsa «borrar» desde el móvil
+		// con datos, que es la forma NORMAL de encontrarse esta regla y no
+		// tiene nada de sospechosa.
+		//
+		// Lo que la hace merecer una mirada es lo otro que puede significar:
+		// llegar aquí exige una sesión de superusuario VÁLIDA desde Internet.
+		// Si esa sesión no era suya, este rechazo es el más importante que el
+		// nodo puede registrar. El panel no puede distinguir los dos casos, y
+		// «merece una mirada si se repite» es exactamente lo que Aviso dice.
 		return Aviso
 	case PermisoInsuficiente, LimiteDeIntentos, TestigoCSRF, RecursoReservado:
 		// Estas cuatro exigen una sesión ya iniciada o un patrón deliberado:

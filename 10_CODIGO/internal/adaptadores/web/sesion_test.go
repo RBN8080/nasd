@@ -49,6 +49,38 @@ func metricasDePrueba(t *testing.T) *metricas.Registro {
 // seguridadDePrueba entrega un historial vacío en un directorio temporal,
 // gemelo de metricasDePrueba y por el mismo motivo: web.Nuevo lo exige (P5) y
 // ninguna prueba de este paquete debe compartir archivo con otra.
+// cuarentenaDePrueba es la lista de apartados por conducta. Va junto al
+// anillo en cada servidor de prueba porque se deriva de él: sin las dos, un
+// servidor de prueba no representa al de verdad.
+func cuarentenaDePrueba(t *testing.T) *seguridad.Cuarentena {
+	t.Helper()
+	c, err := seguridad.CargarCuarentena(filepath.Join(t.TempDir(), "cuarentena"))
+	if err != nil {
+		t.Fatalf("seguridad.CargarCuarentena: %v", err)
+	}
+	return c
+}
+
+// listaDePrueba son los bloqueos manuales. Va con los otros dos por el mismo
+// motivo: un servidor de prueba sin ella no representa al de verdad.
+func listaDePrueba(t *testing.T) *seguridad.Lista {
+	t.Helper()
+	l, err := seguridad.CargarLista(filepath.Join(t.TempDir(), "lista"))
+	if err != nil {
+		t.Fatalf("seguridad.CargarLista: %v", err)
+	}
+	return l
+}
+
+func novedadesDePrueba(t *testing.T) *seguridad.Novedades {
+	t.Helper()
+	n, err := seguridad.CargarNovedades(filepath.Join(t.TempDir(), "novedades"))
+	if err != nil {
+		t.Fatalf("seguridad.CargarNovedades: %v", err)
+	}
+	return n
+}
+
 func seguridadDePrueba(t *testing.T) *seguridad.Anillo {
 	t.Helper()
 	a, err := seguridad.CargarAnillo(filepath.Join(t.TempDir(), "seguridad"))
@@ -104,6 +136,9 @@ func servidorConAuth(t *testing.T) *Servidor {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -133,6 +168,9 @@ func servidorConAuthYInactividad(t *testing.T, inactividad time.Duration) *Servi
 		InactividadSesion: inactividad,
 		Metricas:          metricasDePrueba(t),
 		Seguridad:         seguridadDePrueba(t),
+		Cuarentena:        cuarentenaDePrueba(t),
+		Lista:             listaDePrueba(t),
+		Novedades:         novedadesDePrueba(t),
 		Conexiones:        conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -317,6 +355,9 @@ func TestSinCredencialNoArranca(t *testing.T) {
 			DuracionSesion:  time.Hour,
 			Metricas:        metricasDePrueba(t),
 			Seguridad:       seguridadDePrueba(t),
+			Cuarentena:      cuarentenaDePrueba(t),
+			Lista:           listaDePrueba(t),
+			Novedades:       novedadesDePrueba(t),
 			Conexiones:      conexionesDePrueba(t),
 		})
 		if err == nil {

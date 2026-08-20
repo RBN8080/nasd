@@ -26,7 +26,7 @@ func sesionAbierta(t *testing.T, s *Servidor) (*http.Cookie, string) {
 
 func postCon(t *testing.T, h http.Handler, cookie *http.Cookie, ruta string, campos url.Values) int {
 	t.Helper()
-	r := httptest.NewRequest("POST", ruta, strings.NewReader(campos.Encode()))
+	r := desdeCasa(httptest.NewRequest("POST", ruta, strings.NewReader(campos.Encode())))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if cookie != nil {
 		r.AddCookie(cookie)

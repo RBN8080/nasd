@@ -575,6 +575,82 @@ func (s *Servidor) soloSuperusuario(siguiente http.HandlerFunc) http.HandlerFunc
 	}
 }
 
+// avisoSoloDesdeDentro es lo que lee quien se topa con la regla. Dice DÓNDE
+// se puede hacer, no solo que aquí no: un 403 a secas ante un botón que la
+// propia página acaba de ofrecer se lee como una avería.
+const avisoSoloDesdeDentro = "esta operación solo se hace desde la red de casa o por el túnel"
+
+// acotadoPorRed responde, para UNA petición, si se le niegan las operaciones
+// que no se deshacen.
+//
+// Vive aparte de la envoltura porque tiene DOS clientes: soloDesdeDentro, que
+// niega en el servidor, y verListado, que decide qué ofrece el menú. Si la
+// regla estuviera escrita dos veces, un día la página ofrecería un botón que
+// el servidor rechaza — que es justo el defecto que ADR-0054 tardó en
+// descubrirse, una interfaz enseñando algo distinto de lo que el servidor
+// hacía.
+func acotadoPorRed(r *http.Request) bool {
+	if usuarioDe(r) != autenticacion.NombreSuperusuario {
+		return false
+	}
+	switch seguridad.ClasificarRed(ipDe(r)) {
+	case seguridad.RedLocal, seguridad.RedTunel, seguridad.RedNodo:
+		return false
+	}
+	return true
+}
+
+// soloDesdeDentro niega al SUPERUSUARIO, y solo a él, lo que no se deshace
+// cuando la petición llega de Internet.
+//
+// # POR QUÉ EXISTE
+//
+// RF-18 dice con todas las letras que la confirmación de borrado es «la única
+// barrera del sistema», porque no hay papelera (D-15) y el borrado es
+// definitivo también por SMB. Desde Internet esa barrera está a UNA
+// CONTRASEÑA de distancia, y desde ADR-0047 esa misma contraseña abre también
+// SMB. El propósito declarado del 443 (ADR-0042) es entrar desde un equipo
+// AJENO, así que la credencial se teclea, por diseño, en máquinas que el
+// responsable no controla.
+//
+// Esto no impide el compromiso: lo acota. Con la regla puesta, una sesión de
+// superusuario robada desde fuera lee y sube, pero no destruye ni da de alta
+// cuentas. Eso convierte un daño irreversible en uno reversible.
+//
+// # POR QUÉ SOLO AL SUPERUSUARIO
+//
+// La barrera escala con la autoridad, no con la persona. La sesión del
+// superusuario alcanza el volumen ENTERO y el registro de cuentas; la de un
+// usuario normal está enraizada en su propia carpeta (ADR-0055), así que el
+// radio de daño de su sesión ya está acotado por construcción. Cobrarle a él
+// el mismo peaje le quitaría el uso diario desde fuera sin cerrar nada que no
+// estuviera cerrado. Por eso un usuario normal pasa de largo por aquí.
+//
+// # LISTA POSITIVA, NO «SI VIENE DE INTERNET»
+//
+// Se enumera lo que PASA —casa, túnel y el propio nodo— en vez de lo que se
+// niega. Con la forma negativa, RedDesconocida (una dirección que ni siquiera
+// se pudo leer) se colaría, porque DeFuera() solo es cierto para RedInternet;
+// y un valor de Red que se añada mañana entraría también, en silencio. Así
+// solo puede pasar lo que alguien escribió a mano que puede pasar.
+func (s *Servidor) soloDesdeDentro(siguiente http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !acotadoPorRed(r) {
+			siguiente(w, r)
+			return
+		}
+		s.reg.Warn("operación acotada a la red de casa, pedida desde fuera",
+			"usuario", usuarioDe(r), "ruta", r.URL.Path,
+			"metodo", r.Method, "origen", origenDe(r))
+		// La cuenta se apunta por el mismo motivo que en soloSuperusuario: la
+		// sesión ya está autenticada, así que el nombre es uno real del
+		// registro y no algo tecleado que pudiera ser una contraseña.
+		marcarCuentaIntentada(r, usuarioDe(r))
+		marcarRechazo(r, seguridad.SoloDesdeDentro)
+		http.Error(w, avisoSoloDesdeDentro, http.StatusForbidden)
+	}
+}
+
 func (s *Servidor) conAlmacen(f manejadorDeUsuario) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		alm, err := s.almacenDeLaSesion(r)

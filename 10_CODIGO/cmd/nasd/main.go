@@ -170,6 +170,34 @@ func ejecutar() error {
 			"ruta", cfg.RutaConexiones(), "error", err)
 	}
 
+	// La cuarentena por conducta. MISMO tratamiento del error que los dos
+	// anillos —se anota y se sigue— pero por un motivo distinto y que conviene
+	// no confundir: allí se pierde historial, aquí se pierde una DEFENSA. Aun
+	// así no se falla el arranque, porque un NAS que no arranca protege menos
+	// que uno que arranca sin la respuesta automática: las que de verdad
+	// defienden —TLS, credencial, contención de rutas— siguen enteras.
+	cuarentena, err := seguridad.CargarCuarentena(cfg.RutaCuarentena())
+	if err != nil {
+		reg.Error("la cuarentena no se pudo leer; se empieza sin nadie apartado",
+			"ruta", cfg.RutaCuarentena(), "error", err)
+	}
+
+	// Los bloqueos puestos a mano. Mismo tratamiento del error: se anota y se
+	// sigue con la lista vacía. Perderla cuesta los bloqueos, no el servicio.
+	lista, err := seguridad.CargarLista(cfg.RutaLista())
+	if err != nil {
+		reg.Error("la lista de bloqueos no se pudo leer; se empieza vacía",
+			"ruta", cfg.RutaLista(), "error", err)
+	}
+
+	// La marca de novedades. Solo guarda CUÁNDO se miró por última vez; el
+	// resto se deriva de lo que ya sobrevive al reinicio.
+	novedades, err := seguridad.CargarNovedades(cfg.RutaNovedades())
+	if err != nil {
+		reg.Error("la marca de novedades no se pudo leer; se empieza sin ella",
+			"ruta", cfg.RutaNovedades(), "error", err)
+	}
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen: alm,
 		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
@@ -194,6 +222,9 @@ func ejecutar() error {
 		Metricas:          metricasUso,
 		Seguridad:         historial,
 		Conexiones:        conexiones,
+		Cuarentena:        cuarentena,
+		Lista:             lista,
+		Novedades:         novedades,
 		RutaToques:        cfg.RutaToques(),
 		GeoIP:             baseGeo,
 		// Miniaturas EXIF — rector §7.nonies.bis. Siempre se pasa la ruta
@@ -229,6 +260,30 @@ func ejecutar() error {
 	// sitios donde olvidarse de cerrar uno.
 	go conexiones.Mantener(pararHistorial, func(err error) {
 		reg.Error("no se pudo volcar el historial de conexiones", "error", err)
+	})
+	// La cuarentena y la lista comparten el mismo canal de parada por el mismo
+	// motivo: un solo apagado ordenado, no tres sitios donde olvidarse de uno.
+	go cuarentena.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudo volcar la cuarentena", "error", err)
+	})
+	go lista.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudo volcar la lista de bloqueos", "error", err)
+	})
+	go novedades.Mantener(pararHistorial, conexiones, cuarentena, lista, func(err error) {
+		reg.Error("no se pudo volcar la marca de novedades", "error", err)
+	})
+
+	// Y la vigilancia, que es lo único de todo esto que ACTÚA sin que nadie
+	// mire: cada minuto mira la conducta de la última hora y aparta a quien lo
+	// merece. Se avisa al diario de cada apartado nuevo —no de cada renovación,
+	// que sería una línea por minuto— porque una defensa que actúa sola y en
+	// silencio es indistinguible de una que no actúa.
+	go seguridad.Vigilar(pararHistorial, historial, cuarentena, func(nuevos []seguridad.Apartado) {
+		for _, a := range nuevos {
+			reg.Warn("origen apartado por conducta",
+				"origen", a.IP.String(), "senal", a.Senal.String(),
+				"hasta", a.Hasta.Format(time.RFC3339))
+		}
 	})
 
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

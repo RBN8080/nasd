@@ -63,7 +63,7 @@ func TestSoloElSuperusuarioAlcanzaLaAdministracion(t *testing.T) {
 	// Y al superusuario no se le cierra: la regla separa, no bloquea a todos.
 	deAdmin := cookieLlamada(
 		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie)
-	r := httptest.NewRequest("GET", "/administracion", nil)
+	r := desdeCasa(httptest.NewRequest("GET", "/administracion", nil))
 	r.AddCookie(deAdmin)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -373,6 +373,9 @@ func servidorParaMetricas(t *testing.T, bytesPorUsuario map[string]int64) *Servi
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -442,6 +445,9 @@ func TestRefrescarMetricasCuentaComoCeroLaCuentaSinCarpeta(t *testing.T) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -486,6 +492,9 @@ func TestRefrescarMetricasContinuaSiUnaCuentaFalla(t *testing.T) {
 		DuracionSesion:   time.Hour,
 		Metricas:         metricasDePrueba(t),
 		Seguridad:        seguridadDePrueba(t),
+		Cuarentena:       cuarentenaDePrueba(t),
+		Lista:            listaDePrueba(t),
+		Novedades:        novedadesDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
