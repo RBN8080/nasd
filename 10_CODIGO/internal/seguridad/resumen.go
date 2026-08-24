@@ -34,7 +34,7 @@ const (
 	// SenalFuerzaBruta — credenciales incorrectas repetidas desde un origen.
 	SenalFuerzaBruta
 	// SenalSoftwareAjeno — se pidieron rutas de programas que este NAS no
-	// ejecuta NI HA EJECUTADO NUNCA. Ver rutaDeSoftwareAjeno.
+	// ejecuta NI HA EJECUTADO NUNCA. Ver RutaDeSoftwareAjeno.
 	SenalSoftwareAjeno
 )
 
@@ -133,7 +133,23 @@ const (
 	umbralFuerzaBruta = 5
 )
 
-// rutaDeSoftwareAjeno decide si una ruta pide algo que este NAS no tiene.
+// RutaDeSoftwareAjeno decide si una ruta pide algo que este NAS no tiene.
+//
+// # POR QUÉ ESTÁ EXPORTADA, Y POR QUÉ ES LA ÚNICA
+//
+// Empezó privada, porque la única pregunta que la necesitaba —«¿emito
+// SenalSoftwareAjeno?»— se hacía aquí mismo. Ahora hay tres, y las tres tienen
+// que contestar LO MISMO ante «/.git/config»:
+//
+//  1. derivar la señal (PorOrigen, aquí abajo);
+//  2. construir la evidencia que la sustenta (Sonda, aquí abajo);
+//  3. decidir si una respuesta con contenido fue INESPERADA (RespuestaInesperada,
+//     hallazgos.go), que es la única de las tres que corre en el camino de cada
+//     petición.
+//
+// Copiar la lista a la tercera habría dejado dos verdades que divergen el día
+// que alguien añada «.phtml» a una sola de ellas. Se exporta la FUNCIÓN, no la
+// lista: quien pregunta no puede reordenarla ni ampliarla por su cuenta.
 //
 // # POR QUÉ NO ES UNA LISTA DE RUTAS CONOCIDAS
 //
@@ -147,7 +163,7 @@ const (
 // petición con esas extensiones no puede ser un enlace roto de este NAS,
 // porque este NAS nunca ha servido nada así. La afirmación se sostiene sobre
 // lo que el nodo es, no sobre lo que alguien recuerde apuntar.
-func rutaDeSoftwareAjeno(ruta string) bool {
+func RutaDeSoftwareAjeno(ruta string) bool {
 	r := strings.ToLower(ruta)
 	// Extensiones de programas que este binario no ejecuta.
 	switch strings.ToLower(path.Ext(r)) {
@@ -200,6 +216,58 @@ func (a *Anillo) Filtrados(f Filtro) []Evento {
 	return out
 }
 
+// TopeSondas es cuántas líneas de evidencia se conservan por origen.
+//
+// # POR QUÉ HAY UN TOPE Y POR QUÉ ES ESTE
+//
+// La evidencia la escribe UN TERCERO: las rutas las elige quien sondea, así
+// que sin tope esto sería la única estructura del panel cuyo tamaño decide
+// alguien de fuera — exactamente lo que topeCuarentena y topeAgente existen
+// para impedir.
+//
+// Diez, el MISMO número que TopeRutas, y no un valor propio: las dos tablas
+// contestan «¿qué se pidió más?» a distinta escala —el nodo entero y un
+// origen— y dos topes distintos obligarían a explicar cuál manda. Diez líneas
+// bastan para leer un diccionario de escáner: lo que se pierde a partir de ahí
+// es más de lo mismo, y SondasVistas dice cuánto se recortó.
+const TopeSondas = 10
+
+// Sonda es UNA petición rechazada, agregada por método, ruta y estado.
+//
+// # ES UN HECHO, NO UNA INFERENCIA, Y POR ESO NO SE PERSISTE
+//
+// Cada campo salió tal cual de un Evento que sí está en el anillo: esto es
+// una VISTA de hechos ya guardados, agrupada para poder leerla. Persistirla
+// sería guardar dos veces lo mismo y crear un segundo sitio donde el
+// historial puede decir algo distinto.
+//
+// Existe porque el panel afirmaba «Exploración automatizada» sin enseñar
+// sobre qué. Una inferencia cuya evidencia hay que adivinar es indistinguible
+// de una inventada, y este panel no emite veredictos (ADR-0061).
+//
+// NO LLEVA User-Agent NI CUENTA: el primero ya se ve en la cronología y la
+// segunda tiene su propia pastilla. Repetirlos aquí multiplicaría por diez
+// filas un dato que no cambia entre ellas.
+type Sonda struct {
+	Metodo string
+	Ruta   string
+	// Estado es el que el servidor DEVOLVIÓ de verdad. Va en la clave de
+	// agrupación y no solo en la fila porque «/.git/config → 404» y
+	// «/.git/config → 200» son dos hechos opuestos sobre el nodo, y sumarlos
+	// borraría justo la diferencia que hay que ver (ver hallazgos.go).
+	Estado  int
+	Veces   int
+	Primera time.Time
+	Ultima  time.Time
+}
+
+// claveSonda agrupa. Los tres campos juntos, por lo dicho en Estado.
+type claveSonda struct {
+	metodo string
+	ruta   string
+	estado int
+}
+
 // Origen agrupa lo que hizo una misma dirección.
 type Origen struct {
 	IP  netip.Addr
@@ -215,6 +283,25 @@ type Origen struct {
 	PorMotivo map[Motivo]int
 	Cuentas   []string
 	Senales   []Senal
+	// Evidencia son los hechos que sustentan las señales, agregados y
+	// RECORTADOS a TopeSondas. Van del más repetido al menos.
+	Evidencia []Sonda
+	// SondasVistas son las combinaciones método+ruta+estado DISTINTAS que hubo,
+	// que casi siempre son más que las TopeSondas que se pintan. Se publica
+	// para que la evidencia pueda decir que recorta, igual que ya hacen la
+	// cronología y la tabla de rutas: tres listas de la misma página no pueden
+	// tener distinta idea de la honestidad.
+	SondasVistas int
+	// RutasInexistentes son las rutas DISTINTAS que no existían, es decir la
+	// ENTRADA exacta del umbral de SenalExploracion.
+	//
+	// ADR-0065 retiró una columna que enseñaba justo esto, y con razón: estaba
+	// en la tabla, dos columnas antes de la CONCLUSIÓN del mismo umbral, así
+	// que el lector veía el cálculo y el resultado a la vez sin que nadie le
+	// dijera que eran la misma cosa. Aquí no vuelve a la tabla: vive DENTRO de
+	// la explicación de la señal, que es donde la pregunta «¿por qué dice
+	// exploración?» se hace de verdad.
+	RutasInexistentes int
 	// Gravedad es la MAYOR de sus eventos, no la media: un origen con 200
 	// rechazos de rutina y uno de atención merece mirarse, y promediar lo
 	// escondería.
@@ -237,6 +324,12 @@ func PorOrigen(eventos []Evento) []Origen {
 		// enseñaba la ENTRADA de un umbral cuya CONCLUSIÓN ya se pintaba dos
 		// columnas más allá (ADR-0065).
 		sinRutaOK map[string]bool
+		// sondas agrupa la evidencia por método+ruta+estado. Es un mapa sin
+		// tope, y eso es seguro por dónde vive: su cota es el número de eventos
+		// de la ventana, que el anillo ya acota en Capacidad. Lo que SÍ se
+		// acota es lo que sale (TopeSondas), porque eso es lo que viaja al
+		// navegador y se pinta en un A53.
+		sondas map[claveSonda]*Sonda
 	}
 	porIP := make(map[netip.Addr]*acumulado)
 
@@ -251,6 +344,7 @@ func PorOrigen(eventos []Evento) []Origen {
 				},
 				cuentas:   make(map[string]bool),
 				sinRutaOK: make(map[string]bool),
+				sondas:    make(map[claveSonda]*Sonda),
 			}
 			porIP[e.Origen] = a
 		}
@@ -271,14 +365,37 @@ func PorOrigen(eventos []Evento) []Origen {
 		if e.Motivo == RutaInexistente {
 			a.sinRutaOK[e.Ruta] = true
 		}
-		if rutaDeSoftwareAjeno(e.Ruta) {
+		if RutaDeSoftwareAjeno(e.Ruta) {
 			a.ajenas++
+		}
+		// LA EVIDENCIA SE ACUMULA PARA TODOS LOS RECHAZOS, no solo para los que
+		// disparan una señal. Si solo se guardara lo que ya sospechamos, la
+		// tabla confirmaría siempre lo que la señal dice y nunca podría
+		// desmentirla — que es lo que se le pide a una evidencia.
+		k := claveSonda{metodo: e.Metodo, ruta: e.Ruta, estado: e.Estado}
+		sd, ok := a.sondas[k]
+		if !ok {
+			sd = &Sonda{
+				Metodo: e.Metodo, Ruta: e.Ruta, Estado: e.Estado,
+				Primera: e.Momento, Ultima: e.Momento,
+			}
+			a.sondas[k] = sd
+		}
+		sd.Veces++
+		if e.Momento.Before(sd.Primera) {
+			sd.Primera = e.Momento
+		}
+		if e.Momento.After(sd.Ultima) {
+			sd.Ultima = e.Momento
 		}
 	}
 
 	out := make([]Origen, 0, len(porIP))
 	for _, a := range porIP {
 		a.o.Cuentas = ordenado(a.cuentas)
+		a.o.RutasInexistentes = len(a.sinRutaOK)
+		a.o.SondasVistas = len(a.sondas)
+		a.o.Evidencia = sondasOrdenadas(a.sondas, TopeSondas)
 
 		// LAS INFERENCIAS, aquí y en ningún otro sitio.
 		//
@@ -385,6 +502,38 @@ func Resumir(eventos []Evento, origenes []Origen, totalHistorico int64) Resumen 
 	r.RutasMasPedidas = masFrecuentes(rutas, TopeRutas)
 	r.RutasVistas = len(rutas)
 	return r
+}
+
+// sondasOrdenadas saca la evidencia del mapa, de la más repetida a la menos, y
+// la recorta.
+//
+// EL DESEMPATE ES COMPLETO —ruta, método y estado— y no un criterio parcial:
+// con la mitad de la clave fuera, dos sondas que solo difieren en el estado
+// salen en el orden aleatorio del recorrido del mapa, y la evidencia baila
+// entre recargas sin que nada haya cambiado. Es el mismo defecto que PorOrigen
+// y masFrecuentes ya cierran con su tercer criterio, y aquí importa más:
+// justificar una inferencia con una tabla que cambia sola no justifica nada.
+func sondasOrdenadas(m map[claveSonda]*Sonda, tope int) []Sonda {
+	out := make([]Sonda, 0, len(m))
+	for _, sd := range m {
+		out = append(out, *sd)
+	}
+	slices.SortFunc(out, func(x, y Sonda) int {
+		if c := cmp.Compare(y.Veces, x.Veces); c != 0 {
+			return c
+		}
+		if c := strings.Compare(x.Ruta, y.Ruta); c != 0 {
+			return c
+		}
+		if c := strings.Compare(x.Metodo, y.Metodo); c != 0 {
+			return c
+		}
+		return cmp.Compare(x.Estado, y.Estado)
+	})
+	if len(out) > tope {
+		out = out[:tope]
+	}
+	return out
 }
 
 func masFrecuentes(m map[string]int, tope int) []Cuenta {

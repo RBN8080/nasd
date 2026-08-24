@@ -110,6 +110,7 @@ func servidorMultiusuario(t *testing.T) (*Servidor, *reparto) {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -314,6 +315,7 @@ func TestQueLaCuentaExistaNoCambiaLaRespuesta(t *testing.T) {
 			Cuarentena:      cuarentenaDePrueba(t),
 			Lista:           listaDePrueba(t),
 			Novedades:       novedadesDePrueba(t),
+			Hallazgos:       hallazgosDePrueba(t),
 			Conexiones:      conexionesDePrueba(t),
 		})
 		if err != nil {
@@ -441,6 +443,7 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 			Cuarentena:      cuarentenaDePrueba(t),
 			Lista:           listaDePrueba(t),
 			Novedades:       novedadesDePrueba(t),
+			Hallazgos:       hallazgosDePrueba(t),
 			Conexiones:      conexionesDePrueba(t),
 		}
 	}
@@ -607,6 +610,7 @@ func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {

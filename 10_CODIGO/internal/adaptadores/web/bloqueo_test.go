@@ -157,7 +157,7 @@ func TestBloquearElOperadorCubreTodosSusTramos(t *testing.T) {
 
 	// La comprobación que importa: la dirección del SEGUNDO tramo, la que el
 	// /48 de la ficha de partida habría dejado pasar.
-	if !s.lista.Bloquea(netip.MustParseAddr("2602:fa5d:10::1"), time.Now()) {
+	if _, ok := s.lista.Cubre(netip.MustParseAddr("2602:fa5d:10::1"), time.Now()); !ok {
 		t.Error("el segundo tramo del operador no quedó cubierto")
 	}
 }
@@ -279,12 +279,20 @@ func TestUnBloqueoManualCierraLaPuerta(t *testing.T) {
 		t.Fatalf("Anadir: %v", err)
 	}
 
-	if !s.lista.Bloquea(netip.MustParseAddr("2602:fa5d:5::dead"), time.Now()) {
+	ahora := time.Now()
+	id, ok := s.lista.Cubre(netip.MustParseAddr("2602:fa5d:5::dead"), ahora)
+	if !ok {
 		t.Fatal("la lista no bloquea a quien cae dentro")
 	}
-	// Y el contador de la entrada sube, que es lo que permite retirarla algún
-	// día con un dato en vez de con una corazonada.
-	if s.lista.Vigentes(time.Now())[0].Frenados == 0 {
-		t.Error("bloqueó sin contarlo")
+	// Y COMPROBAR NO ES FRENAR: hasta aquí el contador tiene que seguir a cero.
+	// Antes no podía: la misma llamada que decidía era la que sumaba.
+	if n := s.lista.Vigentes(ahora)[0].Frenados; n != 0 {
+		t.Fatalf("consultar la política ya contó %d frenados", n)
+	}
+	// El contador sube al CERRAR, que es lo que permite retirarla algún día
+	// con un dato en vez de con una corazonada.
+	s.lista.AnotarCierre(id, ahora)
+	if s.lista.Vigentes(ahora)[0].Frenados != 1 {
+		t.Error("se cerró una conexión y no se contó")
 	}
 }

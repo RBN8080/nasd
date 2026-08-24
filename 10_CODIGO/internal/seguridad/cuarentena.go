@@ -107,11 +107,25 @@ type Apartado struct {
 	Senal Senal     `json:"senal"`
 	Desde time.Time `json:"desde"`
 	Hasta time.Time `json:"hasta"`
-	// Frenados son las conexiones que se le han cerrado desde que está.
+	// Frenados son las conexiones EFECTIVAMENTE CERRADAS, no las veces que
+	// esta dirección coincidió con la política.
+	//
+	// La distinción no es pedante: hasta que se separó decisión de ejecución,
+	// esta cifra subía ANTES del net.Conn.Close() y seguía subiendo aunque el
+	// cierre fallara. Ahora solo la toca AnotarCierre, a la que no se llega
+	// sin un Close() que haya devuelto nil. Ver Cubre y puerta.go.
 	//
 	// Es lo que permite retirar lo que no sirve: un apartado con cero
 	// frenados no protegió de nada, y sin esta cifra nadie podría saberlo.
+	//
+	// NO SON PETICIONES. Después de cerrar la conexión no hay petición que
+	// contar, así que esta columna y la de rechazos miden cosas distintas y no
+	// se pueden comparar entre sí.
 	Frenados int64 `json:"frenados"`
+	// UltimoFrenado es cuándo sirvió por última vez. Mismo campo y mismo
+	// motivo que en Entrada (lista.go): sin él, «esto acaba de frenar algo» no
+	// se distingue de «esto frenó algo alguna vez».
+	UltimoFrenado time.Time `json:"ultimo_frenado,omitzero"`
 }
 
 // Vigente dice si el apartado sigue en pie.
@@ -267,21 +281,48 @@ func senalQueAparta(o Origen) (Senal, bool) {
 	return SenalExploracion, false
 }
 
-// Frena dice si a esta dirección se le cierra la puerta, y lo cuenta.
+// Cubre dice si a esta dirección le corresponde que se le cierre la puerta.
 //
-// Cuenta AQUÍ y no en quien llama por el mismo motivo por el que el filtro de
-// red vive dentro de Conexiones.Anotar: un solo sitio puede equivocarse, en
-// vez de uno por cada servidor enchufado.
-func (c *Cuarentena) Frena(ip netip.Addr, ahora time.Time) bool {
+// # NO CUENTA NADA, Y ESA ES TODA LA CORRECCIÓN
+//
+// Esto se llamaba Frena y hacía las dos cosas: decidía Y sumaba un frenado. El
+// problema no era de estilo, era que volvía FALSO el propio panel. La
+// secuencia real era:
+//
+//	coincide  ->  Frenados++  ->  net.Conn.Close()  ->  ...falla
+//
+// y el panel afirmaba igualmente haber frenado una conexión que seguía viva.
+// Peor: quien poseía el net.Conn —el ConnState de web/seguridad.go— era el
+// único que podía saber si el cierre ocurrió, y para cuando lo sabía la cifra
+// ya estaba escrita.
+//
+// Ahora son tres actos separados, y el orden lo impone el tipo Cierre
+// (puerta.go): decidir, ejecutar, contar. Contar es AnotarCierre, y solo se
+// llega a ella pasando por un Close() que devolvió nil.
+func (c *Cuarentena) Cubre(ip netip.Addr, ahora time.Time) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	a, hay := c.apartados[ip]
-	if !hay || !a.Vigente(ahora) {
-		return false
+	return hay && a.Vigente(ahora)
+}
+
+// AnotarCierre cuenta UNA conexión que ya se cerró de verdad.
+//
+// Que la dirección haya podido caducar entre la decisión y el cierre no es un
+// error y no se avisa: el cierre ocurrió y ya no hay apartado al que
+// atribuirlo. Es una carrera de microsegundos que solo puede perder una
+// unidad de una cifra de observación; inventar aquí un apartado para que
+// cuadre sería lo contrario de lo que este contador existe para decir.
+func (c *Cuarentena) AnotarCierre(ip netip.Addr, ahora time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	a, hay := c.apartados[ip]
+	if !hay {
+		return
 	}
 	a.Frenados++
+	a.UltimoFrenado = ahora
 	c.sucio = true
-	return true
 }
 
 // Vigentes devuelve los apartados en pie, del más reciente al más antiguo.

@@ -890,3 +890,134 @@ func TestElIntervaloNoMezclaZonasHorarias(t *testing.T) {
 		t.Errorf("se coló la hora en UTC (%s): el mismo instante sale con dos horas", utc)
 	}
 }
+
+// EL PANEL ENSEÑA EN QUÉ SE BASA CADA INFERENCIA, no solo su conclusión.
+//
+// # EL DEFECTO QUE ESTO CIERRA
+//
+// Hasta aquí, la fila decía «Exploración automatizada» y ahí se acababa. Quien
+// lo leyera tenía dos opciones: creerse el umbral, o irse al diario del nodo a
+// reconstruir a mano qué se había pedido. Una inferencia cuya evidencia hay que
+// buscar en otro sitio es indistinguible de una inventada, y este panel se
+// definió desde el primer día como uno que no emite veredictos (ADR-0061).
+func TestElPanelEnsenaLaEvidenciaDeSusSenales(t *testing.T) {
+	s := servidorConAuth(t)
+	// Un barrido de verdad: ocho rutas distintas que no existen, y una de
+	// ellas insistida. Es el patrón que hay que poder leer de un vistazo.
+	for i := range 8 {
+		r := httptest.NewRequest(http.MethodGet, "/inventada-"+strconv.Itoa(i)+".php", nil)
+		r.RemoteAddr = "203.0.113.7:44001"
+		s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
+	}
+	for range 3 {
+		r := httptest.NewRequest(http.MethodGet, "/inventada-0.php", nil)
+		r.RemoteAddr = "203.0.113.7:44001"
+		s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
+	}
+
+	cuerpo := panelSeguridad(t, s, "")
+	for _, quiero := range []string{
+		seguridad.SenalExploracion.Etiqueta(), // la conclusión
+		"En qué se basa esto",                 // y la evidencia, a un clic
+		"/inventada-0.php",                    // la ruta concreta que se pidió
+		"GET",                                 // con su método
+		"Rutas distintas que no existen",      // la entrada exacta del umbral
+	} {
+		if !strings.Contains(cuerpo, quiero) {
+			t.Errorf("el panel no enseña %q", quiero)
+		}
+	}
+}
+
+// LA EVIDENCIA ENSEÑA EL ESTADO QUE DEVOLVIÓ EL SERVIDOR, que es la mitad que
+// convierte «pidió esto» en «pidió esto y no se le dio».
+func TestLaEvidenciaDiceQueContestoElServidor(t *testing.T) {
+	s := servidorConAuth(t)
+	r := httptest.NewRequest(http.MethodGet, "/.git/config", nil)
+	r.RemoteAddr = "203.0.113.7:44001"
+	w := httptest.NewRecorder()
+	s.Rutas().ServeHTTP(w, r)
+
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.Contains(cuerpo, "/.git/config") {
+		t.Fatal("la evidencia no enseña la ruta pedida")
+	}
+	// El estado real, no uno supuesto: es lo que distingue un sondeo de una
+	// exposición cuando la ruta es la misma.
+	if !strings.Contains(cuerpo, ">"+strconv.Itoa(w.Code)+"<") {
+		t.Errorf("la evidencia no enseña el estado %d que devolvió el servidor", w.Code)
+	}
+}
+
+// LA FOTO DE LA BASE SE PINTA, Y SE AVISA CUANDO ENVEJECE.
+//
+// seguridad.Entrada.BaseGeo prometía en su comentario que «con la fecha
+// delante, el panel puede decir que la base es más nueva que la entrada y
+// ofrecer revisarla». La fecha se guardaba y no se pintaba en ninguna parte:
+// la foto envejecía EN SILENCIO, que es justo el modo de fallo contra el que se
+// guardaba.
+func TestElPanelDiceDeCuandoEsLaFotoDeUnBloqueoDeOperador(t *testing.T) {
+	s := conGeo(t, servidorConAuth(t))
+
+	// Una entrada de operador compuesta con una base VIEJA. La instalada en el
+	// servidor de prueba se acaba de generar, así que es más nueva.
+	if _, err := s.lista.Anadir(seguridad.Entrada{
+		Alcance:  seguridad.AlcanceOperador,
+		Etiqueta: "AS44382 · WHITELABEL · US",
+		Tramos:   []seguridad.Tramo{seguridad.TramoDe(netip.MustParsePrefix("2602:fa5d::/44"))},
+		Motivo:   "reputación del ASN",
+		Autor:    "raiz",
+		BaseGeo:  time.Now().Add(-90 * 24 * time.Hour),
+	}, netip.Addr{}, time.Now()); err != nil {
+		t.Fatalf("Anadir: %v", err)
+	}
+
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.Contains(cuerpo, "base de ") {
+		t.Error("el panel no dice de cuándo es la foto del alcance")
+	}
+	if !strings.Contains(cuerpo, "hay una base más nueva") {
+		t.Error("el panel no ofrece revisar una foto que ya envejeció")
+	}
+	// Y DICE QUE ES UNA FOTO, que es lo que impide leer el alcance como una
+	// regla que sigue al operador.
+	if !strings.Contains(cuerpo, "no una regla viva") {
+		t.Error("el panel no explica que el alcance del operador es una foto")
+	}
+}
+
+// A un bloqueo de DIRECCIÓN o de RANGO no se le pide revisión: su alcance no
+// depende de la base para seguir siendo exacto, y marcarlo mandaría a revisar
+// algo que no puede haber cambiado.
+func TestUnBloqueoDeRangoNoPideRevisionPorLaBase(t *testing.T) {
+	s := conGeo(t, servidorConAuth(t))
+	if _, err := s.lista.Anadir(seguridad.Entrada{
+		Alcance:  seguridad.AlcanceRango,
+		Etiqueta: "2602:fa5d::/44",
+		Tramos:   []seguridad.Tramo{seguridad.TramoDe(netip.MustParsePrefix("2602:fa5d::/44"))},
+		Motivo:   "barrido medido el 16/08",
+		Autor:    "raiz",
+		BaseGeo:  time.Now().Add(-90 * 24 * time.Hour),
+	}, netip.Addr{}, time.Now()); err != nil {
+		t.Fatalf("Anadir: %v", err)
+	}
+	if strings.Contains(panelSeguridad(t, s, ""), "hay una base más nueva") {
+		t.Error("se pide revisar un rango escrito a mano, que no depende de la base")
+	}
+}
+
+// EL PANEL NO CONFUNDE «FRENADOS» CON «PETICIONES», y lo dice donde se leen las
+// dos cifras.
+//
+// Después de cerrar la conexión en StateNew no hay petición que contar, así que
+// un apartado con muchos frenados y pocos rechazos NO es una contradicción —
+// pero lo parece si nadie lo explica.
+func TestElPanelDistingueConexionesCerradasDePeticiones(t *testing.T) {
+	s := servidorConAuth(t)
+	apartar(t, s, "203.0.113.7")
+
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.Contains(cuerpo, "son conexiones cerradas, no peticiones") {
+		t.Error("el panel no distingue conexiones cerradas de peticiones HTTP")
+	}
+}

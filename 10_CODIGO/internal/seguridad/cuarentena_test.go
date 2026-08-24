@@ -53,8 +53,8 @@ func TestLaExploracionAparta(t *testing.T) {
 	if nuevos[0].Senal != SenalExploracion {
 		t.Errorf("apartado por %v; se esperaba exploración", nuevos[0].Senal)
 	}
-	if !c.Frena(netip.MustParseAddr(deFuera), ahora) {
-		t.Error("apartado y sin embargo no se le frena")
+	if !c.Cubre(netip.MustParseAddr(deFuera), ahora) {
+		t.Error("apartado y sin embargo no se le cierra la puerta")
 	}
 }
 
@@ -143,7 +143,7 @@ func TestLaCuarentenaCaducaSola(t *testing.T) {
 	c.Evaluar(PorOrigen(eventos), ahora)
 
 	despues := ahora.Add(DuracionCuarentena + time.Minute)
-	if c.Frena(dir, despues) {
+	if c.Cubre(dir, despues) {
 		t.Error("sigue frenando después de caducar")
 	}
 	if len(c.Vigentes(despues)) != 0 {
@@ -183,8 +183,13 @@ func TestRenovarNoVuelveAAvisar(t *testing.T) {
 	}
 }
 
-// LA CIFRA QUE PERMITE RETIRAR LO QUE NO SIRVE: cuántas veces ha frenado.
-func TestFrenaCuentaLoQueFrena(t *testing.T) {
+// LA CIFRA QUE PERMITE RETIRAR LO QUE NO SIRVE: cuántas conexiones ha cerrado.
+//
+// LA COMPROBACIÓN QUE ANTES NO EXISTÍA es la segunda mitad: MIRAR no cuenta.
+// Hasta que se separó decisión de ejecución, preguntar «¿a este se le cierra la
+// puerta?» ya sumaba un frenado, así que la cifra era «coincidencias con la
+// política» y el panel la presentaba como conexiones cerradas.
+func TestSoloElCierreEjecutadoCuenta(t *testing.T) {
 	c := cuarentenaDePrueba(t)
 	ahora := time.Now()
 	dir := netip.MustParseAddr(deFuera)
@@ -195,17 +200,29 @@ func TestFrenaCuentaLoQueFrena(t *testing.T) {
 	}
 	c.Evaluar(PorOrigen(eventos), ahora)
 
+	// Mil consultas no son un frenado: son mil consultas.
+	for range 1000 {
+		c.Cubre(dir, ahora)
+	}
+	if v := c.Vigentes(ahora); len(v) != 1 || v[0].Frenados != 0 {
+		t.Fatalf("consultar la política subió el contador: %+v", v)
+	}
+
 	for range 3 {
-		c.Frena(dir, ahora)
+		c.AnotarCierre(dir, ahora)
 	}
 	// Y a quien no está apartado no se le cuenta nada.
-	if c.Frena(netip.MustParseAddr("198.51.100.9"), ahora) {
-		t.Error("frenó a una dirección que no está apartada")
+	c.AnotarCierre(netip.MustParseAddr("198.51.100.9"), ahora)
+	if c.Cubre(netip.MustParseAddr("198.51.100.9"), ahora) {
+		t.Error("cubre una dirección que no está apartada")
 	}
 
 	v := c.Vigentes(ahora)
 	if len(v) != 1 || v[0].Frenados != 3 {
 		t.Errorf("frenados = %+v; se esperaban 3", v)
+	}
+	if v[0].UltimoFrenado.IsZero() {
+		t.Error("se contó el cierre y no se guardó cuándo fue")
 	}
 }
 
@@ -223,7 +240,7 @@ func TestSoltarRetiraAntesDeTiempo(t *testing.T) {
 	if !c.Soltar(dir) {
 		t.Fatal("Soltar dijo que no había nada que soltar")
 	}
-	if c.Frena(dir, ahora) {
+	if c.Cubre(dir, ahora) {
 		t.Error("sigue frenando tras soltarlo")
 	}
 	if c.Soltar(dir) {
@@ -248,7 +265,7 @@ func TestLaCuarentenaSobreviveAlArranque(t *testing.T) {
 		eventos = append(eventos, rechazo(deFuera, RutaInexistente, "/inventada-"+strconv.Itoa(i), ahora))
 	}
 	uno.Evaluar(PorOrigen(eventos), ahora)
-	uno.Frena(dir, ahora)
+	uno.AnotarCierre(dir, ahora)
 	if err := uno.Volcar(); err != nil {
 		t.Fatalf("Volcar: %v", err)
 	}
@@ -257,7 +274,7 @@ func TestLaCuarentenaSobreviveAlArranque(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CargarCuarentena tras el reinicio: %v", err)
 	}
-	if !otro.Frena(dir, ahora) {
+	if !otro.Cubre(dir, ahora) {
 		t.Fatal("tras reiniciar, el apartado se perdió")
 	}
 	v := otro.Vigentes(ahora)
@@ -270,7 +287,16 @@ func TestLaCuarentenaSobreviveAlArranque(t *testing.T) {
 	if v[0].Senal != SenalExploracion {
 		t.Errorf("la señal no sobrevivió al archivo: %v", v[0].Senal)
 	}
-	if v[0].Frenados != 2 {
-		t.Errorf("frenados tras reiniciar = %d; se esperaban 2 (1 antes + 1 ahora)", v[0].Frenados)
+	// LA CUENTA SOBREVIVE Y SIGUE SUMANDO. Antes esta comprobación esperaba 2
+	// —uno de antes del reinicio y otro de la propia consulta de arriba—, y esa
+	// segunda unidad era el defecto: preguntar «¿a este se le cierra la
+	// puerta?» sumaba un frenado sin que se hubiera cerrado nada. Ahora consultar
+	// es gratis, así que sigue en 1, y solo un cierre ejecutado la mueve.
+	if v[0].Frenados != 1 {
+		t.Errorf("frenados tras reiniciar = %d; se esperaba 1", v[0].Frenados)
+	}
+	otro.AnotarCierre(dir, ahora)
+	if n := otro.Vigentes(ahora)[0].Frenados; n != 2 {
+		t.Errorf("frenados tras cerrar otra conexión = %d; se esperaban 2", n)
 	}
 }

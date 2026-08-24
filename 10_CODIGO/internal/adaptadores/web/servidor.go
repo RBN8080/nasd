@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"nasd/internal/almacen"
@@ -88,6 +89,19 @@ type Servidor struct {
 	lista *seguridad.Lista
 	// novedades cuenta lo que ha pasado desde la última visita al panel.
 	novedades *seguridad.Novedades
+	// hallazgos guarda las rutas que este NAS no publica y aun así atendió con
+	// contenido. Es la única estructura del panel que habla del SERVIDOR y no
+	// de quien pide — ver internal/seguridad/hallazgos.go.
+	hallazgos *seguridad.Hallazgos
+	// cierresFallidos son los net.Conn.Close() que no se pudieron completar en
+	// la puerta.
+	//
+	// Existe para que «Frenados» pueda ser verdad SIN convertir el diario en el
+	// amplificador de quien insiste: el volumen lo lleva este contador y el
+	// diario recibe una sola línea por arranque (anotarCierreFallido). Es
+	// atómico y no lleva candado por lo mismo que los de contadores.go: es un
+	// indicador, no contabilidad.
+	cierresFallidos atomic.Int64
 	// geo resuelve un origen de Internet a su país y su operador. PUEDE SER
 	// NULA: sin base instalada el panel funciona igual, solo que sin ese dato.
 	geo *geoip.BaseDatos
@@ -194,6 +208,15 @@ type Opciones struct {
 	// Obligatoria: si faltara, la marca no se encendería nunca y nadie se
 	// enteraría de que no se enciende.
 	Novedades *seguridad.Novedades
+	// Hallazgos guarda las respuestas inesperadas del propio servidor.
+	//
+	// OBLIGATORIA, y con el argumento más fuerte de toda esta estructura: es lo
+	// único del panel que no se puede volver a observar. Un rechazo perdido lo
+	// repite el siguiente escáner; un «este nodo devolvió 200 en /.git/config»
+	// que nadie anotó no vuelve. Si pudiera faltar, el panel diría «ninguna
+	// respuesta inesperada» sin haber mirado, que es la degradación silenciosa
+	// que P5 obliga a convertir en un arranque fallido.
+	Hallazgos *seguridad.Hallazgos
 	// Lista son los bloqueos puestos a mano. Obligatoria por el mismo criterio
 	// que Cuarentena: si faltara, el panel ofrecería un botón de bloquear que
 	// no bloquea nada, que es peor que no ofrecerlo.
@@ -266,6 +289,9 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	if o.Novedades == nil {
 		return nil, fmt.Errorf("web.Nuevo: falta Novedades (la marca de la barra)")
 	}
+	if o.Hallazgos == nil {
+		return nil, fmt.Errorf("web.Nuevo: falta Hallazgos (respuestas inesperadas del servidor)")
+	}
 
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
@@ -296,6 +322,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		cuarentena:        o.Cuarentena,
 		lista:             o.Lista,
 		novedades:         o.Novedades,
+		hallazgos:         o.Hallazgos,
 		rutaToques:        o.RutaToques,
 		geo:               o.GeoIP,
 		dirMiniaturas:     o.DirMiniaturas,
@@ -544,6 +571,24 @@ func (s *Servidor) conRegistro(siguiente http.Handler) http.Handler {
 			s.anotarRechazo(r, marcador, cap.estado, inicio)
 		}
 
+		// LA OTRA MITAD, Y LA QUE FALTABA: una respuesta CON CONTENIDO en una
+		// ruta que este NAS no publica.
+		//
+		// El corte de arriba —«>= 400»— es correcto para lo que aquel anillo
+		// es, y por construcción deja fuera el caso más grave que este servidor
+		// puede producir: «/.git/config → 200». Un 404 ahí es un sondeo y no
+		// pasó nada; un 200 dice algo del NODO y no de quien pidió. Van a sitios
+		// distintos porque son cosas distintas — ver seguridad/hallazgos.go.
+		//
+		// El coste en el camino de cada petición es dos comparaciones de
+		// enteros para casi todo lo que se sirve: RespuestaInesperada empieza
+		// por el estado y descarta ahí mismo cualquier cosa que no sea 200 ni
+		// 206, y a continuación los prefijos del espacio del usuario, que es
+		// por donde salen las descargas y las miniaturas.
+		if seguridad.RespuestaInesperada(r.URL.Path, cap.estado) {
+			s.anotarHallazgo(r, cap.estado, inicio)
+		}
+
 		// «origen» faltaba, y era el agujero: de todos los 4xx del nodo no
 		// quedaba constancia de QUIÉN los pedía en ningún sitio —solo el
 		// acceso fallido, el cierre de sesión y las acciones del panel lo
@@ -561,18 +606,72 @@ func (s *Servidor) conRegistro(siguiente http.Handler) http.Handler {
 	})
 }
 
+// capturaDeEstado mira qué se respondió sin cambiar lo que se responde.
+//
+// # POR QUÉ NO BASTA CON GUARDAR EL ÚLTIMO WriteHeader
+//
+// Así estaba, y divergía del cliente en un caso REAL. Medido contra un
+// net/http de verdad el 2026-08-24:
+//
+//	WriteHeader(404); WriteHeader(500)  ->  el cliente recibe 404
+//
+// net/http descarta la segunda llamada —deja el aviso «superfluous
+// response.WriteHeader call» en el diario— porque la cabecera ya se envió. El
+// envoltorio, en cambio, se quedaba con la última y anotaba 500. Consecuencia:
+// el panel de seguridad y los contadores de /estado habrían clasificado como
+// error del servidor una respuesta que el cliente vio como «no existe», y el
+// SLI-1 —que cuenta 5xx— se habría manchado con un rechazo perfectamente
+// normal. Un manejador que llama dos veces es un descuido; que el registro lo
+// convierta en otro suceso es un defecto de esta pieza.
+//
+// La regla ahora es la de net/http, no una propia: manda el PRIMER estado que
+// fija la cabecera, y a partir de ahí no cambia.
+//
+// # Y POR QUÉ «el primero» NO ES SUFICIENTE POR SÍ SOLO
+//
+// Porque las respuestas informativas 1xx NO fijan la cabecera: net/http las
+// envía y sigue esperando el estado final. Con la regla ingenua del primero,
+// un «WriteHeader(103); WriteHeader(404)» quedaría registrado como 103
+// mientras el cliente recibe 404 — la misma clase de mentira, por el otro
+// lado. Comprobado en la misma medición: ahí el cliente recibe 404.
+//
+// La única 1xx que SÍ es final es 101 (Switching Protocols), y por eso lleva
+// su excepción, exactamente igual que en net/http.
 type capturaDeEstado struct {
 	http.ResponseWriter
 	estado int
 	bytes  int64
+	// fijado dice si la cabecera ya quedó comprometida. Es lo que distingue
+	// «nadie ha llamado a WriteHeader todavía» —y entonces el 200 inicial es
+	// una previsión— de «ya se envió»: sin esta marca no se puede saber cuál
+	// de las dos cosas significa el valor de estado.
+	fijado bool
 }
 
 func (c *capturaDeEstado) WriteHeader(e int) {
+	// SE REENVÍA SIEMPRE, incluso lo que aquí se ignora. Este envoltorio
+	// observa; decidir qué hacer con una segunda llamada es de net/http, y
+	// tragársela aquí cambiaría el comportamiento del servidor —y silenciaría
+	// su aviso de «superfluous»— para arreglar un problema que es de medición.
+	defer c.ResponseWriter.WriteHeader(e)
+
+	if c.fijado {
+		return
+	}
+	// 1xx informativo: no fija nada, el estado final llega después. 101 sí es
+	// final; misma excepción y mismo motivo que en net/http.
+	if e >= 100 && e <= 199 && e != http.StatusSwitchingProtocols {
+		return
+	}
 	c.estado = e
-	c.ResponseWriter.WriteHeader(e)
+	c.fijado = true
 }
 
 func (c *capturaDeEstado) Write(p []byte) (int, error) {
+	// Escribir sin WriteHeader es el 200 IMPLÍCITO de net/http, y aquí se hace
+	// explícito: a partir de este momento el estado ya no puede cambiar, igual
+	// que no puede cambiar para el cliente.
+	c.fijado = true
 	n, err := c.ResponseWriter.Write(p)
 	c.bytes += int64(n)
 	return n, err

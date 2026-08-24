@@ -198,6 +198,17 @@ func ejecutar() error {
 			"ruta", cfg.RutaNovedades(), "error", err)
 	}
 
+	// Las respuestas inesperadas del propio servidor. Mismo tratamiento del
+	// error que todo lo anterior —se anota y se sigue— y por un motivo propio:
+	// arrancar sin este archivo cuesta la memoria de lo ya encontrado, pero
+	// negarse a arrancar dejaría al nodo sin servicio por no poder leer una
+	// lista que en un nodo sano está vacía.
+	hallazgos, err := seguridad.CargarHallazgos(cfg.RutaHallazgos())
+	if err != nil {
+		reg.Error("los hallazgos no se pudieron leer; se empieza sin ninguno",
+			"ruta", cfg.RutaHallazgos(), "error", err)
+	}
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen: alm,
 		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
@@ -225,6 +236,7 @@ func ejecutar() error {
 		Cuarentena:        cuarentena,
 		Lista:             lista,
 		Novedades:         novedades,
+		Hallazgos:         hallazgos,
 		RutaToques:        cfg.RutaToques(),
 		GeoIP:             baseGeo,
 		// Miniaturas EXIF — rector §7.nonies.bis. Siempre se pasa la ruta
@@ -269,7 +281,14 @@ func ejecutar() error {
 	go lista.Mantener(pararHistorial, func(err error) {
 		reg.Error("no se pudo volcar la lista de bloqueos", "error", err)
 	})
-	go novedades.Mantener(pararHistorial, conexiones, cuarentena, lista, func(err error) {
+	// Los hallazgos comparten el mismo canal de parada que todo lo demás. Se
+	// vuelcan en la misma cadencia aunque casi nunca cambien: el volcado sale
+	// gratis cuando no hay nada sucio, y tener un ritmo propio solo añadiría un
+	// sitio más donde olvidarse de cerrar.
+	go hallazgos.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudieron volcar los hallazgos", "error", err)
+	})
+	go novedades.Mantener(pararHistorial, conexiones, cuarentena, lista, hallazgos, func(err error) {
 		reg.Error("no se pudo volcar la marca de novedades", "error", err)
 	})
 

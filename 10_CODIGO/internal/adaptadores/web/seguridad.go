@@ -168,13 +168,84 @@ func (s *Servidor) anotarConexion(c net.Conn, estado http.ConnState) {
 	if !seguridad.ClasificarRed(dir.Addr()).DeFuera() {
 		return
 	}
-	if s.cuarentena.Frena(dir.Addr(), ahora) || s.lista.Bloquea(dir.Addr(), ahora) {
-		// Sin registrar nada en el diario: esto corre en el bucle de
-		// aceptación, y un origen capaz de provocar una línea por conexión
-		// convertiría el registro en su amplificador. Lo que hay que saber
-		// —cuántas veces se le ha frenado— lo lleva el propio apartado.
-		_ = c.Close()
+
+	// DECIDIR, EJECUTAR, CONTAR — en ese orden y en tres líneas distintas.
+	//
+	// Estaba en una sola: «if cuarentena.Frena(ip) || lista.Bloquea(ip) {
+	// c.Close() }». Sumaba el frenado DENTRO de la condición, es decir antes
+	// del cierre y sin mirar si el cierre salía bien, así que «Frenados»
+	// contaba coincidencias con la política y el panel lo presentaba como
+	// conexiones cerradas. El porqué entero está en seguridad/puerta.go; aquí
+	// queda la consecuencia, que es lo que se cumple en este archivo:
+	//
+	//	A la cifra solo se llega POR DEBAJO de un Close() que devolvió nil.
+	cierre := seguridad.Decidir(s.cuarentena, s.lista, dir.Addr(), ahora)
+	if !cierre.Cierra() {
+		return
 	}
+	if err := c.Close(); err != nil {
+		s.anotarCierreFallido(err)
+		return
+	}
+	cierre.Ejecutado(ahora)
+}
+
+// anotarCierreFallido registra que a un origen bloqueado NO se le pudo colgar.
+//
+// # POR QUÉ NO SE ESCRIBE UNA LÍNEA POR INTENTO
+//
+// Esto corre en el bucle de aceptación y lo dispara alguien de fuera: una
+// línea de diario por conexión convertiría el registro en su amplificador. Es
+// el mismo argumento que ya impedía anotar cada cierre correcto.
+//
+// # PERO TAMPOCO SE CALLA
+//
+// Un Close() que falla es la única forma de que el panel pueda estar diciendo
+// menos de lo que pasa: hubo una conexión que debía cerrarse y siguió viva, y
+// esa conexión SÍ va a llegar al manejador. Ignorarlo en silencio sería
+// exactamente lo que este trabajo vino a quitar.
+//
+// El reparto: el CONTADOR lleva el volumen —lo publica el panel cuando no es
+// cero— y el diario recibe UNA línea por arranque, la del primer fallo. Uno
+// basta: si esto ocurre, ocurre por algo sistémico, y lo que hace falta es
+// enterarse, no tener mil copias del mismo aviso.
+func (s *Servidor) anotarCierreFallido(err error) {
+	if s.cierresFallidos.Add(1) == 1 {
+		s.reg.Warn("no se pudo cerrar la conexión de un origen bloqueado; no cuenta como frenada",
+			"error", err)
+	}
+}
+
+// anotarHallazgo registra que una ruta que este NAS no publica se atendió con
+// contenido. Solo lo llama conRegistro, y solo cuando seguridad.RespuestaInesperada
+// dice que sí.
+//
+// # NO SE CAPTURA NADA NUEVO
+//
+// Los cinco campos —instante, origen, red, método y ruta— son los mismos que
+// el anillo de rechazos ya guardaba, y ni uno más. No entra el User-Agent (ya
+// está en la cronología de quien hiciera además algún rechazo), ni la cadena
+// de consulta, ni una sola cabecera. 04_SEGURIDAD §6 gobierna esto igual que
+// gobierna Evento, y una función nueva no es motivo para relajarlo.
+//
+// SE ANOTA VENGA DE DONDE VENGA, también desde la LAN o desde el propio nodo,
+// y ahí se aparta del criterio de las señales. No es una incoherencia: una
+// señal INTERPRETA a quien pide, y desde casa esa interpretación no informa de
+// nada. Esto no habla de quien pide — habla del servidor. Que el nodo publique
+// /.git/config es igual de cierto y de grave si quien lo descubre es el propio
+// responsable con curl, y de hecho ese es el caso en el que más falta hace
+// verlo.
+func (s *Servidor) anotarHallazgo(r *http.Request, estado int, momento time.Time) {
+	ip := ipDe(r)
+	s.hallazgos.Anotar(seguridad.Hallazgo{
+		Clase:        seguridad.RutaAjenaAtendida,
+		Metodo:       r.Method,
+		Ruta:         r.URL.Path,
+		Estado:       estado,
+		Ultima:       momento,
+		UltimoOrigen: ip,
+		UltimaRed:    seguridad.ClasificarRed(ip),
+	})
 }
 
 // anotarRechazo registra la petición negada. Solo lo llama conRegistro.
