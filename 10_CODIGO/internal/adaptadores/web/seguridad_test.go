@@ -325,12 +325,17 @@ func TestUnaSenalNuncaAparecSinSuFalsoPositivo(t *testing.T) {
 	if !strings.Contains(cuerpo, "También lo produce") {
 		t.Error("la señal se muestra sin decir con qué se puede confundir")
 	}
-	// Y la página empieza diciendo qué NO es esto. El aviso va primero a
-	// propósito: sin él, un lector razonable daría por hecho que una tabla
-	// titulada «Seguridad» lista ataques.
-	if !strings.Contains(cuerpo, "no ataques") {
-		t.Error("falta el aviso de que esto registra rechazos y no ataques")
-	}
+	// EL AVISO «Hechos registrados, no ataques» SE RETIRÓ EL 2026-08-24, Y ESTA
+	// AFIRMACIÓN CON ÉL. No es un descuido ni una regresión: es una decisión del
+	// responsable sobre capturas del panel en uso —«busco que se vea profesional
+	// y no algo casero»— y se deja escrita para que nadie la reponga creyendo
+	// que arregla algo.
+	//
+	// Lo que aquel aviso protegía sigue protegido, y por donde de verdad
+	// importa: TestNingunaSenalAfirmaUnAtaque (internal/seguridad) prohíbe que
+	// una señal afirme un ataque de un origen CONCRETO, que es la afirmación
+	// peligrosa. Negarlo en la cabecera era prudencia sobre el título de la
+	// página, no sobre un dato.
 }
 
 // Los filtros viajan por la URL —igual que el orden del listado (P-3)— para
@@ -755,7 +760,11 @@ func TestSeDeclaraDesdeCuandoAlcanzaElRegistroDePaquetes(t *testing.T) {
 	}
 
 	panel := panelSeguridad(t, s, "")
-	if !strings.Contains(panel, "El registro de paquetes empieza el") {
+	// El texto se acortó el 2026-08-24 con las cinco leyendas de la página,
+	// pero ESTE dato se quedó y esta prueba con él: no era una explicación,
+	// era un hecho —desde cuándo alcanza la capa de abajo— y sin él una fila
+	// con conexiones y cero paquetes se lee como una contradicción.
+	if !strings.Contains(panel, "Paquetes registrados desde el") {
 		t.Fatal("el panel no dice desde cuándo alcanza la capa de paquetes: " +
 			"una fila con conexiones y cero paquetes se lee como una contradicción")
 	}
@@ -1042,11 +1051,12 @@ func TestElPanelDiceDeCuandoEsLaFotoDeUnBloqueoDeOperador(t *testing.T) {
 	if !strings.Contains(cuerpo, "hay una base más nueva") {
 		t.Error("el panel no ofrece revisar una foto que ya envejeció")
 	}
-	// Y DICE QUE ES UNA FOTO, que es lo que impide leer el alcance como una
-	// regla que sigue al operador.
-	if !strings.Contains(cuerpo, "no una regla viva") {
-		t.Error("el panel no explica que el alcance del operador es una foto")
-	}
+	// LA TERCERA AFIRMACIÓN —que la leyenda EXPLICARA que el alcance es una foto
+	// y no una regla viva— se retiró el 2026-08-24 con las cinco leyendas de la
+	// página (ver TestElPanelDiceQueUnOrigenEstaFrenado). Lo sujetado aquí sigue
+	// siendo lo que importa y son DATOS de la fila, no una explicación: la fecha
+	// de la foto se pinta, y cuando envejece se pide revisarla. Con esas dos, un
+	// alcance que se quedó corto se ve; sin ellas, no.
 }
 
 // A un bloqueo de DIRECCIÓN o de RANGO no se le pide revisión: su alcance no
@@ -1069,18 +1079,32 @@ func TestUnBloqueoDeRangoNoPideRevisionPorLaBase(t *testing.T) {
 	}
 }
 
-// EL PANEL NO CONFUNDE «FRENADOS» CON «PETICIONES», y lo dice donde se leen las
-// dos cifras.
+// EL PANEL SIGUE DICIENDO QUE UN ORIGEN ESTÁ FRENADO, aunque ya no explique la
+// diferencia entre «frenados» y «rechazos» en la leyenda.
 //
-// Después de cerrar la conexión en StateNew no hay petición que contar, así que
-// un apartado con muchos frenados y pocos rechazos NO es una contradicción —
-// pero lo parece si nadie lo explica.
-func TestElPanelDistingueConexionesCerradasDePeticiones(t *testing.T) {
+// # QUÉ SE RETIRÓ Y POR QUÉ, PARA QUE NADIE LO REPONGA
+//
+// Esta prueba exigía la frase «son conexiones cerradas, no peticiones» en la
+// leyenda de la tabla. Esa leyenda —y las otras cuatro de la página— se
+// redujeron a una línea el 2026-08-24 por decisión del responsable sobre
+// capturas del panel en uso, sabiendo que las definiciones dejaban de estar en
+// pantalla. Viven ahora en NAS_OPERACION.txt §15.
+//
+// Lo que NO se puede perder es que la fila diga que a ese origen se le está
+// cerrando la puerta: sin eso, sus cifras de rechazos parecen haberse quedado
+// quietas sin motivo. Eso es un HECHO de la fila, no una definición, y es lo
+// que esta prueba pasa a sujetar.
+func TestElPanelDiceQueUnOrigenEstaFrenado(t *testing.T) {
 	s := servidorConAuth(t)
+	// Hace falta que el origen TENGA fila: el aviso vive en la fila de esa
+	// dirección, no en la leyenda de la tabla, y sin actividad no hay fila.
+	r := httptest.NewRequest(http.MethodGet, "/inventada", nil)
+	r.RemoteAddr = "203.0.113.7:44001"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
 	apartar(t, s, "203.0.113.7")
 
 	cuerpo := panelSeguridad(t, s, "")
-	if !strings.Contains(cuerpo, "son conexiones cerradas, no peticiones") {
-		t.Error("el panel no distingue conexiones cerradas de peticiones HTTP")
+	if !strings.Contains(cuerpo, "Se le está cerrando la puerta") {
+		t.Error("la fila no dice que a ese origen se le esté cerrando la puerta")
 	}
 }

@@ -248,8 +248,12 @@ func ptr[T any](v T) *T { return &v }
 // NINGUNA SEÑAL PUEDE AFIRMAR UN ATAQUE, ni en su etiqueta ni en su
 // explicación. Es la instrucción del responsable convertida en invariante
 // comprobable, y vive aquí —sobre los textos del dominio— y no sobre el HTML
-// del panel, porque el aviso de cabecera de esa página SÍ usa la palabra, y
-// legítimamente: dice «esto registra rechazos, no ataques».
+// del panel.
+//
+// El aviso de cabecera que decía «rechazos, no ataques» se retiró del panel el
+// 2026-08-24 por decisión del responsable. Esta prueba no dependía de él y
+// ahora es la ÚNICA que sujeta la regla, que es donde debía estar: lo que no se
+// puede afirmar es un ataque de un origen CONCRETO.
 //
 // Lo que se prohíbe es AFIRMARLO de un origen concreto.
 func TestNingunaSenalAfirmaUnAtaque(t *testing.T) {

@@ -257,11 +257,35 @@ func TestElPanelNoOfreceBloquearLoQueVieneDeCasa(t *testing.T) {
 	}
 
 	cuerpo := panelSeguridad(t, s, "?red=")
-	if !strings.Contains(cuerpo, "/seguridad/bloquear?ip=203.0.113.7") {
+	if !seOfreceBloquear(cuerpo, "203.0.113.7") {
 		t.Error("no se ofrece bloquear a un origen de Internet")
 	}
-	if strings.Contains(cuerpo, "/seguridad/bloquear?ip=192.168.1.18") {
+	if seOfreceBloquear(cuerpo, "192.168.1.18") {
 		t.Error("se ofrece bloquear a un equipo de casa")
+	}
+}
+
+// seOfreceBloquear dice si el panel ofrece la acción de bloqueo para esa
+// dirección.
+//
+// EXISTE PARA NO ATARSE A LA FORMA DEL CONTROL. Esto se comprobaba buscando
+// «/seguridad/bloquear?ip=X» en el HTML, y el 24/08/2026 la acción pasó de
+// enlace a formulario GET —mismo método, mismo destino, botón nativo en vez de
+// enlace azul entre botones—. La prueba se puso roja sin que cambiara nada de
+// lo que afirma: quién puede bloquearse y quién no. Se pregunta por el par
+// destino + dirección, que es lo único que esa afirmación necesita.
+func seOfreceBloquear(cuerpo, ip string) bool {
+	const destino = `action="/seguridad/bloquear"`
+	for resto := cuerpo; ; {
+		_, tras, hay := strings.Cut(resto, destino)
+		if !hay {
+			return false
+		}
+		formulario, _, _ := strings.Cut(tras, "</form>")
+		if strings.Contains(formulario, `value="`+ip+`"`) {
+			return true
+		}
+		resto = tras
 	}
 }
 
