@@ -1429,6 +1429,143 @@ a.orden-activo {
   overflow-wrap: anywhere;
 }
 
+/* UN ENCABEZADO NO SE PARTE NUNCA, y la regla de arriba no debia alcanzarlo.
+   Reportado sobre captura el 24/08/2026: los encabezados se leian «PAQ/UET/ES»,
+   «REC/HAZ/OS», «ESTAD/O», «VECE/S».
+
+   La distincion es la que faltaba: «anywhere» existe para el CONTENIDO, que es
+   impredecible —una IPv6, una ruta de noventa caracteres, un User-Agent— y del
+   que mas vale que se parta a que se salga. Un encabezado es lo contrario:
+   media docena de palabras cortas, fijas y escritas en esta misma casa. No
+   puede sorprender a nadie, y partido no se lee.
+
+   Ademas es lo que da suelo a las columnas de cifras: sin esto su minimo era
+   UNA letra, asi que el reparto automatico las estrujaba hasta ahi mientras
+   las de texto se quedaban con todo. Con el encabezado entero como suelo, cada
+   columna pide al menos lo que hace falta para saber que es. */
+.datos th {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+/* ——— LAS TABLAS ANCHAS NO REPARTEN A CIEGAS ———
+   Reportado sobre captura el 24/08/2026: el enlace «Bloquear...» se pintaba
+   ENCIMA de las pastillas de la columna vecina.
+
+   LA CAUSA ES LA MISMA DE SIEMPRE, y van tres veces por tres caminos
+   distintos: «table-layout: fixed» reparte el ancho ANTES de mirar lo que hay
+   dentro, asi que a una columna le puede tocar menos de lo que su contenido
+   necesita. Cuando ese contenido SE PUEDE partir, «overflow-wrap: anywhere»
+   lo salva —esa es la regla de arriba—. Cuando NO se puede, no hay nada que
+   partir y el contenido se sale y se pinta sobre la celda de al lado:
+
+     14/08  una IPv6, que no ofrece puntos de corte     -> se salio
+     24/08  la tabla de evidencia dentro de una celda   -> se estrujo
+     24/08  «.pastilla», que lleva white-space: nowrap  -> se salio
+
+   Parchear el tercero seria esperar al cuarto. El reparto fijo se puso para
+   que LAS TRES TABLAS DE /estado se alineen entre si —dos columnas, rotulo y
+   valor, mismo ancho en las tres— y para eso sigue siendo correcto. Lo que no
+   puede es gobernar una tabla de NUEVE columnas con contenido heterogeneo:
+   una IPv6, un nombre de operador, cifras, pastillas y un enlace. Ahi el
+   reparto fijo no es una decision de diseno, es una apuesta.
+
+   «.tabla-ancha» es la marca de «aqui manda el contenido»: el navegador mide
+   lo que hay y le da a cada columna al menos lo que necesita. Nada se sale
+   porque a nadie le falta sitio.
+
+   SE PROBO A REBAJAR «anywhere» A «break-word» AQUI, Y SE RETIRA POR LO QUE
+   HIZO. El argumento parecia bueno —«break-word» conserva como minimo la
+   palabra mas larga, asi que nada se estruja— y el resultado fue que la tabla
+   DESBORDABA SU CONTENEDOR: una IPv6 son 38 caracteres sin un solo punto de
+   corte —los «:» no rompen linea—, asi que ese minimo era ya una columna de
+   250 px, y sumados los ocho la tabla no cabia y se salia por la derecha.
+   Reportado sobre captura el 24/08/2026.
+
+   Con «anywhere» heredado de la regla de arriba NO vuelve el estrujamiento, y
+   el motivo es que la causa nunca fue esa propiedad: era el reparto FIJO, que
+   da partes iguales sin mirar el contenido. El reparto automatico distribuye
+   PROPORCIONALMENTE a lo que cada columna necesita, asi que la ruta —que
+   necesita mucho— recibe mucho. «anywhere» solo baja el suelo, y ese suelo es
+   justo lo que permite que la tabla quepa siempre en su ancho. */
+.tabla-ancha {
+  table-layout: auto;
+  /* No se sale de donde este, sea «main» o cualquier caja futura. */
+  max-width: 100%;
+}
+
+/* Una pastilla nunca es mas ancha que su celda. Es la red de seguridad del
+   caso que no se puede prever: lleva «nowrap» a proposito —«SESION CADUCADA»
+   partido en dos lineas dentro de la pildora no se lee— y con esto, si de
+   verdad no cabe, envuelve en vez de invadir a la vecina. Perder una linea de
+   alto es reversible; pintarse encima de otro dato, no. */
+.datos .pastilla {
+  max-width: 100%;
+}
+
+/* ——— LA COLUMNA DE UNA ACCION PIDE LO MINIMO ———
+   «Bloquear...», «Soltar» y «Retirar» son botones de ancho conocido y fijo:
+   no compiten por el sitio, lo necesitan y punto. «width: 1%» con reparto
+   automatico es exactamente eso —«dame lo minimo que quepa»—, y todo lo que
+   sobra se lo quedan las columnas que SI crecen con su contenido.
+   Sin esto, con reparto automatico la columna de la accion se llevaria una
+   novena parte del ancho para enseñar una palabra.
+
+   VA CON EL ELEMENTO DELANTE —«th.accion» y no «.accion»— por especificidad y
+   no por gusto: «.datos th:last-child» ya reclama «width: 7rem» para la ultima
+   columna y pesa mas que dos clases sueltas, asi que sin el «th» esta regla se
+   escribe y no se aplica. Es el fallo silencioso de CSS: nada avisa. */
+.datos th.accion,
+.datos td.accion {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* ——— LA EVIDENCIA, EN SU PROPIA FILA Y A TODO EL ANCHO ———
+   Reportado sobre captura el 24/08/2026: la tabla de evidencia se leia EN
+   VERTICAL, una letra por linea.
+
+   La causa era la suma de dos reglas correctas por separado. «.datos» reparte
+   con «table-layout: fixed», que divide el ancho DISPONIBLE entre sus
+   columnas; y estando la tabla DENTRO de una celda, ese ancho no era el de la
+   pagina sino el de una novena parte de ella. Cinco columnas a partes iguales
+   dejaban «Peticion» con el ancho de dos caracteres, y como «.datos td» lleva
+   «overflow-wrap: anywhere» —que permite encoger POR DEBAJO de la palabra mas
+   larga, ver arriba— la ruta no desbordaba: se estrujaba.
+
+   Es el solapamiento del 14/08 visto del otro lado: alli el reparto fijo hacia
+   que el texto SE SALIERA, aqui que se ENCOGIERA hasta lo ilegible.
+
+   SE ARREGLA MOVIENDOLA, NO ESTILANDOLA. La primera version le puso una barra
+   horizontal propia y el responsable la rechazo con razon: «no me resulta tan
+   practico mover una barrita». Una barra no arregla el problema, lo administra
+   — y encima obliga a manipular para leer lo que deberia verse. El problema no
+   era la tabla, era el SITIO: una fila propia con «colspan» le da el ancho
+   entero, que es justo lo que le faltaba. Sin barras y sin recortar un dato.
+
+   El numero del colspan sale de vistaSeguridad.ColumnasDeOrigenes y no de la
+   plantilla: cuatro columnas de esa tabla son condicionales. */
+.fila-evidencia > td {
+  /* Se pega a su fila: son el mismo origen, no dos entradas. El borde de
+     separacion lo pone la fila de evidencia abajo, para que el bloque entero
+     se lea como uno. */
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* El reparto automatico se lo da «.tabla-ancha», que es la regla general.
+   Aqui solo queda lo que es suyo: pegarse a su propio resumen. */
+.tabla-evidencia {
+  margin: var(--e-2) 0 0;
+}
+
+/* La ruta conserva el «anywhere» heredado, y aqui SI es una defensa y no la
+   causa: con el ancho entero solo actua sobre una ruta extraordinariamente
+   larga, y entonces envuelve en dos lineas en vez de desbordar sobre la
+   columna vecina. */
+
 /* El agente ocupa lo que sobre y se lee en pequeno: identifica al cliente,
    no es el dato principal de la fila. */
 .tabla-cronologia .agente {

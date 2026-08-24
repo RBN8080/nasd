@@ -303,6 +303,39 @@ type vistaSeguridad struct {
 	PuedeAdministrar bool
 }
 
+// ColumnasDeOrigenes son las columnas que la tabla de orígenes tiene AHORA
+// MISMO. Existe porque cuatro de ellas son condicionales.
+//
+// # PARA QUÉ HACE FALTA UN NÚMERO Y NO UN OJO
+//
+// Dos filas de esa tabla ocupan el ancho entero con un «colspan»: la de «no ha
+// tocado nadie» y la de evidencia. Un colspan que no cuadra con las columnas
+// reales no da error —el navegador lo recorta o deja una columna fantasma—,
+// así que el defecto se ve raro y no se explica solo.
+//
+// Ya había pasado: la fila vacía llevaba «colspan="9"» escrito a mano, que solo
+// era cierto con las cuatro condicionales visibles. Con el filtro por omisión
+// —donde «Procedencia» no se pinta— sobraba una.
+//
+// Se cuenta DONDE SE DECIDE, junto a las banderas que gobiernan cada columna,
+// para que añadir una futura obligue a pasar por aquí en vez de por la memoria
+// de quien edite la plantilla.
+func (v vistaSeguridad) ColumnasDeOrigenes() int {
+	// Las fijas: Dirección, Rechazos, Actividad, Motivos y la de la acción.
+	n := 5
+	for _, seVe := range []bool{
+		v.SinFiltroDeRed,              // Procedencia
+		v.HayGeo,                      // Operador
+		v.SoloInternet && v.HayToques, // Paquetes
+		v.SoloInternet,                // Conex.
+	} {
+		if seVe {
+			n++
+		}
+	}
+	return n
+}
+
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
 // saber: si la base de operadores con la que se compuso ya quedó vieja.
 //

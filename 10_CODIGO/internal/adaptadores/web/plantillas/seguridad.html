@@ -71,7 +71,7 @@
     registro.{{end}}
   </p>
 </div>
-<table class="datos">
+<table class="datos tabla-ancha">
   <thead>
     <tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th><th>Último origen</th></tr>
   </thead>
@@ -114,9 +114,9 @@
     conexiones siguieron vivas y NO están contadas aquí.{{end}}
   </p>
 </div>
-<table class="datos">
+<table class="datos tabla-ancha">
   <thead>
-    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th>Último</th><th></th></tr>
+    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th>Último</th><th class="accion"></th></tr>
   </thead>
   <tbody>
     {{range .Apartados}}
@@ -131,7 +131,7 @@
            puerta ya estaba cerrada por otro». */}}
       <td class="num">{{.Frenados}}</td>
       <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
-      <td class="num">
+      <td class="accion">
         <form method="post" action="/seguridad/soltar">
           <input type="hidden" name="csrf" value="{{$.Csrf}}">
           <input type="hidden" name="ip" value="{{.IP}}">
@@ -160,9 +160,9 @@
     guarda la fecha de la foto.
   </p>
 </div>
-<table class="datos">
+<table class="datos tabla-ancha">
   <thead>
-    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th>Último</th><th></th></tr>
+    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th>Último</th><th class="accion"></th></tr>
   </thead>
   <tbody>
     {{range .Bloqueos}}
@@ -182,7 +182,7 @@
       <td class="num">{{if .Caduca.IsZero}}<span class="suave">sin caducidad</span>{{else}}{{fecha .Caduca}}{{end}}</td>
       <td class="num">{{.Frenados}}</td>
       <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
-      <td class="num">
+      <td class="accion">
         <form method="post" action="/seguridad/retirar">
           <input type="hidden" name="csrf" value="{{$.Csrf}}">
           <input type="hidden" name="id" value="{{.ID}}">
@@ -284,7 +284,7 @@
   <p class="nota leyenda-dato">Base de operadores: {{fecha .FechaGeo}}.</p>
   {{end}}
 </div>
-<table class="datos tabla-origenes">
+<table class="datos tabla-ancha tabla-origenes">
   <!-- COLUMNAS CONDICIONALES, y las tres por el mismo motivo: una columna que
        dice lo mismo en todas las filas, o que esta vacia por construccion, no
        informa de nada y ademas se lee como un cero.
@@ -294,7 +294,7 @@
          Paquetes y Conexiones  solo con el filtro EN Internet: las dos capas
                       son de Internet por construccion. -->
   <thead>
-    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th><th></th></tr>
+    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th><th class="accion"></th></tr>
   </thead>
   <tbody>
   {{range .Origenes}}
@@ -336,48 +336,6 @@
         <details class="senal{{if .Destacar}} senal-aviso{{end}}">
           <summary>{{.Etiqueta}}</summary>
           <p class="nota">{{.Explicacion}}</p>
-        </details>
-        {{end}}
-
-        <!-- LA EVIDENCIA, DEBAJO DE LAS SEÑALES QUE SUSTENTA.
-             Antes de esto el panel afirmaba «Exploración automatizada» y quien
-             lo leyera tenía que creerse el umbral o irse al diario a
-             reconstruirlo a mano. Aquí está lo que se pidió, con qué método,
-             qué contestó el servidor y cuántas veces: los mismos hechos que ya
-             están en el anillo, agrupados para poder leerlos.
-             VA PLEGADA porque son hasta diez líneas por fila y la tabla tiene
-             que seguir leyéndose de un vistazo — mismo criterio que la
-             cronología. -->
-        {{if .Evidencia}}
-        <details class="senal">
-          <summary>En qué se basa esto ({{.Rechazos}} rechazos)</summary>
-          {{if gt .SondasVistas $.TopeSondas}}
-          <p class="nota">Las {{$.TopeSondas}} más repetidas de {{.SondasVistas}} peticiones distintas.</p>
-          {{end}}
-          {{if .RutasInexistentes}}
-          <p class="nota">
-            Rutas distintas que no existen: <strong>{{.RutasInexistentes}}</strong>.
-            {{/* La ENTRADA del umbral de exploración, aquí y no en una columna
-                 de la tabla: ADR-0065 quitó esa columna porque enseñaba el
-                 cálculo al lado de su conclusión sin decir que eran lo mismo.
-                 Dentro de la evidencia sí contesta la pregunta que se hace
-                 aquí, que es «¿por qué dice eso el panel?». */}}
-          </p>
-          {{end}}
-          <table class="datos">
-            <thead><tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th></tr></thead>
-            <tbody>
-            {{range .Evidencia}}
-              <tr>
-                <td class="ruta">{{.Metodo}} {{.Ruta}}</td>
-                <td class="num">{{.Estado}}</td>
-                <td class="num">{{.Veces}}</td>
-                <td class="num">{{fecha .Primera}}</td>
-                <td class="num">{{fecha .Ultima}}</td>
-              </tr>
-            {{end}}
-            </tbody>
-          </table>
         </details>
         {{end}}
 
@@ -428,12 +386,69 @@
            barandilla del servidor— y ofrecer el enlace seria prometer algo
            que se va a rechazar. Es un enlace y no un boton porque no cambia
            nada: lleva a la pantalla que ENSEÑA que se bloquearia. -->
-      <td class="num">
+      <td class="accion">
         {{if and .IP.IsValid .Red.DeFuera}}<a href="/seguridad/bloquear?ip={{.IP}}">Bloquear…</a>{{end}}
       </td>
     </tr>
+
+    <!-- LA EVIDENCIA, EN SU PROPIA FILA Y A TODO EL ANCHO.
+         Antes de esto el panel afirmaba «Exploración automatizada» y quien lo
+         leyera tenía que creerse el umbral o irse al diario a reconstruirlo a
+         mano. Aquí está lo que se pidió, con qué método, qué contestó el
+         servidor y cuántas veces: los mismos hechos que ya están en el anillo,
+         agrupados para poder leerlos.
+
+         POR QUÉ UNA FILA PROPIA Y NO DENTRO DE «Motivos», QUE ES DONDE ESTABA.
+         Reportado sobre captura el 24/08/2026: se leía EN VERTICAL, una letra
+         por línea. Metida en una celda, esta tabla solo podía repartir el ancho
+         de ESA celda —una novena parte de la página—, y con «.datos» a reparto
+         fijo eso dejaba «Petición» con el ancho de dos caracteres. El problema
+         no era la tabla: era el sitio. Aquí dispone del ancho entero y las
+         rutas se leen de corrido, sin barras que mover y sin recortar un dato.
+
+         VA PLEGADA porque son hasta diez líneas por fila y la tabla tiene que
+         seguir leyéndose de un vistazo — mismo criterio que la cronología. -->
+    {{if .Evidencia}}
+    <tr class="fila-evidencia">
+      <td colspan="{{$.ColumnasDeOrigenes}}">
+        <details class="senal">
+          <summary>En qué se basa esto ({{.Rechazos}} rechazos)</summary>
+          {{if gt .SondasVistas $.TopeSondas}}
+          <p class="nota">Las {{$.TopeSondas}} más repetidas de {{.SondasVistas}} peticiones distintas.</p>
+          {{end}}
+          {{if .RutasInexistentes}}
+          <p class="nota">
+            Rutas distintas que no existen: <strong>{{.RutasInexistentes}}</strong>.
+            {{/* La ENTRADA del umbral de exploración, aquí y no en una columna
+                 de la tabla: ADR-0065 quitó esa columna porque enseñaba el
+                 cálculo al lado de su conclusión sin decir que eran lo mismo.
+                 Dentro de la evidencia sí contesta la pregunta que se hace
+                 aquí, que es «¿por qué dice eso el panel?». */}}
+          </p>
+          {{end}}
+          <table class="datos tabla-ancha tabla-evidencia">
+            <thead><tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th></tr></thead>
+            <tbody>
+            {{range .Evidencia}}
+              <tr>
+                <td class="ruta">{{.Metodo}} {{.Ruta}}</td>
+                <td class="num">{{.Estado}}</td>
+                <td class="num">{{.Veces}}</td>
+                <td class="num">{{fecha .Primera}}</td>
+                <td class="num">{{fecha .Ultima}}</td>
+              </tr>
+            {{end}}
+            </tbody>
+          </table>
+        </details>
+      </td>
+    </tr>
+    {{end}}
   {{else}}
-    <tr><td colspan="9">Nadie ha tocado el nodo en esta ventana con estos filtros.</td></tr>
+    <!-- El colspan sale del modelo y no de un número escrito a mano: aquí ponía
+         «9», que solo era cierto con las cuatro columnas condicionales a la
+         vez. Ver vistaSeguridad.ColumnasDeOrigenes. -->
+    <tr><td colspan="{{.ColumnasDeOrigenes}}">Nadie ha tocado el nodo en esta ventana con estos filtros.</td></tr>
   {{end}}
   </tbody>
 </table>
@@ -491,7 +506,7 @@
   {{if .HayMas}}
   <p class="nota">{{.TopeCronologico}} de {{.Resumen.Eventos}}. Acote la ventana para ver el resto.</p>
   {{end}}
-  <table class="datos tabla-cronologia">
+  <table class="datos tabla-ancha tabla-cronologia">
     <thead>
       <tr><th>Momento</th><th>Dirección</th><th>Ruta</th><th>Motivo</th><th>Cliente</th></tr>
     </thead>
