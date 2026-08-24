@@ -187,11 +187,19 @@ func TestElHallazgoNoGuardaLaCadenaDeConsulta(t *testing.T) {
 	}
 }
 
-// EL PANEL LO ENSEÑA, Y DICE LO QUE NO PUEDE AFIRMAR.
+// EL PANEL LO ENSEÑA, Y NO AFIRMA LO QUE NO PUEDE SABER.
 //
-// La segunda mitad no es cortesía: sin ella, «respuesta inesperada» en rojo se
-// lee como «me han entrado», y el servidor no sabe eso. Es la misma regla que
-// obliga a que cada Senal aparezca con su falso positivo al lado.
+// # LO QUE CAMBIÓ EL 2026-08-24, Y LO QUE NO
+//
+// Esta prueba exigía además dos frases de la leyenda —«habla de este servidor,
+// no de quien lo pidió» y «No demuestra…»—. Esa leyenda se redujo a una línea
+// con las otras cuatro de la página, por decisión del responsable sobre
+// capturas del panel en uso. Las definiciones viven en NAS_OPERACION.txt §15.
+//
+// LA SEGUNDA MITAD DE LA PRUEBA NO SE TOCA, y es la que de verdad protegía:
+// prohíbe que la página use «exploit», «intrusión» o «comprometido». Negar el
+// compromiso en prosa era prudencia; no afirmarlo es la regla. Un texto puede
+// acortarse; una palabra que el servidor no puede sostener, no puede aparecer.
 func TestElPanelEnsenaElHallazgoSinAfirmarCompromiso(t *testing.T) {
 	s := servidorConAuth(t)
 	atendiendo(t, s, http.MethodGet, "/.git/config", http.StatusOK, nil)
@@ -200,8 +208,7 @@ func TestElPanelEnsenaElHallazgoSinAfirmarCompromiso(t *testing.T) {
 	for _, quiero := range []string{
 		"Respuestas inesperadas",
 		"/.git/config",
-		"habla de este servidor, no de quien lo pidió",
-		"No demuestra",
+		"Requieren revisión",
 	} {
 		if !strings.Contains(cuerpo, quiero) {
 			t.Errorf("el panel no dice %q", quiero)

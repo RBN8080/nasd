@@ -1512,12 +1512,18 @@ a.orden-activo {
    Sin esto, con reparto automatico la columna de la accion se llevaria una
    novena parte del ancho para enseñar una palabra.
 
+   SE LLAMA «col-accion» Y NO «accion», Y ESE FUE UN FALLO REAL: «.accion» ya
+   existia para la accion recomendada de un indicador en /estado —bloque propio,
+   letra menor y una flecha «-> » de ::before—. Reutilizar el nombre le colgo esa
+   flecha a los botones de las tablas, visible en la captura del 24/08/2026. Dos
+   cosas distintas no pueden compartir clase por parecerse de nombre.
+
    VA CON EL ELEMENTO DELANTE —«th.accion» y no «.accion»— por especificidad y
    no por gusto: «.datos th:last-child» ya reclama «width: 7rem» para la ultima
    columna y pesa mas que dos clases sueltas, asi que sin el «th» esta regla se
    escribe y no se aplica. Es el fallo silencioso de CSS: nada avisa. */
-.datos th.accion,
-.datos td.accion {
+.datos th.col-accion,
+.datos td.col-accion {
   width: 1%;
   white-space: nowrap;
   text-align: right;

@@ -41,11 +41,26 @@
      La cifra del historial se dice con Capacidad y no con los eventos de la
      ventana: aquello llegaba a afirmar «se conservan los 3 más recientes de
      5000», que es falso. Se conservan 2000. -->
+<!-- LOS TEXTOS DE ESTA PAGINA SE REDUJERON A UNA LINEA POR SECCION EL
+     2026-08-24, POR DECISION DEL RESPONSABLE SOBRE CAPTURAS DEL PANEL EN USO:
+     «yo si me esfuerzo en entenderte lo logro, pero solamente tu te lo explicas
+     para ti [...] busco que se vea profesional y no algo casero».
+
+     El diagnostico era correcto y el defecto compartido: estas leyendas
+     explicaban POR QUE se diseño asi —el razonamiento, las salvedades, lo que
+     una cifra no demuestra— en vez de decir QUE es la tabla. Eso es un
+     comentario de codigo, y su sitio es el codigo.
+
+     LA REGLA QUE QUEDA: una linea por seccion, que diga que contiene. Los datos
+     condicionales se quedan, porque son HECHOS y no explicaciones —cuantos
+     rechazos se conservan, cuantos cierres fallaron, desde cuando hay
+     paquetes—. Las definiciones retiradas viven en NAS_OPERACION.txt §15. -->
+{{if .Resumen.Truncado}}
 <p class="nota">
-  Hechos registrados, no ataques.
-  {{if .Resumen.Truncado}}Historial: <strong>{{.Capacidad}}</strong> rechazos
-  conservados de <strong>{{.Resumen.TotalHistorico}}</strong> vistos.{{end}}
+  Historial: <strong>{{.Capacidad}}</strong> rechazos conservados de
+  <strong>{{.Resumen.TotalHistorico}}</strong> vistos.
 </p>
+{{end}}
 
 <!-- LO QUE HABLA DEL NODO Y NO DE QUIEN LLAMA — va PRIMERO de todo.
      Las tres tablas siguientes dicen qué hizo un extraño; esta dice qué hace
@@ -60,15 +75,10 @@
 <h2>Respuestas inesperadas</h2>
 <div class="leyenda">
   <p class="nota">
-    <strong>Esto habla de este servidor, no de quien lo pidió.</strong> Son rutas
-    de programas que este NAS no ejecuta y a las que aun así respondió con
-    contenido. Hay que ir a mirar qué hay ahí y por qué se sirve.
-    <strong>No demuestra que nadie ejecutara nada, ni que se accediera a un
-    repositorio, ni que el nodo esté comprometido</strong>: demuestra que
-    respondió donde su arquitectura dice que no publica nada.
-    {{if gt .TotalHallazgos 0}}Vistas
-    <strong>{{.TotalHallazgos}}</strong> veces en total desde que existe este
-    registro.{{end}}
+    Rutas ajenas a este servidor que recibieron respuesta con contenido.
+    Requieren revisión.
+    {{if gt .TotalHallazgos 0}}Vistas <strong>{{.TotalHallazgos}}</strong> veces
+    desde que existe el registro.{{end}}
   </p>
 </div>
 <table class="datos tabla-ancha">
@@ -104,19 +114,15 @@
 <h2>Apartados por conducta</h2>
 <div class="leyenda">
   <p class="nota">
-    Los puso el nodo solo y caducan solos. Mientras están, sus conexiones se
-    anotan y se cierran: se les sigue viendo llegar.
-    <strong>«Frenados» son conexiones cerradas, no peticiones</strong> — después
-    de cerrarlas no hay petición que contar, así que esa cifra y la de rechazos
-    no se pueden comparar entre sí.
+    Puestos por el nodo según la conducta observada. Caducan solos.
     {{if $.CierresFallidos}}<strong>Atención:</strong> {{$.CierresFallidos}}
     cierres no se pudieron completar desde que arrancó el servicio; esas
-    conexiones siguieron vivas y NO están contadas aquí.{{end}}
+    conexiones siguieron vivas y no están contadas aquí.{{end}}
   </p>
 </div>
 <table class="datos tabla-ancha">
   <thead>
-    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th>Último</th><th class="accion"></th></tr>
+    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th>Último</th><th class="col-accion"></th></tr>
   </thead>
   <tbody>
     {{range .Apartados}}
@@ -131,7 +137,7 @@
            puerta ya estaba cerrada por otro». */}}
       <td class="num">{{.Frenados}}</td>
       <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
-      <td class="accion">
+      <td class="col-accion">
         <form method="post" action="/seguridad/soltar">
           <input type="hidden" name="csrf" value="{{$.Csrf}}">
           <input type="hidden" name="ip" value="{{.IP}}">
@@ -148,21 +154,12 @@
 <h2>Bloqueos puestos</h2>
 <div class="leyenda">
   <p class="nota">
-    Los puso usted. Cada uno lleva su motivo escrito y cuántas veces ha servido:
-    <strong>uno con cero frenados no ha protegido de nada todavía</strong>, y esa
-    es la cifra con la que se decide retirarlo. «Frenados» son conexiones
-    cerradas, no peticiones.
-    <br>
-    El alcance «Operador» es una <strong>foto</strong> de los tramos que la base
-    anunciaba el día que se creó, no una regla viva: si ese operador anuncia un
-    tramo nuevo, esta entrada <strong>no</strong> lo cubre. Es deliberado —una
-    regla viva cambiaría lo bloqueado sin que nadie lo decidiera— y por eso se
-    guarda la fecha de la foto.
+    Bloqueos manuales vigentes.
   </p>
 </div>
 <table class="datos tabla-ancha">
   <thead>
-    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th>Último</th><th class="accion"></th></tr>
+    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th>Último</th><th class="col-accion"></th></tr>
   </thead>
   <tbody>
     {{range .Bloqueos}}
@@ -182,7 +179,7 @@
       <td class="num">{{if .Caduca.IsZero}}<span class="suave">sin caducidad</span>{{else}}{{fecha .Caduca}}{{end}}</td>
       <td class="num">{{.Frenados}}</td>
       <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
-      <td class="accion">
+      <td class="col-accion">
         <form method="post" action="/seguridad/retirar">
           <input type="hidden" name="csrf" value="{{$.Csrf}}">
           <input type="hidden" name="id" value="{{.ID}}">
@@ -265,12 +262,9 @@
      entera para decir una fecha. Ver .leyenda en estilo.css. -->
 <div class="leyenda">
   <p class="nota">
-    Quién ha tocado el nodo, de lo más insistente a lo menos. Las tres cifras de
-    cada fila son la misma visita a distinta profundidad: el paquete llegó, la
-    conexión se estableció, el rechazo pidió algo y no se le dio.
-    {{if .HuecoDePaquetes}}El registro de paquetes empieza el
-    {{fecha .PaquetesDesde}}, más tarde que los otros dos: una visita anterior a
-    esa hora aparece con conexiones y sin paquetes.{{end}}
+    Direcciones que han contactado con el nodo, de más a menos actividad.
+    {{if .HuecoDePaquetes}}Paquetes registrados desde el
+    {{fecha .PaquetesDesde}}.{{end}}
   </p>
   {{if .HayGeo}}
   <!-- La base se refresca una vez al mes, asi que puede ir por detras de la
@@ -294,7 +288,7 @@
          Paquetes y Conexiones  solo con el filtro EN Internet: las dos capas
                       son de Internet por construccion. -->
   <thead>
-    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th><th class="accion"></th></tr>
+    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th><th class="col-accion"></th></tr>
   </thead>
   <tbody>
   {{range .Origenes}}
@@ -386,8 +380,20 @@
            barandilla del servidor— y ofrecer el enlace seria prometer algo
            que se va a rechazar. Es un enlace y no un boton porque no cambia
            nada: lleva a la pantalla que ENSEÑA que se bloquearia. -->
-      <td class="accion">
-        {{if and .IP.IsValid .Red.DeFuera}}<a href="/seguridad/bloquear?ip={{.IP}}">Bloquear…</a>{{end}}
+      <td class="col-accion">
+        <!-- FORMULARIO GET Y NO UN ENLACE, aunque siga siendo una navegación.
+             Reportado sobre captura el 24/08/2026: un enlace azul subrayado
+             entre botones nativos es el mismo conflicto estético que ya se
+             reportó el 05/08 en la barra superior y que documenta «.boton-barra».
+             Aquí se resuelve por el otro lado —botón de verdad en vez de enlace
+             disfrazado— porque cuesta lo mismo y no estrena CSS: el método sigue
+             siendo GET, así que no cambia nada de lo que esta acción es. -->
+        {{if and .IP.IsValid .Red.DeFuera}}
+        <form method="get" action="/seguridad/bloquear">
+          <input type="hidden" name="ip" value="{{.IP}}">
+          <button type="submit">Bloquear…</button>
+        </form>
+        {{end}}
       </td>
     </tr>
 
