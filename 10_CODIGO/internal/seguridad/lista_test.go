@@ -3,7 +3,10 @@ package seguridad
 import (
 	"errors"
 	"net/netip"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -399,5 +402,158 @@ func TestElMatchingAcierta(t *testing.T) {
 		if ok != c.dentro {
 			t.Errorf("Cubre(%s) = %v; se esperaba %v", c.ip, ok, c.dentro)
 		}
+	}
+}
+
+// EL DEFECTO MEDIDO EN EL NODO EL 2026-08-24, reproducido.
+//
+// # QUÉ PASABA
+//
+// El diario decía «la lista de bloqueos no se pudo leer; se empieza vacía» con
+// el error «bufio.Scanner: token too long». La causa, medida sobre el archivo
+// real: la entrada de «AS13335 · CLOUDFLARENET · US» son **1517 tramos** en una
+// sola línea de **102 572 bytes**, y un bufio.Scanner sin configurar admite
+// como mucho 64 KB.
+//
+// El resultado no era un error visible: era un bloqueo que la persona había
+// creado, que el archivo conservaba entero, y que **no bloqueaba nada** desde
+// el primer reinicio. Es exactamente el modo de fallo que este proyecto
+// persigue — una afirmación que deja de ser verdad sin avisar—, y encima sobre
+// un control.
+//
+// Se usan 1600 tramos, por encima de los 1517 reales, para que la prueba siga
+// valiendo si esa entrada crece.
+func TestUnBloqueoDeOperadorGrandeSobreviveAlArranque(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "lista")
+	ahora := time.Now()
+
+	tramos := make([]Tramo, 0, 1600)
+	for i := range 1600 {
+		// Direcciones IPv6 largas a propósito: son las que hacen la línea
+		// grande, y son las que de verdad tiene la entrada del nodo.
+		p := netip.MustParsePrefix("2606:4700:" + strconv.FormatInt(int64(i), 16) + "::/48")
+		tramos = append(tramos, TramoDe(p))
+	}
+
+	uno, err := CargarLista(ruta)
+	if err != nil {
+		t.Fatalf("CargarLista: %v", err)
+	}
+	// Una entrada PEQUEÑA primero: el Scanner se detiene en la línea que no
+	// puede leer, así que si el orden se invirtiera se perderían también las de
+	// detrás. Aquí se comprueba que no se pierde ninguna de las dos.
+	if _, err := uno.Anadir(entradaDe("203.0.113.0/24", "una pequeña, delante"), netip.Addr{}, ahora); err != nil {
+		t.Fatalf("Anadir la pequeña: %v", err)
+	}
+	if _, err := uno.Anadir(Entrada{
+		Alcance:  AlcanceOperador,
+		Etiqueta: "AS13335 · CLOUDFLARENET · US",
+		Tramos:   tramos,
+		Motivo:   "reputación del operador",
+		Autor:    "admin",
+		BaseGeo:  ahora,
+	}, netip.Addr{}, ahora); err != nil {
+		t.Fatalf("Anadir la grande: %v", err)
+	}
+	if err := uno.Volcar(); err != nil {
+		t.Fatalf("Volcar: %v", err)
+	}
+
+	otra, err := CargarLista(ruta)
+	if err != nil {
+		t.Fatalf("CargarLista tras reiniciar: %v", err)
+	}
+	v := otra.Vigentes(ahora)
+	if len(v) != 2 {
+		t.Fatalf("entradas tras reiniciar = %d; se esperaban 2 — la grande se perdió en silencio", len(v))
+	}
+	// Y LO QUE DE VERDAD IMPORTA: que siga bloqueando. Una entrada que se relee
+	// pero con los tramos recortados sería el mismo defecto con otra cara.
+	dentro := tramos[1599].Desde
+	if _, ok := otra.Cubre(dentro, ahora); !ok {
+		t.Errorf("el último tramo del operador no sobrevivió: %v", dentro)
+	}
+	if _, ok := otra.Cubre(netip.MustParseAddr("203.0.113.7"), ahora); !ok {
+		t.Error("la entrada pequeña se perdió detrás de la grande")
+	}
+}
+
+// LA OTRA MITAD DE LA CORRECCIÓN: lo que no se pueda releer, no se acepta.
+//
+// Sin esta barandilla el par escritor/lector puede volver a desajustarse, y el
+// síntoma sería otra vez un bloqueo aceptado por el panel que desaparece al
+// reiniciar. Un bloqueo o entra y funciona, o se niega diciendo por qué.
+func TestNoSeAceptaUnBloqueoQueNoSePodriaVolverALeer(t *testing.T) {
+	l := listaDePrueba(t)
+	ahora := time.Now()
+
+	// Bastantes tramos para pasarse del millón de bytes por línea.
+	enorme := make([]Tramo, 0, 20000)
+	for i := range 20000 {
+		p := netip.MustParsePrefix("2606:4700:" + strconv.FormatInt(int64(i), 16) + "::/48")
+		enorme = append(enorme, TramoDe(p))
+	}
+
+	_, err := l.Anadir(Entrada{
+		Alcance:  AlcanceOperador,
+		Etiqueta: "un operador enorme",
+		Tramos:   enorme,
+		Motivo:   "reputación",
+		Autor:    "admin",
+	}, netip.Addr{}, ahora)
+	if !errors.Is(err, ErrDemasiadosTramos) {
+		t.Fatalf("Anadir devolvió %v; se esperaba ErrDemasiadosTramos", err)
+	}
+	if len(l.Vigentes(ahora)) != 0 {
+		t.Error("se guardó una entrada que no se podría volver a leer")
+	}
+}
+
+// UNA LÍNEA ILEGIBLE NO PUEDE HACER QUE EL DIARIO MIENTA.
+//
+// El mensaje que había —«se empieza vacía»— apareció en el nodo con OCHO
+// bloqueos cargados y vigentes, porque CargarLista devuelve lo leído JUNTO al
+// error. Quien leyera el diario habría creído que el nodo estaba sin defensa
+// manual mientras el panel enseñaba ocho entradas.
+func TestElErrorDeLecturaDiceCuantasSobrevivieron(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "lista")
+	ahora := time.Now()
+
+	uno, err := CargarLista(ruta)
+	if err != nil {
+		t.Fatalf("CargarLista: %v", err)
+	}
+	if _, err := uno.Anadir(entradaDe("203.0.113.0/24", "la buena"), netip.Addr{}, ahora); err != nil {
+		t.Fatalf("Anadir: %v", err)
+	}
+	if err := uno.Volcar(); err != nil {
+		t.Fatalf("Volcar: %v", err)
+	}
+	// Se añade a mano una línea más larga de lo que se puede releer. No se
+	// puede provocar por la vía normal —Anadir ya lo impide— y por eso se
+	// escribe directamente en el archivo: lo que se prueba es qué dice el nodo
+	// ante un archivo que YA venía así, que es el caso real del 24/08.
+	f, err := os.OpenFile(ruta, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("abrir para añadir: %v", err)
+	}
+	larga := `{"id":"x","tramos":[` +
+		strings.Repeat(`{"desde":"::1","hasta":"::2"},`, 60000) +
+		`{"desde":"::1","hasta":"::2"}]}` + "\n"
+	if _, err := f.WriteString(larga); err != nil {
+		t.Fatalf("escribir la línea larga: %v", err)
+	}
+	f.Close()
+
+	otra, err := CargarLista(ruta)
+	if err == nil {
+		t.Fatal("una línea ilegible pasó sin denunciarse")
+	}
+	// LO QUE NO PUEDE PASAR: que el error dé a entender que no queda nada.
+	if len(otra.Vigentes(ahora)) != 1 {
+		t.Fatalf("entradas vigentes = %d; la buena tenía que sobrevivir", len(otra.Vigentes(ahora)))
+	}
+	if !strings.Contains(err.Error(), "quedan vigentes") {
+		t.Errorf("el error no dice cuántas sobrevivieron: %v", err)
 	}
 }

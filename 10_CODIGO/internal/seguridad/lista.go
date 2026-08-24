@@ -46,18 +46,60 @@ import (
 // Errores de las barandillas. Son valores y no textos para que la capa web
 // pueda decir qué pasó sin comparar cadenas.
 var (
-	ErrSinMotivo    = errors.New("un bloqueo sin motivo escrito no se acepta")
-	ErrSinAlcance   = errors.New("no hay nada que bloquear")
-	ErrTocaLaCasa   = errors.New("ese alcance incluye la red de casa, el túnel o el propio nodo")
-	ErrTeDejaFuera  = errors.New("ese alcance incluye la dirección desde la que está mirando")
-	ErrDemasiadas   = errors.New("la lista está llena")
-	ErrNoSeEncontro = errors.New("esa entrada ya no está en la lista")
+	ErrSinMotivo   = errors.New("un bloqueo sin motivo escrito no se acepta")
+	ErrSinAlcance  = errors.New("no hay nada que bloquear")
+	ErrTocaLaCasa  = errors.New("ese alcance incluye la red de casa, el túnel o el propio nodo")
+	ErrTeDejaFuera = errors.New("ese alcance incluye la dirección desde la que está mirando")
+	ErrDemasiadas  = errors.New("la lista está llena")
+	// ErrDemasiadosTramos protege la propiedad de FOTO del alcance «operador»:
+	// antes que guardar una entrada recortada —que bloquearía menos de lo que
+	// se firmó— o una que no se pueda releer, se niega y se dice por qué.
+	ErrDemasiadosTramos = errors.New("ese alcance tiene demasiados tramos para guardarlo entero")
+	ErrNoSeEncontro     = errors.New("esa entrada ya no está en la lista")
 )
 
 // topeLista acota cuántas entradas caben. A diferencia del de la cuarentena,
 // este no lo empuja un extraño sino el responsable, así que es holgado: existe
 // para que un archivo corrupto no se convierta en memoria sin fin.
 const topeLista = 512
+
+// topeLineaLista es lo más larga que puede ser la línea de UNA entrada.
+//
+// # EL DEFECTO MEDIDO QUE ESTA CONSTANTE CIERRA
+//
+// El 2026-08-24, arrancando el nodo, el diario decía:
+//
+//	"la lista de bloqueos no se pudo leer; se empieza vacía"
+//	error: "bufio.Scanner: token too long"
+//
+// La causa, medida sobre el archivo real: la entrada de «AS13335 ·
+// CLOUDFLARENET · US» son **1517 tramos** en una sola línea de **102 572
+// bytes**, y bufio.Scanner sin configurar admite como mucho 64 KB. El
+// resultado NO era un error visible en el panel: era un bloqueo que la persona
+// había creado, que el archivo conservaba entero, y que **no bloqueaba nada**
+// desde el primer reinicio. Silencioso, que es el modo de fallo que este
+// proyecto persigue.
+//
+// Peor: el Scanner se DETIENE en la línea larga, así que las entradas que
+// vinieran detrás se perderían también. Aquella era la última por casualidad.
+//
+// # POR QUÉ 1 MiB Y POR QUÉ NO SE TRUNCA LA ENTRADA
+//
+// Truncar los tramos era la otra salida, y rompe la propiedad que ADR-0070
+// declaró para el alcance «operador»: la entrada es una FOTO de lo que la
+// persona decidió. Una foto recortada en silencio bloquea MENOS de lo que se
+// firmó, que es peor que no bloquear.
+//
+// Así que se mide al revés: el lector tiene que poder leer lo que el escritor
+// escribió. 1 MiB cubre unos 11 000 tramos —siete veces la mayor entrada vista
+// en este nodo— y se paga UNA vez al arrancar, nunca al servir. El buffer
+// arranca en 64 KB y solo crece si hace falta, así que el caso normal no
+// reserva más de lo que ya reservaba.
+//
+// Y para que el par no pueda volver a desajustarse, Anadir RECHAZA una entrada
+// que no cupiera aquí: un bloqueo o entra y funciona, o se niega diciendo por
+// qué. Lo que no puede volver a pasar es que se acepte y desaparezca.
+const topeLineaLista = 1 << 20
 
 // Alcance es qué se eligió bloquear. Se guarda además de los tramos porque es
 // la INTENCIÓN, y los tramos son su consecuencia: al releer la lista dentro de
@@ -251,6 +293,10 @@ func (l *Lista) releer() error {
 	defer f.Close()
 
 	s := bufio.NewScanner(f)
+	// EL BUFFER SE CONFIGURA, y no es una precaución teórica: sin esta línea,
+	// la entrada de 1517 tramos de este nodo hacía fallar la lectura entera.
+	// Ver topeLineaLista.
+	s.Buffer(make([]byte, 0, 64*1024), topeLineaLista)
 	for s.Scan() {
 		linea := s.Bytes()
 		if len(linea) == 0 || linea[0] == '#' {
@@ -268,7 +314,19 @@ func (l *Lista) releer() error {
 			break
 		}
 	}
-	return s.Err()
+	if err := s.Err(); err != nil {
+		// SE DICE CUÁNTAS SOBREVIVIERON, y no solo que hubo un error.
+		//
+		// El Scanner se detiene en la línea que no puede leer, así que lo
+		// cargado hasta ahí SIGUE VIGENTE y lo de detrás se ha perdido. Quien
+		// lea el diario tiene que poder distinguir «no hay ningún bloqueo
+		// puesto» de «hay ocho puestos y falta al menos uno», que son dos
+		// situaciones opuestas. El mensaje anterior —«se empieza vacía»— era
+		// literalmente falso en el segundo caso.
+		return fmt.Errorf("lista de bloqueos %q: %w (quedan vigentes las %d entradas leídas antes del fallo)",
+			l.ruta, err, len(l.entradas))
+	}
+	return nil
 }
 
 // Anadir mete una entrada tras pasar las barandillas.
@@ -301,6 +359,15 @@ func (l *Lista) Anadir(e Entrada, quienPide netip.Addr, ahora time.Time) (Entrad
 		if quienPide.IsValid() && t.Contiene(quienPide) {
 			return Entrada{}, ErrTeDejaFuera
 		}
+	}
+
+	// QUE QUEPA AL RELEERSE, comprobado sobre la serialización REAL y no sobre
+	// una estimación de cuánto ocupa un tramo: si el formato cambia, esta
+	// comprobación cambia con él sola. Se paga un json.Marshal por bloqueo
+	// creado a mano, que es una acción de una persona, no del camino de una
+	// petición.
+	if linea, err := json.Marshal(e); err == nil && len(linea) > topeLineaLista {
+		return Entrada{}, ErrDemasiadosTramos
 	}
 
 	l.mu.Lock()
