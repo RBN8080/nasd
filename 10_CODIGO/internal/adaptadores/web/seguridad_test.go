@@ -949,6 +949,69 @@ func TestLaEvidenciaDiceQueContestoElServidor(t *testing.T) {
 	}
 }
 
+// LA EVIDENCIA SE DESPLIEGA A TODO EL ANCHO, Y NO ES COSMÉTICA.
+//
+// # EL DEFECTO QUE ESTO CIERRA
+//
+// Reportado sobre captura el 2026-08-24: la evidencia se leía EN VERTICAL, una
+// letra por línea. La causa es la suma de dos reglas correctas por separado —
+// «.datos» reparte con table-layout fixed, y «.datos td» lleva overflow-wrap
+// anywhere, que permite encoger POR DEBAJO de la palabra más larga—. Metida en
+// una celda de la tabla de orígenes, el ancho a repartir no era el de la página
+// sino el de una novena parte, así que a «Petición» le tocaba el de dos
+// caracteres y la ruta se estrujaba carácter a carácter.
+//
+// Se corrigió MOVIÉNDOLA a una fila propia con colspan, no estilándola: el
+// problema no era la tabla sino el sitio.
+//
+// # POR QUÉ EL COLSPAN SE COMPRUEBA CONTRA LAS COLUMNAS REALES
+//
+// Un colspan que no cuadra no da error: el navegador lo recorta o deja una
+// columna fantasma, y la fila se desalinea sin que nada falle. Es como llegó el
+// «colspan="9"» escrito a mano de la fila vacía, cierto solo con las cuatro
+// columnas condicionales visibles a la vez. Contar los <th> del encabezado y
+// exigir que coincidan es lo único que convierte eso en un fallo ruidoso.
+func TestLaEvidenciaSeDespliegaATodoElAncho(t *testing.T) {
+	s := servidorConAuth(t)
+	r := httptest.NewRequest(http.MethodGet, "/.git/config", nil)
+	r.RemoteAddr = "203.0.113.7:44001"
+	s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
+
+	// LOS TRES FILTROS, y no solo el de partida: cada uno enciende columnas
+	// condicionales distintas, que es justo lo que el colspan tiene que seguir.
+	// Con un solo caso, un colspan escrito a mano habría pasado la prueba —que
+	// es exactamente como sobrevivió el «9» de la fila vacía.
+	for _, filtro := range []string{"", "?red=", "?red=internet"} {
+		t.Run("filtro"+filtro, func(t *testing.T) {
+			cuerpo := panelSeguridad(t, s, filtro)
+			// Se busca por la clase que IDENTIFICA la tabla, no por la lista
+			// entera: «.tabla-ancha» se le añadió después y dejó la prueba en
+			// rojo sin que nada del comportamiento hubiera cambiado.
+			_, tabla, hay := strings.Cut(cuerpo, `tabla-origenes">`)
+			if !hay {
+				t.Fatal("no está la tabla de orígenes")
+			}
+			encabezado, cuerpoTabla, _ := strings.Cut(tabla, "</thead>")
+			// SE CUENTAN LOS CIERRES, y las dos alternativas ya fallaron aquí:
+			// «<th» cuenta también el «<thead>» que abre el bloque, y «<th>»
+			// se deja fuera los que llevan atributos —«<th class="accion">»—.
+			// «</th>» es uno por columna, exactamente, lleve lo que lleve.
+			columnas := strings.Count(encabezado, "</th>")
+
+			// La evidencia, en fila suya y no dentro de una celda de datos.
+			_, fila, esFilaPropia := strings.Cut(cuerpoTabla, `<tr class="fila-evidencia">`)
+			if !esFilaPropia {
+				t.Fatal("la evidencia ya no va en fila propia: volverá a estrujarse en una celda")
+			}
+			quiero := `colspan="` + strconv.Itoa(columnas) + `"`
+			if !strings.Contains(fila, quiero) {
+				t.Errorf("la fila de evidencia no ocupa las %d columnas de la tabla; falta %s",
+					columnas, quiero)
+			}
+		})
+	}
+}
+
 // LA FOTO DE LA BASE SE PINTA, Y SE AVISA CUANDO ENVEJECE.
 //
 // seguridad.Entrada.BaseGeo prometía en su comentario que «con la fecha
