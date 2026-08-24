@@ -183,10 +183,19 @@ func ejecutar() error {
 	}
 
 	// Los bloqueos puestos a mano. Mismo tratamiento del error: se anota y se
-	// sigue con la lista vacía. Perderla cuesta los bloqueos, no el servicio.
+	// sigue con lo que se haya podido leer. Perderla cuesta los bloqueos, no el
+	// servicio.
+	//
+	// EL MENSAJE NO DICE «se empieza vacía», y no es un matiz de estilo: el
+	// 2026-08-24 esa frase apareció en el diario del nodo con OCHO bloqueos
+	// cargados y vigentes, porque CargarLista devuelve lo leído junto al error.
+	// Quien leyera el diario habría creído que el nodo estaba sin defensa
+	// manual, y quien mirara el panel habría visto ocho entradas: dos fuentes
+	// contradiciéndose sobre lo mismo. El error de CargarLista ya dice cuántas
+	// sobrevivieron; aquí solo hay que no desmentirlo.
 	lista, err := seguridad.CargarLista(cfg.RutaLista())
 	if err != nil {
-		reg.Error("la lista de bloqueos no se pudo leer; se empieza vacía",
+		reg.Error("la lista de bloqueos se leyó a medias; revise el archivo",
 			"ruta", cfg.RutaLista(), "error", err)
 	}
 
