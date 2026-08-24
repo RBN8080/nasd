@@ -109,6 +109,7 @@ func servidorDeMiniatura(t *testing.T, doble func(ctx context.Context, entrada, 
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 		DirMiniaturas:    filepath.Join(t.TempDir(), "miniaturas"),
 	})

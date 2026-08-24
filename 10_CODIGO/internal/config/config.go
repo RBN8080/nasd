@@ -160,6 +160,21 @@ func (c Config) RutaNovedades() string {
 	return filepath.Join(c.DirectorioEstado, "novedades")
 }
 
+// RutaHallazgos son las respuestas inesperadas del propio servidor
+// (internal/seguridad/hallazgos.go).
+//
+// MISMO directorio que las anteriores, y aquí el argumento de no publicarlo por
+// SMB es el más fuerte de todos: este archivo es la lista de rutas que el nodo
+// está sirviendo y no debería. Dejarlo donde lo vea cualquiera de la LAN sería
+// entregar el mapa del problema junto con el problema.
+//
+// ARCHIVO PROPIO Y NO UNA SECCIÓN DEL ANILLO DE RECHAZOS, y no por simetría:
+// aquel guarda sucesos y este guarda RUTAS agregadas, que es otra cosa y otro
+// ritmo. En un nodo sano este archivo ni siquiera llega a existir.
+func (c Config) RutaHallazgos() string {
+	return filepath.Join(c.DirectorioEstado, "hallazgos")
+}
+
 // RutaToques es el historial que deja nas-sensor — RF-33, ADR-0066.
 //
 // NO VA EN DirectorioEstado, y es la única ruta de este archivo que no lo hace:

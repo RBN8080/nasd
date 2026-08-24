@@ -24,6 +24,14 @@ import (
 //  1. Un origen de Internet NUNCA VISTO.
 //  2. Una cuarentena disparada — el nodo se defendió solo y hay que saberlo.
 //  3. Un bloqueo puesto a mano que frenó algo — dice que la regla sigue viva.
+//  4. Un HALLAZGO nuevo — el nodo respondió con contenido en una ruta que no
+//     publica (hallazgos.go).
+//
+// La cuarta se añadió con los hallazgos, y no por completismo: es la única de
+// las cuatro que pide ir a arreglar algo en vez de solo mirar. Las otras tres
+// informan de lo que hizo un extraño; esta informa de lo que hace el nodo. Una
+// alarma así encendida en un panel que nadie abre no habría avisado de nada —
+// que es literalmente el motivo por el que existe este archivo.
 //
 // Se descartó a propósito «acceso correcto desde una red desconocida», que
 // sería la única señal capaz de detectar una credencial robada USADA con
@@ -76,7 +84,7 @@ func CargarNovedades(ruta string) (*Novedades, error) {
 // Recalcular vuelve a contar. Lo llama el ciclo de mantenimiento, no cada
 // página: la barra la pinta CADA petición, y recorrer dos anillos en cada una
 // convertiría un adorno en un coste permanente.
-func (n *Novedades) Recalcular(conectados []OrigenConectado, apartados []Apartado, bloqueos []Entrada) {
+func (n *Novedades) Recalcular(conectados []OrigenConectado, apartados []Apartado, bloqueos []Entrada, hallazgos []Hallazgo) {
 	n.mu.Lock()
 	desde := n.visita
 	n.mu.Unlock()
@@ -97,6 +105,20 @@ func (n *Novedades) Recalcular(conectados []OrigenConectado, apartados []Apartad
 	}
 	for _, b := range bloqueos {
 		if b.UltimoFrenado.After(desde) {
+			cuenta++
+		}
+	}
+	for _, h := range hallazgos {
+		// Se cuenta por PRIMERA y no por Ultima, igual que los orígenes nuevos:
+		// lo que enciende la marca es que aparezca una ruta expuesta que no
+		// estaba, no que una ya conocida se vuelva a pedir. Con Ultima, un
+		// escáner insistiendo sobre la misma ruta dejaría la marca encendida
+		// para siempre y volvería a ser lo que este archivo evita: un aviso que
+		// se enciende por lo de siempre y se deja de mirar.
+		//
+		// LA RUTA SIGUE EN EL PANEL mientras nadie la arregle: apagar la marca
+		// no borra el hallazgo, solo dice «esto ya lo has visto».
+		if h.Primera.After(desde) {
 			cuenta++
 		}
 	}
@@ -129,7 +151,7 @@ func (n *Novedades) Visto(ahora time.Time) {
 }
 
 // Mantener recalcula y vuelca en la misma cadencia que todo lo demás.
-func (n *Novedades) Mantener(hecho <-chan struct{}, cx *Conexiones, c *Cuarentena, l *Lista, alFallar func(error)) {
+func (n *Novedades) Mantener(hecho <-chan struct{}, cx *Conexiones, c *Cuarentena, l *Lista, h *Hallazgos, alFallar func(error)) {
 	t := time.NewTicker(intervaloVolcado)
 	defer t.Stop()
 	recalcular := func(ahora time.Time) {
@@ -137,6 +159,7 @@ func (n *Novedades) Mantener(hecho <-chan struct{}, cx *Conexiones, c *Cuarenten
 			PorOrigenConectado(cx.Desde(time.Time{})),
 			c.Vigentes(ahora),
 			l.Vigentes(ahora),
+			h.Todos(),
 		)
 	}
 	// Una vez al arrancar, para que la marca no tarde un minuto en aparecer

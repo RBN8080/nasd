@@ -220,6 +220,7 @@ func servidorConPlazo(t *testing.T, plazo time.Duration) *Servidor {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {

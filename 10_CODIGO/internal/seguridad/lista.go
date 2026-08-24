@@ -188,10 +188,14 @@ type Entrada struct {
 	// no se puede distinguir de «este bloqueo frenó algo alguna vez», y la
 	// marca se quedaría encendida para siempre desde el primer acierto.
 	UltimoFrenado time.Time `json:"ultimo_frenado,omitzero"`
-	// Frenados son las conexiones que esta entrada ha cerrado.
+	// Frenados son las conexiones que esta entrada ha cerrado DE VERDAD, no las
+	// veces que una dirección coincidió con sus tramos. Ver Cubre y puerta.go:
+	// solo sube tras un net.Conn.Close() que devolvió nil.
 	//
 	// Es la cifra que permite RETIRAR lo que no sirve. Sin ella, una lista solo
 	// crece: nadie quita una regla si no puede saber si alguna vez hizo algo.
+	//
+	// NO SON PETICIONES: después del cierre no hay petición que contar.
 	Frenados int64 `json:"frenados"`
 }
 
@@ -341,23 +345,52 @@ func tocaLaCasa(t Tramo) bool {
 	return false
 }
 
-// Bloquea dice si a esta dirección se le cierra la puerta por una entrada de
-// la lista, y lo cuenta en la entrada que lo hizo.
-func (l *Lista) Bloquea(ip netip.Addr, ahora time.Time) bool {
+// Cubre dice si alguna entrada vigente alcanza esta dirección, y CUÁL.
+//
+// # NO CUENTA NADA — misma corrección que en Cuarentena.Cubre
+//
+// Esto se llamaba Bloquea y sumaba el frenado en el acto, antes de que nadie
+// hubiera cerrado la conexión. Ver el porqué entero allí; aquí basta con la
+// consecuencia: contar es AnotarCierre, y a esa no se llega sin un Close() que
+// haya devuelto nil.
+//
+// DEVUELVE EL ID y no solo un booleano porque la cifra que hay que subir
+// después vive en UNA entrada concreta. Sin el identificador, quien contara
+// tendría que volver a recorrer la lista y podría encontrar otra distinta si
+// entre medias se retiró alguna — y entonces el acierto se le apuntaría a la
+// entrada equivocada.
+//
+// GANA LA PRIMERA que la contenga, en orden de alta, y no la más específica:
+// dos entradas que se solapan son dos decisiones de la misma persona sobre la
+// misma dirección, y elegir «la mejor» exigiría una regla que nadie ha pedido.
+// La primera es determinista y se puede explicar en una línea.
+func (l *Lista) Cubre(ip netip.Addr, ahora time.Time) (string, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for i := range l.entradas {
-		if !l.entradas[i].Vigente(ahora) {
-			continue
-		}
-		if l.entradas[i].Contiene(ip) {
-			l.entradas[i].Frenados++
-			l.entradas[i].UltimoFrenado = ahora
-			l.sucio = true
-			return true
+		if l.entradas[i].Vigente(ahora) && l.entradas[i].Contiene(ip) {
+			return l.entradas[i].ID, true
 		}
 	}
-	return false
+	return "", false
+}
+
+// AnotarCierre cuenta UNA conexión que ya se cerró de verdad, en la entrada
+// que la cubrió.
+//
+// Que la entrada se haya retirado entre la decisión y el cierre no es un error
+// y no se avisa, por lo mismo que en Cuarentena.AnotarCierre: el cierre
+// ocurrió y ya no hay a quién apuntárselo.
+func (l *Lista) AnotarCierre(id string, ahora time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	i := slices.IndexFunc(l.entradas, func(e Entrada) bool { return e.ID == id })
+	if i < 0 {
+		return
+	}
+	l.entradas[i].Frenados++
+	l.entradas[i].UltimoFrenado = ahora
+	l.sucio = true
 }
 
 // Vigentes devuelve las entradas en pie, de la más reciente a la más antigua.

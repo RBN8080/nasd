@@ -103,6 +103,24 @@ func TestAlApartadoSeLeAnotaLaConexionYDespuesSeLeCuelga(t *testing.T) {
 		return len(v) == 1 && v[0].Frenados > 0
 	}, "no se contó el frenado: la conexión se cerró sin quedar registrada")
 
+	// D7 — EL MANEJADOR NO LLEGA A CORRER, y esto se comprueba por debajo del
+	// HTML a propósito.
+	//
+	// «La dirección sale en la tabla» NO demuestra nada: saldría igual por
+	// estar en la lista de apartados. Lo que sí lo demuestra es el contador de
+	// peticiones: conRegistro lo incrementa para TODA petición que entra en el
+	// middleware, sin excepción y antes de cualquier guarda. Si vale cero, la
+	// petición que se escribió en el socket no llegó a existir para la
+	// aplicación — que es la propiedad entera de cerrar en StateNew.
+	if n := s.contadores.peticiones.Load(); n != 0 {
+		t.Errorf("se atendieron %d peticiones de un apartado; no debía llegar ninguna", n)
+	}
+	// Y la otra cara: tampoco se inventó un rechazo. Cerrar antes de HTTP no
+	// produce un 4xx, produce nada.
+	if n := s.seguridad.Total(); n != 0 {
+		t.Errorf("la conexión cerrada produjo %d rechazos; no debía producir ninguno", n)
+	}
+
 	cuerpo := panelSeguridad(t, s, "")
 	if !strings.Contains(cuerpo, dir.String()) {
 		t.Errorf("al apartado se le colgó y además desapareció del panel:\n%s", cuerpo)
@@ -165,7 +183,7 @@ func TestSoltarExigeTestigoCSRF(t *testing.T) {
 func TestLaBarraEnsenaLaMarcaYMirarLaApaga(t *testing.T) {
 	s := servidorConAuth(t)
 	apartar(t, s, "203.0.113.7")
-	s.novedades.Recalcular(nil, s.cuarentena.Vigentes(time.Now()), nil)
+	s.novedades.Recalcular(nil, s.cuarentena.Vigentes(time.Now()), nil, nil)
 
 	cookie := superusuarioEn(t, s)
 	conMarca := pedirDesde(t, s.Rutas(), http.MethodGet, "/", "192.168.1.18:5000", cookie).Body.String()
@@ -186,5 +204,141 @@ func TestLaBarraEnsenaLaMarcaYMirarLaApaga(t *testing.T) {
 	// botón.
 	if !strings.Contains(sinMarca, `href="/seguridad">Seguridad`) {
 		t.Error("desapareció el botón entero en vez de solo la marca")
+	}
+}
+
+// conQueFallaAlCerrar es un net.Conn cuyo Close SIEMPRE falla.
+//
+// Existe porque el caso no se puede provocar con un socket de verdad, y es
+// justo el que convertía el panel en mentira: coincidencia, «Frenados++»,
+// Close() que falla, y el panel afirmando igualmente haber frenado una
+// conexión que seguía viva.
+type conQueFallaAlCerrar struct {
+	net.Conn
+	remoto net.Addr
+}
+
+func (c conQueFallaAlCerrar) RemoteAddr() net.Addr { return c.remoto }
+func (c conQueFallaAlCerrar) Close() error         { return errors.New("cierre imposible") }
+
+// D8 — SI EL CIERRE FALLA, «FRENADOS» NO SUBE.
+//
+// Es la propiedad que hace verdadera la palabra del panel. Se prueba llamando
+// a anotarConexion directamente y no contra un servidor: lo que hay que
+// controlar es el resultado de Close(), y un socket real no falla a voluntad.
+func TestSiElCierreFallaNoSeCuentaComoFrenado(t *testing.T) {
+	s := servidorConAuth(t)
+	dir := apartar(t, s, "203.0.113.7")
+
+	c := conQueFallaAlCerrar{remoto: &net.TCPAddr{IP: net.ParseIP(dir.String()), Port: 44001}}
+	s.anotarConexion(c, http.StateNew)
+
+	v := s.cuarentena.Vigentes(time.Now())
+	if len(v) != 1 {
+		t.Fatalf("apartados = %d", len(v))
+	}
+	if v[0].Frenados != 0 {
+		t.Errorf("frenados = %d; el cierre falló, así que no se frenó nada", v[0].Frenados)
+	}
+	// LO QUE SÍ TIENE QUE PASAR: que no se calle. El contador lleva el volumen
+	// —el diario recibe una sola línea por arranque, para no convertirse en el
+	// amplificador de quien insiste— y el panel lo pinta cuando no es cero.
+	if n := s.cierresFallidos.Load(); n != 1 {
+		t.Errorf("cierres fallidos = %d; se esperaba 1", n)
+	}
+	// Y LA CONEXIÓN SE ANOTA IGUAL: fallar al colgar no puede llevarse por
+	// delante la observación, que es la propiedad que justifica cerrar aquí y
+	// no en el cortafuegos.
+	if s.conexiones.Total() != 1 {
+		t.Error("la conexión no se anotó")
+	}
+}
+
+// D9 al nivel del servidor — un cierre efectivo cuenta exactamente uno.
+func TestUnCierreEfectivoCuentaExactamenteUno(t *testing.T) {
+	s := servidorConAuth(t)
+	dir := apartar(t, s, "203.0.113.7")
+
+	uno, otro := net.Pipe()
+	t.Cleanup(func() { uno.Close(); otro.Close() })
+	s.anotarConexion(conConOrigen{
+		Conn:   uno,
+		remoto: &net.TCPAddr{IP: net.ParseIP(dir.String()), Port: 44001},
+	}, http.StateNew)
+
+	v := s.cuarentena.Vigentes(time.Now())
+	if len(v) != 1 || v[0].Frenados != 1 {
+		t.Fatalf("frenados = %+v; se esperaba exactamente 1", v)
+	}
+	if n := s.cierresFallidos.Load(); n != 0 {
+		t.Errorf("cierres fallidos = %d; el cierre salió bien", n)
+	}
+}
+
+// D10 al nivel del servidor — la misma dirección en los dos controles se
+// cierra UNA vez y cuenta UNA vez.
+//
+// Va aquí además de en el dominio porque lo que se quiere fijar es lo que hace
+// LA PUERTA de verdad, no solo lo que devuelve Decidir: es la línea del
+// ConnState la que antes contaba antes de tiempo.
+func TestCuarentenaYListaSobreLaMismaIPNoCuentanDosVeces(t *testing.T) {
+	s := servidorConAuth(t)
+	dir := apartar(t, s, "203.0.113.7")
+	if _, err := s.lista.Anadir(seguridad.Entrada{
+		Alcance:  seguridad.AlcanceRango,
+		Etiqueta: "203.0.113.0/24",
+		Tramos:   []seguridad.Tramo{seguridad.TramoDe(netip.MustParsePrefix("203.0.113.0/24"))},
+		Motivo:   "reputación del rango",
+		Autor:    "raiz",
+	}, netip.Addr{}, time.Now()); err != nil {
+		t.Fatalf("Anadir: %v", err)
+	}
+
+	uno, otro := net.Pipe()
+	t.Cleanup(func() { uno.Close(); otro.Close() })
+	s.anotarConexion(conConOrigen{
+		Conn:   uno,
+		remoto: &net.TCPAddr{IP: net.ParseIP(dir.String()), Port: 44001},
+	}, http.StateNew)
+
+	ahora := time.Now()
+	deLista := s.lista.Vigentes(ahora)[0].Frenados
+	deCuarentena := s.cuarentena.Vigentes(ahora)[0].Frenados
+	if deLista+deCuarentena != 1 {
+		t.Errorf("frenados en total = %d (lista %d, cuarentena %d); hubo UNA conexión cerrada",
+			deLista+deCuarentena, deLista, deCuarentena)
+	}
+	// LA PRECEDENCIA DOCUMENTADA: manda la decisión que firmó una persona.
+	if deLista != 1 {
+		t.Errorf("el cierre no se le atribuyó al bloqueo manual: lista %d, cuarentena %d",
+			deLista, deCuarentena)
+	}
+	// Y EL PANEL LO EXPLICA, en vez de dejar que el cero de la cuarentena se
+	// lea como «no ha servido de nada».
+	cuerpo := panelSeguridad(t, s, "")
+	if !strings.Contains(cuerpo, "Coinciden los dos controles") {
+		t.Error("el panel no explica por qué un control coincidente enseña cero frenados")
+	}
+}
+
+// D6 — A LA CASA NO SE LE CUELGA NUNCA, pase lo que pase con las políticas.
+//
+// La barandilla se comprueba aquí ADEMÁS de en Anadir porque son dos defensas
+// distintas: aquella impide que la entrada exista, y esta impide que la puerta
+// actúe aunque existiera. Que la casa no se quede fuera no puede depender de
+// que otra función haya hecho bien su parte — así está escrito en
+// anotarConexion.
+func TestALaCasaNoSeLeCuelgaAunqueUnaPoliticaLaAlcanzara(t *testing.T) {
+	for _, ip := range []string{"192.168.1.18", "10.77.0.2", "127.0.0.1", "fe80::1"} {
+		t.Run(ip, func(t *testing.T) {
+			s := servidorConAuth(t)
+			c := conQueFallaAlCerrar{remoto: &net.TCPAddr{IP: net.ParseIP(ip), Port: 44001}}
+			s.anotarConexion(c, http.StateNew)
+			// Si se hubiera intentado cerrar, este contador estaría en 1: el
+			// net.Conn de la prueba falla siempre al cerrarse.
+			if n := s.cierresFallidos.Load(); n != 0 {
+				t.Errorf("se intentó colgar a %s, que es de casa", ip)
+			}
+		})
 	}
 }

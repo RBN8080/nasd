@@ -376,6 +376,7 @@ func servidorParaMetricas(t *testing.T, bytesPorUsuario map[string]int64) *Servi
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -448,6 +449,7 @@ func TestRefrescarMetricasCuentaComoCeroLaCuentaSinCarpeta(t *testing.T) {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -495,6 +497,7 @@ func TestRefrescarMetricasContinuaSiUnaCuentaFalla(t *testing.T) {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {

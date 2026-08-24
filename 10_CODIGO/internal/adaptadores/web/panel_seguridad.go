@@ -93,9 +93,61 @@ type filaOrigen struct {
 	Senales   []seguridad.Senal
 	Gravedad  seguridad.Gravedad
 
+	// LA EVIDENCIA, que es lo que faltaba: qué se pidió exactamente, con qué
+	// método, qué contestó el servidor y cuántas veces.
+	//
+	// Sin esto, el panel afirmaba «Exploración automatizada» y quien lo leyera
+	// tenía que creerse el umbral o irse al diario a reconstruirlo a mano. Una
+	// inferencia cuya evidencia hay que buscar en otro sitio es indistinguible
+	// de una inventada — y este panel se definió desde el primer día como uno
+	// que no emite veredictos (ADR-0061).
+	Evidencia    []seguridad.Sonda
+	SondasVistas int
+	// RutasInexistentes es la ENTRADA del umbral de exploración. Va dentro de
+	// la explicación de la señal y NO como columna de la tabla: ADR-0065 quitó
+	// esa columna con razón, porque enseñaba el cálculo al lado del resultado
+	// sin decir que eran lo mismo.
+	RutasInexistentes int
+
+	// EL ESTADO DE ENFORCEMENT DE ESTA MISMA DIRECCION. Nulos cuando no hay.
+	//
+	// Se traen a la fila y no se dejan solo en sus tablas de arriba porque la
+	// pregunta «¿y a este le estamos cerrando la puerta?» se hace MIRANDO la
+	// fila del origen, no cruzando tres tablas a ojo. Es el mismo argumento con
+	// el que ADR-0066 fundió las tres capas en columnas en vez de tres tablas.
+	Apartado *seguridad.Apartado
+	Bloqueo  *seguridad.Entrada
+
 	Primera time.Time
 	Ultima  time.Time
 }
+
+// Frenados son las conexiones EFECTIVAMENTE CERRADAS a esta dirección, vengan
+// de la política que vengan.
+//
+// # NO SE SUMAN LAS DOS, Y ESE ES EL PUNTO
+//
+// Una conexión TCP se cierra UNA vez. Si a esta dirección la alcanzan a la vez
+// la cuarentena y un bloqueo manual, solo una de las dos contabilizó cada
+// cierre —la lista, por la precedencia de seguridad.Decidir— y la otra estará
+// en cero. Sumar los dos contadores produciría el doble de frenados que
+// conexiones cerradas, que es exactamente la ficción que este trabajo vino a
+// quitar. Se toma el mayor: el que de verdad estuvo contando.
+func (f filaOrigen) Frenados() int64 {
+	var n int64
+	if f.Apartado != nil {
+		n = f.Apartado.Frenados
+	}
+	if f.Bloqueo != nil && f.Bloqueo.Frenados > n {
+		n = f.Bloqueo.Frenados
+	}
+	return n
+}
+
+// Frenada dice si a esta dirección se le está cerrando la puerta ahora mismo.
+// Lo usa la plantilla para advertir de que sus cifras de rechazos se han
+// congelado: después de cerrar la conexión ya no hay peticiones que contar.
+func (f filaOrigen) Frenada() bool { return f.Apartado != nil || f.Bloqueo != nil }
 
 // Destacar dice si la fila merece enfasis. Mismo criterio que tenia
 // seguridad.Origen y por el mismo motivo: la gravedad de atencion se destaca
@@ -215,7 +267,32 @@ type vistaSeguridad struct {
 	Apartados []seguridad.Apartado
 	// Bloqueos son las entradas puestas a mano. Como los apartados, es estado
 	// vigente y no historia, así que tampoco obedece a los filtros.
-	Bloqueos []seguridad.Entrada
+	Bloqueos []filaBloqueo
+	// Hallazgos son las rutas que este NAS no publica y aun así atendió con
+	// contenido.
+	//
+	// FUERA DE LOS FILTROS, como los apartados y los bloqueos, y por un motivo
+	// que es suyo: un hallazgo no caduca porque pasen 24 horas. Que el nodo
+	// devolviera 200 en /.git/config el martes sigue siendo verdad hoy si nadie
+	// ha ido a mirar, y esconderlo tras la ventana sería apagar la única alarma
+	// de la página dejando el problema en pie.
+	Hallazgos []seguridad.Hallazgo
+	// TotalHallazgos son los sucesos vistos desde siempre, que puede ser mucho
+	// mayor que las rutas distintas que se listan: una sola ruta expuesta y
+	// pedida mil veces son mil sucesos y una fila.
+	TotalHallazgos int64
+	// CierresFallidos son los net.Conn.Close() que no se pudieron completar.
+	//
+	// SOLO SE PINTA CUANDO NO ES CERO, y no por estética: mientras vale cero, la
+	// palabra «Frenados» significa exactamente conexiones cerradas y no hace
+	// falta matizarla. En cuanto deja de valer cero, el panel está afirmando
+	// menos de lo que pasa —hubo conexiones que debían cerrarse y siguieron
+	// vivas— y eso hay que decirlo donde se leen las cifras que afecta.
+	CierresFallidos int64
+	// TopeSondas es cuántas líneas de evidencia se enseñan por origen. Se
+	// publica para que la evidencia pueda decir que recorta, igual que ya hacen
+	// la cronología y la tabla de rutas.
+	TopeSondas int
 	// Csrf viaja porque esta página dejó de ser de solo lectura el día que
 	// se le pudo soltar a alguien.
 	Csrf string
@@ -224,6 +301,29 @@ type vistaSeguridad struct {
 	// se ve desde Internet a propósito —mirar quién toca el nodo es justo lo
 	// que se quiere poder hacer desde fuera— y por eso necesita la distinción.
 	PuedeAdministrar bool
+}
+
+// filaBloqueo es una entrada de la lista más lo único que ella sola no puede
+// saber: si la base de operadores con la que se compuso ya quedó vieja.
+//
+// # POR QUÉ ESTO NO ES UN ADORNO
+//
+// El comentario de seguridad.Entrada.BaseGeo dice que el alcance «es una FOTO,
+// no una regla viva»: si mañana el operador anuncia un tramo nuevo, la entrada
+// NO lo cubre, y eso es deliberado —una regla viva cambiaría lo bloqueado sin
+// que nadie lo decidiera—. El mismo comentario prometía la contrapartida: «con
+// la fecha delante, el panel puede decir que la base es más nueva que la
+// entrada y ofrecer revisarla».
+//
+// Esa segunda mitad no estaba implementada: la fecha se guardaba y no se
+// pintaba en ninguna parte. Sin ella, la foto envejece EN SILENCIO, que es
+// justo el modo de fallo contra el que se guardaba la fecha.
+type filaBloqueo struct {
+	seguridad.Entrada
+	// BaseMasNueva es cierto cuando hay base instalada y su fecha es posterior
+	// a la de la foto. No dice que la entrada esté mal —puede seguir siendo
+	// exacta—: dice que se puede volver a mirar.
+	BaseMasNueva bool
 }
 
 // opcionFiltro es un valor para un <select>: la clave estable que viaja por
@@ -372,13 +472,27 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	motivos := opcionesDeMotivo(q.Get("motivo"))
 	redes := opcionesDeRed(redElegida)
 
+	// El estado vigente de los DOS controles se lee UNA vez y se reparte: la
+	// tabla de arriba lo pinta entero y unirOrigenes lo cuelga de la fila de
+	// cada dirección. Leerlo dos veces daría dos fotos de instantes distintos y
+	// la misma página podría enseñar a alguien apartado arriba y libre abajo.
+	ahora := time.Now()
+	apartados := s.cuarentena.Vigentes(ahora)
+	bloqueos := s.lista.Vigentes(ahora)
+
 	v := vistaSeguridad{
 		PuedeAdministrar: !acotadoPorRed(r),
-		Apartados:        s.cuarentena.Vigentes(time.Now()),
-		Bloqueos:         s.lista.Vigentes(time.Now()),
+		Apartados:        apartados,
+		Bloqueos:         s.filasDeBloqueo(bloqueos),
+		Hallazgos:        s.hallazgos.Todos(),
+		TotalHallazgos:   s.hallazgos.Total(),
+		CierresFallidos:  s.cierresFallidos.Load(),
+		TopeSondas:       seguridad.TopeSondas,
 		Csrf:             s.csrfDe(r),
 		Resumen:          resumen,
-		Origenes:         s.unirOrigenes(tocados, seguridad.PorOrigenConectado(conexiones), origenes, f.Motivo != nil),
+		Origenes: s.unirOrigenes(
+			tocados, seguridad.PorOrigenConectado(conexiones), origenes,
+			apartados, bloqueos, f.Motivo != nil),
 		Conexiones:       len(conexiones),
 		TotalConexiones:  s.conexiones.Total(),
 		HayMasConexiones: s.conexiones.Total() > int64(len(conexiones)),
@@ -497,6 +611,30 @@ func redDesde(s string) (seguridad.Red, bool) {
 	return seguridad.RedDesconocida, false
 }
 
+// filasDeBloqueo acompaña cada entrada con si la base de operadores ya es más
+// nueva que la foto con la que se compuso. Ver filaBloqueo.
+//
+// SIN BASE INSTALADA NO SE DICE NADA: no se puede comparar contra una fecha que
+// no existe, y marcar todas las entradas como «revisables» porque falta la base
+// sería inventarse una alarma.
+func (s *Servidor) filasDeBloqueo(entradas []seguridad.Entrada) []filaBloqueo {
+	base := s.geo.Fecha()
+	out := make([]filaBloqueo, 0, len(entradas))
+	for _, e := range entradas {
+		out = append(out, filaBloqueo{
+			Entrada: e,
+			// Solo para el alcance «operador»: es el único cuya foto puede
+			// quedarse corta al anunciarse un tramo nuevo. Una dirección suelta
+			// y un rango escrito a mano no dependen de la base para seguir
+			// siendo exactos, y marcarlos sería mandar a revisar algo que no
+			// puede haber cambiado.
+			BaseMasNueva: e.Alcance == seguridad.AlcanceOperador &&
+				!base.IsZero() && !e.BaseGeo.IsZero() && base.After(e.BaseGeo),
+		})
+	}
+	return out
+}
+
 // unirOrigenes funde las TRES capas en una fila por direccion.
 //
 // La union se hace por direccion y no por ningun otro campo porque es lo unico
@@ -524,6 +662,8 @@ func (s *Servidor) unirOrigenes(
 	tocados []seguridad.OrigenTocado,
 	conectados []seguridad.OrigenConectado,
 	origenes []seguridad.Origen,
+	apartados []seguridad.Apartado,
+	bloqueos []seguridad.Entrada,
 	soloConRechazos bool,
 ) []filaOrigen {
 	porIP := make(map[netip.Addr]*filaOrigen)
@@ -564,7 +704,32 @@ func (s *Servidor) unirOrigenes(
 		f.Red = o.Red
 		f.Rechazos, f.PorMotivo = o.Eventos, o.PorMotivo
 		f.Cuentas, f.Senales, f.Gravedad = o.Cuentas, o.Senales, o.Gravedad
+		f.Evidencia, f.SondasVistas = o.Evidencia, o.SondasVistas
+		f.RutasInexistentes = o.RutasInexistentes
 		extender(f, o.Primera, o.Ultima)
+	}
+
+	// EL ESTADO DE ENFORCEMENT SE CUELGA DE LAS FILAS QUE YA EXISTEN, y no crea
+	// ninguna: un apartado sin conexiones ni rechazos en la ventana no debe
+	// inventarse una fila con todo a cero, porque esa fila diría «vino y no
+	// hizo nada» cuando lo que pasa es que la ventana no lo alcanza. Para eso
+	// está la tabla de apartados, que vive fuera de los filtros.
+	for i := range apartados {
+		if f, hay := porIP[apartados[i].IP]; hay {
+			f.Apartado = &apartados[i]
+		}
+	}
+	for _, f := range porIP {
+		// La entrada que lo cubre se busca con el MISMO recorrido que usa la
+		// puerta —la primera vigente que lo contenga— para que el panel no
+		// pueda atribuirle el bloqueo a una entrada distinta de la que de
+		// verdad lo cerraría.
+		for i := range bloqueos {
+			if bloqueos[i].Contiene(f.IP) {
+				f.Bloqueo = &bloqueos[i]
+				break
+			}
+		}
 	}
 
 	filas := make([]filaOrigen, 0, len(porIP))

@@ -47,6 +47,52 @@
   conservados de <strong>{{.Resumen.TotalHistorico}}</strong> vistos.{{end}}
 </p>
 
+<!-- LO QUE HABLA DEL NODO Y NO DE QUIEN LLAMA — va PRIMERO de todo.
+     Las tres tablas siguientes dicen qué hizo un extraño; esta dice qué hace
+     este servidor. Es la única de la página que pide ir a arreglar algo, y por
+     eso se pone donde la vista cae antes.
+     FUERA DE LOS FILTROS, como los apartados y los bloqueos, y con un motivo
+     propio: un hallazgo no caduca porque pasen 24 horas. Que el nodo
+     respondiera donde no debía sigue siendo verdad hasta que alguien lo mire.
+     Solo aparece si hay algo: una tabla vacía titulada así se leería como una
+     acusación permanente contra un nodo sano. -->
+{{if .Hallazgos}}
+<h2>Respuestas inesperadas</h2>
+<div class="leyenda">
+  <p class="nota">
+    <strong>Esto habla de este servidor, no de quien lo pidió.</strong> Son rutas
+    de programas que este NAS no ejecuta y a las que aun así respondió con
+    contenido. Hay que ir a mirar qué hay ahí y por qué se sirve.
+    <strong>No demuestra que nadie ejecutara nada, ni que se accediera a un
+    repositorio, ni que el nodo esté comprometido</strong>: demuestra que
+    respondió donde su arquitectura dice que no publica nada.
+    {{if gt .TotalHallazgos 0}}Vistas
+    <strong>{{.TotalHallazgos}}</strong> veces en total desde que existe este
+    registro.{{end}}
+  </p>
+</div>
+<table class="datos">
+  <thead>
+    <tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th><th>Último origen</th></tr>
+  </thead>
+  <tbody>
+    {{range .Hallazgos}}
+    <tr class="g-atencion">
+      <td class="rotulo">{{.Metodo}} {{.Ruta}}</td>
+      <td class="num">{{.Estado}}</td>
+      <td class="num">{{.Veces}}</td>
+      <td class="num">{{fecha .Primera}}</td>
+      <td class="num">{{fecha .Ultima}}</td>
+      {{/* Quién la obtuvo la última vez, y solo el último: una ruta publicada
+           lo está para todo el mundo, así que el origen es contexto y no el
+           sujeto de la fila. La lista completa está en el diario. */}}
+      <td>{{if .UltimoOrigen.IsValid}}{{.UltimoOrigen}} <span class="pastilla">{{.UltimaRed.Etiqueta}}</span>{{else}}<span class="suave">—</span>{{end}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
 <!-- LO ÚNICO DE ESTA PÁGINA QUE NO ES HISTORIA.
      Va arriba del todo y fuera de los filtros a propósito: los filtros
      gobiernan lo que PASÓ, y esto es lo que está pasando ahora. Filtrarlo por
@@ -60,11 +106,17 @@
   <p class="nota">
     Los puso el nodo solo y caducan solos. Mientras están, sus conexiones se
     anotan y se cierran: se les sigue viendo llegar.
+    <strong>«Frenados» son conexiones cerradas, no peticiones</strong> — después
+    de cerrarlas no hay petición que contar, así que esa cifra y la de rechazos
+    no se pueden comparar entre sí.
+    {{if $.CierresFallidos}}<strong>Atención:</strong> {{$.CierresFallidos}}
+    cierres no se pudieron completar desde que arrancó el servicio; esas
+    conexiones siguieron vivas y NO están contadas aquí.{{end}}
   </p>
 </div>
 <table class="datos">
   <thead>
-    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th></th></tr>
+    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th>Último</th><th></th></tr>
   </thead>
   <tbody>
     {{range .Apartados}}
@@ -73,8 +125,12 @@
       <td>{{.Senal.Etiqueta}}</td>
       <td class="num">{{fecha .Hasta}}</td>
       {{/* La cifra que permite retirar lo que no sirve: un apartado con cero
-           frenados no ha protegido de nada todavía. */}}
+           frenados no ha protegido de nada todavía. Ojo con leerlo al revés
+           cuando además hay un bloqueo manual sobre la misma dirección: el
+           cierre se le atribuye a la lista, así que este cero significa «la
+           puerta ya estaba cerrada por otro». */}}
       <td class="num">{{.Frenados}}</td>
+      <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
       <td class="num">
         <form method="post" action="/seguridad/soltar">
           <input type="hidden" name="csrf" value="{{$.Csrf}}">
@@ -94,23 +150,38 @@
   <p class="nota">
     Los puso usted. Cada uno lleva su motivo escrito y cuántas veces ha servido:
     <strong>uno con cero frenados no ha protegido de nada todavía</strong>, y esa
-    es la cifra con la que se decide retirarlo.
+    es la cifra con la que se decide retirarlo. «Frenados» son conexiones
+    cerradas, no peticiones.
+    <br>
+    El alcance «Operador» es una <strong>foto</strong> de los tramos que la base
+    anunciaba el día que se creó, no una regla viva: si ese operador anuncia un
+    tramo nuevo, esta entrada <strong>no</strong> lo cubre. Es deliberado —una
+    regla viva cambiaría lo bloqueado sin que nadie lo decidiera— y por eso se
+    guarda la fecha de la foto.
   </p>
 </div>
 <table class="datos">
   <thead>
-    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th></th></tr>
+    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th>Último</th><th></th></tr>
   </thead>
   <tbody>
     {{range .Bloqueos}}
     <tr>
       <td class="rotulo">{{.Etiqueta}}</td>
-      <td>{{.Alcance.Etiqueta}}{{if gt (len .Tramos) 1}} · {{len .Tramos}} tramos{{end}}</td>
+      <td>
+        {{.Alcance.Etiqueta}}{{if gt (len .Tramos) 1}} · {{len .Tramos}} tramos{{end}}
+        {{/* LA FECHA DE LA FOTO, que se guardaba y no se pintaba en ninguna
+             parte. Sin ella el alcance envejece EN SILENCIO, que es justo el
+             modo de fallo contra el que se guardaba. Ver filaBloqueo. */}}
+        {{if not .BaseGeo.IsZero}}<br><span class="suave">base de {{fecha .BaseGeo}}</span>{{end}}
+        {{if .BaseMasNueva}}<br><span class="pastilla">hay una base más nueva: conviene revisarlo</span>{{end}}
+      </td>
       <td>{{.Motivo}}</td>
       {{/* «Sin caducidad» se dice con palabras y no con una celda vacía: una
            regla permanente es una decisión, y tiene que leerse como tal. */}}
       <td class="num">{{if .Caduca.IsZero}}<span class="suave">sin caducidad</span>{{else}}{{fecha .Caduca}}{{end}}</td>
       <td class="num">{{.Frenados}}</td>
+      <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
       <td class="num">
         <form method="post" action="/seguridad/retirar">
           <input type="hidden" name="csrf" value="{{$.Csrf}}">
@@ -265,6 +336,90 @@
         <details class="senal{{if .Destacar}} senal-aviso{{end}}">
           <summary>{{.Etiqueta}}</summary>
           <p class="nota">{{.Explicacion}}</p>
+        </details>
+        {{end}}
+
+        <!-- LA EVIDENCIA, DEBAJO DE LAS SEÑALES QUE SUSTENTA.
+             Antes de esto el panel afirmaba «Exploración automatizada» y quien
+             lo leyera tenía que creerse el umbral o irse al diario a
+             reconstruirlo a mano. Aquí está lo que se pidió, con qué método,
+             qué contestó el servidor y cuántas veces: los mismos hechos que ya
+             están en el anillo, agrupados para poder leerlos.
+             VA PLEGADA porque son hasta diez líneas por fila y la tabla tiene
+             que seguir leyéndose de un vistazo — mismo criterio que la
+             cronología. -->
+        {{if .Evidencia}}
+        <details class="senal">
+          <summary>En qué se basa esto ({{.Rechazos}} rechazos)</summary>
+          {{if gt .SondasVistas $.TopeSondas}}
+          <p class="nota">Las {{$.TopeSondas}} más repetidas de {{.SondasVistas}} peticiones distintas.</p>
+          {{end}}
+          {{if .RutasInexistentes}}
+          <p class="nota">
+            Rutas distintas que no existen: <strong>{{.RutasInexistentes}}</strong>.
+            {{/* La ENTRADA del umbral de exploración, aquí y no en una columna
+                 de la tabla: ADR-0065 quitó esa columna porque enseñaba el
+                 cálculo al lado de su conclusión sin decir que eran lo mismo.
+                 Dentro de la evidencia sí contesta la pregunta que se hace
+                 aquí, que es «¿por qué dice eso el panel?». */}}
+          </p>
+          {{end}}
+          <table class="datos">
+            <thead><tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th></tr></thead>
+            <tbody>
+            {{range .Evidencia}}
+              <tr>
+                <td class="ruta">{{.Metodo}} {{.Ruta}}</td>
+                <td class="num">{{.Estado}}</td>
+                <td class="num">{{.Veces}}</td>
+                <td class="num">{{fecha .Primera}}</td>
+                <td class="num">{{fecha .Ultima}}</td>
+              </tr>
+            {{end}}
+            </tbody>
+          </table>
+        </details>
+        {{end}}
+
+        <!-- EL ESTADO DE ENFORCEMENT DE ESTA MISMA DIRECCIÓN.
+             La pregunta «¿y a este le estamos cerrando la puerta?» se hace
+             mirando su fila, no cruzando a ojo las dos tablas de arriba.
+             Y lleva LA ADVERTENCIA que hace honesta la fila entera: mientras
+             está frenado, sus cifras de rechazos dejan de crecer porque ya no
+             hay peticiones que contar. Sin decirlo, un apartado con muchos
+             frenados y pocos rechazos se lee como una contradicción. -->
+        {{if .Frenada}}
+        <details class="senal senal-aviso">
+          <summary>Se le está cerrando la puerta{{if .Frenados}} · {{.Frenados}} conexiones cerradas{{end}}</summary>
+          {{with .Apartado}}
+          <p class="nota">
+            <strong>Cuarentena por conducta</strong> desde {{fecha .Desde}} y hasta
+            {{fecha .Hasta}}. La disparó: {{.Senal.Etiqueta}}. La puso el nodo solo.
+          </p>
+          {{end}}
+          {{with .Bloqueo}}
+          <p class="nota">
+            <strong>Bloqueo puesto a mano</strong> — {{.Alcance.Etiqueta}}, cubre {{.Etiqueta}}
+            ({{len .Tramos}} tramo{{if gt (len .Tramos) 1}}s{{end}}).
+            Alta {{fecha .Alta}}{{if .Autor}} por {{.Autor}}{{end}}.
+            {{if .Caduca.IsZero}}Sin caducidad.{{else}}Caduca {{fecha .Caduca}}.{{end}}
+            {{if not .BaseGeo.IsZero}}Alcance compuesto con la base de {{fecha .BaseGeo}}.{{end}}
+            Motivo: {{.Motivo}}
+          </p>
+          {{end}}
+          {{if and .Apartado .Bloqueo}}
+          <p class="nota">
+            Coinciden los dos controles. <strong>La conexión se cierra UNA sola vez</strong>
+            y el cierre se le atribuye al bloqueo puesto a mano, que es la decisión
+            que firmó una persona; por eso el apartado puede enseñar cero frenados
+            aunque la puerta esté cerrada.
+          </p>
+          {{end}}
+          <p class="nota">
+            Mientras esté frenada, sus conexiones se cierran <strong>antes</strong> de
+            que hablen HTTP: las columnas de rechazos y de rutas dejan de crecer
+            porque ya no hay peticiones, no porque haya dejado de venir.
+          </p>
         </details>
         {{end}}
       </td>

@@ -93,6 +93,7 @@ func servidorDeApertura(t *testing.T) (*Servidor, *almacenDeApertura) {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {

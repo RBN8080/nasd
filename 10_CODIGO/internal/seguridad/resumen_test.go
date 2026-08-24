@@ -117,7 +117,7 @@ func TestSoftwareAjenoSeDecidePorLoQueElNodoNoEjecuta(t *testing.T) {
 		"/algo/.ssh/id_rsa", "/wp-admin/install.php",
 	}
 	for _, r := range ajenas {
-		if !rutaDeSoftwareAjeno(r) {
+		if !RutaDeSoftwareAjeno(r) {
 			t.Errorf("%q debería marcarse: este NAS no ejecuta nada de eso", r)
 		}
 	}
@@ -132,7 +132,7 @@ func TestSoftwareAjenoSeDecidePorLoQueElNodoNoEjecuta(t *testing.T) {
 		"/descargar/git-guia.pdf",           // contiene «git», no «/.git»
 	}
 	for _, r := range propias {
-		if rutaDeSoftwareAjeno(r) {
+		if RutaDeSoftwareAjeno(r) {
 			t.Errorf("%q se marcó como software ajeno y es una ruta legítima del NAS", r)
 		}
 	}
@@ -366,5 +366,163 @@ func TestDestacarSoloResaltaLoQueMereceAtencion(t *testing.T) {
 				t.Errorf("Origen.Destacar() = %v, se esperaba %v", got, c.destaca)
 			}
 		})
+	}
+}
+
+// A1 — UNA PETICIÓN A /.git/config, Y LO QUE SIGNIFICA EXACTAMENTE.
+//
+// El encargo lo pide entero y en una sola prueba porque el valor está en las
+// cinco afirmaciones JUNTAS: cada una sola se cumpliría con un diseño peor.
+func TestUnaPeticionAGitConfigNoEsUnAtaque(t *testing.T) {
+	ahora := time.Now()
+	e := ev(ahora, "203.0.113.7", RutaInexistente, "/.git/config")
+	e.Estado = 404
+	origenes := PorOrigen([]Evento{e})
+	if len(origenes) != 1 {
+		t.Fatalf("orígenes = %d", len(origenes))
+	}
+	o := origenes[0]
+
+	// 1. Queda registrado como RECHAZO, con su método, su ruta y su estado.
+	if o.Eventos != 1 || o.PorMotivo[RutaInexistente] != 1 {
+		t.Errorf("el rechazo no se registró: %+v", o)
+	}
+	if len(o.Evidencia) != 1 {
+		t.Fatalf("evidencia = %d líneas; se esperaba 1", len(o.Evidencia))
+	}
+	sd := o.Evidencia[0]
+	if sd.Metodo != "GET" || sd.Ruta != "/.git/config" || sd.Estado != 404 || sd.Veces != 1 {
+		t.Errorf("la evidencia no conserva el hecho: %+v", sd)
+	}
+
+	// 2. SUSTENTA la señal de software ajeno, que es una inferencia.
+	if !contieneSenal(o.Senales, SenalSoftwareAjeno) {
+		t.Error("no sustenta SenalSoftwareAjeno")
+	}
+
+	// 3. NO sustenta exploración: una ruta no son ocho.
+	if contieneSenal(o.Senales, SenalExploracion) {
+		t.Error("una sola ruta produjo señal de exploración")
+	}
+
+	// 4. NO significa compromiso: no hay hallazgo, porque el servidor negó.
+	if RespuestaInesperada("/.git/config", 404) {
+		t.Error("un 404 se contó como respuesta inesperada del servidor")
+	}
+
+	// 5. NO produce cuarentena por sí sola. Es la calibración de ADR-0070: la
+	// acción más fuerte no la puede disparar la señal más débil.
+	c := cuarentenaDePrueba(t)
+	if n := len(c.Evaluar(origenes, ahora)); n != 0 {
+		t.Errorf("una petición aislada apartó a alguien: %d apartados", n)
+	}
+}
+
+// LA EVIDENCIA ES LO QUE CONVIERTE UNA AFIRMACIÓN EN UNA QUE SE PUEDE
+// CONTRASTAR.
+//
+// Hasta aquí el panel decía «Exploración automatizada» y quien lo leyera tenía
+// que creerse el umbral. Esto comprueba que se puede contestar «¿qué estaba
+// buscando?» sin salir de la página.
+func TestLaEvidenciaExplicaLaSenal(t *testing.T) {
+	ahora := time.Now()
+	var eventos []Evento
+	// Ocho rutas distintas, y una de ellas pedida cuatro veces: es el patrón
+	// que hay que poder leer de un vistazo.
+	for i := range umbralExploracion {
+		e := ev(ahora, "203.0.113.7", RutaInexistente, "/inventada-"+strconv.Itoa(i)+".php")
+		e.Estado = 404
+		eventos = append(eventos, e)
+	}
+	for range 3 {
+		e := ev(ahora, "203.0.113.7", RutaInexistente, "/inventada-0.php")
+		e.Estado = 404
+		eventos = append(eventos, e)
+	}
+
+	o := PorOrigen(eventos)[0]
+	if !contieneSenal(o.Senales, SenalExploracion) {
+		t.Fatal("ocho rutas distintas no produjeron exploración")
+	}
+	// LA ENTRADA DEL UMBRAL, publicada: es lo que contesta «¿por qué dice
+	// exploración?» sin obligar a nadie a contar filas.
+	if o.RutasInexistentes != umbralExploracion {
+		t.Errorf("rutas inexistentes = %d; se esperaban %d", o.RutasInexistentes, umbralExploracion)
+	}
+	if o.SondasVistas != umbralExploracion {
+		t.Errorf("sondas distintas = %d; se esperaban %d", o.SondasVistas, umbralExploracion)
+	}
+	// La más repetida va PRIMERA: es la que dice qué buscaba con más ganas.
+	if o.Evidencia[0].Ruta != "/inventada-0.php" || o.Evidencia[0].Veces != 4 {
+		t.Errorf("la evidencia no ordena por repetición: %+v", o.Evidencia[0])
+	}
+}
+
+// LA EVIDENCIA ESTÁ ACOTADA. La escribe un tercero —las rutas las elige quien
+// sondea—, así que sin tope sería la única estructura del panel cuyo tamaño
+// decide alguien de fuera.
+func TestLaEvidenciaNoCreceConLoQueHagaUnExtrano(t *testing.T) {
+	ahora := time.Now()
+	var eventos []Evento
+	for i := range 500 {
+		e := ev(ahora, "203.0.113.7", RutaInexistente, "/x-"+strconv.Itoa(i))
+		e.Estado = 404
+		eventos = append(eventos, e)
+	}
+	o := PorOrigen(eventos)[0]
+	if len(o.Evidencia) != TopeSondas {
+		t.Errorf("evidencia = %d líneas; el tope es %d", len(o.Evidencia), TopeSondas)
+	}
+	// Y SE DICE QUE SE RECORTA, en vez de dar a entender que eso es todo: la
+	// misma honestidad que ya tienen la cronología y la tabla de rutas.
+	if o.SondasVistas != 500 {
+		t.Errorf("sondas vistas = %d; se esperaban 500", o.SondasVistas)
+	}
+}
+
+// EL MISMO HECHO CON DOS ESTADOS DISTINTOS SON DOS LÍNEAS, no una sumada.
+//
+// «/.git/config → 404» y «/.git/config → 200» son afirmaciones opuestas sobre
+// el nodo. Agruparlas por ruta a secas borraría justo la diferencia que este
+// trabajo existe para enseñar.
+func TestLaEvidenciaNoMezclaEstadosDistintos(t *testing.T) {
+	ahora := time.Now()
+	uno := ev(ahora, "203.0.113.7", RutaInexistente, "/.git/config")
+	uno.Estado = 404
+	otro := ev(ahora, "203.0.113.7", PermisoInsuficiente, "/.git/config")
+	otro.Estado = 403
+
+	o := PorOrigen([]Evento{uno, otro})[0]
+	if len(o.Evidencia) != 2 {
+		t.Fatalf("evidencia = %d líneas; dos estados distintos son dos hechos", len(o.Evidencia))
+	}
+}
+
+// EL ORDEN DE LA EVIDENCIA NO BAILA ENTRE RECARGAS. Justificar una inferencia
+// con una tabla que cambia sola no justifica nada — mismo criterio que el
+// tercer desempate de PorOrigen.
+func TestElOrdenDeLaEvidenciaEsDeterminista(t *testing.T) {
+	ahora := time.Now()
+	var eventos []Evento
+	for _, ruta := range []string{"/a", "/b", "/c", "/d", "/e"} {
+		e := ev(ahora, "203.0.113.7", RutaInexistente, ruta)
+		e.Estado = 404
+		eventos = append(eventos, e)
+	}
+
+	var primera []string
+	for i := range 30 {
+		o := PorOrigen(eventos)[0]
+		var rutas []string
+		for _, sd := range o.Evidencia {
+			rutas = append(rutas, sd.Ruta)
+		}
+		if i == 0 {
+			primera = rutas
+			continue
+		}
+		if !slices.Equal(primera, rutas) {
+			t.Fatalf("la evidencia cambió de orden: %v vs %v", primera, rutas)
+		}
 	}
 }

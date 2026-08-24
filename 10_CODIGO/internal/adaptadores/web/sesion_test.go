@@ -81,6 +81,18 @@ func novedadesDePrueba(t *testing.T) *seguridad.Novedades {
 	return n
 }
 
+// hallazgosDePrueba son las respuestas inesperadas del propio servidor. Va con
+// los otros por el mismo motivo: un servidor de prueba sin ella no representa
+// al de verdad, y ademas web.Nuevo la exige.
+func hallazgosDePrueba(t *testing.T) *seguridad.Hallazgos {
+	t.Helper()
+	h, err := seguridad.CargarHallazgos(filepath.Join(t.TempDir(), "hallazgos"))
+	if err != nil {
+		t.Fatalf("seguridad.CargarHallazgos: %v", err)
+	}
+	return h
+}
+
 func seguridadDePrueba(t *testing.T) *seguridad.Anillo {
 	t.Helper()
 	a, err := seguridad.CargarAnillo(filepath.Join(t.TempDir(), "seguridad"))
@@ -139,6 +151,7 @@ func servidorConAuth(t *testing.T) *Servidor {
 		Cuarentena:       cuarentenaDePrueba(t),
 		Lista:            listaDePrueba(t),
 		Novedades:        novedadesDePrueba(t),
+		Hallazgos:        hallazgosDePrueba(t),
 		Conexiones:       conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -171,6 +184,7 @@ func servidorConAuthYInactividad(t *testing.T, inactividad time.Duration) *Servi
 		Cuarentena:        cuarentenaDePrueba(t),
 		Lista:             listaDePrueba(t),
 		Novedades:         novedadesDePrueba(t),
+		Hallazgos:         hallazgosDePrueba(t),
 		Conexiones:        conexionesDePrueba(t),
 	})
 	if err != nil {
@@ -358,6 +372,7 @@ func TestSinCredencialNoArranca(t *testing.T) {
 			Cuarentena:      cuarentenaDePrueba(t),
 			Lista:           listaDePrueba(t),
 			Novedades:       novedadesDePrueba(t),
+			Hallazgos:       hallazgosDePrueba(t),
 			Conexiones:      conexionesDePrueba(t),
 		})
 		if err == nil {
