@@ -35,7 +35,14 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
-RestrictAddressFamilies=AF_INET AF_UNIX
+# AF_INET6 NO ES OPCIONAL DESDE ADR-0044: la web publica entra por IPv6 y el
+# socket 443 es de doble pila. Sin esta familia el nodo arranca y NO sirve a
+# Internet, que es el sintoma mas caro de diagnosticar que hay aqui.
+#
+# Esta copia de referencia decia "AF_INET AF_UNIX" hasta el 2026-08-25, mientras
+# la unidad que 05_instalar_servicio.sh instala de verdad si traia AF_INET6. La
+# que manda es el script (P1); esta habia envejecido porque no la copia nadie.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 # ADR-0032 — puerto 80 sin elevar el proceso.
 #
@@ -87,6 +94,18 @@ Environment=GOMEMLIMIT=160MiB
 #
 # Sin esto el servicio NO ARRANCA: no existe un modo sin autenticar.
 LoadCredential=web:/etc/nasd/credencial
+
+# LA CAPA DE AVISOS NO SE DECLARA AQUÍ — ADR-0073.
+#
+# Su credencial (/etc/nasd/avisos) llega por un DROP-IN que instala
+# 20_APROVISIONAMIENTO/20_avisos.sh, y no por esta unidad. El motivo es
+# concreto: LoadCredential= con un archivo que NO EXISTE hace que la unidad no
+# arranque, así que ponerla aquí dejaría SIN SERVICIO a cualquier nodo al que no
+# se le hayan configurado los avisos — se cambiaría un NAS que funciona por un
+# canal de notificaciones.
+#
+# Con el drop-in, la credencial se declara solo cuando ya existe, y retirar la
+# capa entera es borrar un archivo.
 
 # RNF-13: registro estructurado JSON por stdout hacia journald.
 StandardOutput=journal

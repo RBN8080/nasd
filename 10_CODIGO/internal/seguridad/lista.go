@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"nasd/internal/atomico"
 )
 
 // Lista — el bloqueo que decide una PERSONA, con su motivo escrito.
@@ -533,7 +535,7 @@ func (l *Lista) Volcar() error {
 	l.sucio = false
 	l.mu.Unlock()
 
-	err := escribirAtomico(l.ruta, ".lista-*", func(w io.Writer) error {
+	err := atomico.Escribir(l.ruta, ".lista-*", func(w io.Writer) error {
 		fmt.Fprint(w, "# Bloqueos puestos a mano — una decisión por línea, en JSON.\n")
 		fmt.Fprint(w, "# Cada una lleva su motivo escrito, quién la puso y cuántas veces ha servido.\n")
 		enc := json.NewEncoder(w)

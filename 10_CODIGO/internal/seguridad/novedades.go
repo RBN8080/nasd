@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"nasd/internal/atomico"
 )
 
 // Novedades — «hay algo que no había visto» en un número.
@@ -193,7 +195,7 @@ func (n *Novedades) Volcar() error {
 	n.sucio = false
 	n.mu.Unlock()
 
-	err := escribirAtomico(n.ruta, ".novedades-*", func(w io.Writer) error {
+	err := atomico.Escribir(n.ruta, ".novedades-*", func(w io.Writer) error {
 		return json.NewEncoder(w).Encode(d)
 	})
 	if err != nil {

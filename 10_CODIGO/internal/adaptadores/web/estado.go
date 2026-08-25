@@ -100,7 +100,93 @@ type indicador struct {
 // statfs o vcgencmd no. Ver ADR-0051 y el tipo sistema.Vivo. La partición es
 // solo de cálculo: sigue habiendo un único criterio por indicador.
 func evaluar(n sistema.Nodo, i Instantanea) []indicador {
-	return append(evaluarVivos(n.Vivo, i), evaluarLentos(n)...)
+	out := append(evaluarVivos(n.Vivo, i), evaluarLentos(n)...)
+	return append(out, evaluarSalidas(i)...)
+}
+
+// evaluarSalidas juzga las DOS vías por las que el nodo habla hacia fuera.
+//
+// # POR QUÉ ESTO ES UN INDICADOR Y NO UN ADORNO
+//
+// Un canal de avisos callado y uno roto se ven exactamente igual desde el sofá.
+// Este nodo recibió 8 peticiones de Internet en 21 días medidos, así que el
+// silencio es su estado NORMAL: sin estas dos filas no habría forma de
+// distinguir «no ha pasado nada» de «lleva tres semanas sin poder entregar».
+//
+// Es el mismo defecto que ADR-0064 corrigió en el panel de seguridad —el
+// control funcionaba y lo que faltaba era VERLO— aplicado a la capa nueva antes
+// de que muerda.
+//
+// # SE PINTAN SOLO SI ESTÁN CONFIGURADAS
+//
+// Un nodo sin la capa instalada no enseña dos semáforos en gris. Un indicador
+// permanentemente «desconocido» enseña a ignorar el panel, que es justo lo que
+// ADR-0065 vino a corregir retirando 24 elementos sin pregunta detrás.
+func evaluarSalidas(i Instantanea) []indicador {
+	var out []indicador
+
+	if i.Canal.Configurado {
+		ind := indicador{Clave: "canal_avisos", Nombre: "Canal de avisos"}
+		switch {
+		case i.Canal.SecretoRechazado:
+			// El único fallo que NO se arregla esperando, y por eso es el único
+			// que sube a «fallo»: hay que ir a cambiar el secreto.
+			ind.Valor = "credencial rechazada por el proveedor"
+			ind.Veredicto = vFallo
+			ind.Accion = "Regenere el token del bot y reescriba /etc/nasd/avisos; " +
+				"después «sudo systemctl restart nasd». Hasta entonces no sale ningún aviso."
+		case i.Canal.Descartados > 0:
+			ind.Valor = fmt.Sprintf("%d avisos descartados por cola llena", i.Canal.Descartados)
+			ind.Veredicto = vFallo
+			ind.Accion = "El canal lleva tiempo sin poder entregar. Revise el diario " +
+				"(«journalctl -u nasd -g 'cola de avisos'») y la conectividad del nodo."
+		case i.Canal.Fallidos > 0 && i.Canal.UltimoExito.Before(i.Canal.UltimoIntento):
+			// El último intento falló: está caído AHORA. Un fallo antiguo con un
+			// éxito posterior no alarma, porque ya se recuperó.
+			ind.Valor = "sin entregar: " + i.Canal.UltimoError
+			ind.Veredicto = vAtencion
+			ind.Accion = "Puede ser una caída pasajera del proveedor o de la red; se reintenta solo. " +
+				"Si persiste, compruebe que el nodo alcanza Internet."
+		case i.Canal.Entregados == 0:
+			// Configurado y sin haber entregado nada todavía. NO es un fallo:
+			// es lo normal en un nodo recién arrancado y tranquilo. Se dice
+			// como desconocido, que es lo único que se puede afirmar.
+			ind.Valor = "configurado, sin nada que entregar todavía"
+			ind.Veredicto = vDesconocido
+		default:
+			ind.Valor = fmt.Sprintf("%d entregados · último a las %s",
+				i.Canal.Entregados, i.Canal.UltimoExito.Format("15:04"))
+			ind.Veredicto = vOK
+		}
+		out = append(out, ind)
+	}
+
+	if i.Latido.Configurado {
+		ind := indicador{Clave: "latido", Nombre: "Latido al testigo externo"}
+		switch {
+		case i.Latido.Latidos == 0 && i.Latido.Fallidos > 0:
+			// Nunca ha llegado NI UNO. Es la avería que deja al nodo sin
+			// vigilancia externa entera, y por eso es fallo y no atención.
+			ind.Valor = "ningún latido ha salido: " + i.Latido.UltimoError
+			ind.Veredicto = vFallo
+			ind.Accion = "Compruebe latido_url en /etc/nasd/avisos y que el nodo alcanza Internet. " +
+				"Sin latido, una caída del nodo NO se detecta desde fuera."
+		case i.Latido.UltimoError != "":
+			ind.Valor = fmt.Sprintf("%d emitidos, el último falló: %s", i.Latido.Latidos, i.Latido.UltimoError)
+			ind.Veredicto = vAtencion
+			ind.Accion = "El testigo tolera varios latidos perdidos antes de alarmar (ADR-0074). " +
+				"Si no se recupera, revise la conectividad."
+		case i.Latido.Latidos == 0:
+			ind.Valor = "configurado, todavía sin latir"
+			ind.Veredicto = vDesconocido
+		default:
+			ind.Valor = fmt.Sprintf("%d emitidos · último a las %s",
+				i.Latido.Latidos, i.Latido.UltimoExito.Format("15:04"))
+			ind.Veredicto = vOK
+		}
+		out = append(out, ind)
+	}
+	return out
 }
 
 // evaluarVivos son los indicadores que se recalculan en cada muestreo.
@@ -513,6 +599,16 @@ func (s *Servidor) instantaneaCompleta() Instantanea {
 	i := s.contadores.instantanea()
 	i.SubidasEnCurso = s.subidas.cuantas()
 	i.SesionesAbiertas = s.sesiones.Abiertas()
+	// Las dos salidas se preguntan aquí y no en los contadores porque las
+	// publica el adaptador de canal, no este paquete. Nulas significan «no
+	// configurado», y entonces sus indicadores no se pintan: un semáforo en
+	// gris permanente enseña a ignorar el panel entero (ADR-0065).
+	if s.saludCanal != nil {
+		i.Canal = s.saludCanal()
+	}
+	if s.saludLatido != nil {
+		i.Latido = s.saludLatido()
+	}
 	return i
 }
 

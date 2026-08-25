@@ -1,6 +1,6 @@
 //go:build !unix
 
-package metricas
+package atomico
 
 // En sistemas no-Unix no existe el fsync de un directorio: Windows devuelve
 // «acceso denegado» al intentar FlushFileBuffers sobre un manejador de
@@ -10,6 +10,6 @@ package metricas
 // que sus gemelos de fsposix y autenticacion. El objetivo de despliegue es
 // linux/arm64, donde siempre se usa la implementación real.
 //
-// Consecuencia: ejecutando en Windows, la durabilidad del registro NO está
-// garantizada. Las pruebas valen como prueba de lógica, no de durabilidad.
+// Consecuencia: ejecutando en Windows, la durabilidad NO está garantizada.
+// Las pruebas valen como prueba de lógica, no de durabilidad.
 func sincronizarDir(string) error { return nil }

@@ -21,14 +21,16 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"nasd/internal/atomico"
 )
 
 // Medida es el último uso de disco calculado para una cuenta.
@@ -162,26 +164,14 @@ func (r *Registro) Actualizar(nuevas map[string]int64, momento time.Time) error 
 	return nil
 }
 
-// guardar escribe el archivo entero de forma ATÓMICA — mismos cuatro pasos
-// que autenticacion.guardar (ADR-0024): temporal en el mismo directorio,
-// fsync del contenido, rename, fsync del directorio.
+// guardar escribe el archivo entero de forma ATÓMICA — los cuatro pasos de
+// ADR-0024, que desde el 2026-08-25 viven en internal/atomico.
+//
+// ANTES ESTABAN ESCRITOS A MANO AQUÍ, y era la segunda copia de la misma
+// danza: la otra vivía en internal/seguridad. Con internal/aviso llegando como
+// tercer llamador, mantener tres copias significaba que arreglar un paso en una
+// dejaría las otras dos rotas hasta el siguiente corte de corriente.
 func (r *Registro) guardar() error {
-	dir := filepath.Dir(r.ruta)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("preparar %q: %w", dir, err)
-	}
-	tmp, err := os.CreateTemp(dir, ".uso-disco-*")
-	if err != nil {
-		return fmt.Errorf("crear el temporal del registro de métricas: %w", err)
-	}
-	nombreTmp := tmp.Name()
-	defer os.Remove(nombreTmp) // no-op si el rename salió bien
-
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("permisos del registro de métricas: %w", err)
-	}
-
 	// Orden alfabético y no de inserción: a diferencia de
 	// autenticacion.Registro —que guarda un slice para conservar el orden
 	// del alta, como un registro cronológico legible—, esto es una caché de
@@ -194,38 +184,27 @@ func (r *Registro) guardar() error {
 	}
 	sort.Strings(nombres)
 
-	var b strings.Builder
-	b.WriteString("# Uso de disco por cuenta, medido bajo demanda — P-4, etapa 3.\n")
-	b.WriteString("# Una cuenta por línea: nombre:bytes:variación:momento-RFC3339.\n")
-	b.WriteString("# variación es «-» si esa cuenta no tenía medida previa.\n")
-	for _, nombre := range nombres {
-		m := r.medidas[nombre]
-		b.WriteString(nombre)
-		b.WriteByte(':')
-		b.WriteString(strconv.FormatInt(m.Bytes, 10))
-		b.WriteByte(':')
-		if m.Variacion == nil {
-			b.WriteByte('-')
-		} else {
-			b.WriteString(strconv.FormatInt(*m.Variacion, 10))
+	return atomico.Escribir(r.ruta, ".uso-disco-*", func(w io.Writer) error {
+		var b strings.Builder
+		b.WriteString("# Uso de disco por cuenta, medido bajo demanda — P-4, etapa 3.\n")
+		b.WriteString("# Una cuenta por línea: nombre:bytes:variación:momento-RFC3339.\n")
+		b.WriteString("# variación es «-» si esa cuenta no tenía medida previa.\n")
+		for _, nombre := range nombres {
+			m := r.medidas[nombre]
+			b.WriteString(nombre)
+			b.WriteByte(':')
+			b.WriteString(strconv.FormatInt(m.Bytes, 10))
+			b.WriteByte(':')
+			if m.Variacion == nil {
+				b.WriteByte('-')
+			} else {
+				b.WriteString(strconv.FormatInt(*m.Variacion, 10))
+			}
+			b.WriteByte(':')
+			b.WriteString(m.Momento.Format(time.RFC3339))
+			b.WriteByte('\n')
 		}
-		b.WriteByte(':')
-		b.WriteString(m.Momento.Format(time.RFC3339))
-		b.WriteByte('\n')
-	}
-	if _, err := tmp.WriteString(b.String()); err != nil {
-		tmp.Close()
-		return fmt.Errorf("escribir el registro de métricas: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("sincronizar el registro de métricas: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("cerrar el temporal del registro de métricas: %w", err)
-	}
-	if err := os.Rename(nombreTmp, r.ruta); err != nil {
-		return fmt.Errorf("publicar el registro de métricas: %w", err)
-	}
-	return sincronizarDir(dir)
+		_, err := io.WriteString(w, b.String())
+		return err
+	})
 }

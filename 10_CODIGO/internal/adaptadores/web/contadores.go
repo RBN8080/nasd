@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"nasd/internal/aviso"
 )
 
 // Indicadores del SERVICIO — la mitad de producto de lo que exige el charter
@@ -97,6 +99,17 @@ type Instantanea struct {
 	Borrados         int64 `json:"borrados"`
 	AccesosFallidos  int64 `json:"accesos_fallidos"`
 	SesionesAbiertas int   `json:"sesiones_abiertas"`
+
+	// Las DOS rutas de salida del nodo (ADR-0073, ADR-0074). No salen de los
+	// contadores atómicos de arriba —las rellena instantaneaCompleta— pero
+	// viven aquí porque es lo que /estado publica, y evaluar() es una función
+	// libre que solo recibe esto.
+	//
+	// VAN SEPARADAS Y NO SE FUNDEN: «los avisos no salen» y «el latido no sale»
+	// son averías distintas, con causas distintas y proveedores distintos, y
+	// poder distinguirlas es media respuesta cuando algo va mal.
+	Canal  aviso.SaludCanal  `json:"canal_avisos"`
+	Latido aviso.SaludLatido `json:"latido"`
 }
 
 func (c *contadores) instantanea() Instantanea {
