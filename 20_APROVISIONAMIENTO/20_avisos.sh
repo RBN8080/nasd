@@ -109,8 +109,20 @@ fi
 
 chmod 0600 "$CONF"
 chown root:root "$CONF"
-# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
-. "$CONF"
+
+# NO SE HACE «. "$CONF"»: este archivo no es shell, es el formato TOML-lite que
+# lee config.LeerPares en el propio binario (10_CODIGO/internal/config/toml.go)
+# — «clave = "valor"», con espacios alrededor del signo igual. Sourcearlo como
+# bash rompía con «command not found» en la primera línea, porque los espacios
+# no son asignación válida de shell. Es distinto del formato de 11_ddns.sh
+# (DOMINIO=valor, sin espacios, ese sí pensado para sourcearse) y no deben
+# confundirse: aquí se extrae con la misma regla que aplica el lector real.
+valor_de() {
+  sed -n "s/^${1}[[:space:]]*=[[:space:]]*\"\\(.*\\)\"[[:space:]]*\$/\\1/p" "$CONF" | tail -1
+}
+telegram_token=$(valor_de telegram_token)
+telegram_chat=$(valor_de telegram_chat)
+latido_url=$(valor_de latido_url)
 : "${telegram_token:?falta telegram_token en $CONF}"
 : "${telegram_chat:?falta telegram_chat en $CONF}"
 # EL TESTIGO ES OPCIONAL Y EL CANAL NO, igual que en el binario: main.go exige
