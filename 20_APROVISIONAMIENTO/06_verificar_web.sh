@@ -32,7 +32,34 @@ systemctl is-active --quiet nasd || { echo "nasd no está activo."; exit 1; }
 
 # Desde RF-15 (Fase 3) NADA responde sin sesión, así que sin esto el script
 # no pasaría de la primera comprobación y reportaría un muro de fallos falsos.
-# La contraseña se teclea; no se guarda ni se pasa por argumento (P4).
+# La contraseña se teclea y no se guarda (P4).
+#
+# Y NO ENTRA EN argv, QUE ES LO QUE ESTA MISMA LÍNEA PROMETÍA SIN CUMPLIR. Se
+# mandaba con «--data-urlencode "clave=$CLAVE"», y el shell expande esa variable
+# ANTES de ejecutar curl: el valor pasa a ser uno de sus argumentos y queda
+# visible en la tabla de procesos para cualquiera que mire mientras dura la
+# petición. El comentario decía «no se pasa por argumento» y era justo lo que
+# hacía.
+#
+# Ahora viaja por la ENTRADA ESTÁNDAR: «clave@-» le dice a curl que lea el valor
+# de stdin, lo codifique como corresponde y lo mande con el nombre «clave». En
+# argv solo queda el literal «clave@-».
+#
+# MEDIDO CONTRA EL curl DE ESTE NODO (8.14.1) el 2026-08-24, con un valor de
+# prueba inventado y un receptor efímero en loopback:
+#
+#   cuerpo enviado  usuario=admin&clave=VALOR-DE-PRUEBA+con+espacios+%26+...
+#   Content-Type    application/x-www-form-urlencoded   (el mismo de antes)
+#   ps con "clave=$CLAVE"   -> el valor SE VE
+#   ps con "clave@-"        -> el valor NO se ve; solo el literal «clave@-»
+#
+# LO QUE ESTO NO ES: no se intenta borrar el secreto de la memoria del shell. La
+# variable CLAVE sigue existiendo hasta el «unset» de abajo, y eso está bien —
+# lo que se cierra es la exposición a OTROS procesos, que es la que no dependía
+# de nosotros.
+#
+# Y NO SE ESCRIBE EN NINGÚN SITIO: ni archivo temporal, ni variable de entorno
+# exportada, ni diario, ni salida. La tubería no deja rastro en disco.
 #
 # EL CAMPO «usuario» FALTABA, Y ESO TENÍA EL SCRIPT ROTO DESDE ADR-0055.
 # Hasta la migración multicuenta bastaba con la contraseña porque solo había una
@@ -54,9 +81,9 @@ systemctl is-active --quiet nasd || { echo "nasd no está activo."; exit 1; }
 # este script; si esa constante cambiara, esta línea es la única que tocar.
 echo "Contraseña de la WEB (D-14, distinta de la de Samba):"
 read -rs -p "  > " CLAVE; echo
-COD=$(curl -s -o /dev/null -w '%{http_code}' -c "$GALLETAS" \
+COD=$(printf '%s' "$CLAVE" | curl -s -o /dev/null -w '%{http_code}' -c "$GALLETAS" \
       --data-urlencode "usuario=admin" \
-      --data-urlencode "clave=$CLAVE" "$BASE/acceso")
+      --data-urlencode "clave@-" "$BASE/acceso")
 unset CLAVE
 if [ "$COD" != "303" ]; then
   echo "No se pudo abrir sesión (HTTP $COD). Sin sesión no se puede verificar NADA."
