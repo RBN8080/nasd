@@ -6,6 +6,7 @@ import (
 
 	"nasd/internal/adaptadores/sistema"
 	"nasd/internal/almacen"
+	"nasd/internal/aviso"
 )
 
 // Ciclo de vida de las subidas abandonadas — cierra los hallazgos 1, 2 y 3
@@ -99,13 +100,23 @@ func (s *Servidor) mantener(ctx context.Context) {
 	s.vigilar(ctx)
 }
 
-// vigilar es el ÚNICO canal de alerta que tiene este producto.
+// vigilar evalúa la salud del nodo y anuncia los cambios.
 //
-// El charter §8 pide alertas «sobre síntomas observables por el usuario» y
-// «accionables». Aquí no hay nada a lo que empujar una notificación —ni correo,
-// ni Telegram, ni un sistema de monitorización; el charter §9.2 fija tres nodos
-// y gestión artesanal—, así que el canal es el diario, que es donde el
-// responsable ya mira cuando algo va mal, y la pantalla de /estado.
+// # ESTE COMENTARIO DECÍA OTRA COSA HASTA EL 2026-08-25, Y CONVIENE SABER CUÁL
+//
+// Decía: «es el ÚNICO canal de alerta que tiene este producto… aquí no hay nada
+// a lo que empujar una notificación —ni correo, ni Telegram, ni un sistema de
+// monitorización—, así que el canal es el diario». Era verdad y dejó de serlo
+// con ADR-0073: ahora un cambio de veredicto también SALE del nodo.
+//
+// Se reescribe en vez de dejarlo envejecer, porque un comentario que afirma una
+// carencia que ya no existe es exactamente la clase de mentira silenciosa que
+// este proyecto persigue en su propio código.
+//
+// El charter §8 sigue pidiendo alertas «sobre síntomas observables por el
+// usuario» y «accionables», y eso no cambia: el diario y /estado siguen siendo
+// la constancia local, y ahora además hay un aviso que llega al responsable sin
+// que tenga que ir a mirar.
 //
 // Se apoya en la MISMA función evaluar() que la pantalla. Si algún día la
 // alerta y la pantalla discreparan, sería un defecto de este proyecto, no una
@@ -143,9 +154,17 @@ func (s *Servidor) anunciar(indicadores []indicador) {
 			// exactamente lo que hay que ver.
 			s.reg.Error("ALERTA", "indicador", ind.Nombre,
 				"valor", ind.Valor, "accion", ind.Accion)
+			s.AvisarAveria(aviso.Averia{
+				Clave: ind.Clave, Nombre: ind.Nombre, Valor: ind.Valor,
+				Accion: ind.Accion, Grave: true,
+			}, time.Now())
 		case vAtencion:
 			s.reg.Warn("atención", "indicador", ind.Nombre,
 				"valor", ind.Valor, "accion", ind.Accion)
+			s.AvisarAveria(aviso.Averia{
+				Clave: ind.Clave, Nombre: ind.Nombre, Valor: ind.Valor,
+				Accion: ind.Accion,
+			}, time.Now())
 		case vDesconocido:
 			// En la primera pasada casi todo está sin medir —los SLI no tienen
 			// muestras y el nodo puede no publicar la limitación—. Eso no es

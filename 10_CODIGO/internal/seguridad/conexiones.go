@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"nasd/internal/atomico"
 )
 
 // Conexiones entrantes de Internet — el hueco que el historial de rechazos no
@@ -261,7 +263,7 @@ func (c *Conexiones) Volcar() error {
 	c.sucio = false
 	c.mu.Unlock()
 
-	err := escribirAtomico(c.ruta, ".conexiones-*", func(w io.Writer) error {
+	err := atomico.Escribir(c.ruta, ".conexiones-*", func(w io.Writer) error {
 		fmt.Fprintf(w, "# Conexiones entrantes de Internet — anillo de %d, de la más antigua a la más reciente.\n", Capacidad)
 		fmt.Fprint(w, "# Una por línea, en JSON. Solo instante y dirección: nada más se sabe al aceptar.\n")
 		fmt.Fprintf(w, "%s%d\n", marcaTotal, total)

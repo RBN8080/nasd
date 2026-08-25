@@ -11,6 +11,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"nasd/internal/atomico"
 )
 
 // Cuarentena — la respuesta automática por CONDUCTA OBSERVADA.
@@ -390,7 +392,22 @@ func (c *Cuarentena) Mantener(hecho <-chan struct{}, alFallar func(error)) {
 // ritmos distintos habría una ventana en la que el nodo aparta a alguien, se
 // reinicia y lo olvida — que es precisamente lo que esta pieza existe para
 // evitar.
-func Vigilar(hecho <-chan struct{}, a *Anillo, c *Cuarentena, alApartar func([]Apartado)) {
+//
+// # POR QUÉ EL OBSERVADOR RECIBE LOS ORÍGENES Y NO SOLO LOS APARTADOS
+//
+// Porque desde ADR-0073 hay un SEGUNDO interesado en el mismo cálculo: la capa
+// de avisos necesita exactamente los mismos []Origen para decidir qué merece
+// salir del nodo.
+//
+// PorOrigen recorre la ventana entera, agrupa por dirección y deriva las
+// señales de cada una. Hacerlo dos veces por minuto en un A53 —una para apartar
+// y otra para avisar— sería pagar dos veces por el mismo trabajo, y encima
+// dejaría abierta la posibilidad de que las dos lecturas vieran ventanas
+// distintas y el panel contara una cosa y el aviso otra.
+//
+// Se calcula UNA vez y se reparte. El observador se llama SIEMPRE, aunque no
+// haya apartados nuevos: quien decide si hay algo que avisar es él, no esto.
+func Vigilar(hecho <-chan struct{}, a *Anillo, c *Cuarentena, observar func(origenes []Origen, nuevos []Apartado, ahora time.Time)) {
 	t := time.NewTicker(intervaloVolcado)
 	defer t.Stop()
 	for {
@@ -398,9 +415,16 @@ func Vigilar(hecho <-chan struct{}, a *Anillo, c *Cuarentena, alApartar func([]A
 		case <-hecho:
 			return
 		case ahora := <-t.C:
-			nuevos := c.Evaluar(PorOrigen(a.Desde(ahora.Add(-VentanaCuarentena))), ahora)
-			if len(nuevos) > 0 && alApartar != nil {
-				alApartar(nuevos)
+			origenes := PorOrigen(a.Desde(ahora.Add(-VentanaCuarentena)))
+			// EL ORDEN IMPORTA Y ES ESTE: primero se APARTA, después se avisa.
+			// Es la jerarquía del proyecto cumplida en dos líneas —ENFORCEMENT
+			// antes que NOTIFICACIÓN, nunca al revés— y tiene además una
+			// consecuencia práctica: el observador ve los apartados que ACABAN
+			// de aplicarse, así que el aviso puede decir «cuarentena aplicada»
+			// en vez de «se va a aplicar».
+			nuevos := c.Evaluar(origenes, ahora)
+			if observar != nil {
+				observar(origenes, nuevos, ahora)
 			}
 		}
 	}
@@ -422,7 +446,7 @@ func (c *Cuarentena) Volcar() error {
 
 	slices.SortFunc(orden, func(x, y Apartado) int { return x.Desde.Compare(y.Desde) })
 
-	err := escribirAtomico(c.ruta, ".cuarentena-*", func(w io.Writer) error {
+	err := atomico.Escribir(c.ruta, ".cuarentena-*", func(w io.Writer) error {
 		fmt.Fprint(w, "# Cuarentena automática por conducta — una dirección por línea, en JSON.\n")
 		fmt.Fprint(w, "# La pone el nodo solo y caduca sola. Se suelta desde /seguridad.\n")
 		enc := json.NewEncoder(w)

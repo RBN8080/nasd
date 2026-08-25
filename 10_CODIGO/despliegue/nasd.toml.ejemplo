@@ -60,3 +60,37 @@ inactividad_s = 300
 # dejan sin fijar a propósito — cortarían descargas legítimas de 4 GB.
 # Valor de referencia [R]: no es criterio de aceptación.
 inactividad_s = 60
+
+[avisos]
+# Capa de avisos externos — ADR-0073. AQUÍ NO HAY NINGÚN SECRETO.
+#
+# El token del bot, el chat y la URL del testigo van por LoadCredential= de
+# systemd, en /etc/nasd/avisos, igual que la credencial de la web (P4). Lo que
+# vive aquí es solo CUÁNDO y CON QUÉ GANAS se avisa.
+#
+# OJO AL INSTALAR EN UN NODO QUE YA EXISTE: 05_instalar_servicio.sh escribe
+# este archivo SOLO la primera vez, así que estas claves NO llegan a un nodo
+# que ya tiene su TOML. Los valores por omisión del binario son los que mandan
+# allí, y son exactamente los de abajo.
+
+# Cómo se entrega. Valores: "normal", "silencio", "observacion".
+#
+#   normal       🟢 al resumen · 🟡 y 🔴 inmediatos
+#   silencio     🟢 al resumen · 🟡 retenido hasta el resumen · 🔴 INMEDIATO
+#   observacion  todo inmediato — para desarrollo o investigación
+#
+# UN 🔴 NUNCA SE PUEDE SILENCIAR, en ningún modo. No es configurable.
+modo = "normal"
+
+# Cada cuánto sale el resumen, EN HORAS. Sale aunque no haya pasado nada: con
+# 8 peticiones de Internet en 21 días medidos, un canal que solo habla cuando
+# hay problemas es indistinguible de uno roto. Llega sin sonar.
+resumen_horas = 24
+
+# Cada cuánto late el nodo al testigo externo, EN SEGUNDOS. Misma cadencia que
+# nas-ddns.timer, ya probada en esta red.
+#
+# EL UMBRAL DE TOLERANCIA NO ESTÁ AQUÍ: vive en el testigo (Period y Grace,
+# ADR-0074), fuera del nodo. Es lo que permite ajustarlo sin redesplegar y lo
+# que impide que un nodo comprometido lo suba a un año.
+latido_s = 300

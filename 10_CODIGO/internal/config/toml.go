@@ -79,3 +79,27 @@ func leerTOML(r io.Reader) (map[string]string, error) {
 	}
 	return valores, nil
 }
+
+// LeerPares expone el lector mínimo para archivos de CLAVE = "valor" que no son
+// la configuración del servicio.
+//
+// # POR QUÉ SE EXPORTA, Y PARA QUÉ EXACTAMENTE
+//
+// Lo necesita la raíz de composición para leer el archivo de secretos de la
+// capa de avisos (ADR-0073), que systemd entrega por LoadCredential= en un
+// tmpfs privado y tiene esta misma forma:
+//
+//	telegram_token = "..."
+//	telegram_chat  = "..."
+//	latido_url     = "https://..."
+//
+// Se reutiliza este lector en vez de escribir un troceador de líneas en main.go
+// por dos motivos concretos, no por elegancia: aquí ya está resuelto el
+// entrecomillado —una contraseña o un identificador con un «#» dentro no se
+// corta por la mitad— y el operador escribe los dos archivos con las MISMAS
+// reglas, en vez de tener que recordar que uno admite comentarios y el otro no.
+//
+// Devuelve las claves sin sección, tal cual: un archivo de secretos no tiene
+// secciones y una construcción fuera del subconjunto admitido da error explícito
+// en lugar de ignorarse en silencio (P5).
+func LeerPares(r io.Reader) (map[string]string, error) { return leerTOML(r) }

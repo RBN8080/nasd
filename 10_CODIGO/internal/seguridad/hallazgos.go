@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"nasd/internal/atomico"
 )
 
 // Hallazgos — lo que el nodo descubre SOBRE SÍ MISMO.
@@ -438,7 +440,7 @@ func (h *Hallazgos) Volcar() error {
 
 	slices.SortFunc(orden, func(x, y Hallazgo) int { return x.Primera.Compare(y.Primera) })
 
-	err := escribirAtomico(h.ruta, ".hallazgos-*", func(w io.Writer) error {
+	err := atomico.Escribir(h.ruta, ".hallazgos-*", func(w io.Writer) error {
 		fmt.Fprint(w, "# Respuestas inesperadas — una ruta por línea, en JSON.\n")
 		fmt.Fprint(w, "# Esto habla del NODO, no de quien pidió: dice dónde respondió con contenido\n")
 		fmt.Fprint(w, "# una ruta que su arquitectura no publica. No afirma explotación ni compromiso.\n")

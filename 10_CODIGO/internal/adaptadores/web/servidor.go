@@ -19,6 +19,7 @@ import (
 
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/aviso"
 	"nasd/internal/geoip"
 	"nasd/internal/metricas"
 	"nasd/internal/seguridad"
@@ -155,6 +156,45 @@ type Servidor struct {
 	// ciclo de 5 min (mantenimiento.go). Sin esto, un archivo sin miniatura
 	// aprovechable lanzaría un subproceso en CADA recarga de su carpeta.
 	miniaturaFallidas *fallosMiniatura
+
+	// --- Capa de avisos externos (ADR-0073) ------------------------------
+	//
+	// avisos recuerda qué situaciones se comunicaron ya, para no repetirlas en
+	// cada ciclo ni tras cada reinicio. PUEDE SER NULO: un nodo sin la capa
+	// configurada funciona exactamente igual, solo que sin avisar por fuera —
+	// mismo trato que geo, y por el mismo motivo.
+	avisos *aviso.Registro
+	// emitir entrega un aviso. Es una FUNCIÓN y no el canal entero a propósito:
+	// este paquete no debe saber si detrás hay una cola, un diario o un
+	// proveedor. Nula significa «no hay a dónde avisar», y entonces la
+	// evaluación ni siquiera se hace.
+	emitir func(aviso.Aviso)
+	// modoAvisos es la política de entrega vigente.
+	modoAvisos aviso.Modo
+	// retenidas guarda lo que el modo silencio no dejó salir, hasta el resumen.
+	retenidas *aviso.Retencion
+	// periodoResumen es cada cuánto sale el resumen; ultimoResumen, cuándo
+	// salió el último. Los toca SOLO la goroutine de mantenimiento, que es una
+	// sola, así que no llevan candado — mismo criterio y mismo aviso que
+	// veredictosPrevios.
+	periodoResumen time.Duration
+	ultimoResumen  time.Time
+	// saludCanal y saludLatido publican el estado de las DOS rutas de salida
+	// para /estado. Nulas si esa ruta no está configurada.
+	//
+	// SON DOS Y NO UNA a propósito: los avisos y el latido salen por caminos
+	// distintos a proveedores distintos, y poder distinguir cuál de los dos
+	// está roto es justamente lo que el encargo pedía conservar (ADR-0074).
+	saludCanal  func() aviso.SaludCanal
+	saludLatido func() aviso.SaludLatido
+	// arranque es cuándo se construyó este servidor.
+	//
+	// Existe para el CUERPO DEL LATIDO, y ahí sí dice algo que no se puede
+	// deducir de otra parte: el testigo externo ve llegar latidos, pero no
+	// distingue un nodo que lleva tres días en pie de uno que se está
+	// reiniciando en bucle cada dos minutos. Con quince reinicios en catorce
+	// días medidos en este nodo, esa diferencia importa.
+	arranque time.Time
 }
 
 type Opciones struct {
@@ -250,6 +290,34 @@ type Opciones struct {
 	// y por eso Nuevo NO la exige, al revés que Usuarios, Metricas o
 	// Seguridad, cuya ausencia sí rompería algo en silencio.
 	GeoIP *geoip.BaseDatos
+
+	// --- Capa de avisos externos (ADR-0073) ------------------------------
+	//
+	// Avisos y Emitir van JUNTOS o no van ninguno, y Nuevo lo comprueba: un
+	// registro sin emisor evaluaría situaciones que no llegan a ningún sitio, y
+	// un emisor sin registro repetiría el mismo aviso cada minuto. Las dos
+	// mitades sueltas son peores que no tener la capa.
+	//
+	// SON OPCIONALES, al contrario que Seguridad o Cuarentena. La diferencia no
+	// es de comodidad: aquellas son CONTROLES y su ausencia dejaría al nodo
+	// indefenso en silencio (P5). Esto es comunicación — sin ella el nodo
+	// detecta, aparta, bloquea y registra exactamente igual, y lo único que se
+	// pierde es enterarse hoy en vez de mañana. Es el mismo criterio con el que
+	// GeoIP puede faltar.
+	Avisos *aviso.Registro
+	Emitir func(aviso.Aviso)
+	// ModoAvisos es la política de entrega. Su valor cero es aviso.ModoNormal,
+	// que es el que se quiere por omisión: un servicio de avisos que arranca en
+	// silencio parece encendido y no lo está.
+	ModoAvisos aviso.Modo
+	// PeriodoResumen es cada cuánto sale el resumen. Cero lo apaga.
+	PeriodoResumen time.Duration
+	// SaludCanal y SaludLatido publican el estado de las dos rutas de salida.
+	// Nulas significan que ese indicador no se pinta, que es lo correcto en un
+	// nodo sin la capa configurada: un indicador en gris permanente enseña a
+	// ignorar el panel.
+	SaludCanal  func() aviso.SaludCanal
+	SaludLatido func() aviso.SaludLatido
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -305,6 +373,18 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		return nil, fmt.Errorf("web.Nuevo: falta Hallazgos (respuestas inesperadas del servidor)")
 	}
 
+	// La capa de avisos es OPCIONAL, pero sus dos mitades van juntas (ADR-0073).
+	//
+	// P5 aplicado a lo que sí puede fallar en silencio: un registro sin emisor
+	// evaluaría situaciones que no llegan a ningún sitio, y un emisor sin
+	// registro mandaría el mismo aviso cada minuto mientras la conducta siga.
+	// Las dos averías son invisibles desde dentro —el servicio arranca y sirve
+	// igual— y por eso se cierran aquí, al construir, y no se descubren en el
+	// teléfono del responsable.
+	if (o.Avisos == nil) != (o.Emitir == nil) {
+		return nil, fmt.Errorf("web.Nuevo: Avisos y Emitir se configuran juntos o ninguno (ADR-0073)")
+	}
+
 	// P5: sin credencial no se arranca. Un modo «sin autenticar» dejaría el
 	// disco entero administrable por cualquiera en la LAN, que es justo lo
 	// que RN-06 ordena evitar. Mejor no arrancar que arrancar inseguro.
@@ -340,6 +420,14 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		dirMiniaturas:     o.DirMiniaturas,
 		miniaturaSem:      make(chan struct{}, 1),
 		miniaturaFallidas: nuevoFallosMiniatura(),
+		arranque:          time.Now(),
+		avisos:            o.Avisos,
+		emitir:            o.Emitir,
+		modoAvisos:        o.ModoAvisos,
+		retenidas:         &aviso.Retencion{},
+		periodoResumen:    o.PeriodoResumen,
+		saludCanal:        o.SaludCanal,
+		saludLatido:       o.SaludLatido,
 	}
 	s.muestreador = nuevoMuestreador(s.abrirLectorVivo)
 	s.cuentas = nuevoMuestreador(s.abrirLectorCuentas)

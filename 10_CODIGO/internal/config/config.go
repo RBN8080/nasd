@@ -90,6 +90,43 @@ type Config struct {
 	// y escribible de un servicio (systemd.exec(5)). La unidad lo declara y
 	// systemd lo crea con el dueño correcto antes de arrancar.
 	DirectorioEstado string
+
+	// --- Capa de avisos externos (ADR-0073) ------------------------------
+	//
+	// AQUÍ NO HAY NINGÚN SECRETO, y no es un descuido: el token del bot, el
+	// identificador del chat y la URL del testigo llegan por LoadCredential=
+	// de systemd, igual que la credencial de la web (P4, ADR-0021). Lo que
+	// vive en el TOML es solo cuándo y con qué ganas se avisa.
+	//
+	// LOS VALORES POR OMISIÓN MANDAN EN PRODUCCIÓN, y conviene tenerlo
+	// presente al cambiarlos: 05_instalar_servicio.sh escribe el TOML del
+	// nodo SOLO la primera vez (if [ ! -f "$CONFIG" ]), así que una clave
+	// nueva en el script NO llega a un nodo que ya tiene su archivo. Quien la
+	// lleva es el binario, por aquí.
+
+	// ModoAvisos es «normal», «silencio» u «observacion» (internal/aviso).
+	// Normal por omisión: silencio por defecto sería un sistema de avisos
+	// apagado que parece encendido.
+	ModoAvisos string
+
+	// PeriodoResumen es cada cuánto sale el resumen, AUNQUE NO HAYA NADA.
+	//
+	// Veinticuatro horas. El resumen no está solo para contar actividad —este
+	// nodo recibió 8 peticiones de Internet en 21 días medidos—: está para
+	// demostrar que el canal sigue vivo. Un canal que solo habla cuando hay
+	// problemas es indistinguible de uno averiado.
+	PeriodoResumen time.Duration
+
+	// IntervaloLatido es cada cuánto se avisa al testigo externo de que el
+	// servicio sigue en pie.
+	//
+	// Cinco minutos, la MISMA cadencia que nas-ddns.timer, que lleva un año
+	// funcionando contra esta red doméstica. El umbral de tolerancia —cuántos
+	// se pueden perder antes de dar la voz de alarma— NO vive aquí: vive en
+	// el testigo, fuera del nodo, que es lo que permite ajustarlo sin
+	// redesplegar y lo que impide que un nodo comprometido lo suba a un año
+	// (ADR-0074).
+	IntervaloLatido time.Duration
 }
 
 // RutaUsuarios es el archivo del registro de cuentas.
@@ -194,6 +231,16 @@ func (c Config) RutaToques() string {
 	return "/var/lib/nas-sensor/toques"
 }
 
+// RutaAvisos es la marca de qué situaciones se han avisado ya (ADR-0073).
+//
+// Va en el DirectorioEstado y no en el disco de datos, por lo mismo que el
+// resto de esta familia: allí lo vería SMB. No contiene hechos —los hechos
+// están en seguridad, conexiones y hallazgos— sino solo la memoria de qué se
+// comunicó, que es lo que impide repetir el mismo aviso tras cada reinicio.
+func (c Config) RutaAvisos() string {
+	return filepath.Join(c.DirectorioEstado, "avisos")
+}
+
 // RutaGeoIP es la base que resuelve una dirección a su país y su operador
 // (internal/geoip).
 //
@@ -244,6 +291,9 @@ func porDefecto() Config {
 		// llega a un nodo que ya tiene su archivo — solo el binario la trae.
 		InactividadSesion: 5 * time.Minute,
 		DirectorioEstado:  "/var/lib/nasd",
+		ModoAvisos:        "normal",
+		PeriodoResumen:    24 * time.Hour,
+		IntervaloLatido:   5 * time.Minute,
 	}
 }
 
@@ -312,6 +362,23 @@ func Cargar(ruta string) (Config, error) {
 		}
 		if s, ok := v["estado.directorio"]; ok {
 			c.DirectorioEstado = s
+		}
+		if s, ok := v["avisos.modo"]; ok {
+			c.ModoAvisos = s
+		}
+		if s, ok := v["avisos.resumen_horas"]; ok {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 {
+				return c, fmt.Errorf("avisos.resumen_horas: debe ser un entero positivo")
+			}
+			c.PeriodoResumen = time.Duration(n) * time.Hour
+		}
+		if s, ok := v["avisos.latido_s"]; ok {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 {
+				return c, fmt.Errorf("avisos.latido_s: debe ser un entero positivo")
+			}
+			c.IntervaloLatido = time.Duration(n) * time.Second
 		}
 		if s, ok := v["plazos.inactividad_s"]; ok {
 			n, err := strconv.Atoi(s)

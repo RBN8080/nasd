@@ -20,11 +20,13 @@ import (
 	"syscall"
 	"time"
 
+	"nasd/internal/adaptadores/canal"
 	"nasd/internal/adaptadores/fsposix"
 	"nasd/internal/adaptadores/operacion"
 	"nasd/internal/adaptadores/web"
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
+	"nasd/internal/aviso"
 	"nasd/internal/config"
 	"nasd/internal/geoip"
 	"nasd/internal/metricas"
@@ -218,6 +220,63 @@ func ejecutar() error {
 			"ruta", cfg.RutaHallazgos(), "error", err)
 	}
 
+	// LA CAPA DE AVISOS — ADR-0073 y ADR-0074.
+	//
+	// ES OPCIONAL Y SE DICE CUANDO NO ESTÁ. Un nodo sin el archivo de secretos
+	// funciona exactamente igual: detecta, infiere, aparta, bloquea y registra
+	// lo mismo, y los avisos van al diario en vez de al teléfono. Es el mismo
+	// trato que GeoIP y por el mismo motivo — esto es comunicación, no un
+	// control, y negarse a arrancar por no poder avisar cambiaría un servicio
+	// sano por un mensaje.
+	//
+	// EL ORDEN DE ESTAS PIEZAS NO ES ARBITRARIO: el canal se construye antes
+	// que el servidor porque el servidor necesita poder emitir; el latido se
+	// construye DESPUÉS porque su cuerpo lo compone el servidor.
+	modoAvisos, ok := aviso.ModoDesde(cfg.ModoAvisos)
+	if !ok {
+		// P5: un modo mal escrito no se degrada a «normal» en silencio. El
+		// responsable creería estar en silencio mientras el nodo le escribe, o
+		// al revés, y ninguna de las dos se nota hasta que importa.
+		return fmt.Errorf("avisos.modo %q: use «normal», «silencio» u «observacion»", cfg.ModoAvisos)
+	}
+
+	registroAvisos, err := aviso.CargarRegistro(cfg.RutaAvisos())
+	if err != nil {
+		reg.Error("la marca de avisos no se pudo leer; se empieza sin memoria de lo ya avisado",
+			"ruta", cfg.RutaAvisos(), "error", err)
+	}
+
+	secretos, origenSecretos, err := leerSecretosDeAvisos()
+	if err != nil {
+		// Un archivo ILEGIBLE sí se dice a gritos, al contrario que uno
+		// AUSENTE: ausente significa «no configurado» y es un estado válido;
+		// ilegible significa que alguien quiso configurarlo y no funcionó, y
+		// callarlo dejaría al responsable creyendo que le van a avisar.
+		return fmt.Errorf("archivo de secretos de avisos: %w", err)
+	}
+
+	// El diario SIEMPRE está. Es lo que hace que un nodo sin proveedor no sea
+	// un nodo mudo: sigue habiendo constancia local de cada aviso.
+	var destino canal.Canal = canal.NuevoDiario(reg)
+	if secretos.TelegramToken != "" {
+		tg, err := canal.NuevoTelegram(secretos.TelegramToken, secretos.TelegramChat)
+		if err != nil {
+			return fmt.Errorf("canal de avisos: %w", err)
+		}
+		destino = canal.NuevoDuplicado(tg, canal.NuevoDiario(reg))
+		reg.Info("canal de avisos configurado", "canal", destino.Nombre(), "origen", origenSecretos)
+	} else {
+		reg.Warn("SIN CANAL DE AVISOS EXTERIOR: los avisos solo van al diario de este nodo",
+			"configurar_con", "20_APROVISIONAMIENTO/20_avisos.sh")
+	}
+	cola := canal.NuevaCola(destino, reg)
+
+	// El latido se declara aquí y se construye más abajo: su cuerpo lo compone
+	// el servidor, que todavía no existe. La salud se pregunta por closure, y
+	// Salud() admite receptor nulo a propósito para que esto sea seguro antes
+	// de asignarlo.
+	var latido *canal.Latido
+
 	s, err := web.Nuevo(web.Opciones{
 		Almacen: alm,
 		// AQUÍ se unen el aislamiento del adaptador POSIX y la web, y en
@@ -254,6 +313,16 @@ func ejecutar() error {
 		// esa foto se sirve sin miniatura, sin que arrancar dependa de nada
 		// más (mismo criterio «opcional» que GeoIP).
 		DirMiniaturas: cfg.RutaMiniaturas(),
+
+		// La capa de avisos. Emitir es Encolar y no un envío directo: quien
+		// produce un aviso NO puede quedarse esperando a un POST, porque quien
+		// lo produce es el mismo ciclo que evalúa la cuarentena (ADR-0073).
+		Avisos:         registroAvisos,
+		Emitir:         cola.Encolar,
+		ModoAvisos:     modoAvisos,
+		PeriodoResumen: cfg.PeriodoResumen,
+		SaludCanal:     cola.Salud,
+		SaludLatido:    func() aviso.SaludLatido { return latido.Salud() },
 	})
 	if err != nil {
 		return err
@@ -301,21 +370,60 @@ func ejecutar() error {
 		reg.Error("no se pudo volcar la marca de novedades", "error", err)
 	})
 
+	// La marca de avisos baja a disco en la misma cadencia y por el mismo canal
+	// de parada que todo lo demás: con dos ritmos habría una ventana en la que
+	// se avisa de algo, el nodo se reinicia y se vuelve a avisar de lo mismo.
+	go registroAvisos.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudo volcar la marca de avisos", "error", err)
+	})
+
 	// Y la vigilancia, que es lo único de todo esto que ACTÚA sin que nadie
 	// mire: cada minuto mira la conducta de la última hora y aparta a quien lo
 	// merece. Se avisa al diario de cada apartado nuevo —no de cada renovación,
 	// que sería una línea por minuto— porque una defensa que actúa sola y en
 	// silencio es indistinguible de una que no actúa.
-	go seguridad.Vigilar(pararHistorial, historial, cuarentena, func(nuevos []seguridad.Apartado) {
-		for _, a := range nuevos {
-			reg.Warn("origen apartado por conducta",
-				"origen", a.IP.String(), "senal", a.Senal.String(),
-				"hasta", a.Hasta.Format(time.RFC3339))
-		}
-	})
+	//
+	// DESDE ADR-0073 EL OBSERVADOR HACE DOS COSAS, y el orden importa: primero
+	// deja constancia local, después decide qué sale del nodo. Los orígenes
+	// llegan YA agregados —PorOrigen se calcula una sola vez dentro de
+	// Vigilar—, así que evaluar avisos no cuesta un segundo recorrido.
+	go seguridad.Vigilar(pararHistorial, historial, cuarentena,
+		func(origenes []seguridad.Origen, nuevos []seguridad.Apartado, ahora time.Time) {
+			for _, a := range nuevos {
+				reg.Warn("origen apartado por conducta",
+					"origen", a.IP.String(), "senal", a.Senal.String(),
+					"hasta", a.Hasta.Format(time.RFC3339))
+			}
+			s.EvaluarAvisos(origenes, nuevos, ahora)
+		})
 
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
+
+	// LA ENTREGA DE AVISOS, en su propia goroutine. Encolar no bloquea nunca;
+	// esperar al proveedor es trabajo de aquí y de nadie más (ADR-0073).
+	go cola.Atender(ctx)
+
+	// EL LATIDO AL TESTIGO EXTERNO — ADR-0074.
+	//
+	// Se construye aquí y no arriba porque su cuerpo lo compone el servidor,
+	// que hasta ahora no existía. Sin latido configurado el nodo funciona
+	// igual, pero se dice A GRITOS: sin él, que la Raspberry se apague no lo
+	// detecta NADIE, y esa es justamente la carencia que este trabajo vino a
+	// cerrar.
+	if secretos.LatidoURL != "" {
+		l, err := canal.NuevoLatido(secretos.LatidoURL, cfg.IntervaloLatido, s.CuerpoDelLatido, reg)
+		if err != nil {
+			return fmt.Errorf("latido al testigo externo: %w", err)
+		}
+		latido = l
+		go latido.Mantener(ctx)
+		reg.Info("latido al testigo externo activo",
+			"intervalo_s", int(cfg.IntervaloLatido.Seconds()), "origen", origenSecretos)
+	} else {
+		reg.Warn("SIN TESTIGO EXTERNO: si este nodo deja de funcionar, nadie fuera se enterará",
+			"configurar_con", "20_APROVISIONAMIENTO/20_avisos.sh")
+	}
 
 	// Dos servidores como mucho: el de siempre en la LAN y, si hay
 	// certificado, el de TLS hacia Internet. Comparten el mismo Handler, así
@@ -595,4 +703,87 @@ func prepararBaseGeoIP(args []string) error {
 		fmt.Printf("  %-24s AS%-7d %-3s %s\n", ancla.ip, info.ASN, info.Pais, info.Nombre)
 	}
 	return nil
+}
+
+// secretosDeAvisos son las tres credenciales de la capa de avisos (ADR-0073).
+//
+// Las TRES son secretos, y no del mismo calibre:
+//
+//	TelegramToken  quien lo tenga publica en ese chat y lee lo que se envíe AL
+//	               BOT. No abre ninguna otra conversación del responsable.
+//	LatidoURL      quien la tenga puede FALSIFICAR LATIDOS y mantener el
+//	               testigo en verde con el nodo muerto. Es la que más daño hace
+//	               si se filtra, y es exactamente el escenario del atacante con
+//	               privilegios: ver la cabecera de canal/latido.go.
+//	TelegramChat   por sí solo no hace nada.
+type secretosDeAvisos struct {
+	TelegramToken string
+	TelegramChat  string
+	LatidoURL     string
+}
+
+// leerSecretosDeAvisos obtiene el archivo que entrega systemd por
+// LoadCredential=avisos, en un tmpfs privado del servicio.
+//
+// # MISMO MECANISMO QUE LA CREDENCIAL DE LA WEB, Y NO ES CASUALIDAD
+//
+// P4 del charter: el secreto no vive en el repositorio ni en el TOML. Aquí se
+// reutiliza literalmente la vía de leerCredencial —$CREDENTIALS_DIRECTORY, con
+// una variable de entorno como camino alternativo para desarrollo— en vez de
+// inventar una segunda forma de entregar secretos a este mismo proceso.
+//
+// # QUE NO EXISTA NO ES UN ERROR, QUE ESTÉ ROTO SÍ
+//
+// Ausente significa «esta capa no está configurada», que es un estado válido:
+// el nodo arranca y los avisos van al diario. Ilegible o mal formado significa
+// que alguien QUISO configurarla y no funcionó, y eso se falla a gritos (P5):
+// callarlo dejaría al responsable creyendo que le van a avisar cuando no.
+//
+// EL ARCHIVO NO SE REGISTRA NUNCA, ni su contenido ni sus valores. Lo único que
+// sale al diario es de DÓNDE se leyó.
+func leerSecretosDeAvisos() (secretosDeAvisos, string, error) {
+	ruta := ""
+	origen := ""
+	if dir := os.Getenv("CREDENTIALS_DIRECTORY"); dir != "" {
+		if candidata := filepath.Join(dir, "avisos"); existe(candidata) {
+			ruta, origen = candidata, "systemd LoadCredential"
+		}
+	}
+	if ruta == "" {
+		if v := os.Getenv("NASD_AVISOS"); v != "" {
+			ruta, origen = v, "NASD_AVISOS="+v
+		}
+	}
+	if ruta == "" {
+		return secretosDeAvisos{}, "", nil // no configurada
+	}
+
+	f, err := os.Open(ruta)
+	if err != nil {
+		return secretosDeAvisos{}, origen, fmt.Errorf("abrir %q: %w", ruta, err)
+	}
+	defer f.Close()
+
+	v, err := config.LeerPares(f)
+	if err != nil {
+		return secretosDeAvisos{}, origen, fmt.Errorf("%s: %w", ruta, err)
+	}
+	sec := secretosDeAvisos{
+		TelegramToken: strings.TrimSpace(v["telegram_token"]),
+		TelegramChat:  strings.TrimSpace(v["telegram_chat"]),
+		LatidoURL:     strings.TrimSpace(v["latido_url"]),
+	}
+	// Media configuración es la forma más cara de descubrir un error, porque
+	// arranca y parece funcionar. Mismo criterio que TLS en config.validar:
+	// o están las dos o no está ninguna.
+	if (sec.TelegramToken == "") != (sec.TelegramChat == "") {
+		return sec, origen, fmt.Errorf(
+			"%s: telegram_token y telegram_chat se configuran juntos o ninguno", ruta)
+	}
+	return sec, origen, nil
+}
+
+func existe(ruta string) bool {
+	_, err := os.Stat(ruta)
+	return err == nil
 }
