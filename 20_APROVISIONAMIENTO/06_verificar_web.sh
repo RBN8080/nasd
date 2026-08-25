@@ -31,11 +31,31 @@ dato() { printf '  \033[36mDATO\033[0m  %s\n' "$1"; }
 systemctl is-active --quiet nasd || { echo "nasd no está activo."; exit 1; }
 
 # Desde RF-15 (Fase 3) NADA responde sin sesión, así que sin esto el script
-# recibiría un 401 en cada petición y reportaría un muro de fallos falsos.
+# no pasaría de la primera comprobación y reportaría un muro de fallos falsos.
 # La contraseña se teclea; no se guarda ni se pasa por argumento (P4).
+#
+# EL CAMPO «usuario» FALTABA, Y ESO TENÍA EL SCRIPT ROTO DESDE ADR-0055.
+# Hasta la migración multicuenta bastaba con la contraseña porque solo había una
+# credencial. Desde entonces /acceso necesita saber CONTRA QUÉ CUENTA verificar,
+# así que el campo vacío se trataba como un nombre no aceptable y el script
+# abortaba aquí mismo con «No se pudo abrir sesión» sobre un servicio
+# perfectamente sano — la séptima lección del rector otra vez: los verificadores
+# envejecen con el producto y nadie les avisa.
+#
+# SE ENTRA COMO SUPERUSUARIO Y NO COMO UNA CUENTA CUALQUIERA, y no es comodidad:
+# lo que este script comprueba vive en la RAÍZ del volumen —sube a /subir y busca
+# el archivo en $PUNTO/datos/, descarga /descargar/v_100.bin, lista
+# /ver/v_muchos—. Una cuenta normal está enraizada en homeUsers/<nombre>
+# (ADR-0055) y no vería nada de eso: las comprobaciones darían fallos falsos
+# aunque la sesión llegara a abrirse.
+#
+# EL LITERAL «admin» ES autenticacion.NombreSuperusuario (usuarios.go). No se
+# puede importar desde sh, así que queda escrito aquí y en ningún otro sitio de
+# este script; si esa constante cambiara, esta línea es la única que tocar.
 echo "Contraseña de la WEB (D-14, distinta de la de Samba):"
 read -rs -p "  > " CLAVE; echo
 COD=$(curl -s -o /dev/null -w '%{http_code}' -c "$GALLETAS" \
+      --data-urlencode "usuario=admin" \
       --data-urlencode "clave=$CLAVE" "$BASE/acceso")
 unset CLAVE
 if [ "$COD" != "303" ]; then
