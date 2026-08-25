@@ -14,7 +14,7 @@ import (
 //
 // # POR QUÉ EL MOTIVO VIAJA POR EL CONTEXTO Y NO SE ANOTA EN CADA SITIO
 //
-// Quien SABE por qué se rechaza es el sitio que rechaza —exigirSesion,
+// Quien SABE por qué se rechaza es el sitio que rechaza —la puerta opaca,
 // soloSuperusuario, el limitador, el verificador de CSRF—, pero quien conoce
 // el resultado FINAL de la petición es conRegistro, que es también el único
 // punto por el que pasan todas sin excepción.

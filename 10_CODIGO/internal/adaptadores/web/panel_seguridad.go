@@ -580,7 +580,12 @@ func opcionesDeVentana(elegida int) []opcionFiltro {
 
 func opcionesDeMotivo(elegido string) []opcionFiltro {
 	out := []opcionFiltro{{Valor: "", Etiqueta: "Todos los motivos", Elegido: elegido == ""}}
-	for m := seguridad.MotivoDesconocido; m <= seguridad.PeticionMalformada; m++ {
+	// El tope es seguridad.UltimoMotivo y NO un valor escrito a mano. Estaba
+	// escrito a mano —«<= PeticionMalformada»— y por eso «Solo desde dentro»
+	// llevaba desde el 2026-08-19 sin aparecer en el desplegable: se añadió el
+	// motivo, se actualizó el tope de MotivoDesde y este se quedó atrás. Un
+	// filtro que falta no da error, solo deja de ofrecer una opción.
+	for m := seguridad.MotivoDesconocido; m <= seguridad.UltimoMotivo; m++ {
 		out = append(out, opcionFiltro{
 			Valor: m.String(), Etiqueta: m.Etiqueta(), Elegido: elegido == m.String(),
 		})

@@ -180,11 +180,38 @@ echo
 echo "-- RF-24: extremo de estado --"
 
 # Primero SIN sesión. ADR-0034 lo pone detrás de la autenticación a propósito.
+#
+# SE ESPERA 404 Y NO 401 DESDE ADR-0072, y este verificador se actualiza EN EL
+# MISMO cambio que la decisión, por la lección 7 del rector: «cuando una
+# decisión cambia un puerto, una ruta o el control de acceso, hay que ir a
+# buscar quién comprobaba eso». Ya pasó una vez —06_verificar_web.sh siguió
+# apuntando al 8080 tres decisiones después de ADR-0032— y habría vuelto a
+# pasar aquí: al desplegar, esta línea habría dado FALLO sobre un servicio
+# sano, que es lo que enseña a ignorar los fallos del verificador.
+#
+# EL 404 NO AFIRMA QUE /estado NO EXISTA: es la respuesta opaca, idéntica para
+# toda ruta anónima no pública. Lo que se comprueba sigue siendo lo mismo —que
+# sin sesión no se regala reconocimiento— y además, ahora, que ni siquiera se
+# regala saber que la ruta está ahí.
 COD=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/estado")
-if [ "$COD" = "401" ] || [ "$COD" = "403" ]; then
-  si "/estado sin sesión → $COD (ADR-0034: no se regala reconocimiento en la LAN)"
+if [ "$COD" = "404" ]; then
+  si "/estado sin sesión → 404 opaco (ADR-0072: ni el contenido ni la topología)"
+elif [ "$COD" = "401" ] || [ "$COD" = "403" ]; then
+  no "/estado sin sesión devolvió $COD: el nodo corre una versión anterior a ADR-0072"
 else
-  no "/estado sin sesión devolvió $COD; debería ser 401 o 403"
+  no "/estado sin sesión devolvió $COD; debería ser el 404 opaco"
+fi
+
+# Y LA OTRA MITAD, que es la que de verdad prueba ADR-0072: una ruta que NO
+# existe tiene que ser indistinguible de la de arriba. Con dos cifras iguales
+# no se demuestra todo —el cuerpo y las cabeceras los comprueban las pruebas de
+# Go, que sí pueden compararlos byte a byte— pero un estado distinto AQUÍ sería
+# suficiente para enumerar el servidor desde fuera, y eso sí se ve desde aquí.
+COD_FALSA=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/no-existe-jamas-de-los-jamases")
+if [ "$COD_FALSA" = "$COD" ]; then
+  si "una ruta inexistente responde igual que /estado ($COD_FALSA)"
+else
+  no "/estado dio $COD y una ruta inventada dio $COD_FALSA: la respuesta enumera rutas"
 fi
 
 echo
@@ -532,7 +559,7 @@ else
   # «[::]:443» y ese socket NO acepta IPv4, aunque bindv6only valga 0. Con
   # 127.0.0.1 la conexión se rechazaba y esta comprobación llevaba quién sabe
   # cuánto dando FALLO sobre un servicio sano —medido el mismo día: por [::1]
-  # responde 401 con el certificado validando—. Un verificador que miente en
+  # responde 401 con el certificado validando (404 desde ADR-0072)—. Un verificador que miente en
   # rojo es peor que no tenerlo: enseña a ignorar sus fallos.
   DOM_TLS=$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null)
   if [ -n "$DOM_TLS" ]; then
@@ -540,7 +567,11 @@ else
       --resolve "$DOM_TLS.duckdns.org:443:[::1]" \
       "https://$DOM_TLS.duckdns.org/" 2>/dev/null || echo "fallo:x")
     case "$COD" in
-      401:0|200:0) si "TLS negocia y el certificado VALIDA (${COD%%:*})" ;;
+      # 404 desde ADR-0072 —la respuesta opaca de «/» sin sesión—, 401 en un
+      # nodo anterior, 200 si la petición llevara sesión. Las tres significan
+      # aquí lo mismo: el TLS negoció y el certificado validó, que es lo único
+      # que esta comprobación pregunta.
+      404:0|401:0|200:0) si "TLS negocia y el certificado VALIDA (${COD%%:*})" ;;
       *:0)         dato "TLS válido, respuesta inesperada: ${COD%%:*}" ;;
       *)           no "TLS no negocia o el certificado no valida ($COD)" ;;
     esac

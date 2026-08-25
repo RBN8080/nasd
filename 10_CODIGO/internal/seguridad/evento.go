@@ -13,10 +13,15 @@
 //   - el 403 de la raíz reservada de una cuenta (ADR-0058);
 //   - y cualquier sondeo de Internet.
 //
-// Peor: como la ruta comodín «/» va envuelta en exigirSesion, una petición a
-// /wp-login.php SIN sesión nunca llega al mux interno y NO produce 404 sino
-// el MISMO 401 que la visita legítima. «Ruta inexistente» y «sin sesión» eran
-// el mismo suceso indistinguible, y son la mayoría del contador.
+// Peor: la ruta comodín «/» iba envuelta en la guarda de sesión, así que una
+// petición a /wp-login.php SIN sesión nunca llegaba al mux interno y NO
+// producía 404 sino el MISMO 401 que la visita legítima. «Ruta inexistente» y
+// «sin sesión» eran el mismo suceso indistinguible, y son la mayoría del
+// contador.
+//
+// (Desde ADR-0072 el comodín ya no existe y la respuesta exterior es un 404
+// opaco para las dos, pero el motivo interior las sigue separando: es
+// justamente lo que aquel ADR conserva de este.)
 //
 // Y el contador se pone a cero en cada reinicio del servicio, que con P-11
 // vivo ocurre solo por las tardes: no cubría ni un día.
@@ -264,9 +269,14 @@ const (
 	// del servidor ni como archivo del volumen.
 	//
 	// Es la clasificación que antes era IMPOSIBLE de separar de SinSesion: el
-	// comodín «/» de servidor.go corta en exigirSesion antes de que el mux
-	// interno pueda devolver un 404, así que un sondeo a /wp-login.php y la
-	// primera visita del día salían exactamente iguales.
+	// comodín «/» de servidor.go cortaba en la guarda de sesión antes de que
+	// el mux interno pudiera devolver un 404, así que un sondeo a
+	// /wp-login.php y la primera visita del día salían exactamente iguales.
+	//
+	// NO ABSORBE EL MÉTODO EQUIVOCADO. Desde ADR-0072, «POST /estado» —ruta
+	// real, método que no es— lleva MetodoNoPermitido y no esto. Meterlo aquí
+	// inflaba el recuento de rutas inexistentes DISTINTAS, que es lo que
+	// dispara SenalExploracion, con algo que no es exploración.
 	//
 	// Es UN solo motivo y no dos —«ruta del servidor» y «archivo»— a
 	// propósito: para quien mira, los dos son «pidió algo que no hay». Lo que
@@ -296,7 +306,68 @@ const (
 	// pero MotivoDesde recorre el rango, así que insertar en medio movería
 	// el tope y es un descuido que no hace falta arriesgar.
 	SoloDesdeDentro
+	// MetodoNoPermitido — la ruta EXISTE y el método no era el suyo.
+	//
+	// Antes de ADR-0072 este caso salía como RutaInexistente, y era mentira:
+	// se preguntaba `protegido.Handler(r)` y un método que no cuadra devuelve
+	// patrón VACÍO exactamente igual que una ruta que no está. Medido contra
+	// un net/http real el 2026-08-24 (Go 1.26):
+	//
+	//	POST /estado  ->  patrón "",  el mux respondería 405 con Allow: GET, HEAD
+	//	GET /.git/cfg ->  patrón "",  el mux respondería 404
+	//
+	// Los dos hechos son distintos y ahora se separan. Importa para las
+	// señales: SenalExploracion cuenta RUTAS INEXISTENTES distintas, y meter
+	// aquí los métodos equivocados sobre rutas reales inflaba esa cuenta con
+	// algo que no es exploración.
+	MetodoNoPermitido
+	// CuerpoExcesivo — el cuerpo de /acceso pasaba del tope de topeCuerpoAcceso.
+	//
+	// No es PeticionMalformada: un formulario roto es un cliente averiado; un
+	// cuerpo de megabytes contra el formulario de acceso es una forma de
+	// ataque —gastar memoria y tiempo antes del KDF— y se lee distinto.
+	CuerpoExcesivo
+	// FormatoNoAdmitido — el Content-Type del POST de acceso no era el único
+	// que el formulario usa. Ningún navegador manda otra cosa: llegar aquí
+	// exige una herramienta.
+	FormatoNoAdmitido
+	// SinCapacidadCripto — la petición NO obtuvo admisión al verificador y por
+	// tanto NO SE COMPROBÓ NINGUNA CONTRASEÑA.
+	//
+	// Existe por lo que NO puede ser: contarlo como CredencialIncorrecta
+	// afirmaría que se probó una clave que nunca se derivó, y alimentaría
+	// SenalFuerzaBruta —y con ella el apartado automático— con un hecho que no
+	// ocurrió. ADR-0071 gobierna esto: describir lo que pasó.
+	SinCapacidadCripto
+	// FalloAlAbrirSesion — la contraseña ERA correcta y el servidor no pudo
+	// abrir la sesión (crypto/rand falló).
+	//
+	// Exteriormente sale como el mismo fallo genérico que todos los demás, a
+	// propósito: un 500 ahí sería un oráculo que dice «esa contraseña era
+	// buena». Interiormente es lo contrario de un rechazo y por eso lleva
+	// motivo propio, además del Error en el diario.
+	FalloAlAbrirSesion
+	// SesionInvalida — vino cookie de sesión y el gestor NO CONOCE ese testigo.
+	//
+	// Se separa de SesionCaducada porque son cosas distintas y solo una es
+	// demostrable. Una cookie la escribe el cliente: `nas_sesion=loquesea` no
+	// prueba que esa sesión existiera nunca. SesionCaducada queda reservada
+	// para cuando autenticacion.Sesiones SÍ tiene la entrada y la ve vencida.
+	SesionInvalida
 )
+
+// UltimoMotivo es el mayor valor del enum, y existe para que ese tope viva en
+// UN solo sitio.
+//
+// LO ESCRIBE UN DEFECTO REAL, no la simetría: MotivoDesde recorría hasta
+// SoloDesdeDentro y el desplegable del panel (opcionesDeMotivo) recorría hasta
+// PeticionMalformada. Al añadir SoloDesdeDentro se actualizó uno y no el otro,
+// así que el panel llevaba desde el 2026-08-19 sin poder filtrar por ese
+// motivo — un filtro que falta no se nota, que es lo que lo hizo durar.
+//
+// Con esta constante, añadir un motivo al final es UNA línea y los dos
+// recorridos se enteran solos.
+const UltimoMotivo = SesionInvalida
 
 // clave es el texto estable con el que un motivo se persiste y viaja por la
 // URL de los filtros. Separado de Etiqueta a propósito: la etiqueta se puede
@@ -324,6 +395,18 @@ func (m Motivo) String() string {
 		return "peticion_malformada"
 	case SoloDesdeDentro:
 		return "solo_desde_dentro"
+	case MetodoNoPermitido:
+		return "metodo_no_permitido"
+	case CuerpoExcesivo:
+		return "cuerpo_excesivo"
+	case FormatoNoAdmitido:
+		return "formato_no_admitido"
+	case SinCapacidadCripto:
+		return "sin_capacidad_cripto"
+	case FalloAlAbrirSesion:
+		return "fallo_al_abrir_sesion"
+	case SesionInvalida:
+		return "sesion_invalida"
 	}
 	return "desconocido"
 }
@@ -333,7 +416,7 @@ func (m Motivo) String() string {
 // archivo de una versión futura con motivos nuevos se leería como si todos
 // fueran desconocidos y nadie se enteraría.
 func MotivoDesde(s string) (Motivo, bool) {
-	for m := MotivoDesconocido; m <= SoloDesdeDentro; m++ {
+	for m := MotivoDesconocido; m <= UltimoMotivo; m++ {
 		if m.String() == s {
 			return m, true
 		}
@@ -364,6 +447,18 @@ func (m Motivo) Etiqueta() string {
 		return "Petición malformada"
 	case SoloDesdeDentro:
 		return "Solo desde dentro"
+	case MetodoNoPermitido:
+		return "Método no permitido"
+	case CuerpoExcesivo:
+		return "Cuerpo excesivo"
+	case FormatoNoAdmitido:
+		return "Formato no admitido"
+	case SinCapacidadCripto:
+		return "Sin capacidad criptográfica"
+	case FalloAlAbrirSesion:
+		return "Fallo al abrir la sesión"
+	case SesionInvalida:
+		return "Sesión inválida"
 	}
 	return "Motivo desconocido"
 }
@@ -414,6 +509,39 @@ func (m Motivo) Gravedad() Gravedad {
 		// ser un enlace viejo. Ninguna dice nada suelta — dicen mucho
 		// repetidas, y de eso se encarga la agregación, no la etiqueta.
 		return Aviso
+	case SesionInvalida:
+		// AVISO y no Rutina, al contrario que SesionCaducada, y la diferencia
+		// es la que separa a los dos motivos: caducada es alguien que ESTUVO
+		// dentro; inválida es una cookie que el servidor no ha emitido nunca
+		// —o ya olvidó—. Lo primero es el día a día; lo segundo, repetido, es
+		// alguien probando testigos.
+		//
+		// No es Atención porque tiene un camino inocente y frecuente: reiniciar
+		// el servicio borra las sesiones (viven en memoria, a propósito) y
+		// deja a todo el mundo con una cookie que ya no existe.
+		return Aviso
+	case MetodoNoPermitido, FormatoNoAdmitido:
+		// Las dos exigen una herramienta: ningún navegador manda POST a una
+		// página de solo lectura ni JSON al formulario de acceso. Merecen una
+		// mirada si se repiten, no una alarma sueltas.
+		return Aviso
+	case CuerpoExcesivo:
+		// ATENCIÓN. Al formulario de acceso solo se le mandan dos campos
+		// cortos; pasarse del kilobyte no le ocurre a nadie por accidente y la
+		// única lectura razonable es que alguien probó a gastar el nodo.
+		return Atencion
+	case SinCapacidadCripto:
+		// ATENCIÓN, y es la única de la lista que habla del NODO y no de quien
+		// pide: significa que el verificador estaba ocupado y esta petición no
+		// llegó a él. Un caso suelto puede ser dos personas de la casa
+		// entrando a la vez; repetido, es saturación, y quien mira tiene que
+		// enterarse aunque la culpa no sea de quien aparece en la fila.
+		return Atencion
+	case FalloAlAbrirSesion:
+		// ATENCIÓN sin matices: la contraseña era CORRECTA y el servidor no
+		// pudo abrir la sesión. Es una avería del nodo, no una sospecha sobre
+		// nadie, y es lo único de esta tabla que deja a alguien legítimo fuera.
+		return Atencion
 	case SoloDesdeDentro:
 		// AVISO, y no es una calibración perezosa entre Rutina y Atención.
 		//

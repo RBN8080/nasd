@@ -46,15 +46,20 @@ func ultimoEvento(t *testing.T, s *Servidor) seguridad.Evento {
 //
 // Antes, una petición a /wp-login.php sin sesión y la primera visita del día
 // del responsable producían el MISMO 401, indistinguible, porque el comodín
-// «/» de Rutas() va envuelto en exigirSesion y corta antes de que el mux
-// interno pueda devolver un 404. Las dos caían en el contador único de
+// «/» de Rutas() iba envuelto en la guarda de sesión y cortaba antes de que el
+// mux interno pudiera devolver un 404. Las dos caían en el contador único de
 // «rechazadas» de /estado y ahí se acababa la información.
+//
+// DESDE ADR-0072 LAS DOS RESPONDEN 404 OPACO —antes eran las dos un 401— y
+// esta prueba vale MÁS que antes, no menos: es la que demuestra que igualar la
+// respuesta exterior no se llevó por delante el motivo interior. Fuera, lo
+// mismo; dentro, dos hechos distintos.
 func TestUnSondeoNoSeConfundeConLaPrimeraVisita(t *testing.T) {
 	s := servidorConAuth(t)
 
 	// Lo que hace un escáner de Internet.
-	if w := pedir(t, s, "GET", "/wp-login.php"); w.Code != http.StatusUnauthorized {
-		t.Fatalf("/wp-login.php -> %d; se esperaba 401", w.Code)
+	if w := pedir(t, s, "GET", "/wp-login.php"); w.Code != http.StatusNotFound {
+		t.Fatalf("/wp-login.php -> %d; se esperaba el 404 opaco", w.Code)
 	}
 	if got := ultimoEvento(t, s).Motivo; got != seguridad.RutaInexistente {
 		t.Errorf("un sondeo a una ruta que no existe se anotó como %q", got.Etiqueta())
@@ -62,8 +67,8 @@ func TestUnSondeoNoSeConfundeConLaPrimeraVisita(t *testing.T) {
 
 	// Lo que hace el responsable al abrir el NAS sin cookie. MISMA respuesta,
 	// motivo distinto.
-	if w := pedir(t, s, "GET", "/"); w.Code != http.StatusUnauthorized {
-		t.Fatalf("/ -> %d; se esperaba 401", w.Code)
+	if w := pedir(t, s, "GET", "/"); w.Code != http.StatusNotFound {
+		t.Fatalf("/ -> %d; se esperaba el 404 opaco", w.Code)
 	}
 	if got := ultimoEvento(t, s).Motivo; got != seguridad.SinSesion {
 		t.Errorf("la primera visita a una ruta que SÍ existe se anotó como %q", got.Etiqueta())
@@ -88,20 +93,49 @@ func TestClasificarNoDelataQueRutasExisten(t *testing.T) {
 	}
 }
 
-// «Sin sesión» y «sesión caducada» responden igual y significan lo contrario:
-// una es un desconocido, la otra alguien que estuvo dentro y se le acabó el
-// plazo (ADR-0059). Con un solo contador de 4xx eran el mismo número.
+// «Sin sesión», «sesión inválida» y «sesión caducada» responden igual y
+// significan cosas distintas: un desconocido, una cookie que este servidor no
+// ha emitido nunca, y alguien que estuvo dentro y se le acabó el plazo
+// (ADR-0059). Con un solo contador de 4xx eran el mismo número.
+//
+// # LO QUE ESTA PRUEBA CORRIGE DE SÍ MISMA — ADR-0072 §12
+//
+// Afirmaba que «testigo-que-ya-no-vale» era una sesión CADUCADA. No lo es y no
+// se podía saber: esa cadena la escribe el cliente, y el gestor de sesiones no
+// tiene ninguna entrada suya. Lo único demostrable es que no consta. La prueba
+// pasaba porque el código cometía el mismo error que ella.
+//
+// Ahora se comprueban los dos casos por separado, y «caducada» solo se exige
+// donde de verdad se puede demostrar: una sesión que este proceso abrió.
 func TestUnaSesionCaducadaNoSeConfundeConUnDesconocido(t *testing.T) {
 	s := servidorConAuth(t)
-	// Una cookie con un testigo que el servidor no conoce: es exactamente lo
-	// que queda en el navegador cuando la sesión se purga.
-	vieja := &http.Cookie{Name: nombreCookie, Value: "testigo-que-ya-no-vale"}
 
-	if w := pedir(t, s, "GET", "/", vieja); w.Code != http.StatusUnauthorized {
-		t.Fatalf("con cookie caducada -> %d; se esperaba 401", w.Code)
+	// 1 — Una cookie que el servidor NO ha emitido. Cualquiera puede fabricarla.
+	inventada := &http.Cookie{Name: nombreCookie, Value: "testigo-que-ya-no-vale"}
+	if w := pedir(t, s, "GET", "/", inventada); w.Code != http.StatusNotFound {
+		t.Fatalf("con cookie inventada -> %d; se esperaba el 404 opaco", w.Code)
+	}
+	if got := ultimoEvento(t, s).Motivo; got != seguridad.SesionInvalida {
+		t.Errorf("una cookie que el servidor nunca emitió se anotó como %q; "+
+			"afirmar «caducada» sería inventarle un pasado", got.Etiqueta())
+	}
+
+	// 2 — Una sesión DE VERDAD, abierta por este proceso y ya vencida. Aquí sí
+	// hay historia que contar, y el gestor la tiene.
+	// Tope absoluto negativo: la sesión nace vencida, así que el gestor la
+	// tiene en el mapa Y la ve vencida — que es la única forma de que
+	// «caducada» sea una afirmación demostrable y no una suposición.
+	s.sesiones = autenticacion.NuevasSesiones(-time.Hour, 0)
+	testigo, err := s.sesiones.Abrir(autenticacion.NombreSuperusuario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vencida := &http.Cookie{Name: nombreCookie, Value: testigo}
+	if w := pedir(t, s, "GET", "/", vencida); w.Code != http.StatusNotFound {
+		t.Fatalf("con sesión vencida -> %d; se esperaba el 404 opaco", w.Code)
 	}
 	if got := ultimoEvento(t, s).Motivo; got != seguridad.SesionCaducada {
-		t.Errorf("una cookie que ya no vale se anotó como %q", got.Etiqueta())
+		t.Errorf("una sesión que este proceso abrió y venció se anotó como %q", got.Etiqueta())
 	}
 }
 
@@ -111,31 +145,58 @@ func TestUnaSesionCaducadaNoSeConfundeConUnDesconocido(t *testing.T) {
 // que anotar lo tecleado a ciegas metería esa contraseña en /var/lib.
 //
 // La regla es: el nombre SOLO si la cuenta existe.
+//
+// SE COMPRUEBAN LOS DOS CAMINOS desde ADR-0072, porque ahora son dos: un
+// nombre que ni siquiera puede ser de nadie se rechaza ANTES del KDF —«ñ» y
+// las mayúsculas no pasan NombreValido— y uno sintácticamente válido llega
+// hasta la derivación. El secreto no puede filtrarse por ninguno de los dos.
 func TestElNombreTecleadoNoLlegaAlHistorialSiLaCuentaNoExiste(t *testing.T) {
-	s := servidorConAuth(t)
-
-	// Alguien teclea su contraseña en la casilla del nombre.
-	posibleSecreto := "mi-contraseña-de-verdad"
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/acceso", strings.NewReader(url.Values{
-		"usuario": {posibleSecreto},
-		"clave":   {"lo-que-sea"},
-	}.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	s.Rutas().ServeHTTP(w, r)
-
-	e := ultimoEvento(t, s)
-	if e.Motivo != seguridad.CredencialIncorrecta {
-		t.Fatalf("un acceso fallido se anotó como %q", e.Motivo.Etiqueta())
+	casos := []struct {
+		nombre   string
+		tecleado string
+		esperado seguridad.Motivo
+	}{
+		// Una contraseña con «ñ»: no es un nombre posible, así que se rechaza
+		// barato. Las reglas del nombre son públicas: eso no filtra nada.
+		{"contraseña con letras que un nombre no admite", "mi-contraseña-de-verdad",
+			seguridad.PeticionMalformada},
+		// Una que SÍ podría ser un nombre. Esta llega al KDF y cuesta lo
+		// mismo que una cuenta real: es la defensa de enumeración (CWE-208).
+		{"contraseña que además pasa por nombre", "correcthorsebattery",
+			seguridad.CredencialIncorrecta},
 	}
-	if e.Cuenta != "" {
-		t.Fatalf("se anotó %q como cuenta y esa cuenta NO existe: puede ser una contraseña", e.Cuenta)
-	}
-	// Y por si alguien «mejorara» esto guardando el campo en otro sitio.
-	for _, campo := range []string{e.Cuenta, e.Ruta, e.Agente} {
-		if strings.Contains(campo, posibleSecreto) {
-			t.Fatalf("lo tecleado en la casilla del nombre acabó en el historial: %q", campo)
-		}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			s := servidorConAuth(t)
+
+			// Alguien teclea su contraseña en la casilla del nombre.
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("POST", "/acceso", strings.NewReader(url.Values{
+				"usuario": {c.tecleado},
+				"clave":   {"lo-que-sea"},
+			}.Encode()))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			s.Rutas().ServeHTTP(w, r)
+
+			e := ultimoEvento(t, s)
+			if e.Motivo != c.esperado {
+				t.Fatalf("se anotó como %q; se esperaba %q", e.Motivo.Etiqueta(), c.esperado.Etiqueta())
+			}
+			if e.Cuenta != "" {
+				t.Fatalf("se anotó %q como cuenta y esa cuenta NO existe: puede ser una contraseña", e.Cuenta)
+			}
+			// Y por si alguien «mejorara» esto guardando el campo en otro sitio.
+			for _, campo := range []string{e.Cuenta, e.Ruta, e.Agente} {
+				if strings.Contains(campo, c.tecleado) {
+					t.Fatalf("lo tecleado en la casilla del nombre acabó en el historial: %q", campo)
+				}
+			}
+			// Y en el CUERPO tampoco: el formulario se redibuja con el nombre
+			// que recuerda la cookie, nunca con el que se acaba de teclear.
+			if strings.Contains(w.Body.String(), c.tecleado) {
+				t.Fatal("lo tecleado en la casilla del nombre volvió en la respuesta")
+			}
+		})
 	}
 }
 
@@ -234,10 +295,14 @@ func TestElHistorialCuentaLoMismoQueElContadorDeRechazadas(t *testing.T) {
 // deliberado: un punto ciego VISIBLE se corrige, uno silencioso no.
 func TestUnRechazoSinClasificarApareceComoDesconocido(t *testing.T) {
 	s := servidorConAuth(t)
-	// El servidor de archivos estáticos queda FUERA de exigirSesion (para que
-	// el formulario de acceso pueda dibujarse), así que un 404 suyo no pasa
-	// por ninguna de las guardas que clasifican.
-	if w := pedir(t, s, "GET", "/estatico/no-existe.css"); w.Code != http.StatusNotFound {
+	// CON SESIÓN, y esa es la diferencia desde ADR-0072: sin ella, /estatico/
+	// ya no es público salvo los dos archivos del formulario, así que un 404
+	// suyo lo clasifica la puerta opaca y deja de ser un punto ciego. Con
+	// sesión, en cambio, la petición llega al manejador de estáticos, que
+	// responde 404 por su cuenta sin pasar por ninguna guarda que clasifique
+	// — que es exactamente el hueco que esta prueba vigila.
+	cookie, _ := sesionAbierta(t, s)
+	if w := pedir(t, s, "GET", "/estatico/no-existe.css", cookie); w.Code != http.StatusNotFound {
 		t.Fatalf("estático inexistente -> %d; se esperaba 404", w.Code)
 	}
 	if got := ultimoEvento(t, s).Motivo; got != seguridad.MotivoDesconocido {
@@ -439,18 +504,22 @@ func TestElPanelDiceQueEstaRecortando(t *testing.T) {
 // EL DEFECTO DEL FAVICON, visto en la primera captura del panel en producción
 // y convertido en prueba.
 //
-// /favicon.ico lo pide TODO navegador, siempre. Sin sesión lo clasificaba
-// clasificarNegativa como «ruta inexistente»; con sesión llegaba al mux, que
-// responde 404 por su cuenta sin pasar por fallo(), y nadie lo marcaba: salía
-// como «Motivo desconocido». La MISMA petición, dos clasificaciones distintas
-// según si habías entrado — y una de ellas sin nombre, a perpetuidad, porque
-// el navegador nunca deja de pedirlo.
+// /favicon.ico lo pide TODO navegador, siempre. Sin sesión lo clasificaba la
+// guarda como «ruta inexistente»; con sesión llegaba al mux, que responde 404
+// por su cuenta sin pasar por fallo(), y nadie lo marcaba: salía como «Motivo
+// desconocido». La MISMA petición, dos clasificaciones distintas según si
+// habías entrado — y una de ellas sin nombre, a perpetuidad, porque el
+// navegador nunca deja de pedirlo.
+//
+// Desde ADR-0072 el ESTADO exterior sí es distinto a los dos lados —404 opaco
+// sin sesión, 404 de verdad con ella— y da la casualidad de que coinciden. Lo
+// que esta prueba vigila es lo otro: que el MOTIVO siga siendo el mismo.
 func TestLaMismaRutaInexistenteSeClasificaIgualConSesionYSinElla(t *testing.T) {
 	s := servidorConAuth(t)
 
 	// Sin sesión.
-	if w := pedir(t, s, "GET", "/favicon.ico"); w.Code != http.StatusUnauthorized {
-		t.Fatalf("sin sesión -> %d; se esperaba 401", w.Code)
+	if w := pedir(t, s, "GET", "/favicon.ico"); w.Code != http.StatusNotFound {
+		t.Fatalf("sin sesión -> %d; se esperaba el 404 opaco", w.Code)
 	}
 	sinSesion := ultimoEvento(t, s).Motivo
 

@@ -393,7 +393,7 @@ func TestLosExtremosNuevosExigenSesion(t *testing.T) {
 	for _, ruta := range []string{"/abrir/notas.txt", "/contenido/notas.txt"} {
 		w := httptest.NewRecorder()
 		s.Rutas().ServeHTTP(w, httptest.NewRequest(http.MethodGet, ruta, nil))
-		if w.Code != http.StatusUnauthorized && w.Code != http.StatusForbidden {
+		if w.Code != http.StatusNotFound {
 			t.Errorf("GET %s sin sesión -> %d; se esperaba 401 o 403", ruta, w.Code)
 		}
 	}

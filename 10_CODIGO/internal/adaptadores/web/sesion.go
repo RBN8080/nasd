@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"mime"
 	"net"
 	"net/http"
 	"strings"
@@ -39,10 +40,83 @@ const (
 	// da acceso, el nombre no da acceso a nada.
 	duracionRecuerdo = 365 * 24 * time.Hour
 
-	// Un solo mensaje para todos los fallos de acceso. Distinguir «ese usuario
-	// no existe» de «esa contraseña no es» convertiría el formulario en un
-	// listador de cuentas: bastaría probar nombres y leer la respuesta.
-	avisoAccesoFallido = "Usuario o contraseña incorrectos."
+	// UN SOLO MENSAJE PARA TODOS LOS FALLOS DE ACCESO, y desde ADR-0072
+	// «todos» significa todos, no solo los dos de la credencial.
+	//
+	// Distinguir «ese usuario no existe» de «esa contraseña no es» convertiría
+	// el formulario en un listador de cuentas. El texto anterior —«Usuario o
+	// contraseña incorrectos»— ya cubría ese par, pero se quedaba corto: al
+	// endurecer el extremo aparecieron seis fallos más (límite por origen,
+	// cuerpo excesivo, formato, formulario ilegible, sin capacidad y fallo al
+	// abrir la sesión) y decir «contraseña incorrecta» ante ellos sería MENTIR
+	// hacia dentro además de hacia fuera. Este texto es verdadero en los ocho
+	// casos y sigue diciendo qué hacer.
+	//
+	// «Compruebe la contraseña» es una SUGERENCIA, no una afirmación: no dice
+	// que estuviera mal, dice por dónde empezar. En el caso frecuente —una
+	// letra de más— es exactamente la ayuda que hace falta.
+	avisoAccesoFallido = "No se pudo iniciar sesión. Compruebe la contraseña y vuelva a intentarlo."
+
+	// topeCuerpoAcceso acota el cuerpo del POST de acceso — ADR-0072 §10.
+	//
+	// # DE DÓNDE SALE EL NÚMERO
+	//
+	// El formulario manda dos campos y nada más:
+	//
+	//	usuario=<hasta 32 bytes>&clave=<contraseña>
+	//
+	// 32 es el máximo del nombre (autenticacion.NombreValido). Con el peor
+	// caso de codificación de formulario —cada byte escapado como %XX, tres
+	// caracteres por byte— eso son 96, más «usuario=» y «&clave=» son 111. Con
+	// 1 KiB quedan ~913 para la contraseña, es decir 304 bytes aunque llegara
+	// entera escapada, y unos 900 caracteres si es ASCII normal, que es lo que
+	// pasa siempre.
+	//
+	// # POR QUÉ NO 10 MB «POR SI ACASO»
+	//
+	// Porque el cuerpo se lee ANTES de saber si la petición vale, y todo lo
+	// que se acepte leer es memoria y tiempo que un desconocido puede gastar
+	// del nodo sin coste suyo. Y porque no hace falta: la contraseña más larga
+	// que este NAS puede tener en uso cabe cuarenta veces.
+	//
+	// # POR QUÉ NO MÁS PEQUEÑO
+	//
+	// Una contraseña legítima que no quepa se convierte en «no se pudo iniciar
+	// sesión» sin explicación posible, que es el peor fallo que este extremo
+	// puede tener. 1 KiB no puede alcanzar a ninguna.
+	topeCuerpoAcceso = 1 << 10
+
+	// tipoFormularioAcceso es el ÚNICO formato que el formulario usa. Se
+	// comprueba contra la plantilla, no contra la costumbre: acceso.html es un
+	// <form method="post"> sin enctype, y el de HTML por omisión es este.
+	//
+	// No se aceptan multipart, JSON ni nada más. Este extremo no los necesita,
+	// y multipart en particular es la vía por la que un cuerpo pequeño obliga a
+	// trabajo grande — el mismo motivo por el que ADR-0025 lo prohíbe en las
+	// subidas.
+	tipoFormularioAcceso = "application/x-www-form-urlencoded"
+
+	// plazoCuerpoAcceso corta al cliente que abre el POST y manda el cuerpo a
+	// cuentagotas — ADR-0072 §10.
+	//
+	// # POR QUÉ NO SE TOCA ReadTimeout DEL SERVIDOR
+	//
+	// Porque es ABSOLUTO y global, y está sin fijar a propósito: RF-09 exige
+	// 4 GB íntegros y cualquier valor compatible con una subida de dos minutos
+	// no protegería de nada aquí. Ver el comentario de HTTPServer, que lleva
+	// escrito por qué eso no se «arregla».
+	//
+	// # POR QUÉ AQUÍ SÍ VALE UN PLAZO ABSOLUTO
+	//
+	// Porque este cuerpo mide como mucho 1 KiB. No hay ninguna transferencia
+	// legítima larga que proteger: son dos campos que caben en un segmento
+	// TCP. El plazo por actividad de plazos.go existe para lo contrario —lo que
+	// avanza despacio pero avanza— y aplicarlo aquí sería usar el mecanismo
+	// caro para el caso que no lo necesita.
+	//
+	// 10 s es el mismo orden que ReadHeaderTimeout, que gobierna la fase justo
+	// anterior de la misma petición.
+	plazoCuerpoAcceso = 10 * time.Second
 
 	// Iteraciones de PBKDF2. Recomendación OWASP vigente para HMAC-SHA256.
 	//
@@ -60,24 +134,126 @@ const (
 	// para un despiste humano, insuficiente para un ataque. [R]
 	maxIntentosFallidos = 5
 	ventanaIntentos     = 5 * time.Minute
+
+	// topeEnEsperaKDF es cuántas peticiones pueden estar ESPERANDO turno para
+	// derivar, además de la que está derivando — ADR-0072 §11.
+	//
+	// # POR QUÉ NO CERO
+	//
+	// Cero cola es lo más simple y es defendible en abstracto, pero rompe un
+	// caso real de esta casa: tras reiniciar el servicio, las sesiones —que
+	// viven en memoria a propósito— desaparecen y varias personas vuelven a
+	// entrar a la vez. Con cero cola, quien pulse segundo ve «no se pudo
+	// iniciar sesión» y concluye que su contraseña está mal. Un rechazo que se
+	// lee como una avería es peor que la espera que evita.
+	//
+	// # POR QUÉ DOS Y NO MÁS
+	//
+	// Uno derivando y dos esperando son TRES accesos simultáneos atendidos sin
+	// un fallo falso, y el registro admite como mucho 32 cuentas pero la casa
+	// tiene cinco. El cuarto simultáneo se rechaza barato, que es lo que se
+	// quería: sin cola ilimitada, ninguna goroutine esperando indefinidamente.
+	topeEnEsperaKDF = 2
+
+	// esperaMaximaKDF acota lo que una petición admitida a la sala puede
+	// esperar. Sale de la medición, no del gusto:
+	//
+	//	derivación en el nodo (2026-07-31)      3.232 s
+	//	peor espera del primero de la sala      3.232 s   (lo que queda del activo)
+	//	peor espera del segundo de la sala      6.464 s   (el activo + el primero)
+	//
+	// 8 s cubre ese peor caso legítimo con margen para el límite térmico blando
+	// (RNF-11), que puede hacer una derivación más lenta que la medida. Pasado
+	// el plazo se rechaza y se dice por qué: SinCapacidadCripto.
+	esperaMaximaKDF = 8 * time.Second
 )
 
 // limitadorAcceso frena los intentos de inicio de sesión.
 //
 // Dos controles, y hacen cosas distintas:
 //
-//  1. El mutex SERIALIZA las verificaciones. Una sola derivación a la vez,
+//  1. La ADMISIÓN acota el gasto criptográfico. Una sola derivación a la vez,
 //     así que por muchos clientes que empujen, el gasto queda acotado a un
 //     núcleo. Importa porque el nodo ya opera con el límite térmico blando
 //     activo (RNF-11) y las cuatro CPU al 100 % lo empeorarían.
 //
-//  2. El contador por origen corta la repetición. Sin él, serializar solo
-//     convierte la saturación en una cola infinita.
+//  2. El contador por origen corta la repetición. Sin él, acotar el gasto
+//     solo convierte la saturación en una cola infinita.
+//
+// # POR QUÉ LA ADMISIÓN YA NO ES UN MUTEX — ADR-0072 §11
+//
+// Era `verificar sync.Mutex`, y cumplía la mitad: una derivación a la vez, sí.
+// Pero Lock() ESPERA PARA SIEMPRE, así que N peticiones simultáneas se
+// convertían en N goroutines vivas, cada una con su conexión abierta y su
+// petición en memoria, apiladas detrás de un trabajo de 3.2 s. El límite por
+// origen no lo evita: son orígenes distintos, y cada uno tiene sus cinco
+// intentos antes de que el contador lo pare.
+//
+// La propiedad que hacía falta no es «una a la vez», son dos:
+//
+//	derivaciones activas a la vez   <= 1
+//	peticiones esperando turno      <= topeEnEsperaKDF, y cada una con plazo
+//
+// Un mutex da la primera y no puede dar la segunda. Dos canales dan las dos.
 type limitadorAcceso struct {
-	verificar sync.Mutex
+	// activo es el presupuesto criptográfico: CAPACIDAD 1, y esa capacidad ES
+	// la regla «como máximo una derivación simultánea». No es un número
+	// ajustable — subirlo pondría dos A53 al 100 % en un nodo que ya se limita
+	// solo por temperatura.
+	activo chan struct{}
+	// sala es la sala de espera: quien no entra a la primera puede aguardar
+	// aquí, y solo caben topeEnEsperaKDF. El que llega y la encuentra llena se
+	// va con un rechazo barato en vez de quedarse.
+	sala chan struct{}
+	// espera es el plazo máximo dentro de la sala. Es un CAMPO y no la
+	// constante directamente para que las pruebas puedan comprobar el
+	// vencimiento sin tardar ocho segundos de verdad; producción lo recibe de
+	// nuevoLimitador y nadie más lo toca.
+	espera time.Duration
 
 	mu       sync.Mutex
 	fallidos map[string]*intentos
+}
+
+// admitir pide permiso para derivar. Devuelve la función que devuelve el turno
+// y si se consiguió; con false NO SE HA VERIFICADO NADA y no hay nada que
+// soltar.
+//
+// # LOS TRES DESENLACES, Y NINGUNO ES «ESPERAR INDEFINIDAMENTE»
+//
+//	presupuesto libre        -> entra al momento
+//	ocupado y sala con sitio -> espera como mucho l.espera
+//	ocupado y sala llena     -> se va, barato, sin tocar la CPU
+//
+// La sala se libera al SALIR de aquí, con o sin turno: cuenta a quien está
+// esperando, no a quien está derivando. Sin eso, el hueco de la sala quedaría
+// retenido durante toda la derivación y la sala valdría la mitad.
+func (l *limitadorAcceso) admitir(ctx context.Context) (func(), bool) {
+	select {
+	case l.activo <- struct{}{}:
+		return func() { <-l.activo }, true
+	default:
+	}
+
+	select {
+	case l.sala <- struct{}{}:
+		defer func() { <-l.sala }()
+	default:
+		return nil, false
+	}
+
+	t := time.NewTimer(l.espera)
+	defer t.Stop()
+	select {
+	case l.activo <- struct{}{}:
+		return func() { <-l.activo }, true
+	case <-t.C:
+		return nil, false
+	case <-ctx.Done():
+		// El cliente se fue. No hay a quién responder y desde luego no hay que
+		// gastarle 3.2 s de CPU al nodo por él.
+		return nil, false
+	}
 }
 
 type intentos struct {
@@ -86,7 +262,12 @@ type intentos struct {
 }
 
 func nuevoLimitador() *limitadorAcceso {
-	return &limitadorAcceso{fallidos: make(map[string]*intentos)}
+	return &limitadorAcceso{
+		activo:   make(chan struct{}, 1),
+		sala:     make(chan struct{}, topeEnEsperaKDF),
+		espera:   esperaMaximaKDF,
+		fallidos: make(map[string]*intentos),
+	}
 }
 
 // permitido indica si ese origen puede intentarlo, y cuánto esperar si no.
@@ -146,89 +327,6 @@ func origenDe(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-// exigirSesion protege todo lo que no sea el propio formulario de acceso.
-//
-// RF-15 pide literalmente que «sin sesión válida, toda ruta distinta del
-// formulario de acceso responde 401 o 403». Se cumple al pie de la letra:
-// se responde 401 — no una redirección 303, que sería más cómoda pero
-// incumpliría el criterio— y el CUERPO del 401 lleva el formulario, así que
-// el navegador muestra algo usable sin falsear el código de estado.
-// El parámetro es el mux INTERNO y no un http.Handler cualquiera, y esa es
-// la única razón por la que se puede distinguir un sondeo de una visita:
-// preguntándole si la ruta existe ANTES de negar. Ver clasificarNegativa.
-func (s *Servidor) exigirSesion(protegido *http.ServeMux) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(nombreCookie)
-		if err != nil {
-			marcarRechazo(r, s.clasificarNegativa(protegido, r, seguridad.SinSesion))
-			s.pedirAcceso(w, r, "")
-			return
-		}
-		usuario, vigente := s.sesiones.Usuario(c.Value)
-		// FALLO CERRADO: una sesión vigente pero sin dueño no pasa. No debería
-		// existir —Abrir rechaza el nombre vacío—, y justo por eso, si alguna
-		// vez aparece una, lo que NO puede hacer es acabar mirando la carpeta
-		// del superusuario por descarte (ADR-0055).
-		if !vigente || usuario == "" {
-			// Traía cookie: es alguien que ESTUVO dentro y se le acabó el
-			// plazo (ADR-0059), no un desconocido. Los dos casos responden
-			// igual —401 con el formulario— pero significan cosas opuestas, y
-			// el panel los tiene que poder separar.
-			marcarRechazo(r, s.clasificarNegativa(protegido, r, seguridad.SesionCaducada))
-			s.pedirAcceso(w, r, "")
-			return
-		}
-		// Cuenta como actividad AL TERMINAR la petición, no al empezar —
-		// ADR-0059—, para que una petición larga no se dé por acabada antes
-		// de tiempo. Una descarga o subida se toca además, y más seguido,
-		// desde dentro (ver plazos.go); este defer es el suelo que cubre
-		// todo lo demás: listar, navegar, borrar, administrar.
-		defer s.sesiones.Tocar(c.Value)
-		// LA MISMA PREGUNTA, AL OTRO LADO DE LA AUTENTICACIÓN, y hace falta
-		// por un defecto que se vio en la primera captura del panel en
-		// producción: /favicon.ico —que TODO navegador pide siempre— salía
-		// dos veces con dos motivos distintos. Sin sesión lo clasificaba
-		// clasificarNegativa como «ruta inexistente»; CON sesión llegaba al
-		// mux, que responde 404 por su cuenta sin pasar por fallo(), y nadie
-		// lo marcaba: aparecía como «Motivo desconocido».
-		//
-		// La misma petición no puede clasificarse distinto según si has
-		// entrado. Se marca aquí y el mux sigue respondiendo su 404 como
-		// siempre: esto no cambia ni una respuesta, solo lo que se apunta.
-		if _, patron := protegido.Handler(r); patron == "" {
-			marcarRechazo(r, seguridad.RutaInexistente)
-		}
-		protegido.ServeHTTP(w, r.WithContext(
-			context.WithValue(r.Context(), claveUsuario, usuario)))
-	})
-}
-
-// clasificarNegativa distingue «no tiene sesión» de «esa ruta no existe».
-//
-// # POR QUÉ HACE FALTA, Y POR QUÉ NO SE PODÍA ANTES
-//
-// En Rutas(), «/» es el comodín y va envuelto en esta misma guarda. Eso
-// significa que una petición a /wp-login.php sin sesión NUNCA llega al mux
-// interno: se corta aquí y sale con el MISMO 401 que la primera visita del
-// día del responsable. Un sondeo de Internet y un uso normal producían el
-// mismo suceso, indistinguible, y ambos eran la mayor parte del contador de
-// «rechazadas» de /estado.
-//
-// Se le pregunta al mux interno si la ruta existe. No se ejecuta nada suyo:
-// Handler() solo resuelve el patrón, y un patrón vacío significa que no hay
-// ninguna ruta que la atienda.
-//
-// LO QUE SIGUE SIN CAMBIAR, y es deliberado: la RESPUESTA es la misma en los
-// dos casos —401 con el formulario—, nunca un 404. Decirle a quien sondea
-// cuáles de sus rutas existen sería enumerarle el servidor gratis. Lo que
-// cambia es lo que se APUNTA, no lo que se contesta.
-func (s *Servidor) clasificarNegativa(protegido *http.ServeMux, r *http.Request, siNoExistiera seguridad.Motivo) seguridad.Motivo {
-	if _, patron := protegido.Handler(r); patron == "" {
-		return seguridad.RutaInexistente
-	}
-	return siNoExistiera
-}
-
 // claveUsuario nombra al usuario dentro del contexto de la petición. Es de un
 // tipo propio y no una cadena: así ningún otro paquete puede escribir en esa
 // misma clave, ni por accidente ni a propósito.
@@ -237,7 +335,7 @@ type claveDeContexto struct{}
 var claveUsuario claveDeContexto
 
 // usuarioDe devuelve de quién es la petición. Solo tiene valor detrás de
-// exigirSesion, que es el único que lo pone.
+// la puerta opaca (opaca.go), que es la única que lo pone.
 func usuarioDe(r *http.Request) string {
 	u, _ := r.Context().Value(claveUsuario).(string)
 	return u
@@ -249,7 +347,7 @@ func usuarioDe(r *http.Request) string {
 // nunca sea un error.
 //
 // Es lo que consumen las descargas y subidas largas (plazos.go): una sola
-// petición HTTP puede durar minutos moviendo bytes sin que exigirSesion
+// petición HTTP puede durar minutos moviendo bytes sin que la puerta opaca
 // vuelva a pasar por en medio, así que sin esto una transferencia de 4 GB
 // caducaría su propia sesión a mitad de camino.
 func (s *Servidor) tocadorDe(r *http.Request) func() {
@@ -357,20 +455,79 @@ func (s *Servidor) mostrarAcceso(w http.ResponseWriter, r *http.Request) {
 	s.renderAcceso(w, usuario, "")
 }
 
+// procesarAcceso atiende el POST del formulario — RF-15, ADR-0072 §10.
+//
+// # EL ORDEN ES LA DEFENSA, Y ESTE ES EL ORDEN
+//
+//	origen
+//	  -> ¿ya limitado por origen?      (un mapa en memoria)
+//	  -> Content-Type                  (una cabecera)
+//	  -> cuerpo acotado + plazo        (1 KiB, 10 s)
+//	  -> parseo                        (dos campos)
+//	  -> nombre sintácticamente válido (reglas públicas)
+//	  -> ADMISIÓN al presupuesto       (dos canales)
+//	  -> PBKDF2                        (3.2 s en el nodo)
+//	  -> sesión
+//
+// Cada escalón es órdenes de magnitud más barato que el siguiente, y ninguno
+// de los siete primeros toca la CPU de forma apreciable. La regla que los
+// ordena es una sola: NO SE PAGA EL KDF PARA DESCUBRIR QUE LA PETICIÓN NO
+// MERECÍA LLEGAR A ÉL.
+//
+// # HACIA FUERA, UN SOLO DESENLACE
+//
+// Los ocho fallos posibles salen por accesoFallido, con el mismo estado, el
+// mismo cuerpo y el mismo texto. Ninguno lleva Retry-After ni una plantilla
+// distinta: eso los volvería a separar y devolvería el oráculo por la puerta
+// de atrás.
+//
+// # HACIA DENTRO, OCHO HECHOS DISTINTOS
+//
+// Y cada uno con su Motivo. El panel tiene que poder decir si el nodo está
+// saturado, si alguien está probando contraseñas o si alguien está mandando
+// megabytes al formulario — tres problemas con tres respuestas distintas que
+// una sola etiqueta haría indistinguibles.
 func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 	origen := origenDe(r)
 
+	// 1 — ¿ESTE ORIGEN YA ESTÁ LIMITADO? Lo primero, porque es lo más barato y
+	// porque es lo único que puede decidirse sin leer un solo byte del cuerpo.
 	if ok, espera := s.limitador.permitido(origen); !ok {
-		s.reg.Warn("acceso bloqueado por intentos repetidos",
-			"origen", origen, "espera_s", int(espera.Seconds()))
-		marcarRechazo(r, seguridad.LimiteDeIntentos)
-		w.Header().Set("Retry-After", "300")
-		s.pedirAcceso(w, r, "Demasiados intentos fallidos. Espere unos minutos.")
+		s.anotarAccesoLimitado(origen, espera)
+		s.accesoFallido(w, r, seguridad.LimiteDeIntentos)
 		return
 	}
+
+	// 2 — FORMATO. Una cabecera, sin tocar el cuerpo. ParseMediaType para
+	// aceptar los parámetros legítimos —«; charset=UTF-8» lo manda algún
+	// cliente— sin aceptar por eso otro tipo distinto.
+	tipo, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || tipo != tipoFormularioAcceso {
+		s.accesoFallido(w, r, seguridad.FormatoNoAdmitido)
+		return
+	}
+
+	// 3 — TAMAÑO Y TIEMPO DEL CUERPO, antes de leerlo.
+	//
+	// MaxBytesReader corta la LECTURA, no comprueba Content-Length: un cuerpo
+	// que miente sobre su tamaño, o que no lo declara, se corta igual en el
+	// byte 1025. Y el plazo corta al que manda esos 1024 bytes de uno en uno.
+	//
+	// El plazo se pide con NewResponseController y el error se ignora a
+	// propósito, igual que en plazos.go: si el ResponseWriter no admite plazos
+	// —un httptest.ResponseRecorder, por ejemplo— se sigue sin él en vez de
+	// convertir una limitación del envoltorio en un fallo de acceso.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(plazoCuerpoAcceso))
+	r.Body = http.MaxBytesReader(w, r.Body, topeCuerpoAcceso)
+
+	// 4 — PARSEO. Ya acotado en bytes y en segundos.
 	if err := r.ParseForm(); err != nil {
-		marcarRechazo(r, seguridad.PeticionMalformada)
-		s.pedirAcceso(w, r, "Petición inválida.")
+		var grande *http.MaxBytesError
+		if errors.As(err, &grande) {
+			s.accesoFallido(w, r, seguridad.CuerpoExcesivo)
+			return
+		}
+		s.accesoFallido(w, r, seguridad.PeticionMalformada)
 		return
 	}
 	// El nombre lo teclea quien entra la primera vez en este aparato; después
@@ -382,7 +539,45 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 	}
 	clave := r.PostFormValue("clave")
 
+	// 5 — CAMPOS MÍNIMAMENTE VÁLIDOS, y aquí SÍ se rechaza barato.
+	//
+	// ESTO NO FILTRA NADA, y es la distinción que sostiene toda la defensa de
+	// enumeración: las reglas del nombre son PÚBLICAS —de 2 a 32, minúsculas,
+	// empieza por letra— y cualquiera puede comprobarlas sin preguntarle al
+	// servidor. Saber que «A/B» no es un nombre válido no dice si «ana» existe.
+	//
+	// Lo que sí filtraría —si un nombre VÁLIDO corresponde a alguien— sigue
+	// costando exactamente lo mismo exista o no: de eso se encarga
+	// verificarAcceso con la credencial de relleno del registro. Esa propiedad
+	// no se toca (CWE-208).
+	//
+	// La contraseña vacía se rechaza por lo mismo: quien manda el formulario
+	// sabe si rellenó la casilla, así que no hay nada que ocultarle.
+	if nombreAceptable(usuario) == "" || clave == "" {
+		s.accesoFallido(w, r, seguridad.PeticionMalformada)
+		return
+	}
+
+	// 6 — ADMISIÓN. El último control barato, y el que decide si esta petición
+	// llega siquiera a la parte cara.
+	soltar, admitida := s.limitador.admitir(r.Context())
+	if !admitida {
+		s.anotarSinCapacidad(origen)
+		// NO SE CUENTA COMO CREDENCIAL INCORRECTA, y no es un matiz — ADR-0071.
+		// Aquí no se ha verificado NINGUNA contraseña: no se ha derivado nada.
+		// Contarlo como fallo de credencial alimentaría SenalFuerzaBruta, y con
+		// ella el apartado automático, con un hecho que no ocurrió: el nodo
+		// acabaría apartando a gente por estar él ocupado. Por el mismo motivo
+		// no se toca accesosFallidos ni limitador.fallo.
+		s.accesoFallido(w, r, seguridad.SinCapacidadCripto)
+		return
+	}
+
+	// 7 — PBKDF2. Todo lo anterior existe para que aquí solo llegue lo que ya
+	// pasó seis filtros.
 	valida, conocido := s.verificarAcceso(usuario, clave)
+	soltar()
+
 	if !valida {
 		s.limitador.fallo(origen)
 		s.contadores.accesosFallidos.Add(1)
@@ -406,15 +601,23 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		if conocido {
 			marcarCuentaIntentada(r, usuario)
 		}
-		marcarRechazo(r, seguridad.CredencialIncorrecta)
-		s.pedirAccesoComo(w, r, nombreAceptable(usuario), avisoAccesoFallido)
+		s.accesoFallido(w, r, seguridad.CredencialIncorrecta)
 		return
 	}
 
+	// 8 — SESIÓN.
 	testigo, err := s.sesiones.Abrir(usuario)
 	if err != nil {
+		// LA CONTRASEÑA ERA CORRECTA Y AUN ASÍ SE SALE POR EL MISMO SITIO.
+		//
+		// Antes esto respondía 500. Un 500 aquí es un oráculo perfecto: dice
+		// «esa contraseña es buena, vuelve luego», que es justo lo que ningún
+		// fallo de este extremo puede decir. Hacia fuera va el mismo aviso que
+		// todo lo demás; hacia dentro va su motivo propio y una línea de Error
+		// en el diario, porque esto es una AVERÍA del nodo y quien lo cuida
+		// tiene que enterarse.
 		s.reg.Error("no se pudo abrir la sesión", "error", err)
-		http.Error(w, "error interno", http.StatusInternalServerError)
+		s.accesoFallido(w, r, seguridad.FalloAlAbrirSesion)
 		return
 	}
 	s.limitador.acierto(origen)
@@ -447,7 +650,7 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		// sigue usando la web. El servidor es el único que sabe cuándo hubo
 		// actividad, y por eso el plazo corto vive solo en Sesiones —el
 		// cliente conserva la cookie hasta el tope absoluto; qué hace el
-		// servidor con un testigo inactivo es cosa de exigirSesion.
+		// servidor con un testigo inactivo es cosa de la puerta.
 		MaxAge: int(s.duracionSesion.Seconds()),
 		// Secure SOLO si la petición llegó por TLS — ADR-0046, que supersede
 		// a ADR-0018.
@@ -467,6 +670,58 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// accesoFallido es la ÚNICA salida de un intento de acceso que no abrió sesión.
+//
+// # POR QUÉ EL FORMULARIO SE REDIBUJA CON EL NOMBRE DE LA COOKIE Y NO CON EL QUE SE TECLEÓ
+//
+// Porque el que se tecleó solo se conoce si el formulario llegó a parsearse, y
+// eso separa los fallos en dos grupos observables: los que devuelven el nombre
+// —el cuerpo se leyó y se entendió— y los que no —cuerpo excesivo, formato
+// inválido, límite por origen—. Es un oráculo pequeño y es exactamente la
+// clase de diferencia que ADR-0072 §10 viene a quitar.
+//
+// COSTE DECLARADO: en un aparato nuevo, fallar la contraseña obliga a volver a
+// teclear el nombre. En el aparato de uso diario no se nota, porque la cookie
+// nas_usuario lo recuerda y es de ella de donde sale.
+//
+// NI Retry-After NI NINGUNA OTRA PISTA. El límite por origen ya no se anuncia:
+// decir «vuelve en 300 s» identifica ese fallo entre los ocho y, de paso, le
+// dice a quien prueba contraseñas cuándo merece la pena volver.
+func (s *Servidor) accesoFallido(w http.ResponseWriter, r *http.Request, motivo seguridad.Motivo) {
+	marcarRechazo(r, motivo)
+	s.pedirAccesoComo(w, r, usuarioRecordado(r), avisoAccesoFallido)
+}
+
+// anotarAccesoLimitado y anotarSinCapacidad escriben UNA línea por arranque.
+//
+// # POR QUÉ NO UNA POR PETICIÓN
+//
+// Las dos las dispara alguien de fuera y ninguna está acotada por el propio
+// limitador —a la primera se llega justo cuando el limitador ya dijo que no—,
+// así que una línea por intento convertiría el diario en el amplificador de
+// quien insiste: petición barata, línea cara y persistente. Es el mismo
+// argumento, y el mismo patrón, que anotarCierreFallido (seguridad.go).
+//
+// # Y POR QUÉ NO SE CALLAN
+//
+// Porque el HECHO no se pierde: cada rechazo entra igual en el anillo con su
+// motivo, su origen y su instante, y el panel los cuenta y los agrupa. Lo que
+// se acota es la REPETICIÓN en el diario, no el registro. La línea única
+// existe para que quien lea el diario se entere de que esto está pasando.
+func (s *Servidor) anotarAccesoLimitado(origen string, espera time.Duration) {
+	if s.accesosLimitados.Add(1) == 1 {
+		s.reg.Warn("acceso bloqueado por intentos repetidos; no se repetirá esta línea",
+			"origen", origen, "espera_s", int(espera.Seconds()))
+	}
+}
+
+func (s *Servidor) anotarSinCapacidad(origen string) {
+	if s.accesosSinCapacidad.Add(1) == 1 {
+		s.reg.Warn("acceso rechazado sin verificar: el presupuesto criptográfico estaba ocupado; no se repetirá esta línea",
+			"origen", origen)
+	}
+}
+
 // verificarAcceso comprueba la contraseña de quien dice ser «usuario», y de
 // paso informa de si ese nombre corresponde a alguien — lo segundo SOLO para
 // el registro, nunca para la respuesta.
@@ -475,24 +730,24 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 // iteraciones. La del superusuario contra su credencial; la de un usuario
 // contra la suya o, si no existe, contra la de relleno del registro. Sin esa
 // simetría, un cronómetro distinguiría los nombres reales de los inventados
-// (CWE-208).
+// (CWE-208). ESO NO SE TOCA: es la defensa de enumeración entera.
+//
+// # DOS COSAS SE MUDARON FUERA DE AQUÍ — ADR-0072 §10
+//
+//  1. EL CERROJO. Era `s.limitador.verificar.Lock()`, y garantizaba una
+//     derivación a la vez esperando para siempre. Ahora quien llama tiene que
+//     traer ya el turno concedido por limitadorAcceso.admitir, que garantiza
+//     lo mismo Y ADEMÁS que la espera esté acotada.
+//
+//  2. EL FILTRO DEL NOMBRE. Rechazar un nombre sintácticamente imposible es un
+//     control BARATO, y estaba detrás del cerrojo, es decir detrás de la cola
+//     de lo caro. Ahora vive en procesarAcceso, en su escalón.
+//
+// PRECONDICIÓN, y por eso está escrita: solo se llama con turno concedido y
+// con un nombre que ya pasó nombreAceptable.
 func (s *Servidor) verificarAcceso(usuario, clave string) (valida, conocido bool) {
-	// Serializado: una derivación a la vez, pase lo que pase. Con 3.6 s cada
-	// una en el nodo, cuatro en paralelo clavarían las cuatro CPU del 3B+, que
-	// ya opera con el límite térmico blando activo (RNF-11).
-	s.limitador.verificar.Lock()
-	defer s.limitador.verificar.Unlock()
-
 	if usuario == autenticacion.NombreSuperusuario {
 		return autenticacion.Verificar(s.credencial, clave), true
-	}
-	// Un nombre que ni siquiera puede ser de nadie se rechaza sin gastar la
-	// derivación, y eso NO filtra nada: las reglas del nombre son públicas y
-	// cualquiera puede comprobarlas sin preguntarle al servidor. Lo que sí
-	// filtraría —si un nombre VÁLIDO existe o no— cuesta siempre lo mismo,
-	// porque de eso se encarga Verifica con su credencial de relleno.
-	if nombreAceptable(usuario) == "" {
-		return false, false
 	}
 	// SE RELEE EL REGISTRO ANTES DE MIRARLO. Las altas las hace otro proceso
 	// —«nasd --crear-usuario»—, así que una copia cargada al arrancar se queda
@@ -524,7 +779,7 @@ func (s *Servidor) almacenDeLaSesion(r *http.Request) (almacen.Almacen, error) {
 	usuario := usuarioDe(r)
 	switch {
 	case usuario == "":
-		// No puede ocurrir detrás de exigirSesion, y precisamente por eso se
+		// No puede ocurrir detrás de la puerta opaca, y precisamente por eso se
 		// trata como error y no como «pues el del superusuario»: si algún día
 		// ocurre, el fallo debe ser ruidoso y no una escalada silenciosa.
 		return nil, errors.New("petición sin usuario en la sesión")

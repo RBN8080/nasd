@@ -147,7 +147,7 @@ func TestMiniaturaExigeSesion(t *testing.T) {
 	almacenes[autenticacion.NombreSuperusuario].agregar(t, "foto.jpg", []byte("x"), time.Now())
 
 	w := peticionMiniatura(s, nil, "/miniatura/foto.jpg")
-	if w.Code != http.StatusUnauthorized && w.Code != http.StatusForbidden {
+	if w.Code != http.StatusNotFound {
 		t.Errorf("GET /miniatura sin sesión -> %d; se esperaba 401 o 403", w.Code)
 	}
 }

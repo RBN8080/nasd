@@ -88,6 +88,35 @@ func comprimible(tipo string) bool {
 		strings.Contains(tipo, "svg")
 }
 
+// assetsPublicos es lo ÚNICO de estatico/ que se sirve SIN SESIÓN — ADR-0072 §9.
+//
+// # POR QUÉ NO ES EL SUBÁRBOL ENTERO
+//
+// Porque /acceso necesita dos archivos y el directorio tiene siete. Los otros
+// cinco —subida.js, cuentas.js, estado.js, menus.js, visor.js— solo existen
+// para páginas que un desconocido no puede abrir, y publicarlos le entrega
+// gratis la huella del programa: qué funciones tiene, qué versión es y qué
+// endpoints llama, todo sin autenticarse. Un asset del panel accesible en
+// anónimo convierte /estatico/ en la puerta lateral de la que la puerta
+// principal se acaba de cerrar.
+//
+// # DE DÓNDE SALE LA LISTA
+//
+// De acceso.html, que a través de la plantilla «cabeza» pide el icono y la
+// hoja de estilos, y ningún script. No se escribe aquí «por si acaso» ni se
+// deja de más: TestSoloSonPublicosLosAssetsQueElFormularioNecesita lee las
+// plantillas del formulario, extrae sus referencias y exige que este conjunto
+// sea exactamente ese. Si mañana el formulario referencia algo nuevo, la
+// prueba lo dice antes de que el formulario salga sin estilos.
+//
+// Es una lista y no un cálculo en el arranque a propósito: derivarla
+// analizando HTML en producción sería inferir en caliente algo que se puede
+// escribir y comprobar en frío.
+var assetsPublicos = []string{
+	"/estatico/estilo.css",
+	"/estatico/icono.svg",
+}
+
 // estaticos es el mapa de ruta HTTP a recurso, calculado una sola vez.
 var estaticos = sync.OnceValue(func() map[string]recursoEstatico {
 	m := make(map[string]recursoEstatico)

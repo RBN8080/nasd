@@ -237,7 +237,7 @@ func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *
 	cod := json.NewEncoder(escribir)
 
 	// testigo identifica la sesión que abrió este flujo. Se captura una vez,
-	// aquí: exigirSesion ya validó que hay cookie con una sesión vigente, así
+	// aquí: la puerta opaca ya validó que hay cookie con una sesión vigente, así
 	// que el error solo puede venir de que el navegador la retire a mitad de
 	// conexión, y en ese caso no hay nada que comprobar en el bucle —sin
 	// cookie no hay testigo, y sesiones.Valida("") ya es false—.
@@ -256,7 +256,7 @@ func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *
 			// LA SESIÓN SE COMPRUEBA EN CADA MARCO — ADR-0059. Sin esto, un
 			// flujo abierto antes de que la sesión caducara por inactividad
 			// seguiría entregando telemetría del nodo entero indefinidamente:
-			// exigirSesion solo se ejecuta al ABRIR la conexión SSE, y esta
+			// la puerta opaca solo se ejecuta al ABRIR la conexión SSE, y esta
 			// puede vivir horas. Valida() es una consulta pura —no cuenta
 			// como actividad—, así que comprobar aquí no alarga la sesión
 			// que se está comprobando.
