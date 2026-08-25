@@ -174,8 +174,19 @@ func TestLoQueSeGuardaEstaAcotado(t *testing.T) {
 // insertar una constante nueva en medio del bloque const reinterpretaría en
 // silencio todos los eventos guardados. Esta prueba falla el día que alguien
 // añada un motivo y olvide su clave o su recuperación.
+//
+// # EL TOPE ERA UN LITERAL Y POR ESO NO SIRVIÓ
+//
+// Decía «m <= PeticionMalformada», así que al añadirse SoloDesdeDentro el
+// bucle dejó de llegar al último motivo y esta prueba pasó a comprobar todos
+// menos el nuevo — que es justo el que hay que comprobar. El mismo literal
+// escrito en opcionesDeMotivo (panel_seguridad.go) dejó ese motivo fuera del
+// desplegable de filtros durante cinco días sin que nada fallara.
+//
+// Ahora el tope es UltimoMotivo y vive en un solo sitio.
 func TestTodosLosMotivosSobrevivenAlDisco(t *testing.T) {
-	for m := MotivoDesconocido; m <= PeticionMalformada; m++ {
+	claves := map[string]Motivo{}
+	for m := MotivoDesconocido; m <= UltimoMotivo; m++ {
 		clave := m.String()
 		vuelta, ok := MotivoDesde(clave)
 		if !ok {
@@ -187,12 +198,23 @@ func TestTodosLosMotivosSobrevivenAlDisco(t *testing.T) {
 		if m != MotivoDesconocido && clave == "desconocido" {
 			t.Fatalf("el motivo %d no tiene clave propia: cae en «desconocido»", m)
 		}
+		if otro, repetida := claves[clave]; repetida {
+			t.Fatalf("los motivos %d y %d comparten la clave %q: el historial los confundiría", m, otro, clave)
+		}
+		claves[clave] = m
 		if m.Etiqueta() == "" {
 			t.Fatalf("el motivo %q no tiene etiqueta que enseñar", clave)
 		}
 	}
 	if _, ok := MotivoDesde("un_motivo_de_otra_version"); ok {
 		t.Fatal("una clave desconocida no debe darse por buena")
+	}
+	// Y el tope tiene que ser DE VERDAD el último: si alguien añade un motivo
+	// detrás de UltimoMotivo y no mueve la constante, el bucle de arriba no lo
+	// vería y esta prueba volvería a mentir como mintió con SoloDesdeDentro.
+	if (UltimoMotivo + 1).String() != "desconocido" {
+		t.Fatalf("hay un motivo más allá de UltimoMotivo (%q): mueve la constante",
+			(UltimoMotivo + 1).String())
 	}
 }
 

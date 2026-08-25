@@ -163,6 +163,61 @@ func (s *Sesiones) CsrfValido(testigo, recibido string) bool {
 	return subtle.ConstantTimeCompare([]byte(esperado), []byte(recibido)) == 1
 }
 
+// Vigencia es lo que el gestor SABE de un testigo, y solo lo que puede
+// demostrar.
+//
+// # POR QUÉ HACE FALTA UN TERCER VALOR Y NO BASTA UN BOOLEANO
+//
+// Usuario() devolvía «false» para dos hechos opuestos: un testigo que este
+// proceso emitió y venció, y una cadena que el cliente se inventó. El
+// adaptador web tenía que elegir uno de los dos para el panel, y elegía
+// «caducada» en cuanto la petición traía cookie — que es una inferencia sobre
+// el pasado a partir de algo que escribe el cliente. `nas_sesion=loquesea` no
+// prueba que ninguna sesión existiera.
+//
+// Con esto, «caducada» se afirma SOLO cuando la entrada sigue en el mapa y
+// vigente() la ve vencida, que es cuando de verdad se sabe.
+//
+// LÍMITE DECLARADO, y no se disimula: Consultar BORRA la entrada vencida al
+// verla, igual que hacía Usuario. Así que la primera petición tras vencer
+// dice Caducada y las siguientes dicen Desconocida. Es correcto — el gestor
+// deja de saberlo de verdad — y no se cambia: recordar los testigos muertos
+// para poder seguir contestando «caducada» sería guardar en memoria una lista
+// que solo crece y que existe para el panel.
+type Vigencia uint8
+
+const (
+	// Desconocida — el gestor no tiene ni recuerdo de este testigo. No dice si
+	// existió alguna vez: dice que AHORA no consta.
+	Desconocida Vigencia = iota
+	// Caducada — la entrada está en el mapa y ya no cumple los relojes de
+	// ADR-0059. Esto sí es historia demostrable: la abrió este proceso.
+	Caducada
+	// Vigente — la sesión vale.
+	Vigente
+)
+
+// Consultar responde de quién es un testigo y qué se sabe de él.
+//
+// Es la consulta completa; Usuario() es la vista corta de esta misma, para que
+// no existan dos formas de decidir si una sesión vale.
+func (s *Sesiones) Consultar(testigo string) (string, Vigencia) {
+	if testigo == "" {
+		return "", Desconocida
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	se, ok := s.m[testigo]
+	if !ok {
+		return "", Desconocida
+	}
+	if !s.vigente(se, time.Now()) {
+		delete(s.m, testigo)
+		return "", Caducada
+	}
+	return se.usuario, Vigente
+}
+
 // Usuario devuelve de quién es la sesión, y si sigue vigente.
 //
 // Es la consulta PRINCIPAL: quien atiende una petición no necesita saber si
@@ -175,20 +230,8 @@ func (s *Sesiones) CsrfValido(testigo, recibido string) bool {
 // sesión robada no se alarga sola con el uso del ladrón), pero por debajo
 // corre uno de inactividad que sí se desliza con Tocar.
 func (s *Sesiones) Usuario(testigo string) (string, bool) {
-	if testigo == "" {
-		return "", false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	se, ok := s.m[testigo]
-	if !ok {
-		return "", false
-	}
-	if !s.vigente(se, time.Now()) {
-		delete(s.m, testigo)
-		return "", false
-	}
-	return se.usuario, true
+	u, v := s.Consultar(testigo)
+	return u, v == Vigente
 }
 
 // Valida indica si el testigo sigue vigente, sin mirar de quién es.

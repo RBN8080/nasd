@@ -228,8 +228,14 @@ func TestSinSesionTodoResponde401(t *testing.T) {
 	for _, c := range rutas {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(c.metodo, c.ruta, nil))
-		if w.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s -> %d; RF-15 exige 401 o 403", c.metodo, c.ruta, w.Code)
+		// 404 OPACO Y NO 401 desde ADR-0072. RF-15 sigue exigiendo lo mismo
+		// —sin sesión no se atiende ninguna de estas— y lo que cambió es la
+		// respuesta con la que se niega: un 401 solo lo daban las rutas que
+		// existen, así que la propia negativa dibujaba el mapa. Que este
+		// bucle siga pasando sobre las doce es lo que demuestra que ninguna
+		// se quedó fuera de la puerta al mudarla.
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s %s -> %d; ADR-0072 exige el 404 opaco", c.metodo, c.ruta, w.Code)
 		}
 	}
 }
@@ -337,7 +343,10 @@ func TestLimitadorCortaLosIntentosRepetidos(t *testing.T) {
 			t.Fatalf("intento %d -> %d", i+1, c)
 		}
 	}
-	// El siguiente debe llevar Retry-After.
+	// El siguiente NO debe llevar Retry-After — ADR-0072 §10. Antes sí lo
+	// llevaba, y era el único fallo del formulario que se distinguía desde
+	// fuera: bastaba mirar esa cabecera para saber que el límite existe y
+	// cuándo merece la pena volver a probar.
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/acceso",
 		strings.NewReader(url.Values{
@@ -347,12 +356,16 @@ func TestLimitadorCortaLosIntentosRepetidos(t *testing.T) {
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.RemoteAddr = "192.168.1.99:5555"
 	h.ServeHTTP(w, r)
-	if w.Header().Get("Retry-After") == "" {
-		t.Error("tras superar el tope debía responder con Retry-After")
+	if v := w.Header().Get("Retry-After"); v != "" {
+		t.Errorf("el rechazo por límite se delató con Retry-After: %q", v)
 	}
-	// Y la contraseña BUENA tampoco pasa mientras dure el bloqueo.
+	// Y la contraseña BUENA tampoco pasa mientras dure el bloqueo. Es LO QUE
+	// IMPORTA de esta prueba y no cambia: el límite se aplica de verdad.
 	if w.Code == http.StatusSeeOther {
 		t.Error("el bloqueo no se aplicó: entró con la contraseña correcta")
+	}
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("el rechazo por límite -> %d; se esperaba el 401 genérico del formulario", w.Code)
 	}
 }
 
@@ -417,8 +430,8 @@ func TestSesionCaducaPorInactividadEnElMiddleware(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.AddCookie(cookie)
 	h.ServeHTTP(w, r)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("petición tras el plazo de inactividad -> %d; RF-15 exige 401", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("petición tras el plazo de inactividad -> %d; ADR-0072 exige el 404 opaco", w.Code)
 	}
 }
 
@@ -443,14 +456,14 @@ func TestCadaPeticionRenuevaLaInactividad(t *testing.T) {
 	// el plazo (40 ms), pero cada una lo desliza antes de que se cumpla.
 	for i := range 3 {
 		time.Sleep(20 * time.Millisecond)
-		if c := pedir(); c == http.StatusUnauthorized {
+		if c := pedir(); c == http.StatusNotFound {
 			t.Fatalf("petición %d dio 401; el deslizamiento no renovó a tiempo", i+1)
 		}
 	}
 
 	// Sin más peticiones, el plazo sí se cumple.
 	time.Sleep(60 * time.Millisecond)
-	if c := pedir(); c != http.StatusUnauthorized {
+	if c := pedir(); c != http.StatusNotFound {
 		t.Errorf("tras dejar de pedir, la sesión debía haber caducado; dio %d", c)
 	}
 }

@@ -62,12 +62,17 @@ func TestTodoRecursoQuePidenLasPlantillasExiste(t *testing.T) {
 
 // Y que además se sirvan. Que el archivo esté incrustado y que la ruta HTTP lo
 // entregue son dos cosas distintas, y la segunda es la que ve el navegador.
+//
+// CON SESIÓN desde ADR-0072. Los dos que el formulario de acceso necesita
+// siguen sirviéndose sin ella —lo comprueba
+// TestSoloSonPublicosLosAssetsQueElFormularioNecesita—, pero los cinco scripts
+// solo existen para páginas que hay que haber entrado para ver, y publicarlos
+// entregaba la huella del programa a quien todavía no ha demostrado nada.
 func TestLosRecursosEstaticosSeSirven(t *testing.T) {
 	s := servidorConAuth(t)
 	h := s.Rutas()
+	cookie, _ := sesionAbierta(t, s)
 
-	// Los estáticos van ANTES de la sesión a propósito: la página de acceso los
-	// necesita para verse, y quien aún no ha entrado tiene que poder verla.
 	for _, ruta := range []string{
 		"/estatico/estilo.css",
 		"/estatico/menus.js",
@@ -76,7 +81,9 @@ func TestLosRecursosEstaticosSeSirven(t *testing.T) {
 		"/estatico/visor.js",
 	} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", ruta, nil))
+		r := httptest.NewRequest("GET", ruta, nil)
+		r.AddCookie(cookie)
+		h.ServeHTTP(w, r)
 		if w.Code != http.StatusOK {
 			t.Errorf("GET %s -> %d; se esperaba 200", ruta, w.Code)
 		}
@@ -126,11 +133,17 @@ func TestUnRecursoConocidoSeRevalidaCon304(t *testing.T) {
 func TestCadaRecursoTieneSuPropioEtag(t *testing.T) {
 	s := servidorConAuth(t)
 	h := s.Rutas()
+	// Con sesión: dos de los tres ya no son públicos (ADR-0072 §9), y sin
+	// cookie los tres compartirían el ETag vacío del 404 opaco — la prueba
+	// pasaría a fallar por un motivo que no es el suyo.
+	cookie, _ := sesionAbierta(t, s)
 
 	vistos := map[string]string{}
 	for _, ruta := range []string{"/estatico/estilo.css", "/estatico/menus.js", "/estatico/visor.js"} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", ruta, nil))
+		r := httptest.NewRequest("GET", ruta, nil)
+		r.AddCookie(cookie)
+		h.ServeHTTP(w, r)
 		etag := w.Header().Get("ETag")
 		if otra, repetido := vistos[etag]; repetido {
 			t.Errorf("%s y %s comparten ETag %s", ruta, otra, etag)

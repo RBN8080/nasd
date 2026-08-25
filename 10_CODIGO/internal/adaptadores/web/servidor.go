@@ -102,6 +102,18 @@ type Servidor struct {
 	// atómico y no lleva candado por lo mismo que los de contadores.go: es un
 	// indicador, no contabilidad.
 	cierresFallidos atomic.Int64
+	// accesosLimitados y accesosSinCapacidad llevan el volumen de los dos
+	// rechazos del formulario de acceso que NO están acotados por el propio
+	// limitador —el primero ocurre justo cuando el limitador ya dijo que no, y
+	// el segundo cuando el presupuesto criptográfico está ocupado—.
+	//
+	// Existen por lo mismo que cierresFallidos: para que el diario reciba UNA
+	// línea por arranque en vez de una por petición, y no se convierta en el
+	// amplificador de quien insiste desde fuera. El hecho suelto no se pierde
+	// —cada rechazo entra en el anillo con su motivo y su origen—: lo que se
+	// acota es la repetición en el diario. Ver anotarAccesoLimitado.
+	accesosLimitados    atomic.Int64
+	accesosSinCapacidad atomic.Int64
 	// geo resuelve un origen de Internet a su país y su operador. PUEDE SER
 	// NULA: sin base instalada el panel funciona igual, solo que sin ese dato.
 	geo *geoip.BaseDatos
@@ -350,17 +362,53 @@ func Nuevo(o Opciones) (*Servidor, error) {
 	return s, nil
 }
 
+// Rutas arma el árbol HTTP entero: la superficie pública, lo protegido, y la
+// puerta opaca que decide cuál de las dos ve cada petición.
+//
+// # DOS MUX Y NINGÚN COMODÍN — el reparto de ADR-0072
+//
+// Antes había un mux externo con «/» colgando de exigirSesion. Eso dejaba al
+// propio mux contestar por su cuenta —405 con Allow, 307 de limpieza de ruta,
+// 307 de subárbol— ANTES de que la guarda opinara, y esas respuestas delataban
+// qué rutas existen. Ahora la puerta va por fuera de los dos y no hay comodín:
+//
+//	publico     lo que un desconocido PUEDE ver. Nada más que entrar.
+//	protegido   todo lo demás, incluido /salir y el resto de /estatico/.
+//
+// Que «publico» sea un mux y no una lista de cadenas es lo que hace que la
+// superficie pública tenga una sola definición: la puerta le PREGUNTA a él
+// (ver puertaOpaca en opaca.go), no compara contra una copia.
 func (s *Servidor) Rutas() http.Handler {
 	// Lo protegido: TODO menos el formulario de acceso y los assets que ese
 	// formulario necesita para dibujarse.
 	protegido := http.NewServeMux()
-	mux := http.NewServeMux()
+	publico := http.NewServeMux()
 
-	mux.HandleFunc("GET /acceso", s.mostrarAcceso)
-	mux.HandleFunc("POST /acceso", s.procesarAcceso)
-	mux.HandleFunc("POST /salir", s.salir)
-	mux.HandleFunc("GET /estatico/", servirEstatico)
-	mux.Handle("/", s.exigirSesion(protegido))
+	publico.HandleFunc("GET /acceso", s.mostrarAcceso)
+	publico.HandleFunc("POST /acceso", s.procesarAcceso)
+	// LOS ASSETS PÚBLICOS, UNO A UNO Y NO EL SUBÁRBOL ENTERO — ADR-0072 §9.
+	//
+	// «GET /estatico/» habría publicado también subida.js, cuentas.js,
+	// estado.js, menus.js y visor.js, que solo existen para páginas que un
+	// desconocido no puede ver. Cada uno de esos archivos es una huella:
+	// descargarlos identifica el programa y su versión sin necesidad de
+	// autenticarse. La lista sale de lo que acceso.html REFERENCIA de verdad, y
+	// una prueba la deriva de la plantilla para que no puedan divergir
+	// (TestSoloSonPublicosLosAssetsQueElFormularioNecesita).
+	for _, a := range assetsPublicos {
+		publico.HandleFunc("GET "+a, servirEstatico)
+	}
+
+	// EL RESTO DE /estatico/ VA DENTRO, y no es celo: quien tiene sesión pide
+	// estas cosas en cada página. Lo que cambia es que un desconocido ya no.
+	protegido.HandleFunc("GET /estatico/", servirEstatico)
+
+	// /salir DEJA DE SER PÚBLICO — ADR-0072 §9. Cerrar una sesión que no
+	// existe no es una operación que nadie necesite: sin sesión no hay nada
+	// que cerrar, y publicarlo solo servía para que la ruta contestara
+	// distinto que las demás y se delatara. Con sesión funciona igual que
+	// siempre.
+	protegido.HandleFunc("POST /salir", s.salir)
 
 	// TODO LO QUE TOCA ARCHIVOS VA ENVUELTO EN conAlmacen, que le entrega al
 	// manejador el volumen ya acotado a quien pregunta (ADR-0055). Esta tabla
@@ -471,7 +519,13 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("PATCH /subidas/{id}", s.conAlmacen(s.tusEnviar))
 	protegido.HandleFunc("DELETE /subidas/{id}", s.conAlmacen(s.tusDescartar))
 
-	return s.conRegistro(s.conCabecerasSeguridad(mux))
+	// EL ORDEN IMPORTA Y ES ESTE. conRegistro por fuera del todo, porque tiene
+	// que ver TAMBIÉN lo que la puerta opaca rechaza —si no, los sondeos
+	// dejarían de aparecer en el panel, que es justo lo contrario de lo que
+	// ADR-0072 persigue—. conCabecerasSeguridad justo después, para que el 404
+	// opaco salga con la misma CSP que cualquier otra página (§33): una vía de
+	// error sin política sería un agujero abierto por la puerta de al lado.
+	return s.conRegistro(s.conCabecerasSeguridad(s.puertaOpaca(publico, protegido)))
 }
 
 // conCabecerasSeguridad fija cabeceras de aislamiento en TODA la web propia
@@ -534,6 +588,18 @@ func (s *Servidor) HTTPServer(direccion string, puerto int) *http.Server {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 		ErrorLog:          slog.NewLogLogger(s.reg.Handler(), slog.LevelWarn),
+		// EL «OPTIONS *» AUTOMÁTICO SE APAGA — ADR-0072 §7.
+		//
+		// No es que OPTIONS sea peligroso. Es que net/http lo contesta ÉL, con
+		// un 200 y Content-Length: 0, ANTES del manejador: fuera de la puerta
+		// opaca, fuera de conCabecerasSeguridad y fuera de conRegistro. Una
+		// respuesta del servidor que ninguna de las tres piezas ve es un hueco
+		// en las tres a la vez — sin política de seguridad, sin telemetría y
+		// con un estado distinto del 404 que toda petición anónima recibe.
+		//
+		// Apagado, «OPTIONS *» entra por donde entra todo lo demás y sale como
+		// todo lo demás.
+		DisableGeneralOptionsHandler: true,
 		// ConnState ve lo que conRegistro NO PUEDE ver: una conexión que se
 		// acepta y muere en el saludo TLS nunca produce una petición HTTP, así
 		// que nunca llega al middleware. Ver anotarConexion.
