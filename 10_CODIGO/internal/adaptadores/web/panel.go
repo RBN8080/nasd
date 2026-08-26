@@ -50,6 +50,8 @@ type filaUsuario struct {
 	// usando la función de plantilla «fecha», la misma que ya usa
 	// listado.html.
 	Medido time.Time
+	// Seleccionada marca la fila cuyo detalle está abierto.
+	Seleccionada bool
 }
 
 // textoSesionActiva es lo que dice la pastilla cuando hay sesión abierta.
@@ -118,6 +120,11 @@ type filaCuenta struct {
 	Nombre    string    `json:"nombre"`
 	Texto     string    `json:"texto"`
 	Veredicto veredicto `json:"veredicto,omitempty"`
+	// Clase es el veredicto YA TRADUCIDO a la pastilla que se pinta. Viaja
+	// hecho por el mismo motivo que en filaViva: si el navegador compusiera
+	// «p-» + veredicto, la traducción viviría en dos sitios y el día que una
+	// cambiara la otra seguiría pintando lo de antes sin fallar a gritos.
+	Clase string `json:"clase,omitempty"`
 }
 
 // marcoCuentas es lo que viaja en cada evento del flujo del panel. Van SIEMPRE
@@ -152,6 +159,7 @@ func (s *Servidor) marcoDeCuentas() marcoCuentas {
 		if activos[u.Nombre] {
 			fila.Texto = textoSesionActiva
 			fila.Veredicto = vOK
+			fila.Clase = vOK.Clase()
 		}
 		m.Cuentas = append(m.Cuentas, fila)
 	}
@@ -181,6 +189,7 @@ func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {
 	if nombre := r.URL.Query().Get("cuenta"); nombre != "" {
 		for i := range v.Usuarios {
 			if v.Usuarios[i].Nombre == nombre {
+				v.Usuarios[i].Seleccionada = true
 				v.Detalle = &v.Usuarios[i]
 				v.ConDetalle = true
 				break

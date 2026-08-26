@@ -1,2125 +1,632 @@
-/* ——— Vocabulario común ———
-   Antes del 05/08/2026 el color vivía en transparencias sueltas repartidas por
-   todo el archivo (#8881, #8882, #8883, #777, #aaa) y los tamaños de letra
-   habían salido uno a uno: 0.78, 0.8, 0.85, 0.9, 0.95, 1.05. Seis tamaños para
-   cuatro jerarquías reales es lo que se ve como «fuentes distintas» aunque la
-   familia sea la misma en toda la web.
-
-   Aquí quedan cuatro pasos de tamaño y un juego de colores con nombre. La
-   regla a partir de ahora: NO se escribe un color ni un tamaño literal fuera
-   de este bloque. Si hace falta uno nuevo, se añade aquí y se razona.
-
-   HIELO — paleta oscura DECLARADA (ADR-0075), no adaptativa.
-   Hasta el 25/08/2026 este bloque hacía «color-scheme: light dark» y volvía a
-   resolver un modo claro entero en «@media (prefers-color-scheme: dark)»: dos
-   paletas turnándose según el sistema del visitante. Doce maquetas después el
-   responsable fue explícito — «prefiero conservar un fondo negro»— y en la
-   ronda de paletas (Hielo/GitHub/Violeta/Ámbar) se probaron cuatro acentos
-   sobre ESE mismo negro, nunca dos fondos. El panel se compromete con un único
-   tema: no hay contrapartida en claro que mantener sincronizada.
-
-   LOS NOMBRES DE TOKEN NO CAMBIAN respecto al bloque anterior — son los que
-   usan las mil y pico líneas de reglas que siguen, y renombrarlos habría
-   obligado a tocarlas todas para no ganar nada. Lo que cambia son los
-   VALORES, y con ellos deja de hacer falta la nota de «los grises van con
-   alfa para servir en los dos modos»: ya solo hay uno. */
-:root {
-  color-scheme: dark;
-
-  --borde: #ffffff1f;
-  --tenue: #ffffff0d;
-
-  /* Semáforo. Desde el 05/08/2026 el veredicto NO tiñe la fila: solo pinta
-     su pastilla. El responsable pidió quitar los fondos —«prácticamente solo
-     los fondos sobran»— porque con una tabla entera en verde el contraste
-     estorbaba más de lo que informaba. La señal sigue estando, concentrada
-     donde se mira. Tonos ajustados para fondo negro (WCAG AA sobre --fondo). */
-  --ok-color: #3fb950;
-  --aviso-color: #d29922;
-  --fallo-color: #f85149;
-  --desconocido-color: #8b949e;
-
-  /* El fondo destructivo se conserva: no es un veredicto, es un botón que
-     debe NO parecer nativo a propósito. */
-  --fallo-fondo: #f8514920;
-
-  /* ÚNICO color OPACO del archivo, y el único que necesita dos valores.
-     Un menú desplegable no puede ser translúcido: dejaría ver la tabla por
-     debajo. Los grises con alfa del resto del archivo no sirven aquí porque
-     su gracia es justamente dejar pasar el fondo. */
-  --panel: #14181d;
-
-  /* SUPERFICIE Y TINTA. Negro casi puro con un sesgo azulado —el «Hielo» de
-     la maqueta— y no un negro neutro: un gris con matiz hacia el acento se
-     lee como elegido, uno neutro se lee como heredado. */
-  --fondo: #0a0c0f;
-  --texto: #e7ebef;
-  --suave: #9198a1;
-
-  /* ACENTO. Un azul que tira a blanco, y la elección no fue de gusto sino de
-     fatiga de uso: la paleta Ámbar y la GitHub-naranja «cansan en una semana»
-     por cuánto territorio ocupa el acento, no por el matiz — probado sobre
-     captura real el 25/08/2026. Hielo hace UN solo trabajo: señalar lo
-     interactivo y lo activo. Los datos siguen en gris; el acento no es un
-     segundo semáforo, y por eso --ok-color/--aviso-color/--fallo-color no lo
-     usan para nada. */
-  --ac: #7dd3fc;
-  --ac2: #bae6fd;
-  --acT: #7dd3fc1a;
-  --acB: #7dd3fc4d;
-
-  /* RADIOS. Dos pasos y no una escala continua, porque «lo redondeado» se
-     rechazó explícitamente sobre captura —junto con el amarillo pato y el
-     azul cielo pastel de la primera ronda—: r1 es la esquina que apenas se
-     nota, r2 es el máximo de toda la consola. Ninguna pieza vuelve a llevar
-     un radio mayor que --r2. */
-  --r1: 4px;
-  --r2: 6px;
-
-  /* Escala tipográfica. El cuerpo es 1rem, y hasta el 19/08/2026 la escala SOLO
-     BAJABA: los cuatro pasos eran todos <= 1rem y el único encabezado con regla
-     era h2, a 1.05rem —un 5 % sobre el cuerpo—. Una página sin jerarquía de
-     encabezados se lee como una lista de párrafos aunque cada pieza esté bien.
-
-     La rampa es CONTENIDA a propósito: esto se lee en un iPhone y no es una
-     portada. h1 solo aparece en cuatro plantillas —acceso, baja, borrar y
-     mover—, todas tarjetas centradas; las páginas de trabajo empiezan en h2, y
-     por eso h2 es el que más se nota. */
-  --t-rotulo: 0.78rem;
-  --t-menor: 0.85rem;
-  --t-tabla: 0.95rem;
-  --t-titulo: 1.05rem;
-  --t-h2: 1.2rem;
-  --t-h1: 1.5rem;
-
-  /* ESCALA DE ESPACIADO, y llega tarde a propósito de nadie.
-     El bloque de arriba nació el 05/08/2026 porque los tamaños de letra habían
-     salido uno a uno y se veían como «fuentes distintas». Se curó la letra, se
-     curó el color… y el espacio se quedó sin curar: el 19/08/2026 había
-     74 declaraciones de padding/margin/gap con 26 VALORES DISTINTOS, de 0.1rem
-     a 4rem, y hasta con notación mezclada («.6rem» junto a «0.6rem»). Seis
-     escalones entre 0.5 y 0.75 que ningún ojo distingue, pero que juntos hacen
-     que la página se lea ajustada a mano en vez de diseñada.
-
-     Base de 0.25rem — 4 px con la raíz por omisión. La regla del archivo pasa a
-     cubrir también el espacio: no se escribe un valor suelto fuera de aquí, y la
-     desviación que sobreviva lleva su motivo escrito al lado. */
-  --e-0: 0.125rem;
-  --e-1: 0.25rem;
-  --e-2: 0.5rem;
-  --e-3: 0.75rem;
-  --e-4: 1rem;
-  --e-5: 1.5rem;
-  --e-6: 2rem;
-  --e-7: 3rem;
-  --e-8: 4rem;
-
-  /* Medida de línea. El cuerpo son 60rem y «.nota» no tenía tope, así que la
-     prosa corría a ~150 caracteres: el doble de lo que se lee cómodo. En «ch» y
-     no en rem porque lo que se acota son CARACTERES, y así sigue valiendo si
-     algún día cambia el cuerpo. */
-  --medida: 68ch;
-
-  /* Objetivo táctil mínimo de las Human Interface Guidelines de Apple. La
-     página se usa sobre todo desde el iPhone. */
-  --tactil: 44px;
-
-  /* ALTURA ÚNICA DE TODO LO QUE VIVE EN LA BARRA SUPERIOR.
-     El descuadre vertical que el responsable fotografió el 05/08/2026 venía de
-     que cada control se dimensionaba solo: el <summary> por su relleno, el
-     <button> nativo por el suyo, y el enlace por la altura de su línea. Tres
-     alturas distintas en una fila que debe leerse como una sola pieza.
-     Con una variable, la barra mide lo mismo en las dos páginas y en las dos
-     plataformas, y en el teléfono sube al objetivo táctil sin repetir reglas. */
-  --alto-control: 2.25rem;
-
-  /* EL CROMO COMPARTIDO — rail y panel de detalle (ADR-0075). Dos anchos
-     fijos; el resto del marco es «1fr». No es una escala: son dos medidas
-     concretas de dos piezas concretas, y no hace falta razonar una tercera
-     hasta que exista. */
-  --rail: 15rem;
-  --det: 20rem;
-}
-
-@media (max-width: 40rem) {
-  :root { --alto-control: var(--tactil); }
-}
-
-* { box-sizing: border-box; }
-
-body {
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  margin: 0 auto;
-  padding: var(--e-4);
-  max-width: 60rem;
-  background: var(--fondo);
-  color: var(--texto);
-}
-
-/* LA PROSA SE ACOTA; LAS TABLAS NO. El tope va en los párrafos y no en «body»
-   porque las tablas de /seguridad y /estado necesitan los 60rem enteros: una de
-   ellas lleva ocho columnas. Acotar el contenedor las habría estrechado con
-   ellas, que es el error que hace ilegible justo lo que hay que leer.
-
-   Y SE SELECCIONA EN POSITIVO, no con «p» a secas. En estas plantillas «p» no
-   quiere decir «prosa»: también son migas de navegación, rutas en monoespaciada,
-   rótulos, un enlace de cancelar y el pie. Acotarlos a todos partió la línea
-   del pie por la mitad y habría descentrado el mensaje del visor. La lista
-   positiva se queda corta si alguien añade prosa nueva —y eso se ve—, mientras
-   que la negativa se equivoca en silencio sobre elementos que nadie miró. */
-p:not([class]), .nota, .oculto {
-  max-width: var(--medida);
-}
-
-/* ——— Cabecera (común a listado y estado) ———
-   Las DOS páginas usan exactamente esta cabecera y exactamente la misma barra
-   de acciones. Antes la de estado tenía clase propia («.acciones-sesion») y por
-   eso se le olvidaban los arreglos que se le hacían a la del listado: el
-   05/08/2026 el responsable fotografió «Archivos» y «Salir» pegados a la
-   izquierda en el iPhone, que era justo la regla que solo tenía la otra. Una
-   sola clase es lo que impide que vuelva a pasar. */
-.cabecera-superior {
-  display: flex;
-  align-items: center;
-  gap: var(--e-4);
-  flex-wrap: wrap;
-  padding-bottom: var(--e-3);
-  border-bottom: 1px solid var(--borde);
-  margin-bottom: var(--e-2);
-}
-
-/* La ruta pesa lo mismo que un control de la barra para que las dos mitades de
-   la cabecera se apoyen en la misma línea. Sin esto, la ruta —que es solo
-   texto— medía menos que los botones y la fila se veía torcida. */
-.migas {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  min-height: var(--alto-control);
-  min-width: 0;
-  /* Desde ADR-0075 vive en Archivos dentro del rail (.cont), no en
-     «.cabecera-superior»: el padding horizontal que aquella le daba lo
-     lleva ahora la propia regla, porque es el único sitio donde se usa. */
-  padding: var(--e-3) var(--e-4) 0;
-}
-
-/* El mensaje de resultado de Archivos, en el mismo margen que el título y la
-   barra de órdenes: fuera de «.cuerpo-modulo» (que empieza más abajo, con la
-   tabla) pero dentro de la misma columna. */
-.mensaje-modulo {
-  margin: 0 var(--e-4) var(--e-3);
-}
-
-.migas a {
-  text-decoration: none;
-  color: inherit;
-}
-
-/* El separador lleva su espacio en un margen y NO en el texto del content.
-   Con la ruta convertida en contenedor flex, cada enlace es un elemento y los
-   espacios de sus extremos se colapsan: un « / » con espacios habría quedado
-   pegado al siguiente nombre. El margen no se colapsa. */
-.migas a::after {
-  content: "/";
-  margin: 0 var(--e-2);
-  opacity: .5;
-}
-
-.migas a:last-child::after {
-  content: "";
-}
-
-/* El título de una página sin migas ocupa su sitio, para que la cabecera pese
-   igual en las dos y no parezcan dos diseños distintos. */
-.titulo-pagina {
-  font-weight: 600;
-}
-
-/* El título de /estado y su pastilla de conexión van juntos, alineados por el
-   centro: la pastilla es un adjetivo del título, no una línea aparte. */
-.titulo-estado {
-  display: flex;
-  align-items: center;
-  gap: var(--e-3);
-  flex-wrap: wrap;
-  min-height: var(--alto-control);
-}
-
-/* El filtro activo, al lado del titulo de /seguridad. Misma forma que el
-   latido de /estado y por el mismo motivo: es un adjetivo de la pantalla —dice
-   QUE se esta mirando— y no una linea aparte. Sin color propio: informa del
-   estado, no avisa de nada. */
-.filtro-activo {
-  display: inline-block;
-  font-size: var(--t-rotulo);
-  padding: var(--e-0) var(--e-2);
-  border-radius: var(--r1);
-  border: 1px solid var(--borde);
-  color: var(--suave);
-}
-
-.salir {
-  float: none;
-  margin: 0;
-  display: flex;
-}
-
-/* Dentro del rail (ADR-0075), «Salir» se ancla al fondo con el hueco que
-   sobra: es la única acción de la consola que no compite con la navegación
-   por el sitio. Fuera del rail —visor.html y bloquear.html no tienen «Salir»,
-   así que esta regla no les afecta— no habría «.rail» del que colgar. */
-.rail > .salir {
-  margin-top: auto;
-}
-
-/* ——— Botones y campos ———
-   NO se les fija background, border ni border-radius, y es deliberado: así
-   cada plataforma dibuja su propio control —el botón azul del sistema en el
-   iPhone, el nativo en Windows y en Android—. Es el «appearance: auto» de
-   CSS Basic User Interface Level 4 §4.1; en WebKit basta con dar background
-   o border para que Safari lo apague y deje un rectángulo plano.
-   Ocurrió el 2026-08-04 y por eso queda escrito: la ausencia es el estilo.
-   El botón destructivo SÍ los fija, más abajo, justo para NO parecer nativo. */
-input, button {
-  font: inherit;
-  padding: var(--e-2) var(--e-3);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: progress;
-}
-
-/* ——— Tabla (estilo profesional unificado) ——— */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: var(--e-5) 0;
-  font-size: var(--t-tabla);
-}
-
-th {
-  font-weight: 600;
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--suave);
-  padding: var(--e-3) var(--e-3);
-  border-bottom: 1px solid var(--borde);
-  text-align: left;
-}
-
-td {
-  padding: var(--e-2) var(--e-3);
-  border-bottom: 1px solid var(--borde);
-  vertical-align: middle;
-}
-
-/* Miniatura EXIF junto al nombre — rector §7.nonies.bis. Tamaño fijo para
-   que la fila no salte de alto mientras carga: el hueco ya existe antes de
-   que llegue el byte. */
-img.miniatura {
-  width: 28px;
-  height: 28px;
-  margin-right: var(--e-2);
-  vertical-align: middle;
-  object-fit: cover;
-  border-radius: 3px;
-}
-
-td.num, th:not(:first-child) {
-  text-align: right;
-  white-space: nowrap;
-}
-
-tbody tr:hover {
-  background: var(--tenue);
-}
-
-a.dir {
-  font-weight: 600;
-  color: inherit;
-}
-
-.vacio {
-  opacity: 0.55;
-  font-style: italic;
-  text-align: center;
-  padding: var(--e-7) var(--e-4) !important;
-  color: var(--suave);
-}
-
-/* ——— Mensajes ——— */
-.mensaje {
-  padding: var(--e-2) var(--e-3);
-  border-radius: var(--r1);
-  background: #0a01;
-  border: 1px solid #0a04;
-}
-
-.oculto {
-  opacity: 0.65;
-  font-size: var(--t-menor);
-  font-style: italic;
-}
-
-.mensaje.error {
-  background: #d001;
-  border-color: #d004;
-}
-
-/* ——— Barra de acciones del listado ———
-   Subir y Nueva carpeta vivían al PIE de la página, debajo de la tabla, que es
-   donde nadie los busca. Suben aquí, junto a Estado y Salir: en cualquier
-   gestor de archivos esas dos acciones están arriba.
-
-   Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
-   purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y montar
-   estos menús con JS habría dejado a un navegador sin él sin poder crear
-   carpetas ni usar el formulario de respaldo. menus.js solo añade el cierre al
-   pulsar fuera, que es lo único que el elemento no sabe hacer. */
-.barra-acciones {
-  display: flex;
-  /* «stretch» y no «center», y esto es lo que endereza la fila de verdad.
-     --alto-control fija un SUELO, pero el botón nativo puede pedir más: MEDIDO
-     en escritorio el 05/08/2026, «Salir» salía a 39 px por su propio relleno
-     mientras los demás se quedaban en los 36 del suelo, y la fila arrancaba con
-     2 px de escalón. Forzarle una altura habría sido pelearse con el control
-     del sistema —que es justo lo que aquí se quiere conservar—; estirando, el
-     más alto manda y los demás lo igualan, mida lo que mida en cada
-     plataforma. */
-  align-items: stretch;
-  gap: var(--e-3);
-  flex-wrap: wrap;
-  /* SIEMPRE a la derecha, quepa o no quepa junto a la ruta.
-     Con «justify-content: space-between» en el padre bastaba mientras las dos
-     mitades cabían en una línea; en cuanto la barra se iba a una línea propia,
-     space-between la trataba como elemento único y la dejaba a la izquierda.
-     Es el defecto que el responsable fotografió en el iPhone. Un margen
-     automático empuja igual en los dos casos. */
-  margin-left: auto;
-  justify-content: flex-end;
-}
-
-/* El suelo de altura lo lleva CADA pieza de la barra, sea cual sea su etiqueta:
-   los dos <details> de menú, el enlace y el formulario de salida. */
-.barra-acciones > * {
-  min-height: var(--alto-control);
-}
-
-/* El <details> es quien se estira; el <summary> es lo que se ve. Sin esto, el
-   contenedor crecía y el botón dibujado dentro se quedaba corto y arriba. */
-.menu > .boton-barra {
-  height: 100%;
-}
-
-.menu {
-  position: relative;
-}
-
-/* Fuera el triángulo que el navegador pone por omisión en <summary>. */
-.menu > summary {
-  list-style: none;
-  cursor: pointer;
-  /* La forma con prefijo va PRIMERO y no sobra: Safari solo entiende
-     «user-select» sin prefijo desde la versión 17, y el iPhone del responsable
-     es el navegador principal de este producto. Sin ella, mantener el dedo
-     sobre un botón selecciona su texto y saca la lupa de iOS. */
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.menu > summary::-webkit-details-marker {
-  display: none;
-}
-
-.menu > summary::marker {
-  content: "";
-}
-
-/* EXCEPCIÓN DECLARADA a la regla de «los botones no llevan estilo».
-   Aquella regla existe para que iOS pinte sus controles nativos en los ENVÍOS
-   de formulario, y se mantiene intacta para esos —«Salir» sigue siendo el botón
-   azul del sistema, que es justo lo que el responsable señaló como bien—. Un
-   <summary> no es un envío ni un control nativo: no hay aspecto que preservar.
-   El mismo tratamiento lo lleva el ENLACE de navegación de la barra, y por eso
-   la clase no dice «summary»: en una barra de herramientas lo que importa es
-   que las piezas se lean iguales, no de qué etiqueta salieron. Un enlace suelto
-   en azul subrayado entre dos botones es el conflicto estético que se reportó
-   el 05/08/2026. */
-.boton-barra {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--alto-control);
-  font-size: var(--t-menor);
-  padding: var(--e-2) var(--e-3);
-  border: 1px solid var(--borde);
-  border-radius: var(--r1);
-  background: var(--tenue);
-  color: inherit;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.boton-barra:hover,
-.menu[open] > .boton-barra {
-  border-color: var(--suave);
-}
-
-/* «Salir» conserva su aspecto nativo y solo se le iguala la ALTURA: es lo único
-   que hacía falta para que la fila dejara de verse escalonada. */
-.salir button {
-  min-height: var(--alto-control);
-}
-
-/* LOS MENÚS DE LA BARRA SE ANCLAN A LA BARRA, NO A SU BOTÓN.
-   Anclados al botón —que es lo natural y lo que había— el panel de «Subir» se
-   iba a la izquierda de un botón que está casi en el borde izquierdo: MEDIDO a
-   390 px, empezaba en −269 y quedaba recortado contra el borde de la pantalla,
-   con el selector de archivos fuera de la vista.
-   La barra siempre está DENTRO de la pantalla y siempre termina en el margen
-   derecho, así que colgar de ella el panel garantiza que se vea entero sin
-   tener que calcular nada por botón. Los menús de FILA no entran aquí: aquellos
-   sí deben salir junto a su propia fila y conservan su anclaje. */
-.barra-acciones {
-  position: relative;
-}
-
-.barra-acciones > .menu {
-  position: static;
-}
-
-/* El panel flota SOBRE la página, no la empuja: abrir un menú no puede mover
-   de sitio la fila que se estaba mirando. */
-.menu-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 0.4rem);
-  z-index: 20;
-  min-width: 15rem;
-  /* Tope duro: pase lo que pase con el contenido, un panel nunca es más ancho
-     que la pantalla menos los márgenes de la página. */
-  max-width: calc(100vw - 2rem);
-  padding: var(--e-4);
-  border: 1px solid var(--borde);
-  border-radius: var(--r2);
-  background: var(--panel);
-  box-shadow: 0 0.5rem 1.5rem #0005;
-  display: grid;
-  gap: var(--e-3);
-  text-align: left;
-}
-
-.menu-panel form {
-  display: grid;
-  gap: var(--e-2);
-}
-
-.menu-panel label {
-  display: grid;
-  gap: var(--e-1);
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--suave);
-}
-
-/* ——— Menú de fila: el botón de tres puntos ——— */
-.boton-puntos {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  border: 1px solid transparent;
-  font-size: 1.15rem;
-  line-height: 1;
-  color: var(--suave);
-}
-
-/* LOS TRES PUNTOS SE DIBUJAN, NO SE ESCRIBEN.
-   Se probaron dos caracteres —«⋯» (U+22EF) y «•» (U+2022)— y los dos salieron
-   como caja vacía en la captura del 05/08/2026: depender de que una fuente
-   traiga un glifo concreto es depender de algo que no controlamos. Un punto y
-   dos sombras dan el mismo dibujo sin tipografía de por medio, y además queda
-   vertical, que es como lo pintan Drive y OneDrive.
-   «currentColor» hace que sigan al color del botón al pasar por encima. */
-.boton-puntos::before {
-  content: "";
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor;
-}
-
-.boton-puntos:hover,
-.menu[open] > .boton-puntos {
-  border-color: var(--borde);
-  background: var(--tenue);
-  color: inherit;
-}
-
-/* La fila del menú separa lo destructivo del resto con una línea, para que
-   «Borrar» no quede pegado a «Mover» y se pulse por inercia. D-15 no tiene
-   papelera: el clic de más no se deshace.
-   Se alinea como los DEMÁS elementos del panel y no como un enlace de texto:
-   arriba hay dos botones nativos que ocupan el ancho completo con su rótulo
-   centrado, y «Borrar» colgando del margen izquierdo era la disonancia que se
-   reportó. Mismo ancho, mismo centro, mismo objetivo táctil — y el color rojo
-   siendo lo único que lo distingue, que es como debe ser. */
-.menu-panel-fila .destructivo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--alto-control);
-  border-top: 1px solid var(--borde);
-  padding-top: var(--e-3);
-  text-decoration: none;
-}
-
-/* ——— Subida, dentro de su panel ——— */
-#zona-subida {
-  display: grid;
-  gap: var(--e-2);
-}
-
-#zona-subida input[type=file] {
-  max-width: 100%;
-}
-
-#zona-subida label {
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--suave);
-}
-
-/* ——— Pie: qué binario está corriendo, y nada más ———
-   SIN línea propia. La última fila de la tabla de arriba ya dibuja una, y con
-   el borde puesto aquí salían DOS rayas paralelas con un vacío de 3,6 rem en
-   medio: 1,1 del margen de la tabla más 2,5 de este margen. Ese hueco es lo que
-   el responsable marcó en verde el 05/08/2026. Se quita la segunda raya y el
-   margen baja a lo que hace falta para que el pie respire. */
-/* LA LÍNEA DEL PIE, que el responsable echó en falta al ver la pasada de
-   diseño. Cierra la página igual que «.cabecera-superior» la abre, con el mismo
-   borde y el mismo token: el pie dice qué binario está corriendo, y eso no es
-   contenido de la página sino información sobre ella. Separarlo lo dice sin
-   escribirlo. */
-.pie {
-  margin-top: var(--e-5);
-  padding-top: var(--e-3);
-  border-top: 1px solid var(--borde);
-  font-family: ui-monospace, monospace;
-  font-size: var(--t-rotulo);
-  letter-spacing: 0.02em;
-  color: var(--suave);
-}
-
-/* La línea entera mide unos 410 px y en el teléfono hay 358: va a envolver.
-   Que envuelva ENTRE campos y no por dentro de uno. */
-.pie span {
-  white-space: nowrap;
-}
-
-.pie-sep {
-  opacity: 0.6;
-}
-
-/* ——— Progreso de subida ——— */
-#progreso {
-  list-style: none;
-  padding: 0;
-  width: 100%;
-  margin-top: var(--e-3);
-}
-
-#progreso li {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: var(--e-3);
-  align-items: center;
-  padding: var(--e-2) 0;
-  border-bottom: 1px solid var(--borde);
-  font-size: var(--t-menor);
-}
-
-#progreso li span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-#progreso button {
-  font-size: var(--t-rotulo);
-  padding: var(--e-1) var(--e-2);
-  margin-left: var(--e-1);
-}
-
-/* ——— Formulario de acceso ——— */
-.acceso {
-  max-width: 22rem;
-  margin: var(--e-8) auto;
-}
-
-.acceso h1 {
-  margin-bottom: var(--e-5);
-  text-align: center;
-}
-
-.acceso form {
-  display: grid;
-  gap: var(--e-3);
-}
-
-/* La etiqueta va PEGADA a su casilla y separada de la anterior. Sin esto, con
-   dos pares etiqueta+casilla la rejilla los reparte a distancias iguales y las
-   cuatro filas se leen como cuatro cosas sueltas en lugar de como dos. */
-.acceso label {
-  font-weight: 600;
-  font-size: var(--t-menor);
-  margin-top: var(--e-2);
-}
-
-.acceso label:first-of-type {
-  margin-top: 0;
-}
-
-.acceso input {
-  height: var(--alto-control);
-  box-sizing: border-box;
-  width: 100%;
-}
-
-.acceso button {
-  margin-top: var(--e-4);
-  height: var(--alto-control);
-}
-
-.acceso input::placeholder {
-  font-style: italic;
-  color: var(--suave);
-  opacity: 0.75;
-}
-
-/* ——— «Este aparato ya sabe quién eres» ———
-   Solo aparece cuando el nombre está recordado y basta con la contraseña.
-   Enseña LA INICIAL Y NADA MÁS: identifica sin publicar de quién es la cuenta
-   a quien mire la pantalla por encima del hombro (ADR-0055).
-
-   VA DEBAJO DEL BOTÓN Y CENTRADO, por indicación del responsable sobre una
-   captura del 06/08. Arriba —con una pastilla redonda con la inicial— competía
-   con la casilla de la contraseña, que es lo único que hay que hacer en esta
-   pantalla. Cambiar de usuario es la salida, no la acción principal, y por eso
-   se lee como enlace y no como botón. */
-.cambiar {
-  margin: var(--e-4) 0 0;
-  text-align: center;
-  font-size: var(--t-menor);
-}
-
-/* ——— Administración ———
-   EL DESCUADRE DE LOS TRES PUNTOS (fotografiado el 05/08/2026): aquí había un
-   «display: flex». Puesto sobre un <td> NO es un detalle de estilo: sustituye
-   al «display: table-cell», el navegador saca la celda del modelo de la tabla y
-   genera una celda anónima a su alrededor. Esa celda anónima ya no se alinea
-   con las de las demás filas, así que el botón caía a distinta altura según lo
-   que midiera cada fila —y las filas medían distinto porque la fecha se partía
-   en dos líneas en unas sí y en otras no—.
-   La celda vuelve a ser una celda. Un solo botón alineado a la derecha no
-   necesitaba un contenedor flex para nada. */
-td.acciones-fila {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.menu-fila {
-  display: inline-block;
-  vertical-align: middle;
-}
-
-a.destructivo,
-button.destructivo {
-  color: var(--fallo-color);
-  font-weight: 600;
-}
-
-button.destructivo {
-  border: 2px solid var(--fallo-color);
-  padding: var(--e-2) var(--e-4);
-  background: var(--fallo-fondo);
-}
-
-.peligro {
-  border: 2px solid var(--fallo-color);
-  border-radius: var(--r2);
-  padding: var(--e-3) var(--e-4);
-  margin: var(--e-4) 0;
-  background: var(--fallo-fondo);
-}
-
-.ruta-destacada {
-  font-family: ui-monospace, monospace;
-  word-break: break-all;
-  font-size: 1.1em;
-}
-
-h1 {
-  font-size: var(--t-h1);
-  line-height: 1.25;
-  margin: 0 0 var(--e-4);
-}
-
-h2 {
-  font-size: var(--t-h2);
-  line-height: 1.3;
-  /* MUCHO AIRE ARRIBA Y POCO ABAJO, que es lo que agrupa un encabezado con lo
-     que titula en vez de dejarlo flotando entre dos bloques. */
-  margin: var(--e-6) 0 var(--e-2);
-}
-
-/* ——— Estado (Fase 4) ———
-   Aqui vivia «.resumen», el parrafo de veredicto global. Se retiro el
-   2026-08-04 junto con el elemento que lo usaba: RF-24 NO lo exige —pide
-   «desconocido»/null en lo no medido y la accion a tomar en cada indicador,
-   y las dos siguen—, y el veredicto global sigue publicandose en
-   /estado?formato=json. Dejar el CSS sin elemento era codigo zombi. */
-/* Las filas NO se tiñen. Lo único que cambia de color es la pastilla, más
-   abajo. Se conserva la negrita del rótulo cuando algo va mal, que no es un
-   fondo y ayuda a encontrar la fila de un vistazo. */
-tr.v-atencion .rotulo,
-tr.v-fallo .rotulo {
-  font-weight: 600;
-}
-
-/* ——— Tablas de datos de /estado ———
-   EL DESCUADRE QUE ESTO ARREGLA (visto en el iPhone el 05/08/2026): las tres
-   tablas se veian de anchos distintos y habia que arrastrar la pagina de lado.
-
-   La causa eran dos reglas que se sumaban. «main» tiene overflow-x auto, asi
-   que las tres tablas comparten UNA barra de desplazamiento; y «white-space:
-   nowrap» impedia partir valores largos como «45 % (media de 250ms, sin contar
-   espera de disco)». La tabla con el texto mas largo se estiraba por encima
-   del ancho de la pagina y las otras se quedaban en el 100 % original — de ahi
-   que sus lineas terminaran en sitios distintos.
-
-   Se arregla por donde estaba el problema: aqui NADA lleva nowrap y el reparto
-   de columnas es FIJO, igual en las tres tablas. Asi se alinean entre si por
-   construccion y no por casualidad. */
-.datos {
-  table-layout: fixed;
-}
-
-.datos th,
-.datos td {
-  text-align: left;
-  white-space: normal;
-}
-
-.datos .rotulo {
-  width: 34%;
-}
-
-.datos .estado,
-.datos th:last-child {
-  width: 7rem;
-  text-align: right;
-}
-
-/* Excepción SOLO para la tabla de cuentas de /administracion. En esa tabla
-   «Sesión» ya NO es la última columna real —«Uso de disco» va después,
-   P-4 etapa 3— así que su encabezado sigue la regla base .datos th
-   { text-align: left } mientras la pastilla de abajo seguía a la derecha:
-   quedaba flotando lejos de su propio rótulo. Reportado en uso real. En
-   estado.html «Estado» SÍ es la última columna —ahí th:last-child ya
-   coincide con ella— y no lleva esta clase, así que no le afecta. */
-.tabla-cuentas .estado {
-  text-align: left;
-}
-
-/* «.datos .cifra» vivia aqui y hacia exactamente esto para una sola columna
-   de /estado. La regla general de mas abajo -toda celda de .datos- la dejo
-   sin trabajo el 14/08/2026, al arreglar el solapamiento de las IPv6, y se
-   retira en vez de quedarse como CSS que no cambia nada. */
-
-/* La accion solo existe cuando hay algo que hacer. Va SIEMPRE en el HTML —el
-   flujo en vivo se limita a cambiarle el texto, sin crear ni destruir nodos— y
-   es el CSS quien la esconde mientras esta vacia. */
-.accion {
-  display: block;
-  margin-top: var(--e-1);
-  font-size: var(--t-menor);
-  opacity: 0.85;
-}
-
-.accion:empty {
-  display: none;
-}
-
-.accion::before {
-  content: "→ ";
-}
-
-/* La pastilla dice el veredicto CON PALABRAS y no solo con color: un semaforo
-   que solo distingue por color no lo lee quien no distingue esos colores. */
-/* Mayúsculas por CSS y NO en Go, y la distinción importa: el valor del
-   veredicto viaja en el JSON de /estado y en el diario, donde es «ok» en
-   minúscula y forma parte del contrato. Cambiarlo en origen habría alterado
-   las dos cosas para arreglar un detalle de pantalla. */
-.pastilla {
-  display: inline-block;
-  font-size: var(--t-rotulo);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 600;
-  padding: var(--e-0) var(--e-2);
-  border-radius: var(--r1);
-  border: 1px solid var(--borde);
-  white-space: nowrap;
-}
-
-.v-ok .pastilla          { border-color: var(--ok-color);          color: var(--ok-color); }
-.v-atencion .pastilla    { border-color: var(--aviso-color);       color: var(--aviso-color); }
-.v-fallo .pastilla       { border-color: var(--fallo-color);       color: var(--fallo-color); }
-.v-desconocido .pastilla { border-color: var(--desconocido-color); color: var(--desconocido-color); }
-
-/* LAS FILAS SIN SEMÁFORO NO LLEVAN NADA, y el guion que llevaban antes se
-   retiró a petición del responsable el 05/08/2026.
-   Se evaluaron las tres salidas que planteó. Un «N/A» habría sido la peor:
-   dice «no disponible» y el dato SÍ está —lo que no existe es un veredicto,
-   porque «Uso de CPU» no tiene umbral contra el que aprobar o suspender—. Un
-   guion decía lo mismo en más corto. Escribir «no aplica» en cada fila de
-   contexto sería ruido repetido doce veces.
-   Queda el hueco: en una tabla donde el resto de la columna sí lleva pastilla,
-   la ausencia ya se lee como «esta fila no es una alarma», que es exactamente
-   lo que pasa.
-   El elemento SIGUE en el HTML aunque esté vacío —lo esconde el CSS, no el
-   servidor— porque el flujo en vivo escribe sobre él sin crear nodos: si un
-   día ese indicador ganara umbral, la pastilla aparecería sola. */
-.pastilla:empty {
-  display: none;
-}
-
-.nota {
-  font-size: var(--t-menor);
-  color: var(--suave);
-  margin: var(--e-1) 0 0;
-}
-
-/* ——— Leyenda de una tabla ———
-   REPORTADO SOBRE CAPTURA EL 19/08/2026, en «Origenes» de /seguridad: la
-   explicacion de las columnas quedaba en una columna estrecha de gris con
-   media pagina vacia a su derecha, y debajo «Base de operadores» gastando una
-   linea entera para decir una fecha. Cinco lineas de texto suave entre el
-   encabezado y la tabla que titulan, y la tabla empujada hacia abajo.
-
-   PRIMER INTENTO, DESCARTADO POR EL RESPONSABLE: mover solo el metadato al
-   extremo y conservar la medida de «--medida» en la explicacion. Llenaba el
-   hueco de la derecha pero dejaba la explicacion en CINCO lineas, y lo que el
-   pidio fue subir el texto. Su correccion, sobre captura: «te pedi que
-   hicieras el texto hacia arriba».
-
-   ASI QUE LA LEYENDA SE EXCEPTUA DE «--medida», A PROPOSITO. Ese tope existe
-   para prosa que se LEE seguida —parrafos de ayuda, avisos—, y a 68ch esta
-   explicacion ocupaba cinco lineas con media pagina vacia al lado. Una leyenda
-   no se lee seguida: se consulta una vez para entender las columnas de la
-   tabla que tiene debajo. Ensancharla la baja a dos lineas y sube la tabla
-   tres, que es el objetivo. El tope SIGUE vigente para todo lo demas: la
-   excepcion es esta clase y solo esta.
-
-   SEGUNDO REPORTE, SOBRE CAPTURA, EL 20/08/2026: la misma columna estrecha en
-   «Bloqueos puestos», con una flecha marcando el hueco que quedaba hasta el
-   borde derecho de la tabla. La clase no cambia; se le aplica tambien alli y a
-   «Apartados por conducta», que es su gemela y solo aparece cuando el nodo ha
-   apartado a alguien. Los tres rotulos hacen el mismo trabajo —explicar las
-   columnas de la tabla que tienen debajo—, asi que arreglar uno solo habria
-   dejado dos anchos distintos para la misma cosa en la misma pagina. Sigue
-   siendo UNA excepcion, no una por tabla.
-
-   «baseline» y no «center»: los dos son texto, y lo que debe coincidir es la
-   linea sobre la que se apoyan, no el centro de sus cajas. «wrap» deja que en
-   el movil el metadato caiga debajo por si solo, sin consulta de medios. */
-.leyenda {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--e-1) var(--e-5);
-}
-
-/* El margen lo lleva la banda, no cada parrafo: dentro son celdas de una fila
-   y un margen suelto la descuadraria contra la linea base. */
-.leyenda .nota {
-  margin: 0;
-  flex: 1;
-  max-width: none;
-}
-
-/* El metadato no se estira ni se parte: es corto y su sitio es el extremo.
-   Se cualifica con «.leyenda» para GANARLE en especificidad a la regla de
-   arriba; con «.leyenda-dato» a secas, el «flex: 1» de «.leyenda .nota» lo
-   estiraba y la fecha se separaba de su borde. */
-.leyenda .leyenda-dato {
-  flex: none;
-}
-
-/* LA TABLA SUBE HASTA SU LEYENDA. «table» lleva --e-5 arriba para separarse
-   del bloque ANTERIOR, y una leyenda no es un bloque anterior: es el rotulo de
-   esta misma tabla. Ese 1.5rem en medio es lo que la dejaba flotando aparte de
-   lo que explica. Solo aplica cuando van pegadas, asi que ninguna otra tabla
-   de ninguna otra pagina cambia. */
-.leyenda + table {
-  margin-top: var(--e-3);
-}
-
-.avisos {
-  font-size: var(--t-menor);
-  opacity: 0.8;
-}
-
-/* ——— Rótulo de conexión ———
-   Vivía en un párrafo propio debajo de la cabecera, y ese párrafo reservaba su
-   altura estuviera o no visible: era la franja vacía que quedó entre la línea
-   divisoria y «Nodo». Ahora va DENTRO de la cabecera, al lado del título, y no
-   hay hueco que reservar. */
-.latido {
-  display: inline-block;
-  /* Fuera de «.cabecera-superior» desde ADR-0075: estado.html lo pinta suelto,
-     bajo el título del marco, y necesita el mismo margen horizontal que la
-     barra de órdenes de las demás páginas. */
-  margin: 0 var(--e-4);
-  font-size: var(--t-rotulo);
-  padding: var(--e-0) var(--e-2);
-  border-radius: var(--r1);
-  border: 1px solid var(--borde);
-  color: var(--suave);
-}
-
-.latido[data-vivo="si"] {
-  border-color: var(--ok-color);
-  color: var(--ok-color);
-}
-
-.latido[data-vivo="no"] {
-  border-color: var(--aviso-color);
-  color: var(--aviso-color);
-}
-
-/* El punto solo parpadea mientras el flujo esta vivo. */
-.latido[data-vivo="si"]::before {
-  content: "● ";
-  animation: latir 2s ease-in-out infinite;
-}
-
-@keyframes latir {
-  50% { opacity: 0.25; }
-}
-
-/* Quien haya pedido menos movimiento al sistema no tiene por que ver esto
-   parpadear. El rotulo sigue diciendo lo mismo con palabras. */
-@media (prefers-reduced-motion: reduce) {
-  .latido[data-vivo="si"]::before { animation: none; }
-}
-
-/* «main» YA NO es contenedor de desplazamiento, y quitarlo era obligatorio:
-   overflow-x en un eje convierte el otro en «auto», así que main recortaba
-   cualquier menú desplegable que asomara por debajo de su caja. Un menú
-   recortado por el contenedor es peor que una tabla ancha.
-
-   Puede quitarse porque la tabla dejó de ser ancha: la cuarta columna pasó de
-   un formulario de renombrado entero a un solo botón de 2 rem. Medido a
-   390 px después del cambio. */
-
-/* ——— Teléfono ———
-   Solo para las tablas de /estado (.datos). El listado de archivos se deja
-   como está: es la referencia de aspecto que pidió el responsable, y
-   convertirlo en tarjetas es un cambio distinto que aún no se ha decidido.
-
-   Cada fila pasa a ser una tarjeta: rótulo y veredicto arriba, valor debajo a
-   ancho completo. Con esto ninguna tabla desborda y desaparece la barra de
-   arrastre lateral que hacía que las tres parecieran descuadradas. */
-@media (max-width: 40rem) {
-  .datos,
-  .datos thead,
-  .datos tbody,
-  .datos tr,
-  .datos td {
-    display: block;
-    width: auto;
-  }
-
-  .datos thead {
-    display: none;
-  }
-
-  .datos tr {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: var(--e-0) var(--e-3);
-    padding: var(--e-3) 0;
-    border-bottom: 1px solid var(--borde);
-  }
-
-  .datos td {
-    border-bottom: 0;
-    padding: 0;
-  }
-
-  /* Los anchos de la vista de escritorio SOBREVIVEN a «display: block» porque
-     tienen más especificidad, y en tarjeta estorban: MEDIDO el 05/08/2026 a
-     390 px, el 34 % del rótulo partía «Temperatura del procesador (SoC)» en
-     CUATRO líneas. Se anulan aquí, con la misma especificidad que aquellos y
-     más abajo en el archivo, que es lo que les hace ganar. */
-  .datos .rotulo,
-  .datos .estado,
-  .datos .valor {
-    width: auto;
-  }
-
-  .datos .rotulo {
-    grid-column: 1;
-    font-size: var(--t-rotulo);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--suave);
-  }
-
-  .datos .estado {
-    grid-column: 2;
-    grid-row: 1;
-    text-align: right;
-  }
-
-  .datos .valor {
-    grid-column: 1 / -1;
-  }
-
-  /* El objetivo táctil de 44 px (HIG de Apple) ya NO se pone aquí control por
-     control: lo lleva --alto-control, que en este mismo ancho vale --tactil.
-     Antes esta lista había que acordarse de ampliarla cada vez que aparecía un
-     elemento en la barra, y el enlace «Archivos» de /estado es exactamente el
-     que se quedó fuera.
-
-     Aquí vivía también un «flex-direction: column» que apilaba la cabecera.
-     Se retira: apilar era innecesario —basta con dejar que la barra envuelva
-     por sí sola— y era lo que dejaba las acciones pegadas a la izquierda,
-     porque «align-items: stretch» estiraba la barra a todo el ancho y su
-     contenido se alineaba al principio. La cabecera vuelve a ser una fila que
-     envuelve cuando no cabe, con la barra empujada a la derecha por su margen
-     automático. */
-
-  /* LA FECHA VUELVE A SER INTOCABLE, y el rodeo anterior era el defecto.
-     Se había permitido que envolviera para ganar ancho, sin caer en que
-     «2026-08-05» ofrece un punto de corte DESPUÉS DE CADA GUION: el navegador
-     partía por ahí y la celda quedaba con «2026-08-» arriba y «05 16:51»
-     abajo, alineado a la derecha y distinto en cada fila. Es el «ligero
-     desplazamiento del texto» que se reportó, y de paso lo que hacía que unas
-     filas midieran más alto que otras.
-
-     El ancho que hacía falta sale de la columna del NOMBRE, que es la que
-     puede ceder: un nombre largo partido en dos líneas se lee perfectamente,
-     una fecha partida por la mitad no. «anywhere» y no «break-word» porque es
-     el único de los dos que además reduce el ancho mínimo de la columna, que
-     es justo lo que necesita el reparto automático de la tabla. */
-  .archivos td:first-child {
-    overflow-wrap: anywhere;
-  }
-
-  /* Y para que ese «anywhere» casi nunca tenga que actuar, los datos
-     secundarios encogen de cuerpo. Es lo que hacen Drive y OneDrive en el
-     teléfono: el nombre —lo único con lo que se distingue un archivo de otro—
-     va en el cuerpo de texto, y el tamaño y la fecha en un cuerpo menor.
-     MEDIDO: devuelve unos 30 px a la columna del nombre, que es la diferencia
-     entre «01_1er_Cuatrimestre/» en una línea o partido por la mitad de una
-     palabra. No se esconde ninguna columna: no se pierde ningún dato. */
-  .archivos td.num,
-  .archivos th:not(:first-child) {
-    font-size: var(--t-rotulo);
-  }
-
-  /* MEDIDO a 390 px: la tabla ocupaba 392 con 358 disponibles. El relleno de
-     0.6rem se llevaba 19 px por columna y las cuatro columnas sumaban 77 solo
-     de aire. A 0.3rem cabe sin esconder ninguna columna. */
-  .archivos th,
-  .archivos td {
-    padding-left: var(--e-2);
-    padding-right: var(--e-2);
-  }
-
-  .boton-puntos {
-    width: 1.75rem;
-    height: 1.75rem;
-  }
-
-  /* El panel de fila se ancla al botón, que está pegado al borde derecho: con
-     15 rem se salía de pantalla en un teléfono. */
-  .menu-panel-fila {
-    min-width: 13rem;
-  }
-}
-
-/* ——— Visor de apertura en el navegador (RF-25) ———
-   Una sola caja centrada para las cinco clases. No hay una regla por tipo
-   porque no hacía falta ninguna: lo que cambia entre una foto y un PDF es
-   cuánto alto pedir, no la disposición.
-
-   El alto se descuenta de la ventana y no del contenido: --alto-control es la
-   barra superior y el resto es el relleno de «body». Así una imagen vertical
-   cabe entera sin desplazar la página, que es lo que se pierde con un
-   max-height en porcentaje sobre un padre de altura automática. */
-.visor {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: var(--e-3);
-}
-
-.visor > * {
-  max-width: 100%;
-}
-
-.visor img,
-.visor video {
-  max-height: calc(100vh - var(--alto-control) - 4rem);
-  object-fit: contain;
-}
-
-.visor audio {
-  width: min(100%, 30rem);
-}
-
-/* El PDF y el texto no tienen tamaño propio que respetar: se les da la caja.
-   El fondo es el opaco del archivo por el mismo motivo que en los menús —un
-   documento translúcido dejaría ver la página por debajo—. */
-.visor object,
-.visor iframe {
-  width: 100%;
-  height: calc(100vh - var(--alto-control) - 4rem);
-  border: 1px solid var(--borde);
-  border-radius: var(--r1);
-  background: var(--panel);
-}
-
-/* RF-25 pide que el mensaje se presente SOLO. Reutiliza la caja centrada del
-   formulario de acceso: es la única disposición «una cosa en medio» que ya
-   existía, y añadir otra habría sido repetirla con otro nombre. */
-.no-compatible {
-  text-align: center;
-}
-
-.mensaje-no-compatible {
-  font-size: var(--t-titulo);
-  margin-bottom: var(--e-5);
-}
-
-/* ——— Pasar de foto sin volver al listado ———
-   Dos enlaces fijos a los lados, pensados PRIMERO PARA EL PULGAR: es como se
-   usa esta web y es lo que pidió el responsable.
-
-   «fixed» y no «absolute» dentro del visor, por un motivo concreto: una foto
-   vertical no llena el ancho y una horizontal no llena el alto, así que
-   anclarlas a la imagen las movería de sitio en cada archivo. Ancladas a la
-   ventana caen siempre bajo el mismo dedo, que es lo que permite pasar cinco
-   fotos seguidas sin mirar dónde hay que tocar.
-
-   El círculo es opaco —«--panel», el mismo de los menús— y no una
-   transparencia: debajo hay una foto cualquiera, y sobre un cielo claro un
-   gris translúcido desaparece. Es el único fondo opaco que el vocabulario ya
-   tenía, así que no se inventa un color nuevo. */
-.paso {
-  position: fixed;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
-
-  /* 3rem son 48 px, por encima del mínimo táctil de --tactil (44). La flecha
-     dibujada es pequeña; lo que se toca es todo el círculo. */
-  width: 3rem;
-  height: 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  font-size: var(--t-h1);
-  line-height: 1;
-  text-decoration: none;
-  color: var(--texto);
-  background: var(--panel);
-  border: 1px solid var(--borde);
-  border-radius: 50%;
-}
-
-/* «env()» y no un valor fijo: en un iPhone en horizontal, el recorte de la
-   pantalla se come justo estos dos bordes, y una flecha bajo el notch no se
-   puede tocar. Donde no hay recorte, env() vale 0 y queda el margen normal. */
-.paso-anterior {
-  left: calc(var(--e-2) + env(safe-area-inset-left, 0px));
-}
-
-.paso-siguiente {
-  right: calc(var(--e-2) + env(safe-area-inset-right, 0px));
-}
-
-/* ——— Mover: el navegador de carpetas (RF-17, ADR-0054) ———
-   Sustituye a un campo de texto donde se escribía la ruta a mano. Ese campo
-   no falló por estrecho ni por mal rotulado: falló porque pedía algo que el
-   usuario no puede saber. Esto no tiene nada que escribir.
-
-   Es la MISMA caja centrada del acceso y del borrado, solo que más ancha:
-   aquí dentro va una lista de carpetas, y a 22rem los nombres largos se
-   parten. No se inventa una disposición nueva. */
-.mover {
-  max-width: 34rem;
-  margin: var(--e-7) auto;
-}
-
-.mover h1 {
-  margin-bottom: var(--e-2);
-}
-
-.rotulo-destino {
-  margin-top: var(--e-5);
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--suave);
-}
-
-/* Las migas separan con «/» por CSS y no con un carácter escrito en la
-   plantilla: así el separador no se puede seleccionar ni copiar como si
-   formara parte del nombre de la carpeta. */
-.migas-mover a + a::before {
-  content: "/";
-  color: var(--suave);
-  margin: 0 var(--e-1);
-}
-
-.lista-carpetas {
-  list-style: none;
-  margin: var(--e-2) 0 0;
-  padding: 0;
-  border: 1px solid var(--borde);
-  border-radius: var(--r2);
-  /* Con muchas subcarpetas la lista empujaría los tres botones fuera de la
-     pantalla, y son justo lo que hay que poder alcanzar siempre. */
-  max-height: 45vh;
-  overflow-y: auto;
-}
-
-.lista-carpetas li + li {
-  border-top: 1px solid var(--borde);
-}
-
-/* Toda la fila es pulsable, no solo el texto: en el teléfono acertarle a un
-   nombre de carpeta de una línea es el mismo problema que ya resolvió el
-   botón de tres puntos. */
-.lista-carpetas a {
-  display: block;
-  padding: var(--e-3) var(--e-4);
-  min-height: var(--alto-control);
-  text-decoration: none;
-}
-
-.lista-carpetas .oculto {
-  display: block;
-  padding: var(--e-3) var(--e-4);
-}
-
-.acciones-mover {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--e-3);
-  margin-top: var(--e-5);
-}
-
-/* El menú de «Crear carpeta» se ancla a su botón, que aquí no está en una
-   barra sino en una fila de acciones. */
-.acciones-mover .menu {
-  position: relative;
-}
-
-.acciones-mover .menu-panel {
-  right: auto;
-  left: 0;
-}
-
-/* El aviso de operación completada. El responsable lo pidió «minimalista
-   pero que se note»: .mensaje ya es la pastilla verde tenue del listado, así
-   que solo se sube el borde y el texto al verde sólido que /estado usa para
-   los veredictos correctos. Sin animación — aparece y se queda hasta que se
-   cierra la vista. */
-.mensaje.exito {
-  border-color: var(--ok-color);
-  color: var(--ok-color);
-  font-weight: 600;
-}
-
-/* ——— Confirmar borrado: centrado y jerarquía (P-2, 06/08/2026) ———
-   El responsable marcó sobre una captura qué debía centrarse. Lo que había
-   era una columna alineada a la izquierda donde el nombre del archivo —el
-   único dato que hay que leer antes de destruir algo, y que RF-18 obliga a
-   mostrar— pesaba lo mismo que el texto de alrededor.
-
-   No se toca el bloque rojo: ahí el texto va alineado a la izquierda a
-   propósito, porque son tres líneas de prosa y centrarlas las hace más
-   lentas de leer — y esa es justo la parte que no conviene leer deprisa. */
-.rotulo-borrado {
-  text-align: center;
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--suave);
-  margin-bottom: var(--e-2);
-}
-
-.borrado .ruta-destacada {
-  text-align: center;
-  margin-top: 0;
-}
-
-.cancelar {
-  text-align: center;
-  margin-top: var(--e-4);
-}
-
-/* El botón destructivo ocupa el ancho de la caja, como los del resto de la
-   interfaz. Antes quedaba a su ancho natural y flotaba a la izquierda bajo
-   un bloque que sí ocupaba todo: parecía de otra página. */
-.borrado .destructivo {
-  width: 100%;
-}
-
-/* ——— Encabezados que ordenan (P-3, 06/08/2026) ———
-   El <th> ya trae su color y su tipografía del bloque de tabla; el enlace
-   solo tiene que heredarlos en vez de pintarse de color de vínculo, que es
-   el error que se cometió con «Mover…» y que el responsable cazó en una
-   captura. Aquí el enlace ocupa toda la celda para que el objetivo táctil
-   sea el encabezado entero y no las siete letras de «Tamaño». */
-a.orden {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-a.orden:hover {
-  color: inherit;
-  text-decoration: underline;
-}
-
-/* La columna activa se marca con peso, no con un icono de flecha: no hay
-   alternancia de sentido que señalar —cada columna tiene una sola
-   dirección—, así que una flecha solo diría lo que el propio nombre de la
-   columna ya dice. */
-a.orden-activo {
-  color: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-}
-
-/* ——— Panel de seguridad ———
-   TRES TABLAS ANCHAS EN UNA PAGINA QUE SE MIRA DESDE EL MOVIL. La regla base
-   «.datos { table-layout: fixed }» reparte con «.rotulo { width: 34% }», que
-   en una tabla de dos columnas es correcto y en una de siete deja las otras
-   seis apretadas contra el borde. Por eso estas dos tablas fijan su propio
-   reparto en lugar de heredarlo: es la misma leccion del descuadre del
-   05/08/2026 —el reparto se decide donde esta el problema, no por casualidad.
-
-   «main» ya tiene overflow-x auto, asi que las tres comparten UNA barra de
-   desplazamiento y no hay que anadir contenedores propios. */
-.tabla-origenes .rotulo,
-.tabla-cronologia .rotulo {
-  width: auto;
-}
-
-/* EL SOLAPAMIENTO, y la regla es GENERAL a proposito.
-   Reportado sobre captura el 14/08/2026: una IPv6 se pintaba ENCIMA de
-   «Red local» en la tabla de origenes y encima de «GET» en la cronologia.
-
-   La causa no es de esas tablas: «.datos» usa table-layout fixed, que NO
-   ensancha una columna para que quepa su contenido, y una IPv6 no ofrece
-   ningun punto de corte -los «:» no rompen linea y tampoco los digitos-, asi
-   que el texto desborda la celda y se pinta sobre la vecina.
-
-   Por eso la regla va sobre TODA celda de «.datos» y no sobre la columna que
-   fallo: el mismo desbordamiento lo produce cualquier cadena larga sin
-   espacios, y este NAS esta lleno de ellas -rutas, nombres de archivo,
-   User-Agent, huellas-. Arreglar solo la columna de la IP habria dejado el
-   defecto esperando en las otras seis.
-
-   «anywhere» y no «break-word»: el primero permite ademas que la celda
-   ENCOJA por debajo de su palabra mas larga, que es lo que necesita un
-   reparto fijo; con break-word la columna conserva un ancho minimo igual al
-   token mas largo y el desbordamiento vuelve en pantallas estrechas. */
-.datos th,
-.datos td {
-  overflow-wrap: anywhere;
-}
-
-/* UN ENCABEZADO NO SE PARTE NUNCA, y la regla de arriba no debia alcanzarlo.
-   Reportado sobre captura el 24/08/2026: los encabezados se leian «PAQ/UET/ES»,
-   «REC/HAZ/OS», «ESTAD/O», «VECE/S».
-
-   La distincion es la que faltaba: «anywhere» existe para el CONTENIDO, que es
-   impredecible —una IPv6, una ruta de noventa caracteres, un User-Agent— y del
-   que mas vale que se parta a que se salga. Un encabezado es lo contrario:
-   media docena de palabras cortas, fijas y escritas en esta misma casa. No
-   puede sorprender a nadie, y partido no se lee.
-
-   Ademas es lo que da suelo a las columnas de cifras: sin esto su minimo era
-   UNA letra, asi que el reparto automatico las estrujaba hasta ahi mientras
-   las de texto se quedaban con todo. Con el encabezado entero como suelo, cada
-   columna pide al menos lo que hace falta para saber que es. */
-.datos th {
-  overflow-wrap: normal;
-  word-break: keep-all;
-  white-space: nowrap;
-}
-
-/* ——— LAS TABLAS ANCHAS NO REPARTEN A CIEGAS ———
-   Reportado sobre captura el 24/08/2026: el enlace «Bloquear...» se pintaba
-   ENCIMA de las pastillas de la columna vecina.
-
-   LA CAUSA ES LA MISMA DE SIEMPRE, y van tres veces por tres caminos
-   distintos: «table-layout: fixed» reparte el ancho ANTES de mirar lo que hay
-   dentro, asi que a una columna le puede tocar menos de lo que su contenido
-   necesita. Cuando ese contenido SE PUEDE partir, «overflow-wrap: anywhere»
-   lo salva —esa es la regla de arriba—. Cuando NO se puede, no hay nada que
-   partir y el contenido se sale y se pinta sobre la celda de al lado:
-
-     14/08  una IPv6, que no ofrece puntos de corte     -> se salio
-     24/08  la tabla de evidencia dentro de una celda   -> se estrujo
-     24/08  «.pastilla», que lleva white-space: nowrap  -> se salio
-
-   Parchear el tercero seria esperar al cuarto. El reparto fijo se puso para
-   que LAS TRES TABLAS DE /estado se alineen entre si —dos columnas, rotulo y
-   valor, mismo ancho en las tres— y para eso sigue siendo correcto. Lo que no
-   puede es gobernar una tabla de NUEVE columnas con contenido heterogeneo:
-   una IPv6, un nombre de operador, cifras, pastillas y un enlace. Ahi el
-   reparto fijo no es una decision de diseno, es una apuesta.
-
-   «.tabla-ancha» es la marca de «aqui manda el contenido»: el navegador mide
-   lo que hay y le da a cada columna al menos lo que necesita. Nada se sale
-   porque a nadie le falta sitio.
-
-   SE PROBO A REBAJAR «anywhere» A «break-word» AQUI, Y SE RETIRA POR LO QUE
-   HIZO. El argumento parecia bueno —«break-word» conserva como minimo la
-   palabra mas larga, asi que nada se estruja— y el resultado fue que la tabla
-   DESBORDABA SU CONTENEDOR: una IPv6 son 38 caracteres sin un solo punto de
-   corte —los «:» no rompen linea—, asi que ese minimo era ya una columna de
-   250 px, y sumados los ocho la tabla no cabia y se salia por la derecha.
-   Reportado sobre captura el 24/08/2026.
-
-   Con «anywhere» heredado de la regla de arriba NO vuelve el estrujamiento, y
-   el motivo es que la causa nunca fue esa propiedad: era el reparto FIJO, que
-   da partes iguales sin mirar el contenido. El reparto automatico distribuye
-   PROPORCIONALMENTE a lo que cada columna necesita, asi que la ruta —que
-   necesita mucho— recibe mucho. «anywhere» solo baja el suelo, y ese suelo es
-   justo lo que permite que la tabla quepa siempre en su ancho. */
-.tabla-ancha {
-  table-layout: auto;
-  /* No se sale de donde este, sea «main» o cualquier caja futura. */
-  max-width: 100%;
-}
-
-/* Una pastilla nunca es mas ancha que su celda. Es la red de seguridad del
-   caso que no se puede prever: lleva «nowrap» a proposito —«SESION CADUCADA»
-   partido en dos lineas dentro de la pildora no se lee— y con esto, si de
-   verdad no cabe, envuelve en vez de invadir a la vecina. Perder una linea de
-   alto es reversible; pintarse encima de otro dato, no. */
-.datos .pastilla {
-  max-width: 100%;
-}
-
-/* ——— LA COLUMNA DE UNA ACCION PIDE LO MINIMO ———
-   «Bloquear...», «Soltar» y «Retirar» son botones de ancho conocido y fijo:
-   no compiten por el sitio, lo necesitan y punto. «width: 1%» con reparto
-   automatico es exactamente eso —«dame lo minimo que quepa»—, y todo lo que
-   sobra se lo quedan las columnas que SI crecen con su contenido.
-   Sin esto, con reparto automatico la columna de la accion se llevaria una
-   novena parte del ancho para enseñar una palabra.
-
-   SE LLAMA «col-accion» Y NO «accion», Y ESE FUE UN FALLO REAL: «.accion» ya
-   existia para la accion recomendada de un indicador en /estado —bloque propio,
-   letra menor y una flecha «-> » de ::before—. Reutilizar el nombre le colgo esa
-   flecha a los botones de las tablas, visible en la captura del 24/08/2026. Dos
-   cosas distintas no pueden compartir clase por parecerse de nombre.
-
-   VA CON EL ELEMENTO DELANTE —«th.accion» y no «.accion»— por especificidad y
-   no por gusto: «.datos th:last-child» ya reclama «width: 7rem» para la ultima
-   columna y pesa mas que dos clases sueltas, asi que sin el «th» esta regla se
-   escribe y no se aplica. Es el fallo silencioso de CSS: nada avisa. */
-.datos th.col-accion,
-.datos td.col-accion {
-  width: 1%;
-  white-space: nowrap;
-  text-align: right;
-}
-
-/* ——— LA EVIDENCIA, EN SU PROPIA FILA Y A TODO EL ANCHO ———
-   Reportado sobre captura el 24/08/2026: la tabla de evidencia se leia EN
-   VERTICAL, una letra por linea.
-
-   La causa era la suma de dos reglas correctas por separado. «.datos» reparte
-   con «table-layout: fixed», que divide el ancho DISPONIBLE entre sus
-   columnas; y estando la tabla DENTRO de una celda, ese ancho no era el de la
-   pagina sino el de una novena parte de ella. Cinco columnas a partes iguales
-   dejaban «Peticion» con el ancho de dos caracteres, y como «.datos td» lleva
-   «overflow-wrap: anywhere» —que permite encoger POR DEBAJO de la palabra mas
-   larga, ver arriba— la ruta no desbordaba: se estrujaba.
-
-   Es el solapamiento del 14/08 visto del otro lado: alli el reparto fijo hacia
-   que el texto SE SALIERA, aqui que se ENCOGIERA hasta lo ilegible.
-
-   SE ARREGLA MOVIENDOLA, NO ESTILANDOLA. La primera version le puso una barra
-   horizontal propia y el responsable la rechazo con razon: «no me resulta tan
-   practico mover una barrita». Una barra no arregla el problema, lo administra
-   — y encima obliga a manipular para leer lo que deberia verse. El problema no
-   era la tabla, era el SITIO: una fila propia con «colspan» le da el ancho
-   entero, que es justo lo que le faltaba. Sin barras y sin recortar un dato.
-
-   El numero del colspan sale de vistaSeguridad.ColumnasDeOrigenes y no de la
-   plantilla: cuatro columnas de esa tabla son condicionales. */
-.fila-evidencia > td {
-  /* Se pega a su fila: son el mismo origen, no dos entradas. El borde de
-     separacion lo pone la fila de evidencia abajo, para que el bloque entero
-     se lea como uno. */
-  padding-top: 0;
-  border-top: 0;
-}
-
-/* El reparto automatico se lo da «.tabla-ancha», que es la regla general.
-   Aqui solo queda lo que es suyo: pegarse a su propio resumen. */
-.tabla-evidencia {
-  margin: var(--e-2) 0 0;
-}
-
-/* La ruta conserva el «anywhere» heredado, y aqui SI es una defensa y no la
-   causa: con el ancho entero solo actua sobre una ruta extraordinariamente
-   larga, y entonces envuelve en dos lineas en vez de desbordar sobre la
-   columna vecina. */
-
-/* El agente ocupa lo que sobre y se lee en pequeno: identifica al cliente,
-   no es el dato principal de la fila. */
-.tabla-cronologia .agente {
-  font-size: var(--t-menor);
-  color: var(--suave);
-}
-
-/* Las filas NO se tinen de fondo, igual que en /estado (ver el comentario de
-   tr.v-atencion mas arriba): solo se marca el rotulo. Un fondo de color por
-   fila en una tabla de 200 filas convierte la pagina en un semaforo ilegible,
-   y ademas el color solo no lo lee quien no distingue esos colores — por eso
-   el motivo va SIEMPRE escrito con palabras en su propia columna. */
-tr.g-aviso .rotulo {
-  font-weight: 600;
-  color: var(--aviso-color);
-}
-
-tr.g-atencion .rotulo {
-  font-weight: 600;
-  color: var(--fallo-color);
-}
-
-/* g-rutina EXISTE Y NO PINTA NADA, y esta escrito a proposito.
-   Origen.Destacar es cierto para TODO origen de Internet, incluidos los de
-   gravedad rutina, asi que la plantilla emite esta clase de verdad. Antes no
-   habia ninguna regla para ella: una fila «resaltada» que no se resaltaba, y
-   nada lo decia. Un simple «sin sesion» desde fuera es un hecho que merece
-   estar en la tabla, no una alarma que merezca color. */
-tr.g-rutina .rotulo {
-  font-weight: 600;
-}
-
-/* ——— Filtros ———
-   Rejilla que se pliega sola: en el movil cae a una columna sin consulta de
-   medios, porque auto-fit + minmax ya hace ese trabajo. */
-.filtros {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: var(--e-2) var(--e-3);
-  align-items: end;
-  margin: var(--e-2) 0;
-}
-
-/* Cada rotulo con su control en una celda de la rejilla. Antes eran hermanos
-   sueltos y la rejilla podia separarlos al plegarse: el rotulo en una columna
-   y su desplegable en la de al lado. */
-.filtros > div {
-  min-width: 0;
-}
-
-.filtros label {
-  display: block;
-  font-size: var(--t-rotulo);
-  color: var(--suave);
-  margin-bottom: var(--e-1);
-}
-
-/* Los campos se dejan NATIVOS —sin fondo, borde ni radio propios— por la
-   regla de la v1.39.0: en WebKit basta cualquiera de los tres para apagar el
-   aspecto nativo del control y devolver un rectangulo gris. Solo se les da
-   ancho, que es lo unico que la rejilla necesita. */
-.filtros select {
-  width: 100%;
-  font: inherit;
-}
-
-.acciones-filtro {
-  display: flex;
-  gap: var(--e-2);
-  align-items: end;
-  margin: var(--e-2) 0 0;
-}
-
-/* EL BOTON OCUPA SU CELDA ENTERA, y es lo que cierra la fila de filtros.
-   Reportado sobre captura el 19/08/2026: la rejilla SI llegaba al borde —los
-   cuatro tramos de «auto-fit» se reparten el ancho completo—, pero el boton se
-   quedaba en su ancho natural pegado a la izquierda del suyo, asi que la fila
-   parecia terminar a media pagina mientras la tabla que gobierna llegaba hasta
-   el final. El hueco no era de la rejilla sino de lo que habia dentro.
-
-   Ocupando la celda, los cuatro controles forman una banda del mismo ancho que
-   la tabla. Y en el movil, donde la rejilla cae a una columna, el boton queda
-   ademas a ancho completo, que es lo que quiere un objetivo tactil. */
-.acciones-filtro > button {
-  width: 100%;
-}
-
-/* ——— Senales ———
-   Son INFERENCIAS, no hechos, y se pintan distinto de las pastillas de motivo
-   a proposito: una pastilla dice lo que paso, esto dice lo que alguien
-   sospecha. El <details> guarda dentro con que se puede confundir, que es lo
-   que impide que la sospecha se lea como un veredicto. */
-.senal {
-  display: block;
-  margin-top: var(--e-2);
-  font-size: var(--t-menor);
-}
-
-.senal > summary {
-  cursor: pointer;
-  color: var(--suave);
-}
-
-/* SOLO LAS SENALES QUE ALARMAN LLEVAN COLOR. La de «software que aqui no
-   existe» saltaba con UNA ruta ajena y su propio texto dice que no va dirigida
-   a este nodo: una alerta que se desmiente sola gasta la credibilidad de las
-   otras dos. Quien decide cual es cual es Senal.Destacar, no esta hoja. */
-.senal-aviso > summary {
-  color: var(--aviso-color);
-  font-weight: 600;
-}
-
-.senal > summary::before {
-  content: "? ";
-}
-
-/* ——— Cronologia plegada ———
-   Es el bloque mas largo de la pagina y el que menos se mira: la tabla de
-   origenes ya dice agregado lo que esta dice suelto. Se pliega, no se retira,
-   porque el orden exacto y la ruta de cada suceso solo estan aqui. */
-.cronologia > summary {
-  cursor: pointer;
-  color: var(--suave);
-  margin-bottom: var(--e-2);
-}
-
-/* ——— Columna de operador del panel de seguridad ———
-   El nombre del operador es lo que hace interpretable una direccion, asi que
-   manda; el numero de AS va debajo y en pequeno porque es el identificador
-   estable -util para buscarlo fuera- pero no lo que se lee de un vistazo. */
-.tabla-origenes .operador .asn {
-  display: block;
-  font-size: var(--t-menor);
-  color: var(--suave);
-}
-
-.tabla-origenes .operador .suave {
-  color: var(--suave);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
-   LA CONSOLA (ADR-0075) — rail, pestañas móviles, panel de detalle, gráfica.
+   LA CONSOLA — ADR-0075.
    ═══════════════════════════════════════════════════════════════════════
 
-   Cinco páginas comparten este cromo: Resumen, Archivos, Estado, Seguridad y
-   Cuentas. Las demás —acceso, visor, mover, borrar, baja, bloquear— NO lo
-   llevan a propósito: son pantallas de un solo gesto (confirmar, ver una
-   foto, elegir un destino) y el rail sería ruido alrededor de una tarea que
-   ya está centrada en su propia tarjeta. Siguen con «.cabecera-superior», sin
-   tocar, y heredan la paleta nueva por los mismos tokens.
+   ESTE ARCHIVO ES LA MAQUETA 12 PORTADA, NO UNA INTERPRETACIÓN DE ELLA.
+   El responsable la aprobó tras doce iteraciones probadas en su propio
+   navegador, y la primera entrega falló justamente por no portarla: se
+   trajeron los colores y el rail, y se dejaron las tablas y la tipografía
+   viejas debajo. Lo que sigue es el bloque de la maqueta con TRES cambios,
+   y ninguno más:
 
-   UNA SOLA PLANTILLA PARA LAS DOS COMPOSICIONES. No hay una hoja de estilos
-   de escritorio y otra de móvil: es una «container query» sobre «.marco», así
-   que el mismo HTML se lee distinto según el ANCHO DE SU CONTENEDOR y no el
-   de la ventana — el requisito exacto de que el diseño no puede ser dos
-   cosas distintas que hay que mantener sincronizadas. */
+     1. Las cinco vistas ya no se conmutan con radios ocultos —cada página
+        del servidor pinta la suya—, así que los selectores «:has(#v-…)» se
+        sustituyen por la clase que escribe el servidor.
+     2. El marco ocupa la ventana (100dvh) en vez de los 800 px del
+        artefacto, y pierde el borde y las esquinas del recuadro.
+     3. La barra de órdenes se ve TAMBIÉN en el teléfono. Es la única
+        desviación deliberada: en la maqueta quedaba oculta bajo 880 px, y
+        con el 69 % del uso medido en móvil eso dejaría este NAS sin poder
+        subir un archivo desde el teléfono.
 
-/* El body deja de acotar a 68ch y de centrar: eso es correcto para prosa y
-   equivocado para un panel con rail. «:has(.marco)» distingue las cinco
-   páginas nuevas sin necesitar una clase en <body>, que html/template no
-   puede componer sin tocar las nueve plantillas para nada. */
-body:has(.marco) {
-  max-width: none;
-  margin: 0;
-  padding: 0;
+   Si algo aquí no se parece a la maqueta, es un defecto — no una decisión.
+
+   # LAS TIPOGRAFÍAS VAN ALOJADAS AQUÍ, Y NO ES OPCIONAL
+
+   La maqueta las pedía a fonts.googleapis.com. La CSP de este servidor es
+   «default-src 'self'» (ADR-0060, servidor.go: cspBase), así que una
+   petición a Google se bloquea y la página cae a la fuente del sistema —
+   que es exactamente la diferencia que el responsable vio en su captura.
+   Los seis archivos woff2 viven en /estatico/ y se sirven desde el propio
+   binario. «unicode-range» hace que el navegador baje SOLO el subconjunto
+   que la página necesita: para una página en español, latin — unos 50 KB —
+   y nunca latin-ext, salvo que un nombre de archivo lo exija.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Archivo — variable, 400..700 en un solo archivo por subconjunto. */
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400 700;font-display:swap;
+  src:url(/estatico/archivo-latinext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400 700;font-display:swap;
+  src:url(/estatico/archivo-latin.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+
+/* DM Mono — dos pesos, dos archivos cada uno. */
+@font-face{font-family:'DM Mono';font-style:normal;font-weight:400;font-display:swap;
+  src:url(/estatico/dmmono400-latinext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'DM Mono';font-style:normal;font-weight:400;font-display:swap;
+  src:url(/estatico/dmmono400-latin.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'DM Mono';font-style:normal;font-weight:500;font-display:swap;
+  src:url(/estatico/dmmono500-latinext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'DM Mono';font-style:normal;font-weight:500;font-display:swap;
+  src:url(/estatico/dmmono500-latin.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+
+/* ── Vocabulario ── los mismos valores de la maqueta, con la paleta HIELO
+   resuelta en :root: aquí no hay selector de paletas que conmutar. */
+:root{
+  --e0:.25rem; --e1:.5rem; --e2:.75rem; --e3:1rem; --e4:1.5rem; --e5:2rem;
+  --r1:3px; --r2:4px; --r3:6px;
+  --rail:236px; --det:308px;
+
+  --n0:#000; --n1:#08090a; --n2:#0e0f11; --n3:#16181b; --n4:#21242a; --n5:#30343c;
+  --tx:#e9ecf1; --tx2:#868d99; --tx3:#5b616b;
+  --ac:#b9cdea; --ac2:#d9e5f6; --acT:#b9cdea14; --acB:#b9cdea40;
+  --ok:#3fb950; --av:#d29922; --fa:#f85149; --nada:#6b7280;
 }
 
-.marco {
-  display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr);
-  min-height: 100vh;
-  container-type: inline-size;
-  container-name: consola;
+*{box-sizing:border-box;}
+body{margin:0;background:var(--n0);color:var(--tx);
+  font-family:Archivo,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+.mono{font-family:"DM Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+a{color:inherit;text-decoration:none;}
+img,svg{max-width:100%;}
+
+/* Barras de desplazamiento discretas, con los tokens de la paleta */
+*{scrollbar-width:thin;scrollbar-color:var(--n5) transparent;}
+::-webkit-scrollbar{width:9px;height:9px;}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--n5);border-radius:99px;
+  border:2px solid transparent;background-clip:content-box;}
+::-webkit-scrollbar-thumb:hover{background:var(--tx3);background-clip:content-box;}
+
+/* El interruptor del filtro, fuera de la vista — el MISMO de la maqueta. */
+.ctl{position:absolute;opacity:0;width:0;height:0;pointer-events:none;}
+
+/* ═════ APP ═════ */
+.app{container-type:inline-size;background:var(--n0);overflow:hidden;}
+.marco{display:grid;grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top" "cuerpo" "tabs";height:100dvh;}
+@container (min-width:880px){
+  .marco{grid-template-columns:var(--rail) minmax(0,1fr) var(--det);
+    grid-template-rows:auto minmax(0,1fr) auto;
+    grid-template-areas:"rail top top" "rail cuerpo detalle" "rail estado estado";}
+}
+.rail{grid-area:rail;} .top{grid-area:top;} .cuerpo{grid-area:cuerpo;}
+.detalle{grid-area:detalle;} .tabs{grid-area:tabs;} .estado{grid-area:estado;}
+.marco > *{min-width:0;min-height:0;}
+
+/* ── RAIL ── */
+.rail{display:none;background:var(--n1);border-right:1px solid var(--n4);
+  flex-direction:column;overflow-y:auto;padding:var(--e2) var(--e1);}
+@container (min-width:880px){.rail{display:flex;}}
+.marca{display:flex;align-items:center;gap:var(--e2);padding:var(--e1) var(--e2) var(--e2);}
+.marca .g{width:28px;height:28px;flex:0 0 28px;border-radius:var(--r2);background:var(--ac);
+  display:grid;place-items:center;font-weight:700;font-size:.76rem;color:#000;}
+.marca .nm{display:flex;flex-direction:column;line-height:1.15;min-width:0;}
+.marca .nm b{font-size:.87rem;font-weight:700;letter-spacing:-.01em;}
+.marca .nm span{font-size:.63rem;color:var(--tx3);display:flex;align-items:center;gap:4px;}
+.marca .nm span i{width:5px;height:5px;background:var(--ok);display:block;}
+.gr{display:flex;flex-direction:column;gap:1px;margin-bottom:var(--e2);}
+.gr .cab{font-size:.59rem;letter-spacing:.15em;text-transform:uppercase;color:var(--tx3);
+  font-weight:600;padding:var(--e2) var(--e2) var(--e0);}
+.ni{display:flex;align-items:center;gap:var(--e2);padding:7px var(--e2);border-radius:var(--r1);
+  color:var(--tx2);font-size:.82rem;cursor:pointer;width:100%;text-align:left;
+  border-left:2px solid transparent;}
+.ni:hover{background:var(--n3);color:var(--tx);}
+.ni .ic{width:16px;height:16px;flex:0 0 16px;opacity:.9;}
+.ni .ct{margin-left:auto;font-family:"DM Mono",monospace;font-size:.65rem;color:var(--tx3);}
+.ni .pt{margin-left:auto;width:6px;height:6px;background:var(--av);flex:0 0 6px;}
+.disco{margin-top:auto;padding:var(--e2);display:flex;flex-direction:column;gap:6px;
+  border-top:1px solid var(--n4);}
+.disco .l1{display:flex;justify-content:space-between;align-items:baseline;}
+.disco .l1 b{font-size:.71rem;font-weight:600;}
+.disco .l1 span{font-size:.65rem;color:var(--tx3);font-family:"DM Mono",monospace;}
+.seg{display:flex;height:6px;overflow:hidden;background:var(--n3);gap:1px;}
+.seg i{display:block;height:100%;}
+.disco .ley{display:flex;flex-wrap:wrap;gap:var(--e1) var(--e2);font-size:.62rem;color:var(--tx3);}
+.disco .ley span{display:flex;align-items:center;gap:4px;}
+.disco .ley u{width:6px;height:6px;display:block;text-decoration:none;}
+
+/* ── TOP ── */
+.top{background:var(--n1);border-bottom:1px solid var(--n4);
+  display:flex;flex-direction:column;gap:var(--e2);padding:var(--e2);}
+@container (min-width:880px){.top{padding:var(--e2) var(--e3);}}
+.f1{display:flex;align-items:center;gap:var(--e2);}
+.mmarca{display:flex;align-items:center;gap:var(--e1);}
+@container (min-width:880px){.mmarca{display:none;}}
+.mmarca .g{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r2);background:var(--ac);
+  display:grid;place-items:center;font-weight:700;font-size:.7rem;color:#000;}
+.miga{display:none;align-items:center;gap:6px;font-size:.8rem;color:var(--tx3);flex:0 0 auto;}
+@container (min-width:880px){.miga{display:flex;}}
+.miga b{color:var(--tx);font-weight:600;}
+.miga svg{opacity:.4;flex:0 0 auto;}
+.busc{flex:1;min-width:0;display:flex;align-items:center;gap:var(--e1);background:var(--n2);
+  border:1px solid var(--n4);border-radius:var(--r2);padding:6px var(--e2);}
+.busc:focus-within{border-color:var(--acB);background:var(--n3);}
+.busc svg{flex:0 0 14px;opacity:.5;}
+.busc input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--tx);
+  font-family:inherit;font-size:.8rem;}
+.busc input::placeholder{color:var(--tx3);}
+.usr{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r2);background:var(--n4);
+  display:grid;place-items:center;color:var(--tx);font-weight:700;font-size:.68rem;}
+.ordenes{display:none;align-items:center;gap:var(--e0);padding-top:var(--e1);border-top:1px solid var(--n4);}
+/* La barra de ordenes NO es global: su contenido lo decide el modulo, y en
+   Resumen y Estado no hay ninguna orden real que ofrecer, asi que la barra
+   entera desaparece. Un control que no puede cambiar nada es ruido con
+   contorno. Conmuta por el mismo :has() que ya conmuta las vistas. */
+.ordenes{display:flex;overflow-x:auto;scrollbar-width:none;}
+.ordenes::-webkit-scrollbar{display:none;}
+.ordenes:empty{display:none;}
+.od{display:inline-flex;align-items:center;gap:6px;padding:5px var(--e2);border-radius:var(--r1);
+  background:none;border:0;color:var(--tx2);font-family:inherit;font-size:.77rem;cursor:pointer;flex:0 0 auto;}
+.od:hover{background:var(--n3);color:var(--tx);}
+.od svg{opacity:.7;}
+/* Filtros bajo demanda. Solo Seguridad tiene volumen que filtrar (~1 456
+   eventos en 11 dias); Cuentas son 3 filas y Estado son indicadores fijos:
+   ahi el filtro no puede cambiar lo que se ve. Y aun en Seguridad la fila
+   arranca plegada -- se abre con «Filtrar» y lo que este ACTIVO se queda
+   siempre visible como pastilla retirable, para que plegado nunca
+   signifique oculto. */
+.chips{display:none;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px;
+  padding-top:var(--e1);}
+body:has(#f-abre:checked) .chips{display:flex;}
+.fbtn{display:inline-flex;align-items:center;gap:5px;
+  flex:0 0 auto;padding:5px var(--e2);border-radius:var(--r1);background:var(--n2);
+  border:1px solid var(--n4);color:var(--tx2);font-family:inherit;font-size:.74rem;
+  cursor:pointer;}
+body:has(#f-abre:checked) .fbtn{background:var(--acT);border-color:var(--acB);color:var(--ac2);}
+body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
+.cv{transition:transform .12s;}
+.rango{margin-left:auto;color:var(--tx3);font-size:.72rem;font-variant-numeric:tabular-nums;}
+.chips::-webkit-scrollbar{display:none;}
+
+/* ── CUERPO ── */
+.cuerpo{overflow-y:auto;padding:var(--e3) var(--e2) var(--e4);}
+@container (min-width:880px){.cuerpo{padding:var(--e3);}}
+.vw{display:none;flex-direction:column;gap:var(--e4);}
+.vw{display:flex;}
+
+/* Elemento de navegación activo, en rail y en pestañas */
+.ni-activo{background:var(--acT);color:var(--ac2);font-weight:600;border-left-color:var(--ac);}
+.ni-activo .ct{color:var(--ac2);}
+.tb-activo{color:var(--ac2);}
+
+.tv{display:flex;align-items:baseline;gap:var(--e2);flex-wrap:wrap;}
+.tv h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;}
+@container (min-width:880px){.tv h1{font-size:1.45rem;}}
+.tv .sb{font-size:.73rem;color:var(--tx3);font-family:"DM Mono",monospace;}
+
+.sc{display:flex;flex-direction:column;gap:var(--e2);}
+.sch{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);flex-wrap:wrap;}
+.sch h2{margin:0;font-size:.69rem;letter-spacing:.14em;text-transform:uppercase;color:var(--tx2);font-weight:600;}
+.sch .ms{font-size:.7rem;color:var(--tx3);}
+
+/* Escalera */
+.esc{display:grid;grid-template-columns:1fr;gap:var(--e1);}
+@container (min-width:620px){.esc{grid-template-columns:repeat(3,1fr);gap:var(--e2);}}
+.pl{position:relative;overflow:hidden;background:var(--n2);border:1px solid var(--n4);
+  border-radius:var(--r2);padding:var(--e2) var(--e3);display:flex;align-items:center;gap:var(--e3);min-width:0;}
+@container (min-width:620px){.pl{flex-direction:column;align-items:flex-start;gap:2px;padding:var(--e3);}}
+.pl::after{content:"";position:absolute;inset:auto auto 0 0;width:34px;height:2px;background:var(--ac);}
+.pl .n{font-size:1.5rem;font-weight:500;line-height:1;color:var(--tx);}
+@container (min-width:620px){.pl .n{font-size:1.95rem;}}
+.pl .t{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.pl .q{font-size:.71rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;}
+.pl .d{font-size:.68rem;color:var(--tx3);line-height:1.35;}
+
+/* Cifras */
+.cif{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--e1);}
+@container (min-width:620px){.cif{grid-template-columns:repeat(4,1fr);gap:var(--e2);}}
+.cf{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
+  padding:var(--e2) var(--e3);display:flex;flex-direction:column;gap:1px;min-width:0;}
+.cf .n{font-size:1.32rem;font-weight:500;line-height:1.1;}
+@container (min-width:620px){.cf .n{font-size:1.6rem;}}
+.cf .r{font-size:.61rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
+.cf.mk .n{color:var(--av);}
+
+/* Gráfico */
+.grc{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);padding:var(--e3);}
+.grl{display:flex;align-items:flex-end;gap:3px;height:88px;}
+@container (min-width:620px){.grl{height:112px;gap:5px;}}
+.gre{display:flex;gap:3px;margin-top:6px;font-size:.56rem;color:var(--tx3);}
+@container (min-width:620px){.gre{gap:5px;font-size:.62rem;}}
+.gre span{flex:1;text-align:center;min-width:0;}
+
+/* ═══ TABLAS ═══
+   La cabecera de columnas y la fila en rejilla SOLO aparecen a partir de
+   1100 px de CONTENEDOR. Por debajo se quedan las tarjetas, que se leen
+   bien. Ese es el arreglo de fondo del traslape: la columna de señales
+   nunca puede ser más estrecha que su pastilla más larga, porque a esos
+   anchos la rejilla ni siquiera existe. */
+.th{display:none;}
+.fls{display:flex;flex-direction:column;gap:2px;}
+.gh{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);
+  margin-top:var(--e2);padding:var(--e1) var(--e2) 5px;border-bottom:1px solid var(--n4);
+  font-size:.62rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
+.gh:first-child{margin-top:0;}
+.notas{margin-top:auto;padding-top:var(--e4);display:flex;flex-direction:column;gap:3px;
+  max-width:56ch;font-size:.63rem;line-height:1.55;color:var(--tx3);}
+.notas .nt{display:block;}
+.notas .rt{font-size:.58rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);
+  opacity:.7;margin-bottom:1px;}
+.notas b{color:var(--tx2);font-weight:600;}
+.fl{display:grid;grid-template-columns:1fr;gap:6px;padding:var(--e2);border-radius:var(--r1);
+  background:var(--n2);border:1px solid transparent;cursor:pointer;min-width:0;}
+.fl:hover{background:var(--n3);}
+.fl[aria-selected=true],.fl.sel{background:var(--acT);border-color:var(--acB);}
+.fl > *{min-width:0;}
+.cl{display:flex;align-items:baseline;gap:var(--e1);min-width:0;}
+.cl>.et{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);
+  font-weight:600;flex:0 0 58px;}
+.cl .ip{font-family:"DM Mono",monospace;font-size:.74rem;word-break:break-all;line-height:1.3;}
+.cl .op{font-size:.7rem;color:var(--tx2);}
+.cl .ct2{font-family:"DM Mono",monospace;font-size:.75rem;line-height:1.5;
+  flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:break-word;}
+.cl .ct2 small{color:var(--tx3);font-size:.64rem;}
+
+@container (min-width:1100px){
+  .th{display:grid;gap:var(--e2);padding:0 var(--e2) 5px;border-bottom:1px solid var(--n4);}
+  .th > *{min-width:0;}
+  .th span,.th button,.th a{color:var(--tx3);font-family:inherit;font-size:.6rem;letter-spacing:.1em;
+    text-transform:uppercase;font-weight:600;background:none;border:0;padding:0;text-align:left;
+    display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
+  .th button:hover,.th a:hover{color:var(--tx);}
+  .th button.act,.th a.act{color:var(--ac2);}
+  .fl{align-items:start;gap:var(--e2);padding:9px var(--e2);background:transparent;
+    border-radius:0;border-bottom:1px solid var(--n4);border-left:2px solid transparent;}
+  .fl:hover{background:var(--n2);}
+  .fl[aria-selected=true],.fl.sel{border-left-color:var(--ac);}
+  .cl>.et{display:none;}
+  .cl{display:block;}
+  /* Rejillas por tipo de tabla */
+  .t-seg .th,.t-seg .fl{grid-template-columns:minmax(0,2.2fr) minmax(0,1.4fr) 76px minmax(128px,1.5fr);}
+  .t-blo .th,.t-blo .fl{grid-template-columns:minmax(0,2fr) 104px 84px 76px;}
+  .t-arc .th,.t-arc .fl{grid-template-columns:minmax(0,3fr) 96px 120px 40px;}
+  .t-cta .th,.t-cta .fl{grid-template-columns:minmax(0,1.6fr) 132px 104px minmax(140px,1.4fr);}
+  .t-est .th,.t-est .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,2fr) 116px;}
+  /* La cronologia lleva CINCO columnas porque el User-Agent es un dato y no
+     un adorno: la ausencia de uno es en si misma informacion —un cliente
+     automatizado a menudo no lo manda—. No cabia en las cuatro de .t-blo. */
+  .t-cro .th,.t-cro .fl{grid-template-columns:132px minmax(0,1.4fr) minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,1.2fr);}
 }
 
-/* Con un panel de detalle abierto, se reserva una tercera columna — SOLO en
-   el contenedor ancho; en el estrecho, ver la regla de @container de abajo,
-   que sustituye la lista por el detalle en vez de sumar una columna. */
-.marco.con-detalle {
-  grid-template-columns: var(--rail) minmax(0, 1fr) var(--det);
+/* ═══ PASTILLAS — la regla es simple: NI SE ENCOGEN NI SE PARTEN ═══
+   Sin min-width, sin max-width, sin overflow-wrap. Cualquiera de esos
+   tres le daba permiso al navegador para dejarla en una letra. Si no
+   caben dos en una línea, flex-wrap las baja a la siguiente. */
+.pls{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.p{
+  display:inline-block; flex:0 0 auto; white-space:nowrap;
+  font-size:.6rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+  padding:2px 7px; line-height:1.6; border-radius:var(--r1);
+  border:1px solid currentColor;
 }
+.p:empty{display:none;}
+.p-ok{color:var(--ok);} .p-av{color:var(--av);} .p-fa{color:var(--fa);} .p-na{color:var(--nada);}
+.p-ll{background:var(--acT);color:var(--ac2);border-color:var(--acB);}
 
-/* ——— Rail (navegador) ——— */
-.rail {
-  border-right: 1px solid var(--borde);
-  padding: var(--e-4) var(--e-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--e-1);
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
-}
+/* Motivos */
+.mts{display:flex;flex-direction:column;gap:6px;}
+.mt{display:grid;grid-template-columns:1fr;gap:3px;min-width:0;}
+@container (min-width:620px){.mt{grid-template-columns:164px 1fr 50px;align-items:center;gap:var(--e2);}}
+.mt > *{min-width:0;}
+.mt .mn{font-size:.72rem;display:flex;justify-content:space-between;gap:var(--e1);}
+@container (min-width:620px){.mt .mn{display:block;}}
+.mt .mn i{font-style:normal;color:var(--tx3);font-family:"DM Mono",monospace;font-size:.68rem;}
+@container (min-width:620px){.mt .mn i{display:none;}}
+.mt .mb{height:6px;background:var(--n3);overflow:hidden;}
+.mt .mb u{display:block;height:100%;background:var(--n5);text-decoration:none;}
+.mt .mv{display:none;font-family:"DM Mono",monospace;font-size:.68rem;color:var(--tx3);text-align:right;}
+@container (min-width:620px){.mt .mv{display:block;}}
 
-.marca {
-  display: flex;
-  align-items: center;
-  gap: var(--e-2);
-  padding: var(--e-2) var(--e-2) var(--e-4);
-  margin-bottom: var(--e-2);
-  border-bottom: 1px solid var(--borde);
-}
+/* Archivos */
+.ico-f{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r1);display:grid;place-items:center;
+  background:var(--n3);color:var(--tx2);}
+.ico-f.ext{font-family:"DM Mono",monospace;font-size:.52rem;font-weight:500;letter-spacing:0;text-transform:uppercase;}
+.nomb{display:flex;align-items:center;gap:var(--e2);min-width:0;}
+.nomb .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;}
+.menu-p{background:none;border:0;color:var(--tx3);cursor:pointer;padding:2px 6px;border-radius:var(--r1);}
+.menu-p:hover{background:var(--n3);color:var(--tx);}
 
-.marca-g {
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: 0 0 auto;
-  border-radius: var(--r1);
-  background: var(--tenue);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: var(--t-menor);
-}
+/* Barra de progreso */
+.prog{height:5px;background:var(--n3);overflow:hidden;}
+.prog i{display:block;height:100%;background:var(--ac);}
 
-.marca .nm {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-}
+/* Tarjeta de aviso */
+.tarj{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ac);
+  border-radius:var(--r2);padding:var(--e2) var(--e3);display:flex;flex-direction:column;gap:6px;}
+.tarj .t1{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);flex-wrap:wrap;}
+.tarj .t1 b{font-size:.84rem;font-weight:600;}
+.tarj .t1 span{font-size:.7rem;color:var(--tx3);font-family:"DM Mono",monospace;}
+.tarj p{margin:0;font-size:.75rem;color:var(--tx2);line-height:1.5;}
 
-.marca .nm b {
-  font-size: var(--t-menor);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.marca .nm span {
-  font-size: var(--t-rotulo);
-  color: var(--suave);
-}
+/* ── DETALLE ── */
+.detalle{display:none;background:var(--n1);border-left:1px solid var(--n4);
+  overflow-y:auto;padding:var(--e3);flex-direction:column;gap:var(--e3);}
+@container (min-width:880px){.detalle{display:flex;}}
+.dc{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--e2);}
+.dc h3{margin:0 0 2px;font-size:.9rem;font-weight:700;letter-spacing:-.01em;}
+.dc .x{background:none;border:0;color:var(--tx3);cursor:pointer;font-size:1rem;line-height:1;padding:0;}
+.dip{font-family:"DM Mono",monospace;font-size:.71rem;color:var(--ac2);word-break:break-all;}
+.db{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.db .h{font-size:.58rem;letter-spacing:.13em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
+.dp{display:flex;justify-content:space-between;gap:var(--e2);font-size:.74rem;padding:3px 0;border-bottom:1px solid var(--n4);}
+.dp span{color:var(--tx3);}
+.dp b{font-weight:500;font-family:"DM Mono",monospace;font-size:.71rem;text-align:right;}
+.dsn{display:flex;flex-direction:column;gap:2px;}
+.dsn code{font-family:"DM Mono",monospace;font-size:.66rem;color:var(--tx2);background:var(--n2);
+  padding:3px 7px;border-radius:2px;word-break:break-all;}
+.dac{display:flex;flex-direction:column;gap:6px;margin-top:auto;padding-top:var(--e2);}
+.bt{padding:8px var(--e2);border-radius:var(--r2);font-family:inherit;font-size:.76rem;font-weight:600;
+  cursor:pointer;text-align:center;background:var(--n3);color:var(--tx);border:1px solid var(--n5);}
+.bt:hover{background:var(--n4);}
+.bt.pel{background:transparent;color:var(--fa);border-color:var(--fa);}
+.bt.pel:hover{background:var(--n3);}
+.dvw{display:none;flex-direction:column;gap:var(--e3);height:100%;}
+.dvw{display:flex;}
 
-/* «.ni» — Nav Item. Bloque completo pulsable, no solo el texto: mismo
-   argumento que el botón de tres puntos, llevado al rail. */
-.ni {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--e-2);
-  min-height: var(--alto-control);
-  padding: 0 var(--e-2);
-  border-radius: var(--r1);
-  color: var(--suave);
-  text-decoration: none;
-  font-size: var(--t-menor);
-}
+/* ── TIRA DE ESTADO ── */
+.estado{display:none;align-items:center;gap:var(--e2);flex-wrap:wrap;padding:5px var(--e3);
+  background:var(--n1);border-top:1px solid var(--n4);
+  font-family:"DM Mono",monospace;font-size:.65rem;color:var(--tx3);}
+@container (min-width:880px){.estado{display:flex;}}
+.estado .it{display:flex;align-items:center;gap:5px;}
+.estado .pt{width:6px;height:6px;display:block;}
+.estado .pt.v{background:var(--ok);} .estado .pt.a{background:var(--av);}
+.estado b{color:var(--tx2);font-weight:400;}
+.estado .der{margin-left:auto;display:flex;gap:var(--e2);}
 
-.ni:hover {
-  background: var(--tenue);
-  color: var(--texto);
-}
+/* ── PESTAÑAS ── */
+.tabs{display:flex;background:var(--n1);border-top:1px solid var(--n4);
+  padding:5px 2px max(6px,env(safe-area-inset-bottom));}
+@container (min-width:880px){.tabs{display:none;}}
+.tb{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:5px 2px;cursor:pointer;color:var(--tx3);font-size:.58rem;font-weight:600;position:relative;}
+.tb .ic{width:20px;height:20px;}
+.tb .pt{position:absolute;top:3px;right:calc(50% - 16px);width:5px;height:5px;background:var(--av);}
 
-.ni-activo,
-.ni-activo:hover {
-  background: var(--acT);
-  color: var(--ac2);
-  font-weight: 600;
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   LO QUE LA MAQUETA PINTABA CON «style="width:…%"»
+   ═══════════════════════════════════════════════════════════════════════
 
-/* El separador de grupo, que hoy solo agrupa Estado/Seguridad/Cuentas bajo
-   «Sistema». Se pinta como rótulo y no como línea: una línea sola no dice qué
-   separa. */
-.ni-grupo {
-  margin: var(--e-4) 0 var(--e-1);
-  padding: 0 var(--e-2);
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--suave);
-  opacity: 0.7;
-}
+   Cuatro piezas llevaban la medida en un estilo en línea: el medidor de
+   disco del rail, las barras del gráfico de actividad, la barra de progreso
+   de una subida y las de «Motivos». La CSP de este servidor es
+   «style-src 'self'» SIN 'unsafe-inline' (ADR-0060, cspBase), así que un
+   atributo style se descarta EN SILENCIO: la pieza saldría vacía y nada
+   fallaría a gritos.
 
-/* La marca de novedades del ítem — mismo dato que la pastilla que ya llevaba
-   «Seguridad» en la barra antigua, reubicado. Un cero no se pinta (lo decide
-   la plantilla, no esto): una pastilla en cero es ruido permanente. */
-.ct {
-  display: inline-block;
-  font-size: var(--t-rotulo);
-  font-weight: 700;
-  padding: 0 var(--e-1);
-  border-radius: var(--r1);
-  background: var(--acT);
-  color: var(--ac2);
-}
+   Las cuatro pasan a <svg> con la medida en atributos numéricos —x, width,
+   height—, que NO son CSS y la política no toca. El color sigue viniendo de
+   una clase, como en el resto del archivo. El aspecto es el mismo; lo que
+   cambia es que ahora se ve.
+   ═══════════════════════════════════════════════════════════════════════ */
 
-/* ——— Columna de contenido ——— */
-.cont {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
+/* El medidor del rail: la maqueta usaba un flex de <i>; aquí es un SVG que
+   se estira al ancho del rail gracias a preserveAspectRatio="none". */
+.seg{display:block;width:100%;height:6px;background:var(--n3);}
+.sg-a{fill:var(--n5);}
+.sg-b{fill:var(--tx3);}
+.sg-o{fill:var(--n4);}
+/* Los cuadraditos de la leyenda son <u>, no SVG: ahí el color es lo único
+   que hay que decir, y una clase basta. */
+.disco .ley u.sg-a{background:var(--n5);}
+.disco .ley u.sg-b{background:var(--tx3);}
+.disco .ley u.sg-o{background:var(--n4);}
 
-/* La fila de título reutiliza «.titulo-estado» y «.titulo-pagina» —las mismas
-   que ya usan visor.html y bloquear.html— para que las cinco páginas del rail
-   y las cinco de tarjeta centrada compartan el mismo trato tipográfico y no
-   dos familias que hay que mantener iguales a mano. Solo se les da un
-   padding propio, porque aquí no van dentro de «.cabecera-superior». */
-.cont > .titulo-estado {
-  padding: var(--e-4) var(--e-4) var(--e-3);
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--borde);
-}
+/* «Salir» cierra el rail, pegado abajo cuando no hay medidor de disco que
+   ocupe ese sitio. Reutiliza «.od» —el botón de la barra de órdenes— para
+   que no estrene una forma nueva. */
+.salir-rail{margin-top:var(--e1);padding:var(--e1) 0 var(--e0);}
+.disco + .salir-rail{margin-top:0;}
+.rail > .gr:last-of-type{margin-bottom:auto;}
+.salir-rail .od{width:100%;}
 
-/* La barra de órdenes de cada módulo — reutiliza «.barra-acciones» tal cual
-   (los mismos <details>/<summary> sin JavaScript de ADR-0027), solo que
-   colgada de su propio hueco en vez de compartir fila con las migas. Un
-   módulo sin nada que ofrecer —Estado— simplemente no la incluye: no hay CSS
-   que la esconda porque no hay HTML que pintar (ver marco.go). */
-.cont > .barra-acciones {
-  padding: 0 var(--e-4) var(--e-3);
-  margin: 0;
-}
+/* La gráfica de actividad. Misma caja y misma altura que la maqueta; lo que
+   cambia es que las barras son <rect> de un SVG en vez de <div> con altura
+   en línea. El eje de días se queda tal cual, en «.gre». */
+.grl{display:block;width:100%;height:88px;}
+@container (min-width:620px){.grl{height:112px;}}
+.grl .b{fill:var(--n5);}
+.grl .b.pk{fill:var(--av);}
 
-.cuerpo-modulo {
-  padding: 0 var(--e-4) var(--e-6);
-  overflow-x: auto;
-  flex: 1;
-}
+/* La barra de progreso de una subida a medias. */
+.prog{display:block;width:100%;height:5px;background:var(--n3);}
+.prog .v{fill:var(--ac);}
 
-/* Las notas de cierre de un módulo — la salvedad que es cierta pero no es el
-   motivo por el que se abrió la página (RF-35, mediciones huérfanas…). Van al
-   PIE de su propia vista, nunca en un aviso aparte. En ancho, a la derecha;
-   en estrecho, como cualquier otro párrafo. */
-.notas-modulo {
-  margin-top: var(--e-6);
-  padding-top: var(--e-4);
-  border-top: 1px solid var(--borde);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+/* Las barras de «Motivos». */
+.mb{display:block;width:100%;height:6px;background:var(--n3);}
+.mb .v{fill:var(--n5);}
 
-.notas-modulo .nota {
-  max-width: none;
-}
 
-@container consola (min-width: 55rem) {
-  .notas-modulo {
-    align-items: flex-end;
-    text-align: right;
-  }
-}
+/* El rail lo pintan enlaces, no <label> como en la maqueta: aquí navegar es
+   navegar. «.ni» ya trae display:flex y color, así que solo hace falta
+   quitarle el subrayado que un <a> trae de fábrica — y lo mismo en las
+   pestañas y en las migas. */
+.ni,.tb{text-decoration:none;}
 
-/* ——— Panel de detalle ——— */
-.detalle {
-  grid-column: 3;
-  border-left: 1px solid var(--borde);
-  padding: var(--e-4);
-  overflow-y: auto;
-  height: 100vh;
-  position: sticky;
-  top: 0;
-}
+/* La miga de pan de Archivos, en la barra superior. */
+.miga a{color:var(--tx3);}
+.miga a:hover{color:var(--tx);}
+.miga a:last-child{color:var(--tx);font-weight:600;}
 
-.det-cabecera {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--e-2);
-  margin-bottom: var(--e-4);
-}
+/* Un mensaje de resultado —«Cuenta creada», «no se pudo mover»— por encima
+   del contenido del módulo. Mismo lenguaje que «.tarj». */
+.msg{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ok);
+  border-radius:var(--r2);padding:var(--e2) var(--e3);font-size:.78rem;color:var(--tx2);line-height:1.5;}
+.msg.mal{border-left-color:var(--fa);color:var(--fa);}
 
-.det-cabecera h3 {
-  margin: 0;
-  font-size: var(--t-h2);
-}
+/* Un módulo vacío lo dice, en vez de dejar el hueco en blanco. */
+.vacio{padding:var(--e5) var(--e3);text-align:center;color:var(--tx3);font-size:.8rem;}
 
-.det-cabecera .dip {
-  font-family: ui-monospace, monospace;
-  font-size: var(--t-menor);
-  color: var(--suave);
-  word-break: break-all;
-}
+/* La nota de una sección: una línea que dice QUÉ es la tabla de debajo. */
+.nota{margin:0;font-size:.72rem;color:var(--tx3);line-height:1.5;}
+.nota b,.nota strong{color:var(--tx2);font-weight:600;}
 
-/* El cierre vuelve a la URL limpia del módulo — sin parámetro de detalle —
-   y es un enlace normal: cerrar el panel no cambia ningún dato. */
-.det-cerrar {
-  flex: 0 0 auto;
-  color: var(--suave);
-  text-decoration: none;
-  font-size: var(--t-h2);
-  line-height: 1;
-}
+/* «Ver los rechazos uno a uno» y la evidencia de un origen: plegables sin
+   una línea de JavaScript, igual que los menús de ADR-0027. */
+details.plg > summary{cursor:pointer;color:var(--tx3);font-size:.72rem;
+  padding:var(--e1) 0;list-style:none;}
+details.plg > summary::-webkit-details-marker{display:none;}
+details.plg > summary::marker{content:"";}
+details.plg > summary::before{content:"▸ ";color:var(--tx3);}
+details.plg[open] > summary::before{content:"▾ ";}
+details.plg > summary:hover{color:var(--tx);}
 
-.det-bloque {
-  margin-bottom: var(--e-5);
-}
+/* El menú de tres puntos de una fila de Archivos. Cuelga de la fila, que es
+   quien se posiciona, para que no se salga por el borde derecho. */
+.menu-fila{position:relative;}
+.menu-fila > summary{list-style:none;cursor:pointer;}
+.menu-fila > summary::-webkit-details-marker{display:none;}
+.menu-fila > summary::marker{content:"";}
+.menu-panel{position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:13rem;
+  max-width:calc(100vw - 2rem);background:var(--n2);border:1px solid var(--n4);
+  border-radius:var(--r2);box-shadow:0 8px 24px #000a;padding:var(--e2);
+  display:flex;flex-direction:column;gap:var(--e1);text-align:left;}
+.menu-panel form{display:flex;flex-direction:column;gap:var(--e1);}
+.menu-panel .bt{width:100%;}
 
-.det-bloque h4 {
-  margin: 0 0 var(--e-2);
-  font-size: var(--t-rotulo);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--suave);
-}
+/* El desplegable de la barra de órdenes —«Subir», «Nueva carpeta»,
+   «Filtrar», «Crear cuenta»— se ancla a la barra y no a su botón: a 390 px
+   un panel colgado de un botón del extremo izquierdo se salía de pantalla. */
+.ordenes{position:relative;}
+.ordenes > details{position:static;}
+.ordenes > details > .menu-panel{left:0;right:auto;top:calc(100% + 6px);min-width:16rem;}
+.ordenes > details > summary{list-style:none;}
+.ordenes > details > summary::-webkit-details-marker{display:none;}
+.ordenes > details > summary::marker{content:"";}
 
-.det-fila {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--e-3);
-  padding: var(--e-1) 0;
-  font-size: var(--t-menor);
-}
+/* Los filtros de Seguridad, dentro de su panel. */
+.filtros{display:grid;grid-template-columns:1fr;gap:var(--e2);}
+@container (min-width:620px){.filtros{grid-template-columns:repeat(3,1fr);}}
+.filtros > div{min-width:0;}
 
-.det-fila b {
-  font-weight: 600;
-  text-align: right;
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   LAS PÁGINAS DE UNA SOLA TAREA — acceso, visor, mover, borrar, baja,
+   bloquear.
+   ═══════════════════════════════════════════════════════════════════════
 
-/* ——— Gráfica de actividad ———
-   Se pinta con lo que el anillo recuerda, NADA MÁS: sin capa de acumulados
-   por hora —que es requisito de una fase futura, no de esta— no hay «últimos
-   90 días» que enseñar. El rótulo de la página dice hasta cuándo alcanza; la
-   gráfica no promete más de lo que tiene detrás.
-   Barras por CSS y geometría por atributos SVG (x/y/width/height, numéricos):
-   ninguno de los dos es «style="..."», así que «style-src 'self'» —sin
-   'unsafe-inline'— no se toca. */
-.grafica-actividad {
-  width: 100%;
-  height: auto;
-  margin: var(--e-3) 0 var(--e-5);
-}
+   NO LLEVAN RAIL, y es deliberado: son pantallas de un solo gesto
+   —entrar, confirmar, elegir un destino, mirar una foto— y una barra de
+   navegación alrededor de una tarea que ya está centrada es ruido. La
+   maqueta no las cubría; se escriben aquí con SU MISMO vocabulario, para
+   que no se lean como de otro producto.
+   ═══════════════════════════════════════════════════════════════════════ */
 
-.grafica-actividad .barra {
-  fill: var(--tenue);
-}
+.sola{min-height:100dvh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:var(--e4) var(--e2);gap:var(--e3);}
+.tarjeta{width:100%;max-width:23rem;background:var(--n1);border:1px solid var(--n4);
+  border-radius:var(--r3);padding:var(--e4);display:flex;flex-direction:column;gap:var(--e2);}
+.tarjeta.ancha{max-width:36rem;}
+.tarjeta h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;}
+.tarjeta > p{margin:0;font-size:.8rem;color:var(--tx2);line-height:1.55;}
 
-.grafica-actividad .barra.pico {
-  fill: var(--ac);
-}
+/* La marca del acceso: el mismo cuadrado del rail, centrado y algo mayor. */
+.marca-sola{display:flex;flex-direction:column;align-items:center;gap:var(--e1);
+  margin-bottom:var(--e1);}
+.marca-sola .g{width:38px;height:38px;border-radius:var(--r2);background:var(--ac);
+  display:grid;place-items:center;font-weight:700;font-size:.95rem;color:#000;}
+.marca-sola b{font-size:.9rem;font-weight:700;letter-spacing:-.01em;}
+.marca-sola span{font-size:.63rem;letter-spacing:.15em;text-transform:uppercase;color:var(--tx3);}
 
-.grafica-actividad .eje {
-  fill: var(--suave);
-  font-size: 9px;
-  font-family: inherit;
-  text-anchor: middle;
-}
+label.cmp{display:flex;flex-direction:column;gap:var(--e0);
+  font-size:.6rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
+input[type=text],input[type=password],input[type=file],select{
+  width:100%;background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
+  padding:9px var(--e2);color:var(--tx);font-family:inherit;font-size:.85rem;outline:0;}
+input[type=text]:focus,input[type=password]:focus,select:focus{
+  border-color:var(--acB);background:var(--n3);}
+input::placeholder{color:var(--tx3);}
 
-/* ——— Pestañas (móvil) ———
-   Ocultas por omisión; @container las enciende y apaga el rail. Mismo
-   objetivo táctil que el resto de la consola. */
-.tabs {
-  display: none;
-}
+/* Un aviso: mismo lenguaje que «.tarj» del panel, con el color del suceso. */
+.aviso{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ac);
+  border-radius:var(--r2);padding:var(--e2) var(--e3);font-size:.78rem;color:var(--tx2);line-height:1.5;}
+.aviso.mal{border-left-color:var(--fa);color:var(--fa);}
+.aviso.bien{border-left-color:var(--ok);color:var(--ok);}
+.aviso.ojo{border-left-color:var(--av);}
 
-.tb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  flex: 1;
-  min-height: calc(var(--tactil) + var(--e-2));
-  padding: var(--e-1) 0 calc(var(--e-1) + env(safe-area-inset-bottom, 0px));
-  font-size: var(--t-rotulo);
-  color: var(--suave);
-  text-decoration: none;
-  position: relative;
-}
+/* La ruta que hay que leer ANTES de destruir algo (RF-18): centrada, en
+   monoespaciada y con el peso suficiente para que no se lea de pasada. */
+.ruta-grande{font-family:"DM Mono",monospace;font-size:.95rem;color:var(--tx);
+  word-break:break-all;text-align:center;line-height:1.45;
+  background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);padding:var(--e2);}
 
-.tb-activo {
-  color: var(--ac2);
-  font-weight: 600;
-}
+.enlace{font-size:.76rem;color:var(--tx3);text-align:center;}
+.enlace a{color:var(--ac2);}
+.enlace a:hover{text-decoration:underline;}
 
-/* El punto de novedades en móvil no repite la cifra —no hay sitio limpio
-   para un número junto a un rótulo de una palabra—: dice «hay algo», que es
-   lo que importa a este ancho. */
-.tb .pt {
-  position: absolute;
-  top: var(--e-1);
-  right: calc(50% - 1.1rem);
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ac);
-}
+/* Lista de carpetas del navegador de RF-17 */
+.carpetas{list-style:none;margin:0;padding:0;border:1px solid var(--n4);
+  border-radius:var(--r2);max-height:45vh;overflow-y:auto;background:var(--n2);}
+.carpetas li + li{border-top:1px solid var(--n4);}
+.carpetas a{display:flex;align-items:center;gap:var(--e2);padding:9px var(--e2);
+  font-size:.82rem;color:var(--tx2);}
+.carpetas a:hover{background:var(--n3);color:var(--tx);}
+.carpetas .vacia{display:block;padding:var(--e3);font-size:.76rem;color:var(--tx3);text-align:center;}
+.migas-sola{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:.74rem;color:var(--tx3);}
+.migas-sola a{color:var(--ac2);}
+.migas-sola a + a::before{content:"/";color:var(--tx3);margin-right:4px;}
 
-/* ——— El contenedor estrecho: rail fuera, pestañas dentro ——— */
-@container consola (max-width: 54.99rem) {
-  .marco,
-  .marco.con-detalle {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
+.fila-bt{display:flex;flex-wrap:wrap;gap:var(--e1);}
+.fila-bt > *{flex:1 1 auto;}
 
-  .rail {
-    display: none;
-  }
+/* ── El visor (RF-25) ── */
+.visor-barra{display:flex;align-items:center;gap:var(--e2);padding:var(--e1) var(--e2);
+  background:var(--n1);border-bottom:1px solid var(--n4);position:sticky;top:0;z-index:10;}
+.visor-barra .nom{font-size:.82rem;font-weight:600;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.visor-barra .bt{flex:0 0 auto;padding:6px var(--e2);}
+.visor{display:flex;align-items:center;justify-content:center;padding:var(--e2);
+  min-height:calc(100dvh - 46px);}
+.visor > *{max-width:100%;}
+.visor img,.visor video{max-height:calc(100dvh - 80px);object-fit:contain;}
+.visor audio{width:min(100%,30rem);}
+.visor object,.visor iframe{width:100%;height:calc(100dvh - 80px);
+  border:1px solid var(--n4);border-radius:var(--r2);background:var(--n1);}
 
-  .tabs {
-    display: flex;
-    grid-row: 2;
-    border-top: 1px solid var(--borde);
-    background: var(--fondo);
-    position: sticky;
-    bottom: 0;
-  }
+/* Pasar de foto sin volver al listado: dos círculos fijos bajo el pulgar. */
+.paso{position:fixed;top:50%;transform:translateY(-50%);z-index:20;
+  width:3rem;height:3rem;display:grid;place-items:center;
+  font-size:1.4rem;line-height:1;color:var(--tx);
+  background:var(--n2);border:1px solid var(--n4);border-radius:50%;}
+.paso:hover{background:var(--n3);border-color:var(--acB);}
+.paso-anterior{left:calc(var(--e1) + env(safe-area-inset-left,0px));}
+.paso-siguiente{right:calc(var(--e1) + env(safe-area-inset-right,0px));}
 
-  /* Con un detalle seleccionado, la lista cede el sitio entero: en un
-     teléfono no caben las dos, y es la lista la que ya se venía mirando —el
-     detalle es lo nuevo, y lo nuevo se enseña a pantalla completa. */
-  .marco.con-detalle .cont {
-    display: none;
-  }
+@media(prefers-reduced-motion:reduce){*{transition:none!important;}}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
 
-  .marco.con-detalle .detalle {
-    display: block;
-    grid-column: 1;
-    border-left: 0;
-    height: auto;
-    position: static;
-  }
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   PIEZAS QUE NO ESTÁN EN LA MAQUETA PORQUE LA MAQUETA NO LAS TENÍA
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* LA ACCIÓN RECOMENDADA de un indicador de /estado — «→ mirar dmesg y actuar
+   antes de escribir nada más». Va SIEMPRE en el HTML aunque esté vacía, para
+   que el flujo en vivo pueda escribir en ella sin crear ni destruir nodos, y
+   es el CSS quien la esconde mientras no diga nada. */
+.accion{display:block;margin-top:var(--e0);font-size:.7rem;color:var(--av);line-height:1.45;}
+.accion:empty{display:none;}
+.accion::before{content:"→ ";}
+
+/* LA LISTA DE SUBIDAS EN CURSO (subida.js). Cada fila es nombre · estado ·
+   acciones; el guion no crea clases, así que se estila por estructura. */
+#progreso{list-style:none;margin:var(--e2) 0 0;padding:0;display:flex;
+  flex-direction:column;gap:var(--e0);}
+#progreso li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--e2);
+  align-items:center;padding:var(--e1) 0;border-bottom:1px solid var(--n4);font-size:.74rem;}
+#progreso li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#progreso button{background:none;border:1px solid var(--n4);border-radius:var(--r1);
+  color:var(--tx2);font-family:inherit;font-size:.68rem;padding:2px 7px;cursor:pointer;}
+#progreso button:hover{background:var(--n3);color:var(--tx);}
+#zona-subida{display:flex;flex-direction:column;gap:var(--e2);}
+
+/* El visor cuando el navegador no puede con el formato: la tarjeta centrada
+   y nada más, que es lo que RF-25 pide al pie de la letra. */
+.no-compatible{text-align:center;}

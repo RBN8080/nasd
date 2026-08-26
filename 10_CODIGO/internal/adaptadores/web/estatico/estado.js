@@ -28,16 +28,13 @@ let fallos = 0;
 // todo porque construir un selector CSS con texto que llega por la red es una
 // costumbre que conviene no tener, aunque hoy ese texto salga de una constante
 // nuestra.
-function indexar(id) {
-  const cuerpo = document.getElementById(id);
+function indexar() {
   const filas = new Map();
-  if (!cuerpo) return filas;
-  for (const tr of cuerpo.querySelectorAll('tr[data-clave]')) {
-    filas.set(tr.dataset.clave, {
-      tr: tr,
-      cifra: tr.querySelector('.cifra'),
-      accion: tr.querySelector('.accion'),
-      pastilla: tr.querySelector('.pastilla'),
+  for (const fila of document.querySelectorAll('.fls [data-clave]')) {
+    filas.set(fila.dataset.clave, {
+      cifra: fila.querySelector('.cifra'),
+      accion: fila.querySelector('.accion'),
+      pastilla: fila.querySelector('.pastilla'),
     });
   }
   return filas;
@@ -66,10 +63,15 @@ function aplicar(indice, filas) {
     // Vacía y no un guion: una fila sin umbral no tiene veredicto que enseñar,
     // y el CSS esconde la pastilla en cuanto se queda sin texto. El elemento se
     // mantiene para poder volver a escribir en él sin tocar el DOM.
-    ponerTexto(destino.pastilla, fila.veredicto || '');
+    ponerTexto(destino.pastilla, fila.etiqueta || '');
 
-    const clase = fila.veredicto ? 'v-' + fila.veredicto : '';
-    if (destino.tr.className !== clase) destino.tr.className = clase;
+    // La clase llega hecha del servidor. Componerla aquí —'p-' + veredicto—
+    // pondría la traducción de veredicto a color en DOS sitios, y el día que
+    // una cambiara la otra seguiría pintando lo de antes sin fallar a gritos.
+    const clase = fila.clase ? 'pastilla p ' + fila.clase : 'pastilla p';
+    if (destino.pastilla && destino.pastilla.className !== clase) {
+      destino.pastilla.className = clase;
+    }
   }
 }
 
@@ -77,13 +79,12 @@ function marcarLatido(estado, texto) {
   const l = document.getElementById('latido');
   if (!l) return;
   l.hidden = false;
-  l.dataset.vivo = estado;
+  l.className = 'p ' + (estado === 'si' ? 'p-ok' : 'p-av');
   ponerTexto(l, texto);
 }
 
 function arrancar() {
-  const nodo = indexar('tabla-nodo');
-  const servicio = indexar('tabla-servicio');
+  const filas = indexar();
   const flujo = new EventSource('/estado/flujo');
 
   flujo.onopen = function () {
@@ -102,8 +103,8 @@ function arrancar() {
     }
     fallos = 0;
     marcarLatido('si', 'en línea');
-    aplicar(nodo, marco.nodo || []);
-    aplicar(servicio, marco.servicio || []);
+    aplicar(filas, marco.nodo || []);
+    aplicar(filas, marco.servicio || []);
   };
 
   flujo.onerror = function () {

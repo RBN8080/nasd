@@ -4,47 +4,63 @@
 {{template "cabeza" "NAS — Acceso"}}
 </head>
 <body>
-<main class="acceso">
-  <h1>NAS</h1>
+{{/* LA PANTALLA DE ACCESO NO LLEVA RAIL, y es deliberado: no hay sesión, así
+     que no hay nada entre lo que navegar. Es una tarjeta centrada con el
+     MISMO vocabulario que la consola —los tokens, la tipografía, el cuadrado
+     de la marca, el botón «.bt»— para que no se lea como de otro producto.
 
-  {{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
+     De aquí solo salen dos recursos, la hoja de estilos y el icono, y de esa
+     lista se deriva `assetsPublicos` (estatico.go): lo que este formulario
+     referencie es lo ÚNICO que un desconocido puede descargar. Añadir algo
+     aquí amplía esa superficie, así que se piensa antes. */}}
+<main class="sola">
+  <div class="tarjeta">
+    <div class="marca-sola">
+      <div class="g">rb</div>
+      <b>NAS</b>
+      <span>Servidor de archivos</span>
+    </div>
 
-  <form method="post" action="/acceso">
+    {{if .Aviso}}<p class="aviso mal">{{.Aviso}}</p>{{end}}
+
+    <form method="post" action="/acceso">
+      {{if .Usuario}}
+      {{/* Este aparato ya sabe a quién pertenece: solo se pide la contraseña.
+           La inicial sigue estando —dentro del enlace de abajo— porque basta
+           para reconocerse y no le dice a quien coja el teléfono prestado de
+           quién es la cuenta.
+           SIN PASTILLA CON LA INICIAL ARRIBA, por indicación del responsable
+           sobre captura: competía con la casilla de la contraseña, que es lo
+           único que hay que hacer en esta pantalla. */}}
+      <label class="cmp" for="clave">Contraseña
+        <input type="password" id="clave" name="clave"
+           autocomplete="current-password" autofocus required>
+      </label>
+      {{else}}
+      {{/* Primera vez en este aparato: hacen falta las dos casillas. Van con
+           etiqueta propia, no con dos textos grises iguales dentro de la
+           casilla, que es lo que hacía que parecieran la misma cosa dos
+           veces. */}}
+      <label class="cmp" for="usuario">Usuario
+        <input type="text" id="usuario" name="usuario"
+           autocomplete="username"
+           autocapitalize="off" autocorrect="off" spellcheck="false"
+           autofocus required>
+      </label>
+      <label class="cmp" for="clave">Contraseña
+        <input type="password" id="clave" name="clave"
+           autocomplete="current-password" required>
+      </label>
+      {{end}}
+      <button type="submit" class="bt">Entrar</button>
+    </form>
+
     {{if .Usuario}}
-    {{/* Este aparato ya sabe a quién pertenece: solo se pide la contraseña.
-         La inicial sigue estando —dentro del propio aviso— porque basta para
-         reconocerse y no le dice a quien coja el teléfono prestado de quién es
-         la cuenta.
-         SIN PASTILLA CON LA INICIAL Y DEBAJO DEL BOTÓN, por indicación del
-         responsable sobre una captura: arriba competía con la casilla de la
-         contraseña, que es lo único que hay que hacer en esta pantalla.
-         Cambiar de usuario es la salida, no la acción principal. */}}
-    <label for="clave">Contraseña</label>
-    <input type="password" id="clave" name="clave"
-       autocomplete="current-password"
-       autofocus required>
-    {{else}}
-    {{/* Primera vez en este aparato: hacen falta las dos casillas. Van con
-         etiqueta propia, no con dos textos grises iguales dentro de la
-         casilla, que es lo que hacía que parecieran la misma cosa dos
-         veces. */}}
-    <label for="usuario">Usuario</label>
-    <input type="text" id="usuario" name="usuario"
-       autocomplete="username"
-       autocapitalize="off" autocorrect="off" spellcheck="false"
-       autofocus required>
-    <label for="clave">Contraseña</label>
-    <input type="password" id="clave" name="clave"
-       autocomplete="current-password" required>
+    <p class="enlace">
+      <a href="/acceso?cambiar=1">¿No eres {{.Inicial}}?, cambiar de usuario</a>
+    </p>
     {{end}}
-    <button type="submit">Entrar</button>
-  </form>
-
-  {{if .Usuario}}
-  <p class="cambiar">
-    <a href="/acceso?cambiar=1">¿No eres {{.Inicial}}?, cambiar de usuario</a>
-  </p>
-  {{end}}
+  </div>
 </main>
 </body>
 </html>

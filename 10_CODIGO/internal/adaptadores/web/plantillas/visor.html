@@ -17,11 +17,9 @@
      habría apuntado a «/ver/<archivo>» —el listado de algo que no es una
      carpeta— y eso responde 400. Comprobado, no supuesto. -->
 <header id="cabecera-visor">
-  <div class="cabecera-superior">
-    <span class="titulo-pagina">{{.Nombre}}</span>
-    <div class="barra-acciones">
-      <a class="boton-barra" href="{{listadoCon .Ruta.Padre .Orden}}">Volver</a>
-    </div>
+  <div class="visor-barra">
+    <span class="nom">{{.Nombre}}</span>
+    <a class="bt" href="{{listadoCon .Ruta.Padre .Orden}}">Volver</a>
   </div>
 </header>
 
@@ -74,9 +72,11 @@
 <!-- RF-25 al pie de la letra: ÚNICAMENTE el mensaje y un botón «Ok» que sale
      de él. Sin barra, sin migas y sin ofrecer la descarga como consuelo — esa
      vive en el menú de tres puntos del listado, y solo ahí. -->
-<main class="acceso no-compatible" id="no-compatible"{{if .Tipo.Clase}} hidden{{end}}>
-  <p class="mensaje-no-compatible">Este archivo no se puede abrir en el navegador</p>
-  <p><a class="boton-barra" href="{{listadoCon .Ruta.Padre .Orden}}">Ok</a></p>
+<main class="sola no-compatible" id="no-compatible"{{if .Tipo.Clase}} hidden{{end}}>
+  <div class="tarjeta">
+    <p>Este archivo no se puede abrir en el navegador</p>
+    <p class="enlace"><a class="bt" href="{{listadoCon .Ruta.Padre .Orden}}">Ok</a></p>
+  </div>
 </main>
 
 {{if .Tipo.Clase}}<script src="/estatico/visor.js"></script>{{end}}

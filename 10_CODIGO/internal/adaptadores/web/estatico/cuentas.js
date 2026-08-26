@@ -28,14 +28,11 @@ let fallos = 0;
 //
 // Se ancla en data-usuario y no en el texto de la celda: el nombre de la cuenta
 // es dato de usuario, y buscar por él sería justo esa costumbre.
-function indexar(id) {
-  const cuerpo = document.getElementById(id);
+function indexar() {
   const filas = new Map();
-  if (!cuerpo) return filas;
-  for (const tr of cuerpo.querySelectorAll('tr[data-usuario]')) {
-    filas.set(tr.dataset.usuario, {
-      tr: tr,
-      pastilla: tr.querySelector('.pastilla'),
+  for (const fila of document.querySelectorAll('.fls [data-usuario]')) {
+    filas.set(fila.dataset.usuario, {
+      pastilla: fila.querySelector('.pastilla'),
     });
   }
   return filas;
@@ -64,8 +61,11 @@ function aplicar(indice, cuentas) {
     // volver a escribir en él sin crear nodos.
     ponerTexto(destino.pastilla, fila.texto || '');
 
-    const clase = fila.veredicto ? 'v-' + fila.veredicto : '';
-    if (destino.tr.className !== clase) destino.tr.className = clase;
+    // La clase llega hecha del servidor — ver filaCuenta.Clase.
+    const clase = fila.clase ? 'pastilla p ' + fila.clase : 'pastilla p';
+    if (destino.pastilla && destino.pastilla.className !== clase) {
+      destino.pastilla.className = clase;
+    }
   }
 }
 
@@ -78,7 +78,7 @@ function marcarLatido(estado, texto) {
 }
 
 function arrancar() {
-  const cuentas = indexar('tabla-cuentas');
+  const cuentas = indexar();
   // Sin ninguna cuenta dada de alta la tabla no tiene filas que refrescar, y
   // abrir el flujo solo pondría al nodo a muestrear para nadie.
   if (cuentas.size === 0) return;

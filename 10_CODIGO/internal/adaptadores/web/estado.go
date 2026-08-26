@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"nasd/internal/adaptadores/sistema"
 )
@@ -40,6 +41,45 @@ import (
 // la alerta no puedan discrepar nunca.
 
 type veredicto string
+
+// Etiqueta es el veredicto EN PALABRAS. Existe porque un semáforo que solo
+// distingue por color no lo lee quien no distingue esos colores, y porque el
+// valor crudo —«ok», «atencion»— es contrato: viaja en /estado?formato=json y
+// en el diario, así que no se puede cambiar para arreglar una pantalla.
+func (v veredicto) Etiqueta() string {
+	switch v {
+	case vOK:
+		return "Correcto"
+	case vAtencion:
+		return "Atención"
+	case vFallo:
+		return "Fallo"
+	case vDesconocido:
+		return "Sin medir"
+	}
+	return ""
+}
+
+// Clase es la pastilla de la maqueta que le corresponde. La traducción vive
+// aquí y no en cada plantilla para que las cuatro páginas que pintan un
+// veredicto no puedan discrepar sobre qué color es «atención».
+func (v veredicto) Clase() string {
+	switch v {
+	case vOK:
+		return "p-ok"
+	case vAtencion:
+		return "p-av"
+	case vFallo:
+		return "p-fa"
+	case vDesconocido:
+		return "p-na"
+	}
+	// Sin veredicto no hay color: una fila de CONTEXTO —«Uso de CPU»— no
+	// aprueba ni suspende, no es que se desconozca. La pastilla se queda
+	// vacía y el CSS la esconde, pero el elemento sigue ahí para que el
+	// flujo en vivo pueda escribir en él sin crear ni destruir nodos.
+	return ""
+}
 
 const (
 	vOK          veredicto = "ok"
@@ -400,25 +440,35 @@ func evaluarPorcentaje(clave, nombre string, valor, objetivo float64, siFalla ve
 // Manejador
 // ---------------------------------------------------------------------------
 
+// grupoEstado es un bloque de la tabla con su rótulo. Son los MISMOS cuatro
+// que la página ya tenía como encabezados —Nodo, Servicio, Almacenamiento y
+// hardware— más las dos salidas, que hasta hoy solo existían en el JSON.
+type grupoEstado struct {
+	Rotulo string
+	Filas  []filaViva
+}
+
+// escaleraEstado son las tres cifras que se leen de un vistazo antes de
+// entrar en la tabla. NO son una segunda medición: salen de los mismos
+// indicadores de abajo.
+type escaleraEstado struct {
+	SoC, SoCPie       string
+	Disco, DiscoPie   string
+	Marcha, MarchaPie string
+}
+
 type vistaEstado struct {
-	// FilasNodo y FilasServicio son las dos tablas que se refrescan solas.
-	// La plantilla las pinta una vez y a partir de ahí las mantiene el flujo
-	// (ADR-0051); sin JavaScript se quedan en esta foto, que es correcta.
-	FilasNodo     []filaViva
-	FilasServicio []filaViva
-	// Lentos son los indicadores que NO se refrescan: medirlos cuesta statfs,
-	// /proc/diskstats o un proceso hijo. La pantalla dice que están medidos al
-	// abrir, en vez de dejar creer que también son de ahora mismo.
-	Lentos []indicador
+	// Grupos es la tabla entera. Los dos primeros los mantiene el flujo en
+	// vivo (ADR-0051); sin JavaScript se quedan en esta foto, que es correcta.
+	Grupos []grupoEstado
+	Esc    escaleraEstado
 	// Peor es el veredicto más grave de todos: lo que se lee de un vistazo.
 	Peor   veredicto
 	Avisos []string
-	// PuedeAdministrar decide si la barra lleva a Administración. Misma regla
-	// y mismo motivo que en el listado (acotadoPorRed, sesion.go): esta página
-	// SÍ se ve desde Internet, así que sin esto ofrecería un enlace que
-	// responde 403 — el botón muerto que ADR-0055 ya evitó para «Estado».
+	// PuedeAdministrar decide si el rail lleva a Cuentas. Misma regla y mismo
+	// motivo que en el listado (acotadoPorRed, sesion.go).
 	PuedeAdministrar bool
-	// Novedades es la marca del botón «Seguridad». Misma que en el listado.
+	// Novedades es la marca de «Seguridad» en el rail.
 	Novedades int
 	// Version es lo único que queda en el pie: qué binario está corriendo.
 	// Viene por campos —nombre, revisión, fecha, huella— y no como una sola
@@ -453,6 +503,30 @@ type filaViva struct {
 	Valor     string    `json:"valor"`
 	Veredicto veredicto `json:"veredicto,omitempty"`
 	Accion    string    `json:"accion,omitempty"`
+	// Etiqueta y Clase son el veredicto YA TRADUCIDO a lo que se pinta.
+	// Viajan en el marco por lo mismo que Valor: ADR-0017 pone el formato en
+	// el servidor, así que el navegador no traduce «ok» a «Correcto» ni a un
+	// color — sustituye texto y clase, y no puede inventarse una tercera
+	// versión de la misma tabla.
+	Etiqueta string `json:"etiqueta,omitempty"`
+	Clase    string `json:"clase,omitempty"`
+	// Seleccionada marca la fila cuyo detalle está abierto. No viaja: es de
+	// esta carga y no del flujo.
+	Seleccionada bool `json:"-"`
+}
+
+// conVeredictoPintado rellena Etiqueta y Clase de una tanda de filas. Se llama
+// en UN sitio —al final de filasVivas— para que ninguna fila pueda salir con
+// veredicto y sin su traducción.
+func conVeredictoPintado(filas []filaViva) []filaViva {
+	for i := range filas {
+		if filas[i].Veredicto == "" {
+			continue
+		}
+		filas[i].Etiqueta = filas[i].Veredicto.Etiqueta()
+		filas[i].Clase = filas[i].Veredicto.Clase()
+	}
+	return filas
 }
 
 // contexto es una fila sin semáforo: no dispara alertas por sí sola, pero es
@@ -483,7 +557,7 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 	// lleva veredicto por definición y una fila de contexto no— y si algún día
 	// dejan de coincidir, esta línea deja de compilar en vez de fallar callada.
 	deIndicador := func(clave string) filaViva {
-		return filaViva(porClave[clave])
+		return comoFila(porClave[clave])
 	}
 
 	// conContexto pega las cifras crudas al valor de un indicador.
@@ -562,11 +636,14 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 			i.SubidasConfirmadas, i.SubidasFallidas, i.SubidasDescartadas, i.SubidasExpiradas)),
 		deIndicador("subidas-en-curso"),
 	}
-	return nodo, servicio
+	return conVeredictoPintado(nodo), conVeredictoPintado(servicio)
 }
 
 func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	n := sistema.Leer(r.Context(), s.volumen)
+	// Esta lectura ya está pagada: se le pasa al rail para que no la vuelva
+	// a hacer por su cuenta un minuto después. Ver volumenReciente.
+	s.anotarVolumen(n)
 
 	inst := s.instantaneaCompleta()
 	indicadores := evaluar(n, inst)
@@ -584,20 +661,34 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
-	lentos := evaluarLentos(n)
+	lentos := conVeredictoPintado(comoFilas(evaluarLentos(n)))
+	salidas := conVeredictoPintado(comoFilas(evaluarSalidas(inst)))
+
+	// LOS CUATRO GRUPOS DE LA TABLA. Los dos últimos solo aparecen si tienen
+	// algo: un nodo sin la capa de avisos instalada no enseña dos semáforos
+	// en gris permanente, que es lo que ADR-0065 vino a retirar.
 	v := vistaEstado{
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
-		FilasNodo:        filasNodo,
-		FilasServicio:    filasServicio,
-		Lentos:           lentos,
+		Esc:              escaleraDe(n, inst),
 		Peor:             peorDe(indicadores),
 		Avisos:           n.Avisos,
 		Version:          versionDelBinario(),
 		Marco:            s.construirMarco(r, "estado", "Estado", ""),
 	}
+	for _, g := range []grupoEstado{
+		{"Nodo", filasNodo},
+		{"Servicio", filasServicio},
+		{"Almacenamiento y hardware", lentos},
+		{"Salidas hacia fuera", salidas},
+	} {
+		if len(g.Filas) > 0 {
+			v.Grupos = append(v.Grupos, g)
+		}
+	}
+
 	if clave := r.URL.Query().Get("ind"); clave != "" {
-		v.Detalle = buscarDetalleDeIndicador(clave, filasNodo, filasServicio, lentos)
+		v.Detalle = marcarSeleccionada(clave, v.Grupos)
 		v.ConDetalle = v.Detalle != nil
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -606,33 +697,88 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// buscarDetalleDeIndicador resuelve el «?ind=» del panel de detalle contra los QUINCE
-// indicadores reales de esta página — ninguno inventado.
-//
-// Recorre las tres listas que la propia página ya construye para pintarse,
-// así que el detalle y la tabla no pueden decir cosas distintas: es la MISMA
-// fuente, mirada dos veces. Una clave que no coincide con ninguna deja el
-// panel cerrado (nil), igual que un aviso de «no se pudo medir» — nunca se
-// rellena un hueco con algo inventado.
-func buscarDetalleDeIndicador(clave string, nodo, servicio []filaViva, lentos []indicador) *filaViva {
-	for _, listas := range [][]filaViva{nodo, servicio} {
-		for _, f := range listas {
-			if f.Clave == clave {
-				return &f
-			}
-		}
+// comoFilas convierte indicadores en filas. Los dos tipos tienen los mismos
+// campos de cabecera y siguen siendo distintos a propósito —un indicador lleva
+// veredicto por definición y una fila de contexto no—, así que la conversión
+// se escribe una vez aquí en vez de campo a campo en cada llamada.
+func comoFilas(is []indicador) []filaViva {
+	out := make([]filaViva, len(is))
+	for i, ind := range is {
+		out[i] = comoFila(ind)
 	}
-	for _, ind := range lentos {
-		if ind.Clave == clave {
-			// indicador y filaViva tienen los mismos campos, en el mismo
-			// orden: son la misma fila mirada por dos lados (uno se
-			// refresca solo, el otro no). La conversión lo dice; copiar
-			// campo a campo solo repetía la misma lista dos veces.
-			f := filaViva(ind)
-			return &f
+	return out
+}
+
+// comoFila es la conversión de uno solo. Se escribe a mano y no con una
+// conversión de tipo porque filaViva tiene ya campos que indicador no tiene
+// —Etiqueta, Clase, Seleccionada—: el compilador lo diría, pero decirlo aquí
+// evita tener que descubrirlo.
+func comoFila(ind indicador) filaViva {
+	return filaViva{
+		Clave: ind.Clave, Nombre: ind.Nombre, Valor: ind.Valor,
+		Veredicto: ind.Veredicto, Accion: ind.Accion,
+	}
+}
+
+// marcarSeleccionada resuelve el «?ind=» del panel de detalle contra los
+// indicadores REALES de esta página — ninguno inventado — y de paso deja
+// marcada su fila.
+//
+// Recorre los grupos que la propia página ya construyó para pintarse, así que
+// el detalle y la tabla no pueden decir cosas distintas: es la MISMA fuente,
+// mirada dos veces. Una clave que no coincide con ninguna deja el panel
+// cerrado (nil) en lugar de responder con un error: no es «esto no existe»,
+// es «no hay nada que seleccionar».
+func marcarSeleccionada(clave string, grupos []grupoEstado) *filaViva {
+	for gi := range grupos {
+		for fi := range grupos[gi].Filas {
+			if grupos[gi].Filas[fi].Clave != clave {
+				continue
+			}
+			grupos[gi].Filas[fi].Seleccionada = true
+			return &grupos[gi].Filas[fi]
 		}
 	}
 	return nil
+}
+
+// escaleraDe compone las tres cifras de cabecera a partir de la MISMA lectura
+// que alimenta la tabla. Si algo no se pudo medir se dice, en vez de pintar
+// un cero que se leería como una medida.
+func escaleraDe(n sistema.Nodo, i Instantanea) escaleraEstado {
+	e := escaleraEstado{
+		SoC: sinMedida, SoCPie: "sin lectura",
+		Disco: sinMedida, DiscoPie: "sin lectura",
+		Marcha: sinMedida, MarchaPie: "servicio " + i.DesdeElArranque,
+	}
+	if n.Vivo.TemperaturaOK {
+		e.SoC = fmt.Sprintf("%.1f°", n.Vivo.TemperaturaC)
+	}
+	if t := evaluarThrottled(n.Throttled); t.Valor != "" {
+		e.SoCPie = t.Valor
+	}
+	if v := n.Datos; v.Disponible && v.TotalBytes > 0 {
+		e.Disco = legibleBytes(v.TotalBytes - v.LibresBytes)
+		e.DiscoPie = legibleBytes(v.LibresBytes) + " libres de " + legibleBytes(v.TotalBytes)
+	}
+	if n.Vivo.UptimeOK {
+		e.Marcha = duracionCorta(n.Vivo.Uptime)
+	}
+	return e
+}
+
+// duracionCorta es la forma de cabecera: dos unidades y sin espacios, «4d 20h».
+// duracionLegible sigue siendo la de las tablas, donde cabe el detalle.
+func duracionCorta(d time.Duration) string {
+	d = d.Round(time.Minute)
+	dias, horas, minutos := int(d.Hours())/24, int(d.Hours())%24, int(d.Minutes())%60
+	switch {
+	case dias > 0:
+		return fmt.Sprintf("%dd %dh", dias, horas)
+	case horas > 0:
+		return fmt.Sprintf("%dh %dmin", horas, minutos)
+	}
+	return fmt.Sprintf("%dmin", minutos)
 }
 
 // instantaneaCompleta reúne los contadores con los dos datos que no viven en

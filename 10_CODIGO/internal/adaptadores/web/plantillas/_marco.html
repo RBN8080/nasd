@@ -1,62 +1,122 @@
-{{/* _marco.html — el cromo compartido: rail, título, pestañas móviles y
-     «Salir» (ADR-0075). Mismo patrón que _cabeza.html ya usa para el <head>:
-     una definición compartida en vez de repetirla en cada plantilla — ver el
-     comentario de esa cabecera para el defecto exacto que esto evita.
+{{/* _marco.html — el cromo de la maqueta 12, portado pieza a pieza: rail con
+     iconos y medidor de disco, barra superior con buscador y avatar, tira de
+     estado al pie y pestañas en el teléfono.
 
-     Se parte en DOS bloques —abre y cierra— y cada página escribe su propio
-     contenido entre medias, exactamente como listado.html hoy escribe su
-     <main> entre la cabecera y el pie compartidos. html/template analiza el
-     contexto de escapado siguiendo los {{template}} anidados, así que
-     partir un documento en dos definiciones no es distinto, para el
-     escapado, de tenerlo entero en una: es el mismo árbol. */}}
+     # POR QUÉ SON CUATRO BLOQUES Y NO UNO
+
+     Porque el marco es una REJILLA CON ÁREAS y cada página tiene que poder
+     meter dos piezas propias en medio: su barra de órdenes —que va dentro de
+     «.top»— y su columna de detalle —que es hermana de «.cuerpo», no hija—.
+     Go no permite sobrescribir un {{"{{block}}"}} desde otra plantilla del
+     mismo conjunto (eso es «multiple definition»), así que la costura se
+     hace por llamada explícita:
+
+       {{"{{template \"marco-abre\" .}}"}}      rail + barra superior, «.top» abierto
+       …la barra de órdenes del módulo, o nada…
+       {{"{{template \"marco-cuerpo\" .}}"}}    cierra «.top», abre el cuerpo y el título
+       …el contenido del módulo…
+       {{"{{template \"marco-fin\" .}}"}}       cierra el cuerpo
+       …la columna de detalle, o nada…
+       {{"{{template \"marco-cierra\" .}}"}}    tira de estado + pestañas
+
+     Un módulo sin barra de órdenes llama a los dos primeros seguidos; uno sin
+     detalle, a los dos últimos. */}}
 
 {{define "marco-abre"}}
-<div class="marco{{if .ConDetalle}} con-detalle{{end}}">
-  <nav class="rail">
-    <div class="marca">
-      <span class="marca-g">rb</span>
-      <span class="nm"><b>nas-ejemplo</b><span>NAS</span></span>
-    </div>
-    {{range .Marco.Items}}
-    {{if .Grupo}}<div class="ni-grupo">{{.Grupo}}</div>{{end}}
-    <a class="ni{{if .Activo}} ni-activo{{end}}" href="{{.Ruta}}">
-      <span>{{.Rotulo}}</span>{{if .Marca}}<span class="ct">{{.Marca}}</span>{{end}}
-    </a>
-    {{end}}
-    <form method="post" action="/salir" class="salir">
-      <input type="hidden" name="csrf" value="{{.Marco.Csrf}}">
-      <button type="submit">Salir</button>
-    </form>
-  </nav>
+<div class="app">
+  <div class="marco">
 
-  <div class="cont">
-    <div class="titulo-estado">
-      <span class="titulo-pagina">{{.Marco.Titulo}}</span>
-      {{if .Marco.Sub}}<span class="filtro-activo">{{.Marco.Sub}}</span>{{end}}
-    </div>
+    <aside class="rail">
+      <div class="marca">
+        <div class="g">{{marcaCorta .Marco.Nodo}}</div>
+        <div class="nm"><b>{{.Marco.Nodo}}</b>{{if .Marco.NodoSub}}<span><i></i>{{.Marco.NodoSub}}</span>{{end}}</div>
+      </div>
+
+      {{range .Marco.Grupos}}
+      <div class="gr">
+        {{if .Rotulo}}<div class="cab">{{.Rotulo}}</div>{{end}}
+        {{range .Items}}
+        <a class="ni{{if .Activo}} ni-activo{{end}}" href="{{.Ruta}}">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">{{.Icono}}</svg>
+          {{.Rotulo}}{{if .Marca}}<span class="ct">{{.Marca}}</span>{{end}}
+        </a>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{/* EL MEDIDOR DE DISCO — los anchos van en atributos de SVG y NO en
+           «style="width:…%"»: la CSP es «style-src 'self'» sin
+           'unsafe-inline' (ADR-0060), así que un estilo en línea se descarta
+           en silencio y la barra saldría vacía sin que nada fallara a
+           gritos. «preserveAspectRatio=none» es lo que deja que un viewBox
+           de 100 unidades se estire al ancho real del rail. */}}
+      {{with .Marco.Disco}}
+      <div class="disco">
+        <div class="l1"><b>Disco de datos</b><span>{{.Usado}} / {{.Total}}</span></div>
+        <svg class="seg" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+          {{range .Partes}}<rect class="{{.Clase}}" x="{{.X}}" y="0" width="{{.Ancho}}" height="6"></rect>{{end}}
+        </svg>
+        <div class="ley">
+          {{range .Partes}}<span><u class="{{.Clase}}"></u>{{.Nombre}} {{.Tamano}}</span>{{end}}
+        </div>
+      </div>
+      {{end}}
+
+      <form method="post" action="/salir" class="salir-rail">
+        <input type="hidden" name="csrf" value="{{.Marco.Csrf}}">
+        <button type="submit" class="od">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          Salir
+        </button>
+      </form>
+    </aside>
+
+    <div class="top">
+      <div class="f1">
+        {{/* La marca solo aparece en el teléfono, donde no hay rail. */}}
+        <div class="mmarca"><div class="g">{{marcaCorta .Marco.Nodo}}</div></div>
+        {{/* EL BUSCADOR ES REAL: un GET a «/» que filtra el listado por
+             nombre. Va en los cinco módulos porque su promesa es «buscar en
+             todo el NAS» y no «buscar en esta página»: desde donde uno esté,
+             teclear lleva a Archivos con el filtro puesto. */}}
+        <form class="busc" method="get" action="/" role="search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="text" name="q" value="{{.Marco.Busqueda}}" placeholder="Buscar en todo el NAS" aria-label="Buscar en todo el NAS">
+        </form>
+        <div class="usr">{{.Marco.Inicial}}</div>
+      </div>
 {{end}}
 
-{{/* marco-cierra NO cierra «.cont»: cada página lo hace ella misma, porque
-     entre el cierre de «.cont» y esta llamada es donde va —si lo hay— su
-     propio panel de detalle («.detalle»). Su forma cambia con cada módulo
-     —un origen, una cuenta, un indicador— así que no puede vivir en una
-     definición compartida que no sabe de ninguna. Ver seguridad.html,
-     administracion.html y estado.html para el patrón exacto:
+{{define "marco-cuerpo"}}
+    </div>
 
-       </div> {{/* cierra .cont */}}
-       <aside class="detalle">{{with .Detalle}}...{{end}}</aside>
-       {{template "marco-cierra" .}}
+    <main class="cuerpo">
+      <div class="vw">
+        <div class="tv"><h1>{{.Marco.Titulo}}</h1>{{if .Marco.Sub}}<span class="sb">{{.Marco.Sub}}</span>{{end}}</div>
+{{end}}
 
-     Un módulo sin panel de detalle —Archivos, Resumen— simplemente no
-     escribe el <aside> en absoluto, y sin «.con-detalle» en «.marco» tampoco
-     se reserva una tercera columna que dibujar. */}}
+{{define "marco-fin"}}
+      </div>
+    </main>
+{{end}}
+
 {{define "marco-cierra"}}
-  <nav class="tabs">
-    {{range .Marco.Items}}
-    <a class="tb{{if .Activo}} tb-activo{{end}}" href="{{.Ruta}}">
-      {{.Rotulo}}{{if .Marca}}<span class="pt"></span>{{end}}
-    </a>
+    {{with .Marco.Estado}}
+    <div class="estado">
+      {{range .}}<span class="it">{{if .Punto}}<i class="pt {{.Punto}}"></i>{{end}}<b>{{.Nombre}}</b> {{.Valor}}</span>{{end}}
+      {{if $.Marco.Version}}<span class="der"><span class="it"><b>{{$.Marco.Version}}</b></span></span>{{end}}
+    </div>
     {{end}}
-  </nav>
+
+    <nav class="tabs">
+      {{range .Marco.Todos}}
+      <a class="tb{{if .Activo}} tb-activo{{end}}" href="{{.Ruta}}">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">{{.Icono}}</svg>
+        {{.Rotulo}}{{if .Marca}}<i class="pt"></i>{{end}}
+      </a>
+      {{end}}
+    </nav>
+
+  </div>
 </div>
 {{end}}

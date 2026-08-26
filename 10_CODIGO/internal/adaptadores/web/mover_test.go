@@ -236,7 +236,7 @@ func TestTrasMoverSeVuelveALaVistaConElAvisoEncendido(t *testing.T) {
 	}
 
 	cuerpo := peticionConSesion(t, s, destino).Body.String()
-	if !strings.Contains(cuerpo, "mensaje exito") {
+	if !strings.Contains(cuerpo, "aviso bien") {
 		t.Error("la vista no dibuja el aviso verde de operación completada")
 	}
 	// Y «Cerrar» tiene que sacar a la carpeta donde acaba de aterrizar. Es un
@@ -261,7 +261,7 @@ func TestEnLaFilaDeAccionesDeMoverNoHayEnlaces(t *testing.T) {
 
 	cuerpo := peticionConSesion(t, s, "/mover/notas.txt").Body.String()
 
-	ini := strings.Index(cuerpo, `<div class="acciones-mover">`)
+	ini := strings.Index(cuerpo, `<div class="fila-bt">`)
 	if ini < 0 {
 		t.Fatal("no se encuentra la fila de acciones")
 	}

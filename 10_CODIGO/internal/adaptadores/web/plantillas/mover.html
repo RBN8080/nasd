@@ -4,78 +4,83 @@
 {{template "cabeza" "NAS — Mover"}}
 </head>
 <body>
-<main class="mover">
-  <h1>Mover</h1>
-  <p class="ruta-destacada">{{.Origen.Nombre}}</p>
+<main class="sola">
+  <div class="tarjeta ancha">
+    <h1>Mover</h1>
+    <p class="ruta-grande">{{.Origen.Nombre}}</p>
 
-  <!-- El aviso verde va ARRIBA, no junto al botón: tras pulsar «Mover aquí»
-       la página se recarga desde el principio, y al pie no se vería sin
-       desplazarse en el teléfono. -->
-  {{if .Hecho}}<p class="mensaje exito">Movido con éxito</p>{{end}}
-  {{if .Error}}<p class="mensaje error">{{.Error}}</p>{{end}}
+    <!-- El aviso va ARRIBA, no junto al botón: tras pulsar «Mover aquí» la
+         página se recarga desde el principio, y al pie no se vería sin
+         desplazarse en el teléfono. -->
+    {{if .Hecho}}<p class="aviso bien">Movido con éxito</p>{{end}}
+    {{if .Error}}<p class="aviso mal">{{.Error}}</p>{{end}}
 
-  <p class="rotulo-destino">Mover a esta carpeta:</p>
-  <p class="migas-mover">
-    {{range .Migas}}<a href="{{moverA $.Origen .}}">{{.Nombre}}</a>{{end}}
-  </p>
+    <p class="enlace">Mover a esta carpeta</p>
+    <nav class="migas-sola">
+      {{range .Migas}}<a href="{{moverA $.Origen .}}">{{if .EsRaiz}}Inicio{{else}}{{.Nombre}}{{end}}</a>{{end}}
+    </nav>
 
-  <ul class="lista-carpetas">
-    {{if not .Aqui.EsRaiz}}
-      <li><a href="{{moverA .Origen .Aqui.Padre}}">.. subir</a></li>
-    {{end}}
-    {{range .Carpetas}}
-      <li><a class="dir" href="{{moverA $.Origen .Ruta}}">{{.Nombre}}/</a></li>
-    {{else}}
-      <li class="oculto">Esta carpeta no tiene subcarpetas.</li>
-    {{end}}
-  </ul>
-  {{if .Truncado}}
-    <p class="oculto">Hay más subcarpetas de las que caben en esta vista.</p>
-  {{end}}
+    <ul class="carpetas">
+      {{if not .Aqui.EsRaiz}}
+      <li><a href="{{moverA .Origen .Aqui.Padre}}">
+        <span class="ico-f"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+        Subir un nivel</a></li>
+      {{end}}
+      {{range .Carpetas}}
+      <li><a href="{{moverA $.Origen .Ruta}}">
+        <span class="ico-f"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+        {{.Nombre}}</a></li>
+      {{else}}
+      <li><span class="vacia">Esta carpeta no tiene subcarpetas.</span></li>
+      {{end}}
+    </ul>
+    {{if .Truncado}}<p class="nota">Hay más subcarpetas de las que caben en esta vista.</p>{{end}}
 
-  <!-- LOS TRES SON BOTONES Y VAN EN UNA SOLA FILA. El responsable lo pidió
-       dos veces sobre dos capturas: primero «Mover…» en el menú del listado
-       y luego «Cerrar» aquí, que se habían dejado como enlaces y salían en
-       color de vínculo entre botones.
-       LA LECCIÓN, para que no haya una tercera vez: en esta interfaz, si
-       algo se pulsa y está junto a botones, ES un botón — aunque por dentro
-       sea una navegación—. Un <a> con aspecto de enlace al lado de un
-       <button> se lee como de otra familia, y da igual que técnicamente sea
-       lo correcto en HTML. Por eso «Cerrar» va en <form method="get">, el
-       mismo patrón que ya usan «Descargar» y «Mover…».
-       «Cerrar» sale a la carpeta que contiene el elemento: antes de mover es
-       de donde vino, y después del movimiento ES la carpeta destino, así que
-       aterriza viendo el resultado sin que haga falta ninguna rama. -->
-  <div class="acciones-mover">
-    <form method="post" action="/mover">
-      <input type="hidden" name="csrf" value="{{.Csrf}}">
-      <input type="hidden" name="origen" value="{{.Origen.Rel}}">
-      <!-- Solo la CARPETA. El nombre lo conserva el servidor a partir del
-           origen: pedirlo aquí repondría el campo de texto ambiguo que este
-           rediseño existe para quitar. -->
-      <input type="hidden" name="carpeta" value="{{.Aqui.Rel}}">
-      <button type="submit" class="boton-barra">Mover aquí</button>
-    </form>
+    <!-- LOS TRES SON BOTONES Y VAN EN UNA SOLA FILA. El responsable lo pidió
+         dos veces sobre dos capturas: primero «Mover…» en el menú del listado
+         y luego «Cerrar» aquí, que se habían dejado como enlaces y salían en
+         color de vínculo entre botones.
+         LA LECCIÓN, para que no haya una tercera vez: en esta interfaz, si
+         algo se pulsa y está junto a botones, ES un botón —aunque por dentro
+         sea una navegación—. «.bt» viste igual a un <a> y a un <button>, pero
+         la regla se mantiene en el MARCADO y no solo en el aspecto: la pidió
+         dos veces y TestEnLaFilaDeAccionesDeMoverNoHayEnlaces la sujeta.
+         «Cerrar» sale a la carpeta que contiene el elemento: antes de mover es
+         de donde vino, y después del movimiento ES la carpeta destino, así que
+         aterriza viendo el resultado sin que haga falta ninguna rama. -->
+    <div class="fila-bt">
+      <form method="post" action="/mover">
+        <input type="hidden" name="csrf" value="{{.Csrf}}">
+        <input type="hidden" name="origen" value="{{.Origen.Rel}}">
+        <!-- Solo la CARPETA. El nombre lo conserva el servidor a partir del
+             origen: pedirlo aquí repondría el campo de texto ambiguo que este
+             rediseño existe para quitar. -->
+        <input type="hidden" name="carpeta" value="{{.Aqui.Rel}}">
+        <button type="submit" class="bt">Mover aquí</button>
+      </form>
 
-    <details class="menu">
-      <summary class="boton-barra">Crear carpeta</summary>
-      <div class="menu-panel">
-        <form method="post" action="/directorio">
-          <input type="hidden" name="csrf" value="{{.Csrf}}">
-          <input type="hidden" name="destino" value="{{.Aqui.Rel}}">
-          <!-- Este campo es lo único que distingue crear una carpeta DESDE
-               aquí de crearla desde el listado: hace que se vuelva a esta
-               vista en lugar de salir a la lista de archivos. -->
-          <input type="hidden" name="mover" value="{{.Origen.Rel}}">
-          <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
-          <button type="submit">Crear</button>
-        </form>
-      </div>
-    </details>
+      <details class="menu-fila">
+        <summary class="bt">Crear carpeta</summary>
+        <div class="menu-panel">
+          <form method="post" action="/directorio">
+            <input type="hidden" name="csrf" value="{{.Csrf}}">
+            <input type="hidden" name="destino" value="{{.Aqui.Rel}}">
+            <!-- Este campo es lo único que distingue crear una carpeta DESDE
+                 aquí de crearla desde el listado: hace que se vuelva a esta
+                 vista en lugar de salir a la lista de archivos. -->
+            <input type="hidden" name="mover" value="{{.Origen.Rel}}">
+            <label class="cmp" for="nombre-carpeta">Nombre
+              <input type="text" id="nombre-carpeta" name="nombre" placeholder="Nombre de la carpeta" required>
+            </label>
+            <button type="submit" class="bt">Crear</button>
+          </form>
+        </div>
+      </details>
 
-    <form method="get" action="{{listado .Origen.Padre}}">
-      <button type="submit" class="boton-barra">Cerrar</button>
-    </form>
+      <form method="get" action="{{listado .Origen.Padre}}">
+        <button type="submit" class="bt">Cerrar</button>
+      </form>
+    </div>
   </div>
 </main>
 <script src="/estatico/menus.js"></script>

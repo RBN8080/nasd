@@ -239,7 +239,7 @@ func TestElOrdenSobreviveAlEntrarEnUnaSubcarpeta(t *testing.T) {
 		t.Errorf("entrar en una subcarpeta pierde el orden elegido:\n%s", cuerpo)
 	}
 	// Y el encabezado activo se marca, para saber qué se está viendo.
-	if !strings.Contains(cuerpo, `class="orden orden-activo" href="/?orden=tamano"`) {
+	if !strings.Contains(cuerpo, `class="act" href="/?orden=tamano"`) {
 		t.Error("no se señala por qué columna se está ordenando")
 	}
 }

@@ -524,7 +524,7 @@ func TestNingunaFilaDeEstadoLlevaGuionEnLaColumnaDeEstado(t *testing.T) {
 
 	// Y que la pastilla vacía EXISTA como elemento, que es lo que permite al
 	// flujo en vivo escribir en ella sin crear ni destruir nodos.
-	if !strings.Contains(cuerpo, `class="pastilla"></span>`) {
+	if !strings.Contains(cuerpo, `class="pastilla p"></span>`) {
 		t.Fatal("no hay ninguna pastilla vacía; las filas de contexto deben " +
 			"conservar el elemento aunque no tengan veredicto que enseñar")
 	}

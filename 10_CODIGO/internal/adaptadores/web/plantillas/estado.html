@@ -1,97 +1,87 @@
 {{define "estado.html"}}<!doctype html>
 <html lang="es">
 <head>
-{{template "cabeza" "NAS — estado"}}
+{{template "cabeza" "NAS — Estado"}}
 </head>
 <body>
 {{template "marco-abre" .}}
-
-<!-- El rótulo de conexión lo enciende estado.js al conectar el flujo. Nace
-     oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
-     cartel que dijera «en línea» sobre una foto congelada sería justo la
-     clase de indicador que miente que 00_RECTOR.md §12.5 lleva años
-     corrigiendo. Vive junto al título del marco y no en una línea propia,
-     por el mismo motivo de siempre: un párrafo suelto reserva su altura
-     aunque esté oculto. -->
-<span id="latido" class="latido" hidden></span>
-
-<!-- ESTADO, ADMINISTRACIÓN, SEGURIDAD Y SALIR YA NO VIVEN EN UNA BARRA
-     PROPIA (ADR-0075): son navegación entre módulos y viven en el rail,
-     construido una sola vez por marco.go. Esta página no tiene ninguna
-     orden propia que ofrecer —medir es automático, no hay nada que crear
-     ni subir—, así que no lleva «.barra-acciones» en absoluto: un módulo
-     sin nada que hacer no simula tener una barra vacía. -->
-
-<main class="cuerpo-modulo">
+{{/* Estado NO tiene barra de órdenes, y no es un olvido: medir es
+     automático, aquí no hay nada que crear, subir ni filtrar. Un módulo sin
+     nada que hacer no simula tener una barra vacía. */}}
+{{template "marco-cuerpo" .}}
 
 <noscript>
   <p class="nota">Sin JavaScript esta página no se refresca sola: las cifras son
   las del momento en que se abrió. Recárguela para verlas de nuevo.</p>
 </noscript>
 
-<h2>Nodo</h2>
-<table class="datos">
-  <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
-  <tbody id="tabla-nodo">
-  {{range .FilasNodo}}{{template "fila-dato" .}}{{end}}
-  </tbody>
-</table>
+<!-- El rótulo de conexión lo enciende estado.js al conectar el flujo. Nace
+     oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
+     cartel que dijera «en línea» sobre una foto congelada sería justo la
+     clase de indicador que miente que 00_RECTOR.md §12.5 lleva años
+     corrigiendo. -->
+<span id="latido" class="p p-na" hidden></span>
 
-<h2>Servicio</h2>
-<!-- Los contadores se ponen a CERO al reiniciar el servicio: no son un
-     histórico. De ahí que la primera fila sea desde cuándo llevan contando;
-     sin ese dato, un porcentaje no significa nada. -->
-<table class="datos">
-  <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
-  <tbody id="tabla-servicio">
-  {{range .FilasServicio}}{{template "fila-dato" .}}{{end}}
-  </tbody>
-</table>
+<!-- LA ESCALERA: las tres cifras que se leen de un vistazo antes de entrar
+     en la tabla. Salen de los MISMOS indicadores de abajo, no de una segunda
+     medición. -->
+<div class="esc">
+  <div class="pl"><div class="n mono">{{.Esc.SoC}}</div><div class="t"><div class="q">SoC</div><div class="d">{{.Esc.SoCPie}}</div></div></div>
+  <div class="pl"><div class="n mono">{{.Esc.Disco}}</div><div class="t"><div class="q">Disco</div><div class="d">{{.Esc.DiscoPie}}</div></div></div>
+  <div class="pl"><div class="n mono">{{.Esc.Marcha}}</div><div class="t"><div class="q">En marcha</div><div class="d">{{.Esc.MarchaPie}}</div></div></div>
+</div>
 
-<h2>Almacenamiento y hardware</h2>
-<table class="datos">
-  <thead><tr><th>Dato</th><th>Valor</th><th>Estado</th></tr></thead>
-  <tbody>
-  {{/* «Punto de montaje» se retiró (ADR-0065): era una constante de
-       configuración con una pastilla de estado permanentemente vacía. El punto
-       de cada volumen sigue en el JSON, junto a su dispositivo. */}}
-  {{range .Lentos}}{{template "fila-dato" .}}{{end}}
-  </tbody>
-</table>
+<div class="t-est">
+  <div class="th"><span>Indicador</span><span>Valor</span><span>Veredicto</span></div>
+  <div class="fls">
+    {{range .Grupos}}
+    <div class="gh"><span>{{.Rotulo}}</span></div>
+    {{range .Filas}}{{template "fila-dato" .}}{{end}}
+    {{end}}
+  </div>
+</div>
 
 {{if .Avisos}}
-<h2>Lo que no se ha podido medir</h2>
-<ul class="avisos">{{range .Avisos}}<li>{{.}}</li>{{end}}</ul>
+<section class="sc">
+  <div class="sch"><h2>Lo que no se ha podido medir</h2></div>
+  {{range .Avisos}}<p class="nota">{{.}}</p>{{end}}
+</section>
 {{end}}
 
 <!-- Cada campo en su propio <span> para que el renglón pueda partirse ENTRE
      campos y nunca por dentro de uno: media huella arriba y media abajo no se
-     puede leer ni comparar, que es para lo único que sirve una huella.
+     puede leer ni comparar, que es para lo único que sirve una huella. -->
+<div class="notas">
+  <span class="rt">Binario</span>
+  <span class="nt">{{range $i, $campo := .Version}}{{if $i}} · {{end}}<b>{{$campo}}</b>{{end}}</span>
+</div>
 
-     LOS ESPACIOS ALREDEDOR DEL SEPARADOR NO SOBRAN. Sin ellos los <span> quedan
-     pegados y la línea entera se vuelve una sola palabra sin ningún punto de
-     corte: MEDIDO, se salía 162 px de los 375 disponibles en vez de envolver.
-     Un espacio de verdad en el texto es lo que da la oportunidad de partir. -->
-<p class="pie">{{range $i, $campo := .Version}}{{if $i}} <span class="pie-sep">·</span> {{end}}<span>{{$campo}}</span>{{end}}</p>
+{{template "marco-fin" .}}
 
-</main>
-</div>{{/* cierra .cont */}}
 {{if .Detalle}}
 <aside class="detalle">
-  {{with .Detalle}}
-  <div class="det-cabecera">
-    <div><h3>{{.Nombre}}</h3><div class="dip">{{.Clave}}</div></div>
-    <a class="det-cerrar" href="/estado" aria-label="Cerrar">✕</a>
+  <div class="dvw">
+    {{with .Detalle}}
+    <div class="dc">
+      <div><h3>{{.Nombre}}</h3><div class="dip">{{.Clave}}</div></div>
+      <a class="x" href="/estado" aria-label="Cerrar">✕</a>
+    </div>
+    <div class="db">
+      <div class="h">Medido</div>
+      <div class="dp"><span>Valor</span><b>{{.Valor}}</b></div>
+      {{if .Veredicto}}<div class="dp"><span>Veredicto</span><b><span class="pls"><span class="p {{.Veredicto.Clase}}">{{.Veredicto.Etiqueta}}</span></span></b></div>{{end}}
+    </div>
+    {{if .Accion}}
+    <div class="db">
+      <div class="h">Qué hacer</div>
+      <p class="nota">{{.Accion}}</p>
+    </div>
+    {{end}}
+    {{end}}
   </div>
-  <div class="det-bloque">
-    <h4>Medido</h4>
-    <div class="det-fila"><span>Valor</span><b>{{.Valor}}</b></div>
-    {{if .Veredicto}}<div class="det-fila"><span>Veredicto</span><b><span class="pastilla">{{.Veredicto}}</span></b></div>{{end}}
-  </div>
-  {{if .Accion}}<div class="det-bloque"><h4>Qué hacer</h4><p class="nota">{{.Accion}}</p></div>{{end}}
-  {{end}}
 </aside>
 {{end}}
+
 {{template "marco-cierra" .}}
 <script src="/estatico/estado.js"></script>
 </body>
@@ -99,33 +89,29 @@
 {{end}}
 
 {{define "fila-dato"}}{{/*
-     Una sola definición de fila para las tres tablas. La usan tanto las filas
-     vivas como los indicadores lentos porque tienen los mismos campos, y que
-     compartan plantilla es lo que hace que se vean iguales sin acordarse.
+     Una sola definición de fila para los cuatro grupos. La usan tanto las
+     filas vivas como los indicadores lentos porque tienen los mismos campos,
+     y que compartan plantilla es lo que hace que se vean iguales sin
+     acordarse.
 
      La celda de acción va SIEMPRE presente aunque esté vacía: así estado.js
-     solo tiene que asignarle texto, sin crear ni destruir nodos. El CSS la
-     esconde mientras no diga nada. La pastilla sigue la MISMA regla, y por eso
-     no lleva condicional ni el guion que llevaba antes: una fila sin umbral la
-     deja vacía y el CSS la oculta.
+     solo tiene que asignarle texto, sin crear ni destruir nodos. La pastilla
+     sigue la MISMA regla — una fila sin umbral la deja vacía, y una pastilla
+     vacía no se pinta porque no hay nada que pintar.
 
-     El NOMBRE ABRE EL DETALLE (ADR-0075): un enlace a «?ind=CLAVE», que
+     EL NOMBRE ABRE EL DETALLE (ADR-0075): un enlace a «?ind=CLAVE», que
      estado.js no toca —opera por data-clave sobre .cifra/.accion/.pastilla,
      y el enlace no es ninguno de los tres—, así que el flujo en vivo sigue
-     actualizando la fila exactamente igual con el detalle abierto o cerrado.
+     actualizando la fila con el detalle abierto o cerrado.
 
-     El comentario va DENTRO y en sintaxis de plantilla, no en HTML fuera del
-     bloque: cualquier texto suelto a nivel de archivo convierte a estado.html
-     en una plantilla con cuerpo propio, y entonces choca con el {{define}} que
-     lleva ese mismo nombre. El síntoma es «multiple definition of template» al
-     arrancar, no al renderizar.
+     El comentario va DENTRO y en sintaxis de plantilla: cualquier texto
+     suelto a nivel de archivo convierte a estado.html en una plantilla con
+     cuerpo propio, y entonces choca con el {{define}} del mismo nombre. El
+     síntoma es «multiple definition of template» al arrancar.
 */}}
-  <tr data-clave="{{.Clave}}"{{if .Veredicto}} class="v-{{.Veredicto}}"{{end}}>
-    <td class="rotulo"><a href="?ind={{.Clave}}">{{.Nombre}}</a></td>
-    <td class="valor">
-      <span class="cifra">{{.Valor}}</span>
-      <span class="accion">{{.Accion}}</span>
-    </td>
-    <td class="estado"><span class="pastilla">{{.Veredicto}}</span></td>
-  </tr>
+  <div class="fl{{if .Seleccionada}} sel{{end}}" data-clave="{{.Clave}}">
+    <div class="cl"><span class="et">Indicador</span><a href="?ind={{.Clave}}">{{.Nombre}}</a></div>
+    <div class="cl"><span class="et">Valor</span><span class="ct2 cifra">{{.Valor}}</span><span class="accion">{{.Accion}}</span></div>
+    <div class="cl"><span class="et">Veredicto</span><span class="pls"><span class="pastilla p{{with .Veredicto.Clase}} {{.}}{{end}}">{{.Veredicto.Etiqueta}}</span></span></div>
+  </div>
 {{end}}
