@@ -636,12 +636,18 @@ func TestElPanelDeSeguridadSeRenderizaEntero(t *testing.T) {
 		t.Fatalf("la página no llega a su última línea: se cortó el render.\nCola: %q",
 			cuerpo[max(0, len(cuerpo)-300):])
 	}
-	// Y las cuatro secciones, para que «entero» signifique algo más que que
-	// la etiqueta de cierre llegó.
-	for _, seccion := range []string{"Resumen", "Filtros", "Orígenes", "Cronología"} {
+	// Y las secciones con encabezado propio, para que «entero» signifique
+	// algo más que que la etiqueta de cierre llegó. «Filtros» dejó de ser una
+	// de ellas con ADR-0075 —vive bajo demanda tras «Filtrar», en la barra de
+	// órdenes, no como sección con su propio <h2>— y se comprueba por ese
+	// control en vez de por el encabezado que ya no tiene.
+	for _, seccion := range []string{"Resumen", "Actividad por día", "Orígenes", "Cronología"} {
 		if !strings.Contains(cuerpo, "<h2>"+seccion+"</h2>") {
 			t.Errorf("falta la sección %q", seccion)
 		}
+	}
+	if !strings.Contains(cuerpo, `<summary class="boton-barra">Filtrar</summary>`) {
+		t.Error("falta el control de filtros en la barra de órdenes")
 	}
 }
 

@@ -301,6 +301,79 @@ type vistaSeguridad struct {
 	// se ve desde Internet a propósito —mirar quién toca el nodo es justo lo
 	// que se quiere poder hacer desde fuera— y por eso necesita la distinción.
 	PuedeAdministrar bool
+	// Marco es el cromo compartido — ADR-0075.
+	Marco marco
+	// Actividad es «Actividad por día», pintada SOLO con lo que el anillo
+	// recuerda de los eventos ya filtrados — ver seguridad.PorDia. Doce
+	// columnas siempre; ActividadDesde dice hasta dónde alcanzan de verdad.
+	Actividad      []barraGrafica
+	ActividadDesde time.Time
+	// Detalle es el origen seleccionado por «?origen=», o nil si no vino el
+	// parámetro o la dirección no está en Origenes. Se busca en la MISMA
+	// lista que pinta la tabla, así que las dos no pueden discrepar.
+	Detalle    *filaOrigen
+	ConDetalle bool
+}
+
+// barraGrafica es UNA columna de «Actividad por día», con su geometría YA
+// CALCULADA — atributos numéricos de SVG (x/y/width/height), no CSS: ninguno
+// de los dos es «style="..."», así que la CSP «style-src 'self'» sin
+// 'unsafe-inline' no se toca (ver el comentario de «.grafica-actividad» en
+// estilo.css). ADR-0017: el formato y ahora también la geometría se deciden
+// en el servidor; la plantilla solo copia números en atributos.
+type barraGrafica struct {
+	X, Y, Ancho, Alto int
+	EjeX, EjeY        int
+	Etiqueta          string
+	// Pico marca el día de mayor actividad de la serie, para que resalte con
+	// el acento en vez de con el gris de las demás columnas — la ÚNICA señal
+	// de color de la gráfica, igual que la pastilla es la única de una tabla.
+	Pico bool
+}
+
+// anchoSlotGrafica, altoMaxGrafica… la geometría fija del SVG. Doce columnas
+// en un viewBox de 300×90 — ver «.grafica-actividad» en estilo.css.
+const (
+	anchoSlotGrafica  = 25
+	anchoBarraGrafica = 17
+	altoMaxGrafica    = 50
+	baseYGrafica      = 60
+	ejeYGrafica       = 76
+)
+
+// graficaDeActividad convierte la serie pura de seguridad.PorDia en columnas
+// con su geometría resuelta. Vive en el adaptador y no en internal/seguridad
+// porque es una decisión de PRESENTACIÓN (tamaños en píxeles de un SVG
+// concreto), y ese paquete no sabe de HTML — mismo corte que filaOrigen ya
+// aplica frente a seguridad.Origen.
+func graficaDeActividad(serie []seguridad.Dia) []barraGrafica {
+	max := 0
+	for _, d := range serie {
+		if d.Rechazos > max {
+			max = d.Rechazos
+		}
+	}
+	out := make([]barraGrafica, len(serie))
+	for i, d := range serie {
+		alto := 0
+		if max > 0 {
+			alto = d.Rechazos * altoMaxGrafica / max
+			if d.Rechazos > 0 && alto == 0 {
+				alto = 1
+			}
+		}
+		out[i] = barraGrafica{
+			X:        i*anchoSlotGrafica + (anchoSlotGrafica-anchoBarraGrafica)/2,
+			Y:        baseYGrafica - alto,
+			Ancho:    anchoBarraGrafica,
+			Alto:     alto,
+			EjeX:     i*anchoSlotGrafica + anchoSlotGrafica/2,
+			EjeY:     ejeYGrafica,
+			Etiqueta: strconv.Itoa(d.Fecha.Day()),
+			Pico:     max > 0 && d.Rechazos == max,
+		}
+	}
+	return out
 }
 
 // ColumnasDeOrigenes son las columnas que la tabla de orígenes tiene AHORA
@@ -547,6 +620,21 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		TopeRutas:        seguridad.TopeRutas,
 		HayMasRutas:      resumen.RutasVistas > seguridad.TopeRutas,
 		Capacidad:        seguridad.Capacidad,
+		Marco:            s.construirMarco(r, "seguridad", "Seguridad", ""),
+	}
+
+	diasActividad, actividadDesde := seguridad.PorDia(eventos, ahora)
+	v.Actividad = graficaDeActividad(diasActividad)
+	v.ActividadDesde = actividadDesde
+
+	if ip, err := netip.ParseAddr(q.Get("origen")); err == nil {
+		for i := range v.Origenes {
+			if v.Origenes[i].IP == ip {
+				v.Detalle = &v.Origenes[i]
+				v.ConDetalle = true
+				break
+			}
+		}
 	}
 
 	// LA VISITA SE SELLA AL PINTAR, y con eso la marca de la barra se apaga.

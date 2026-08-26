@@ -1,0 +1,75 @@
+{{define "resumen.html"}}<!doctype html>
+<html lang="es">
+<head>
+{{template "cabeza" "NAS — Resumen"}}
+</head>
+<body>
+{{template "marco-abre" .}}
+
+<main class="cuerpo-modulo">
+
+<!-- CUATRO CIFRAS, LAS CUATRO YA MEDIDAS EN OTRO SITIO (ver resumen.go): esta
+     página no añade ni un punto de medición al nodo, reúne los que ya
+     existen. Cada una enlaza a la página que la explica del todo, en vez de
+     repetir aquí su tabla entera — la misma lección que ya aplicó
+     «Rótulo de conexión» en /estado: un dato sin su alcance es una
+     afirmación sin respaldo, y su sitio es donde SÍ tiene ese alcance. -->
+<table class="datos">
+  <tbody>
+    <tr{{if not .DiscoOK}} class="v-desconocido"{{end}}>
+      <td class="rotulo"><a href="/estado">Disco de datos</a></td>
+      <td class="valor">{{if .DiscoOK}}{{.DiscoResumen}}{{else}}no disponible{{end}}</td>
+    </tr>
+    <tr>
+      <td class="rotulo"><a href="/administracion">Cuentas</a></td>
+      <td class="valor">{{.Cuentas}}</td>
+    </tr>
+    <tr{{if not .TemperaturaOK}} class="v-desconocido"{{end}}>
+      <td class="rotulo"><a href="/estado">Temperatura del SoC</a></td>
+      <td class="valor">{{if .TemperaturaOK}}{{.TemperaturaResumen}}{{else}}no disponible{{end}}</td>
+    </tr>
+    <tr>
+      <td class="rotulo"><a href="/estado">En marcha</a></td>
+      <td class="valor">{{if .EnMarcha}}{{.EnMarcha}}{{else}}no disponible{{end}}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SUBIDAS INTERRUMPIDAS, de cualquier cuenta. Se reanudan solas al volver
+     a intentarlas (RF-12): esto es solo el aviso de que hay alguna a
+     medias, no una acción — no hay nada que pulsar aquí. -->
+{{if .Interrumpidas}}
+<h2>Subidas interrumpidas</h2>
+<table class="datos">
+  <thead><tr><th>Ruta</th><th>Progreso</th></tr></thead>
+  <tbody>
+  {{range .Interrumpidas}}
+    <tr>
+      <td class="rotulo">{{.Ruta}}</td>
+      <td class="valor">{{.Progreso}} ({{.Porcentaje}} %)</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+
+<!-- CANAL DE AVISOS, solo si está configurado — mismo criterio que /estado:
+     un indicador permanentemente vacío enseña a ignorar el panel. -->
+{{if .CanalConfigurado}}
+<h2>Canal de avisos</h2>
+<table class="datos">
+  <tbody>
+    <tr{{if not .CanalOK}} class="v-atencion"{{end}}>
+      <td class="rotulo"><a href="/estado">Entrega</a></td>
+      <td class="valor">{{.CanalResumen}}</td>
+    </tr>
+  </tbody>
+</table>
+{{end}}
+
+</main>
+</div>{{/* cierra .cont — Resumen no tiene panel de detalle */}}
+{{template "marco-cierra" .}}
+</body>
+</html>
+{{end}}

@@ -504,6 +504,56 @@ func Resumir(eventos []Evento, origenes []Origen, totalHistorico int64) Resumen 
 	return r
 }
 
+// DiasGrafica es cuántos días pinta «Actividad por día» en /seguridad.
+//
+// FIJO Y NO EL ANCHO DE LA VENTANA ELEGIDA, a propósito: la ventana del
+// filtro decide QUÉ eventos entran, no cuántas barras se dibujan. Con
+// «?horas=1» la serie sigue teniendo doce columnas — la mayoría en cero — en
+// vez de encogerse a una sola, que sería confundir el filtro de la tabla con
+// el alcance de la gráfica.
+const DiasGrafica = 12
+
+// Dia es un día con su recuento, para la gráfica de actividad de /seguridad.
+type Dia struct {
+	Fecha    time.Time
+	Rechazos int
+}
+
+// PorDia agrupa los eventos YA FILTRADOS en los últimos DiasGrafica días de
+// calendario local, terminando hoy. Devuelve también DESDE CUÁNDO alcanza lo
+// que pinta: el más antiguo de los eventos recibidos, o el cero de time.Time
+// si no hay ninguno — nunca se promete una serie más larga que los datos que
+// la sostienen (mismo criterio que PaquetesDesde en panel_seguridad.go).
+//
+// SOLO SE PINTA CON LO QUE EL ANILLO RECUERDA. Esta función no sabe nada de
+// Capacidad ni de acumulados por hora: si una ráfaga llenó el anillo y
+// «eventos» solo alcanza tres días, la gráfica de doce columnas tendrá nueve
+// en cero y Desde lo dirá. Una capa de acumulados que sostenga series más
+// largas es requisito de una fase futura (el panel SIEM), no de esta.
+func PorDia(eventos []Evento, ahora time.Time) (serie []Dia, desde time.Time) {
+	hoy := ahora.Local().Truncate(24 * time.Hour)
+	inicio := hoy.AddDate(0, 0, -(DiasGrafica - 1))
+
+	porFecha := make(map[time.Time]int, DiasGrafica)
+	for _, e := range eventos {
+		f := e.Momento.Local().Truncate(24 * time.Hour)
+		if f.Before(inicio) || f.After(hoy) {
+			continue
+		}
+		porFecha[f]++
+		if desde.IsZero() || e.Momento.Before(desde) {
+			desde = e.Momento
+		}
+	}
+
+	serie = make([]Dia, DiasGrafica)
+	for i := range serie {
+		f := inicio.AddDate(0, 0, i)
+		serie[i] = Dia{Fecha: f, Rechazos: porFecha[f]}
+	}
+	return serie, desde
+}
+
 // sondasOrdenadas saca la evidencia del mapa, de la más repetida a la menos, y
 // la recorta.
 //

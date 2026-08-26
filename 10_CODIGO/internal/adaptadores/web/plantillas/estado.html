@@ -4,42 +4,25 @@
 {{template "cabeza" "NAS — estado"}}
 </head>
 <body>
+{{template "marco-abre" .}}
 
-<header>
-  <div class="cabecera-superior">
-    <!-- El rótulo de conexión lo enciende estado.js al conectar el flujo. Nace
-         oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
-         cartel que dijera «en línea» sobre una foto congelada sería justo la
-         clase de indicador que miente que 00_RECTOR.md §12.5 lleva años
-         corrigiendo.
+<!-- El rótulo de conexión lo enciende estado.js al conectar el flujo. Nace
+     oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
+     cartel que dijera «en línea» sobre una foto congelada sería justo la
+     clase de indicador que miente que 00_RECTOR.md §12.5 lleva años
+     corrigiendo. Vive junto al título del marco y no en una línea propia,
+     por el mismo motivo de siempre: un párrafo suelto reserva su altura
+     aunque esté oculto. -->
+<span id="latido" class="latido" hidden></span>
 
-         Va pegado al título y no en una línea propia: es un adjetivo de esta
-         pantalla —dice si lo que se está mirando es de ahora— y como párrafo
-         suelto reservaba su altura aunque estuviera oculto, que era la franja
-         vacía bajo la divisoria. -->
-    <div class="titulo-estado">
-      <span class="titulo-pagina">Estado del Servidor</span>
-      <span id="latido" class="latido" hidden></span>
-    </div>
+<!-- ESTADO, ADMINISTRACIÓN, SEGURIDAD Y SALIR YA NO VIVEN EN UNA BARRA
+     PROPIA (ADR-0075): son navegación entre módulos y viven en el rail,
+     construido una sola vez por marco.go. Esta página no tiene ninguna
+     orden propia que ofrecer —medir es automático, no hay nada que crear
+     ni subir—, así que no lleva «.barra-acciones» en absoluto: un módulo
+     sin nada que hacer no simula tener una barra vacía. -->
 
-    <!-- La MISMA barra que el listado, con la misma clase. Tener una clase
-         propia aquí es lo que dejó a esta página sin los arreglos de alineación
-         que se le hicieron a la otra. -->
-    <div class="barra-acciones">
-      <a class="boton-barra" href="/">Archivos</a>
-      {{/* Quien llega a /estado ya es el superusuario —soloSuperusuario lo
-           exige—, así que aquí no hace falta ningún {{if}}: a diferencia de
-           la barra del listado, esta página nunca la ve nadie más. */}}
-      {{if .PuedeAdministrar}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}
-      <a class="boton-barra" href="/seguridad">Seguridad{{if .Novedades}} <span class="pastilla">{{.Novedades}}</span>{{end}}</a>
-      <form method="post" action="/salir" class="salir">
-        <button type="submit">Salir</button>
-      </form>
-    </div>
-  </div>
-</header>
-
-<main>
+<main class="cuerpo-modulo">
 
 <noscript>
   <p class="nota">Sin JavaScript esta página no se refresca sola: las cifras son
@@ -92,6 +75,24 @@
 <p class="pie">{{range $i, $campo := .Version}}{{if $i}} <span class="pie-sep">·</span> {{end}}<span>{{$campo}}</span>{{end}}</p>
 
 </main>
+</div>{{/* cierra .cont */}}
+{{if .Detalle}}
+<aside class="detalle">
+  {{with .Detalle}}
+  <div class="det-cabecera">
+    <div><h3>{{.Nombre}}</h3><div class="dip">{{.Clave}}</div></div>
+    <a class="det-cerrar" href="/estado" aria-label="Cerrar">✕</a>
+  </div>
+  <div class="det-bloque">
+    <h4>Medido</h4>
+    <div class="det-fila"><span>Valor</span><b>{{.Valor}}</b></div>
+    {{if .Veredicto}}<div class="det-fila"><span>Veredicto</span><b><span class="pastilla">{{.Veredicto}}</span></b></div>{{end}}
+  </div>
+  {{if .Accion}}<div class="det-bloque"><h4>Qué hacer</h4><p class="nota">{{.Accion}}</p></div>{{end}}
+  {{end}}
+</aside>
+{{end}}
+{{template "marco-cierra" .}}
 <script src="/estatico/estado.js"></script>
 </body>
 </html>
@@ -108,6 +109,11 @@
      no lleva condicional ni el guion que llevaba antes: una fila sin umbral la
      deja vacía y el CSS la oculta.
 
+     El NOMBRE ABRE EL DETALLE (ADR-0075): un enlace a «?ind=CLAVE», que
+     estado.js no toca —opera por data-clave sobre .cifra/.accion/.pastilla,
+     y el enlace no es ninguno de los tres—, así que el flujo en vivo sigue
+     actualizando la fila exactamente igual con el detalle abierto o cerrado.
+
      El comentario va DENTRO y en sintaxis de plantilla, no en HTML fuera del
      bloque: cualquier texto suelto a nivel de archivo convierte a estado.html
      en una plantilla con cuerpo propio, y entonces choca con el {{define}} que
@@ -115,7 +121,7 @@
      arrancar, no al renderizar.
 */}}
   <tr data-clave="{{.Clave}}"{{if .Veredicto}} class="v-{{.Veredicto}}"{{end}}>
-    <td class="rotulo">{{.Nombre}}</td>
+    <td class="rotulo"><a href="?ind={{.Clave}}">{{.Nombre}}</a></td>
     <td class="valor">
       <span class="cifra">{{.Valor}}</span>
       <span class="accion">{{.Accion}}</span>

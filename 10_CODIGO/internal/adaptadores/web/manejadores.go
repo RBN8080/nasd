@@ -52,6 +52,15 @@ type vistaListado struct {
 	// Novedades es la marca del botón «Seguridad» de la barra. Cero no pinta
 	// nada: una pastilla con un 0 sería ruido permanente.
 	Novedades int
+	// Marco es el cromo compartido (rail, título, pestañas) — ADR-0075. Lo
+	// arma construirMarco a partir de las MISMAS EsSuperusuario/
+	// PuedeAdministrar/Novedades de arriba, así que las dos no pueden discrepar.
+	Marco marco
+	// ConDetalle es siempre falso aquí: Archivos no tiene panel de detalle
+	// (ver el comentario en marco.go sobre por qué "/" es de Archivos y no
+	// de Resumen). Existe solo para que _marco.html pueda preguntarlo sin
+	// que html/template falle por campo inexistente.
+	ConDetalle bool
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -81,6 +90,7 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
 	}
+	v.Marco = s.construirMarco(r, "archivos", "Archivos", "")
 
 	n := 0
 	for e, err := range alm.Listar(r.Context(), ruta) {

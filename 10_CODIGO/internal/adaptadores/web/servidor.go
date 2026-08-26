@@ -541,6 +541,15 @@ func (s *Servidor) Rutas() http.Handler {
 	protegido.HandleFunc("GET /borrar/{ruta...}", s.soloDesdeDentro(s.conAlmacen(s.confirmarBorrado))) // RF-18, paso 1
 	protegido.HandleFunc("POST /borrar", s.soloDesdeDentro(s.conAlmacen(s.borrar)))                    // RF-18, paso 2
 
+	// Resumen — el aterrizaje del superusuario (ADR-0075, RF-42). MISMA
+	// envoltura y mismo motivo que /estado: reúne cifras de TODO el nodo, así
+	// que a una cuenta normal no le informa de nada suyo. Ruta PROPIA y no
+	// «/»: urlDeListado(raíz) == "/" es lo que usan las migas de pan y el
+	// atajo «subir» del listado, y las dos cuentas normales aterrizan en su
+	// propio listado por esa misma ruta — ver el comentario junto a
+	// `modulos` en marco.go.
+	protegido.HandleFunc("GET /resumen", s.soloSuperusuario(s.verResumen))
+
 	// Observabilidad — Fase 4, RF-24. Va DENTRO de lo protegido: ver estado.go.
 	//
 	// Y DESDE ADR-0055, SOLO PARA EL SUPERUSUARIO, por decisión del

@@ -9,60 +9,72 @@
    regla a partir de ahora: NO se escribe un color ni un tamaño literal fuera
    de este bloque. Si hace falta uno nuevo, se añade aquí y se razona.
 
-   Los grises van en notación #RGBA con alfa: así el MISMO valor funciona en
-   claro y en oscuro, porque es el fondo el que asoma por debajo. Es el motivo
-   de que el proyecto no tenga dos paletas. */
-:root {
-  color-scheme: light dark;
+   HIELO — paleta oscura DECLARADA (ADR-0075), no adaptativa.
+   Hasta el 25/08/2026 este bloque hacía «color-scheme: light dark» y volvía a
+   resolver un modo claro entero en «@media (prefers-color-scheme: dark)»: dos
+   paletas turnándose según el sistema del visitante. Doce maquetas después el
+   responsable fue explícito — «prefiero conservar un fondo negro»— y en la
+   ronda de paletas (Hielo/GitHub/Violeta/Ámbar) se probaron cuatro acentos
+   sobre ESE mismo negro, nunca dos fondos. El panel se compromete con un único
+   tema: no hay contrapartida en claro que mantener sincronizada.
 
-  --borde: #8883;
-  --tenue: #8881;
+   LOS NOMBRES DE TOKEN NO CAMBIAN respecto al bloque anterior — son los que
+   usan las mil y pico líneas de reglas que siguen, y renombrarlos habría
+   obligado a tocarlas todas para no ganar nada. Lo que cambia son los
+   VALORES, y con ellos deja de hacer falta la nota de «los grises van con
+   alfa para servir en los dos modos»: ya solo hay uno. */
+:root {
+  color-scheme: dark;
+
+  --borde: #ffffff1f;
+  --tenue: #ffffff0d;
 
   /* Semáforo. Desde el 05/08/2026 el veredicto NO tiñe la fila: solo pinta
      su pastilla. El responsable pidió quitar los fondos —«prácticamente solo
      los fondos sobran»— porque con una tabla entera en verde el contraste
      estorbaba más de lo que informaba. La señal sigue estando, concentrada
-     donde se mira.
-
-     Estos tonos son sólidos y no transparencias: la pastilla es ahora la
-     ÚNICA señal de color, así que tiene que leerse igual en claro y en
-     oscuro, y un #0a06 sobre fondo oscuro casi desaparecía. */
-  --ok-color: #2da44e;
-  --aviso-color: #bf8700;
-  --fallo-color: #c00;
-  --desconocido-color: #8888;
+     donde se mira. Tonos ajustados para fondo negro (WCAG AA sobre --fondo). */
+  --ok-color: #3fb950;
+  --aviso-color: #d29922;
+  --fallo-color: #f85149;
+  --desconocido-color: #8b949e;
 
   /* El fondo destructivo se conserva: no es un veredicto, es un botón que
      debe NO parecer nativo a propósito. */
-  --fallo-fondo: #c0000010;
+  --fallo-fondo: #f8514920;
 
   /* ÚNICO color OPACO del archivo, y el único que necesita dos valores.
      Un menú desplegable no puede ser translúcido: dejaría ver la tabla por
      debajo. Los grises con alfa del resto del archivo no sirven aquí porque
-     su gracia es justamente dejar pasar el fondo.
-     Se probó «Canvas», el color de sistema, y en la captura del 05/08/2026
-     salió BLANCO sobre una página en modo oscuro. Se declara a mano. */
-  --panel: #fff;
+     su gracia es justamente dejar pasar el fondo. */
+  --panel: #14181d;
 
-  /* SUPERFICIE Y TINTA. Hasta el 19/08/2026 «body» no declaraba ni fondo ni
-     color: la página era el blanco o el negro por omisión del navegador. Un
-     blanco puro es lo que separa una página «sin estilo» de una acabada.
+  /* SUPERFICIE Y TINTA. Negro casi puro con un sesgo azulado —el «Hielo» de
+     la maqueta— y no un negro neutro: un gris con matiz hacia el acento se
+     lee como elegido, uno neutro se lee como heredado. */
+  --fondo: #0a0c0f;
+  --texto: #e7ebef;
+  --suave: #9198a1;
 
-     ESTO OBLIGA A DAR TOKENS AL MODO OSCURO, y no es un capricho: el resto de
-     la paleta son grises con alfa que funcionan porque es el fondo el que asoma
-     por debajo. En cuanto se fija un fondo claro hay que fijar también el
-     oscuro, o el oscuro quedaría compuesto contra un color que ya no existe.
-     Son tres tokens y no una paleta entera: los grises con alfa se quedan como
-     estaban, y el proyecto sigue sin tener dos paletas de verdad.
+  /* ACENTO. Un azul que tira a blanco, y la elección no fue de gusto sino de
+     fatiga de uso: la paleta Ámbar y la GitHub-naranja «cansan en una semana»
+     por cuánto territorio ocupa el acento, no por el matiz — probado sobre
+     captura real el 25/08/2026. Hielo hace UN solo trabajo: señalar lo
+     interactivo y lo activo. Los datos siguen en gris; el acento no es un
+     segundo semáforo, y por eso --ok-color/--aviso-color/--fallo-color no lo
+     usan para nada. */
+  --ac: #7dd3fc;
+  --ac2: #bae6fd;
+  --acT: #7dd3fc1a;
+  --acB: #7dd3fc4d;
 
-     --suave PASA A SER OPACO Y SE OSCURECE, y esto corrige un defecto real de
-     accesibilidad: #8888 sobre blanco daba ~3.95:1 de contraste, por debajo del
-     4.5:1 que WCAG AA exige para texto normal — y lo usaba «.nota», o sea el
-     texto secundario de todo el panel. Los valores de abajo están comprobados:
-     5.8:1 en claro y 6.4:1 en oscuro. */
-  --fondo: #fbfaf8;
-  --texto: #1a1a19;
-  --suave: #63635e;
+  /* RADIOS. Dos pasos y no una escala continua, porque «lo redondeado» se
+     rechazó explícitamente sobre captura —junto con el amarillo pato y el
+     azul cielo pastel de la primera ronda—: r1 es la esquina que apenas se
+     nota, r2 es el máximo de toda la consola. Ninguna pieza vuelve a llevar
+     un radio mayor que --r2. */
+  --r1: 4px;
+  --r2: 6px;
 
   /* Escala tipográfica. El cuerpo es 1rem, y hasta el 19/08/2026 la escala SOLO
      BAJABA: los cuatro pasos eran todos <= 1rem y el único encabezado con regla
@@ -120,15 +132,13 @@
      Con una variable, la barra mide lo mismo en las dos páginas y en las dos
      plataformas, y en el teléfono sube al objetivo táctil sin repetir reglas. */
   --alto-control: 2.25rem;
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --panel: #1c1c1e;
-    --fondo: #16161a;
-    --texto: #e8e8e5;
-    --suave: #9a9a95;
-  }
+  /* EL CROMO COMPARTIDO — rail y panel de detalle (ADR-0075). Dos anchos
+     fijos; el resto del marco es «1fr». No es una escala: son dos medidas
+     concretas de dos piezas concretas, y no hace falta razonar una tercera
+     hasta que exista. */
+  --rail: 15rem;
+  --det: 20rem;
 }
 
 @media (max-width: 40rem) {
@@ -187,6 +197,17 @@ p:not([class]), .nota, .oculto {
   flex-wrap: wrap;
   min-height: var(--alto-control);
   min-width: 0;
+  /* Desde ADR-0075 vive en Archivos dentro del rail (.cont), no en
+     «.cabecera-superior»: el padding horizontal que aquella le daba lo
+     lleva ahora la propia regla, porque es el único sitio donde se usa. */
+  padding: var(--e-3) var(--e-4) 0;
+}
+
+/* El mensaje de resultado de Archivos, en el mismo margen que el título y la
+   barra de órdenes: fuera de «.cuerpo-modulo» (que empieza más abajo, con la
+   tabla) pero dentro de la misma columna. */
+.mensaje-modulo {
+  margin: 0 var(--e-4) var(--e-3);
 }
 
 .migas a {
@@ -232,7 +253,7 @@ p:not([class]), .nota, .oculto {
   display: inline-block;
   font-size: var(--t-rotulo);
   padding: var(--e-0) var(--e-2);
-  border-radius: 0.75rem;
+  border-radius: var(--r1);
   border: 1px solid var(--borde);
   color: var(--suave);
 }
@@ -241,6 +262,14 @@ p:not([class]), .nota, .oculto {
   float: none;
   margin: 0;
   display: flex;
+}
+
+/* Dentro del rail (ADR-0075), «Salir» se ancla al fondo con el hueco que
+   sobra: es la única acción de la consola que no compite con la navegación
+   por el sitio. Fuera del rail —visor.html y bloquear.html no tienen «Salir»,
+   así que esta regla no les afecta— no habría «.rail» del que colgar. */
+.rail > .salir {
+  margin-top: auto;
 }
 
 /* ——— Botones y campos ———
@@ -327,7 +356,7 @@ a.dir {
 /* ——— Mensajes ——— */
 .mensaje {
   padding: var(--e-2) var(--e-3);
-  border-radius: 0.35rem;
+  border-radius: var(--r1);
   background: #0a01;
   border: 1px solid #0a04;
 }
@@ -430,7 +459,7 @@ a.dir {
   font-size: var(--t-menor);
   padding: var(--e-2) var(--e-3);
   border: 1px solid var(--borde);
-  border-radius: 0.4rem;
+  border-radius: var(--r1);
   background: var(--tenue);
   color: inherit;
   text-decoration: none;
@@ -478,7 +507,7 @@ a.dir {
   max-width: calc(100vw - 2rem);
   padding: var(--e-4);
   border: 1px solid var(--borde);
-  border-radius: 0.5rem;
+  border-radius: var(--r2);
   background: var(--panel);
   box-shadow: 0 0.5rem 1.5rem #0005;
   display: grid;
@@ -729,7 +758,7 @@ button.destructivo {
 
 .peligro {
   border: 2px solid var(--fallo-color);
-  border-radius: 0.5rem;
+  border-radius: var(--r2);
   padding: var(--e-3) var(--e-4);
   margin: var(--e-4) 0;
   background: var(--fallo-fondo);
@@ -850,7 +879,7 @@ tr.v-fallo .rotulo {
   text-transform: uppercase;
   font-weight: 600;
   padding: var(--e-0) var(--e-2);
-  border-radius: 0.75rem;
+  border-radius: var(--r1);
   border: 1px solid var(--borde);
   white-space: nowrap;
 }
@@ -960,9 +989,13 @@ tr.v-fallo .rotulo {
    hay hueco que reservar. */
 .latido {
   display: inline-block;
+  /* Fuera de «.cabecera-superior» desde ADR-0075: estado.html lo pinta suelto,
+     bajo el título del marco, y necesita el mismo margen horizontal que la
+     barra de órdenes de las demás páginas. */
+  margin: 0 var(--e-4);
   font-size: var(--t-rotulo);
   padding: var(--e-0) var(--e-2);
-  border-radius: 0.75rem;
+  border-radius: var(--r1);
   border: 1px solid var(--borde);
   color: var(--suave);
 }
@@ -1168,7 +1201,7 @@ tr.v-fallo .rotulo {
   width: 100%;
   height: calc(100vh - var(--alto-control) - 4rem);
   border: 1px solid var(--borde);
-  border-radius: 0.4rem;
+  border-radius: var(--r1);
   background: var(--panel);
 }
 
@@ -1271,7 +1304,7 @@ tr.v-fallo .rotulo {
   margin: var(--e-2) 0 0;
   padding: 0;
   border: 1px solid var(--borde);
-  border-radius: 0.5rem;
+  border-radius: var(--r2);
   /* Con muchas subcarpetas la lista empujaría los tres botones fuera de la
      pantalla, y son justo lo que hay que poder alcanzar siempre. */
   max-height: 45vh;
@@ -1710,4 +1743,383 @@ tr.g-rutina .rotulo {
 
 .tabla-origenes .operador .suave {
   color: var(--suave);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LA CONSOLA (ADR-0075) — rail, pestañas móviles, panel de detalle, gráfica.
+   ═══════════════════════════════════════════════════════════════════════
+
+   Cinco páginas comparten este cromo: Resumen, Archivos, Estado, Seguridad y
+   Cuentas. Las demás —acceso, visor, mover, borrar, baja, bloquear— NO lo
+   llevan a propósito: son pantallas de un solo gesto (confirmar, ver una
+   foto, elegir un destino) y el rail sería ruido alrededor de una tarea que
+   ya está centrada en su propia tarjeta. Siguen con «.cabecera-superior», sin
+   tocar, y heredan la paleta nueva por los mismos tokens.
+
+   UNA SOLA PLANTILLA PARA LAS DOS COMPOSICIONES. No hay una hoja de estilos
+   de escritorio y otra de móvil: es una «container query» sobre «.marco», así
+   que el mismo HTML se lee distinto según el ANCHO DE SU CONTENEDOR y no el
+   de la ventana — el requisito exacto de que el diseño no puede ser dos
+   cosas distintas que hay que mantener sincronizadas. */
+
+/* El body deja de acotar a 68ch y de centrar: eso es correcto para prosa y
+   equivocado para un panel con rail. «:has(.marco)» distingue las cinco
+   páginas nuevas sin necesitar una clase en <body>, que html/template no
+   puede componer sin tocar las nueve plantillas para nada. */
+body:has(.marco) {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.marco {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  min-height: 100vh;
+  container-type: inline-size;
+  container-name: consola;
+}
+
+/* Con un panel de detalle abierto, se reserva una tercera columna — SOLO en
+   el contenedor ancho; en el estrecho, ver la regla de @container de abajo,
+   que sustituye la lista por el detalle en vez de sumar una columna. */
+.marco.con-detalle {
+  grid-template-columns: var(--rail) minmax(0, 1fr) var(--det);
+}
+
+/* ——— Rail (navegador) ——— */
+.rail {
+  border-right: 1px solid var(--borde);
+  padding: var(--e-4) var(--e-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--e-1);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.marca {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  padding: var(--e-2) var(--e-2) var(--e-4);
+  margin-bottom: var(--e-2);
+  border-bottom: 1px solid var(--borde);
+}
+
+.marca-g {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  border-radius: var(--r1);
+  background: var(--tenue);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: var(--t-menor);
+}
+
+.marca .nm {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.marca .nm b {
+  font-size: var(--t-menor);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marca .nm span {
+  font-size: var(--t-rotulo);
+  color: var(--suave);
+}
+
+/* «.ni» — Nav Item. Bloque completo pulsable, no solo el texto: mismo
+   argumento que el botón de tres puntos, llevado al rail. */
+.ni {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2);
+  min-height: var(--alto-control);
+  padding: 0 var(--e-2);
+  border-radius: var(--r1);
+  color: var(--suave);
+  text-decoration: none;
+  font-size: var(--t-menor);
+}
+
+.ni:hover {
+  background: var(--tenue);
+  color: var(--texto);
+}
+
+.ni-activo,
+.ni-activo:hover {
+  background: var(--acT);
+  color: var(--ac2);
+  font-weight: 600;
+}
+
+/* El separador de grupo, que hoy solo agrupa Estado/Seguridad/Cuentas bajo
+   «Sistema». Se pinta como rótulo y no como línea: una línea sola no dice qué
+   separa. */
+.ni-grupo {
+  margin: var(--e-4) 0 var(--e-1);
+  padding: 0 var(--e-2);
+  font-size: var(--t-rotulo);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--suave);
+  opacity: 0.7;
+}
+
+/* La marca de novedades del ítem — mismo dato que la pastilla que ya llevaba
+   «Seguridad» en la barra antigua, reubicado. Un cero no se pinta (lo decide
+   la plantilla, no esto): una pastilla en cero es ruido permanente. */
+.ct {
+  display: inline-block;
+  font-size: var(--t-rotulo);
+  font-weight: 700;
+  padding: 0 var(--e-1);
+  border-radius: var(--r1);
+  background: var(--acT);
+  color: var(--ac2);
+}
+
+/* ——— Columna de contenido ——— */
+.cont {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* La fila de título reutiliza «.titulo-estado» y «.titulo-pagina» —las mismas
+   que ya usan visor.html y bloquear.html— para que las cinco páginas del rail
+   y las cinco de tarjeta centrada compartan el mismo trato tipográfico y no
+   dos familias que hay que mantener iguales a mano. Solo se les da un
+   padding propio, porque aquí no van dentro de «.cabecera-superior». */
+.cont > .titulo-estado {
+  padding: var(--e-4) var(--e-4) var(--e-3);
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--borde);
+}
+
+/* La barra de órdenes de cada módulo — reutiliza «.barra-acciones» tal cual
+   (los mismos <details>/<summary> sin JavaScript de ADR-0027), solo que
+   colgada de su propio hueco en vez de compartir fila con las migas. Un
+   módulo sin nada que ofrecer —Estado— simplemente no la incluye: no hay CSS
+   que la esconda porque no hay HTML que pintar (ver marco.go). */
+.cont > .barra-acciones {
+  padding: 0 var(--e-4) var(--e-3);
+  margin: 0;
+}
+
+.cuerpo-modulo {
+  padding: 0 var(--e-4) var(--e-6);
+  overflow-x: auto;
+  flex: 1;
+}
+
+/* Las notas de cierre de un módulo — la salvedad que es cierta pero no es el
+   motivo por el que se abrió la página (RF-35, mediciones huérfanas…). Van al
+   PIE de su propia vista, nunca en un aviso aparte. En ancho, a la derecha;
+   en estrecho, como cualquier otro párrafo. */
+.notas-modulo {
+  margin-top: var(--e-6);
+  padding-top: var(--e-4);
+  border-top: 1px solid var(--borde);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notas-modulo .nota {
+  max-width: none;
+}
+
+@container consola (min-width: 55rem) {
+  .notas-modulo {
+    align-items: flex-end;
+    text-align: right;
+  }
+}
+
+/* ——— Panel de detalle ——— */
+.detalle {
+  grid-column: 3;
+  border-left: 1px solid var(--borde);
+  padding: var(--e-4);
+  overflow-y: auto;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.det-cabecera {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--e-2);
+  margin-bottom: var(--e-4);
+}
+
+.det-cabecera h3 {
+  margin: 0;
+  font-size: var(--t-h2);
+}
+
+.det-cabecera .dip {
+  font-family: ui-monospace, monospace;
+  font-size: var(--t-menor);
+  color: var(--suave);
+  word-break: break-all;
+}
+
+/* El cierre vuelve a la URL limpia del módulo — sin parámetro de detalle —
+   y es un enlace normal: cerrar el panel no cambia ningún dato. */
+.det-cerrar {
+  flex: 0 0 auto;
+  color: var(--suave);
+  text-decoration: none;
+  font-size: var(--t-h2);
+  line-height: 1;
+}
+
+.det-bloque {
+  margin-bottom: var(--e-5);
+}
+
+.det-bloque h4 {
+  margin: 0 0 var(--e-2);
+  font-size: var(--t-rotulo);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--suave);
+}
+
+.det-fila {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--e-3);
+  padding: var(--e-1) 0;
+  font-size: var(--t-menor);
+}
+
+.det-fila b {
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ——— Gráfica de actividad ———
+   Se pinta con lo que el anillo recuerda, NADA MÁS: sin capa de acumulados
+   por hora —que es requisito de una fase futura, no de esta— no hay «últimos
+   90 días» que enseñar. El rótulo de la página dice hasta cuándo alcanza; la
+   gráfica no promete más de lo que tiene detrás.
+   Barras por CSS y geometría por atributos SVG (x/y/width/height, numéricos):
+   ninguno de los dos es «style="..."», así que «style-src 'self'» —sin
+   'unsafe-inline'— no se toca. */
+.grafica-actividad {
+  width: 100%;
+  height: auto;
+  margin: var(--e-3) 0 var(--e-5);
+}
+
+.grafica-actividad .barra {
+  fill: var(--tenue);
+}
+
+.grafica-actividad .barra.pico {
+  fill: var(--ac);
+}
+
+.grafica-actividad .eje {
+  fill: var(--suave);
+  font-size: 9px;
+  font-family: inherit;
+  text-anchor: middle;
+}
+
+/* ——— Pestañas (móvil) ———
+   Ocultas por omisión; @container las enciende y apaga el rail. Mismo
+   objetivo táctil que el resto de la consola. */
+.tabs {
+  display: none;
+}
+
+.tb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  min-height: calc(var(--tactil) + var(--e-2));
+  padding: var(--e-1) 0 calc(var(--e-1) + env(safe-area-inset-bottom, 0px));
+  font-size: var(--t-rotulo);
+  color: var(--suave);
+  text-decoration: none;
+  position: relative;
+}
+
+.tb-activo {
+  color: var(--ac2);
+  font-weight: 600;
+}
+
+/* El punto de novedades en móvil no repite la cifra —no hay sitio limpio
+   para un número junto a un rótulo de una palabra—: dice «hay algo», que es
+   lo que importa a este ancho. */
+.tb .pt {
+  position: absolute;
+  top: var(--e-1);
+  right: calc(50% - 1.1rem);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ac);
+}
+
+/* ——— El contenedor estrecho: rail fuera, pestañas dentro ——— */
+@container consola (max-width: 54.99rem) {
+  .marco,
+  .marco.con-detalle {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .tabs {
+    display: flex;
+    grid-row: 2;
+    border-top: 1px solid var(--borde);
+    background: var(--fondo);
+    position: sticky;
+    bottom: 0;
+  }
+
+  /* Con un detalle seleccionado, la lista cede el sitio entero: en un
+     teléfono no caben las dos, y es la lista la que ya se venía mirando —el
+     detalle es lo nuevo, y lo nuevo se enseña a pantalla completa. */
+  .marco.con-detalle .cont {
+    display: none;
+  }
+
+  .marco.con-detalle .detalle {
+    display: block;
+    grid-column: 1;
+    border-left: 0;
+    height: auto;
+    position: static;
+  }
 }

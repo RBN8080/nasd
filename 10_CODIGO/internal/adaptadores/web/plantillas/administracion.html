@@ -4,53 +4,42 @@
 {{template "cabeza" "NAS — Administración"}}
 </head>
 <body>
+{{template "marco-abre" .}}
 
-<header>
-  <div class="cabecera-superior">
-    <div class="titulo-estado">
-      <span class="titulo-pagina">Administración</span>
-    </div>
-
-    <!-- La MISMA barra y la MISMA clase que listado.html y estado.html
-         (ver el comentario junto a .cabecera-superior en estilo.css): tener
-         una clase propia aquí es justo lo que dejó a /estado sin los
-         arreglos de alineación que recibía la otra página. -->
-    <div class="barra-acciones">
-      <a class="boton-barra" href="/">Archivos</a>
-      <a class="boton-barra" href="/estado">Estado</a>
-      <a class="boton-barra" href="/seguridad">Seguridad{{if .Novedades}} <span class="pastilla">{{.Novedades}}</span>{{end}}</a>
-      <!-- Mismo patrón que «Subir» y «Nueva carpeta» en listado.html:
-           <details>/<summary>, sin JavaScript (ADR-0027). El formulario
-           «Nueva cuenta» vivía siempre visible al fondo de la página; el
-           responsable pidió esconderlo detrás de un botón junto al resto
-           de la barra (P-5, rector §7.sexies). -->
-      <details class="menu">
-        <summary class="boton-barra">Crear Usuario</summary>
-        <div class="menu-panel">
-          <form method="post" action="/administracion/alta">
-            <input type="hidden" name="csrf" value="{{.Csrf}}">
-            <label for="nombre">Nombre</label>
-            <input type="text" id="nombre" name="nombre"
-               autocapitalize="off" autocorrect="off" spellcheck="false"
-               required>
-            <label for="clave">Contraseña</label>
-            <input type="password" id="clave" name="clave"
-               autocomplete="new-password" minlength="14" required>
-            <p class="nota">Solo minúsculas, dígitos, «-» y «_», empezando por letra. Mínimo 14 caracteres.</p>
-            <button type="submit">Crear cuenta</button>
-          </form>
-        </div>
-      </details>
-      <form method="post" action="/salir" class="salir">
-        <button type="submit">Salir</button>
+<!-- Mismo patrón que «Subir» y «Nueva carpeta» en listado.html:
+     <details>/<summary>, sin JavaScript (ADR-0027). El formulario «Nueva
+     cuenta» vivía siempre visible al fondo de la página; el responsable
+     pidió esconderlo detrás de un botón (P-5, rector §7.sexies).
+     ESTADO, SEGURIDAD Y SALIR YA NO VIVEN AQUÍ (ADR-0075): viven en el rail. -->
+<div class="barra-acciones">
+  <details class="menu">
+    <summary class="boton-barra">Crear Usuario</summary>
+    <div class="menu-panel">
+      <form method="post" action="/administracion/alta">
+        <input type="hidden" name="csrf" value="{{.Csrf}}">
+        <label for="nombre">Nombre</label>
+        <input type="text" id="nombre" name="nombre"
+           autocapitalize="off" autocorrect="off" spellcheck="false"
+           required>
+        <label for="clave">Contraseña</label>
+        <input type="password" id="clave" name="clave"
+           autocomplete="new-password" minlength="14" required>
+        <p class="nota">Solo minúsculas, dígitos, «-» y «_», empezando por letra. Mínimo 14 caracteres.</p>
+        <button type="submit">Crear cuenta</button>
       </form>
     </div>
-  </div>
-</header>
+  </details>
+  {{if .Usuarios}}
+  <form method="post" action="/administracion/refrescar">
+    <input type="hidden" name="csrf" value="{{.Csrf}}">
+    <button type="submit" class="boton-barra">Refrescar métricas</button>
+  </form>
+  {{end}}
+</div>
 
-<main>
+<main class="cuerpo-modulo">
 
-{{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{else}}exito{{end}}">{{.Mensaje}}</p>{{end}}
+{{if .Mensaje}}<p class="mensaje mensaje-modulo {{if .EsError}}error{{else}}exito{{end}}">{{.Mensaje}}</p>{{end}}
 
 <h2>Cuentas</h2>
 <table class="datos tabla-cuentas">
@@ -64,7 +53,11 @@
          constantes que viajan en el marco— para que esta carga y el primer tic
          no puedan decir cosas distintas. -->
     <tr data-usuario="{{.Nombre}}"{{if .Veredicto}} class="v-{{.Veredicto}}"{{end}}>
-      <td class="rotulo">{{.Nombre}}</td>
+      <!-- El nombre abre el detalle («?cuenta=», ADR-0075) — mismo patrón
+           que la clave en estado.html. cuentas.js opera por data-usuario
+           sobre .pastilla y no toca este enlace, así que el flujo en vivo
+           sigue actualizando la fila con el detalle abierto o cerrado. -->
+      <td class="rotulo"><a href="?cuenta={{.Nombre}}">{{.Nombre}}</a></td>
       <td class="estado"><span class="pastilla">{{.Sesion}}</span></td>
       <!-- Bajo demanda, no en vivo (P-4, etapa 3): se dice explícitamente
            CUÁNDO se midió, para no confundirlo con Cuenta/Sesión de al
@@ -78,17 +71,32 @@
   </tbody>
 </table>
 
-{{if .Usuarios}}
-<form method="post" action="/administracion/refrescar">
-  <input type="hidden" name="csrf" value="{{.Csrf}}">
-  <button type="submit">Refrescar métricas</button>
-</form>
-{{end}}
-
 <!-- El superusuario (admin) no aparece en esta lista: no está en el
      registro (ADR-0055) y no se puede dar de baja a sí mismo por aquí. -->
 
 </main>
+</div>{{/* cierra .cont */}}
+{{if .Detalle}}
+<aside class="detalle">
+  {{with .Detalle}}
+  <div class="det-cabecera">
+    <div><h3>{{.Nombre}}</h3><div class="dip">cuenta {{if .Activo}}activa{{else}}sin sesión{{end}}</div></div>
+    <a class="det-cerrar" href="/administracion" aria-label="Cerrar">✕</a>
+  </div>
+  <div class="det-bloque">
+    <h4>Uso</h4>
+    <div class="det-fila"><span>Disco</span><b>{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}}{{end}}</b></div>
+    {{if not .Medido.IsZero}}<div class="det-fila"><span>Medido</span><b>{{fecha .Medido}}</b></div>{{end}}
+  </div>
+  <div class="det-bloque">
+    <h4>Baja</h4>
+    <p class="nota">Es definitiva: la carpeta no se destruye, pero la cuenta deja de poder entrar.</p>
+    <p><a class="destructivo" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></p>
+  </div>
+  {{end}}
+</aside>
+{{end}}
+{{template "marco-cierra" .}}
 <script src="/estatico/menus.js"></script>
 <script src="/estatico/cuentas.js"></script>
 </body>

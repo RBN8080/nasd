@@ -85,6 +85,13 @@ type vistaAdministracion struct {
 	Csrf     string
 	// Novedades es la marca del botón «Seguridad». Misma que en el listado.
 	Novedades int
+	// Marco es el cromo compartido — ADR-0075.
+	Marco marco
+	// Detalle es la cuenta seleccionada por «?cuenta=», o nil si no vino el
+	// parámetro o no coincide con ninguna. Se busca en la MISMA lista que
+	// pinta la tabla (v.Usuarios), así que las dos no pueden discrepar.
+	Detalle    *filaUsuario
+	ConDetalle bool
 }
 
 // Sesión en vivo — P-7, ADR-0056.
@@ -161,6 +168,7 @@ func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {
 		Mensaje:   r.URL.Query().Get("msg"),
 		EsError:   r.URL.Query().Get("err") != "",
 		Csrf:      s.csrfDe(r),
+		Marco:     s.construirMarco(r, "cuentas", "Cuentas", ""),
 	}
 	for _, u := range s.usuarios.Lista() {
 		fila := filaUsuario{Nombre: u.Nombre, Activo: activos[u.Nombre]}
@@ -169,6 +177,15 @@ func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {
 			fila.Medido = m.Momento
 		}
 		v.Usuarios = append(v.Usuarios, fila)
+	}
+	if nombre := r.URL.Query().Get("cuenta"); nombre != "" {
+		for i := range v.Usuarios {
+			if v.Usuarios[i].Nombre == nombre {
+				v.Detalle = &v.Usuarios[i]
+				v.ConDetalle = true
+				break
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

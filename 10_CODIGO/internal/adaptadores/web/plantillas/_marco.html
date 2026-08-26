@@ -1,0 +1,62 @@
+{{/* _marco.html — el cromo compartido: rail, título, pestañas móviles y
+     «Salir» (ADR-0075). Mismo patrón que _cabeza.html ya usa para el <head>:
+     una definición compartida en vez de repetirla en cada plantilla — ver el
+     comentario de esa cabecera para el defecto exacto que esto evita.
+
+     Se parte en DOS bloques —abre y cierra— y cada página escribe su propio
+     contenido entre medias, exactamente como listado.html hoy escribe su
+     <main> entre la cabecera y el pie compartidos. html/template analiza el
+     contexto de escapado siguiendo los {{template}} anidados, así que
+     partir un documento en dos definiciones no es distinto, para el
+     escapado, de tenerlo entero en una: es el mismo árbol. */}}
+
+{{define "marco-abre"}}
+<div class="marco{{if .ConDetalle}} con-detalle{{end}}">
+  <nav class="rail">
+    <div class="marca">
+      <span class="marca-g">rb</span>
+      <span class="nm"><b>nas-ejemplo</b><span>NAS</span></span>
+    </div>
+    {{range .Marco.Items}}
+    {{if .Grupo}}<div class="ni-grupo">{{.Grupo}}</div>{{end}}
+    <a class="ni{{if .Activo}} ni-activo{{end}}" href="{{.Ruta}}">
+      <span>{{.Rotulo}}</span>{{if .Marca}}<span class="ct">{{.Marca}}</span>{{end}}
+    </a>
+    {{end}}
+    <form method="post" action="/salir" class="salir">
+      <input type="hidden" name="csrf" value="{{.Marco.Csrf}}">
+      <button type="submit">Salir</button>
+    </form>
+  </nav>
+
+  <div class="cont">
+    <div class="titulo-estado">
+      <span class="titulo-pagina">{{.Marco.Titulo}}</span>
+      {{if .Marco.Sub}}<span class="filtro-activo">{{.Marco.Sub}}</span>{{end}}
+    </div>
+{{end}}
+
+{{/* marco-cierra NO cierra «.cont»: cada página lo hace ella misma, porque
+     entre el cierre de «.cont» y esta llamada es donde va —si lo hay— su
+     propio panel de detalle («.detalle»). Su forma cambia con cada módulo
+     —un origen, una cuenta, un indicador— así que no puede vivir en una
+     definición compartida que no sabe de ninguna. Ver seguridad.html,
+     administracion.html y estado.html para el patrón exacto:
+
+       </div> {{/* cierra .cont */}}
+       <aside class="detalle">{{with .Detalle}}...{{end}}</aside>
+       {{template "marco-cierra" .}}
+
+     Un módulo sin panel de detalle —Archivos, Resumen— simplemente no
+     escribe el <aside> en absoluto, y sin «.con-detalle» en «.marco» tampoco
+     se reserva una tercera columna que dibujar. */}}
+{{define "marco-cierra"}}
+  <nav class="tabs">
+    {{range .Marco.Items}}
+    <a class="tb{{if .Activo}} tb-activo{{end}}" href="{{.Ruta}}">
+      {{.Rotulo}}{{if .Marca}}<span class="pt"></span>{{end}}
+    </a>
+    {{end}}
+  </nav>
+</div>
+{{end}}

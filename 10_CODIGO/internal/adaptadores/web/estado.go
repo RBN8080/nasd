@@ -425,6 +425,15 @@ type vistaEstado struct {
 	// cadena, para que la plantilla pueda impedir que se rompa uno por dentro
 	// al envolver. Ver versionDelBinario.
 	Version []string
+	// Marco es el cromo compartido — ADR-0075.
+	Marco marco
+	// Detalle es el indicador seleccionado por «?ind=», o nil si no vino el
+	// parámetro o no coincide con ninguno de los quince. NUNCA se inventa uno
+	// para una clave que no exista: el panel se queda cerrado, que es la
+	// misma regla con la que el resto de esta página no rellena lo que no
+	// pudo medir (ver Avisos).
+	Detalle    *filaViva
+	ConDetalle bool
 }
 
 // filaViva es una fila de las dos tablas que se refrescan solas.
@@ -575,20 +584,55 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
+	lentos := evaluarLentos(n)
 	v := vistaEstado{
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
 		FilasNodo:        filasNodo,
 		FilasServicio:    filasServicio,
-		Lentos:           evaluarLentos(n),
+		Lentos:           lentos,
 		Peor:             peorDe(indicadores),
 		Avisos:           n.Avisos,
 		Version:          versionDelBinario(),
+		Marco:            s.construirMarco(r, "estado", "Estado", ""),
+	}
+	if clave := r.URL.Query().Get("ind"); clave != "" {
+		v.Detalle = buscarDetalleDeIndicador(clave, filasNodo, filasServicio, lentos)
+		v.ConDetalle = v.Detalle != nil
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.plantillas.ExecuteTemplate(w, "estado.html", v); err != nil {
 		s.reg.Error("render de /estado", "error", err)
 	}
+}
+
+// buscarDetalleDeIndicador resuelve el «?ind=» del panel de detalle contra los QUINCE
+// indicadores reales de esta página — ninguno inventado.
+//
+// Recorre las tres listas que la propia página ya construye para pintarse,
+// así que el detalle y la tabla no pueden decir cosas distintas: es la MISMA
+// fuente, mirada dos veces. Una clave que no coincide con ninguna deja el
+// panel cerrado (nil), igual que un aviso de «no se pudo medir» — nunca se
+// rellena un hueco con algo inventado.
+func buscarDetalleDeIndicador(clave string, nodo, servicio []filaViva, lentos []indicador) *filaViva {
+	for _, listas := range [][]filaViva{nodo, servicio} {
+		for _, f := range listas {
+			if f.Clave == clave {
+				return &f
+			}
+		}
+	}
+	for _, ind := range lentos {
+		if ind.Clave == clave {
+			// indicador y filaViva tienen los mismos campos, en el mismo
+			// orden: son la misma fila mirada por dos lados (uno se
+			// refresca solo, el otro no). La conversión lo dice; copiar
+			// campo a campo solo repetía la misma lista dos veces.
+			f := filaViva(ind)
+			return &f
+		}
+	}
+	return nil
 }
 
 // instantaneaCompleta reúne los contadores con los dos datos que no viven en

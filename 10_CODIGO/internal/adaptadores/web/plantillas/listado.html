@@ -4,6 +4,7 @@
 {{template "cabeza" (printf "NAS — %s" .Ruta.Nombre)}}
 </head>
 <body>
+{{template "marco-abre" .}}
 
 <!-- RF-14 RETIRADO por D-17 (2026-07-30), a petición del responsable.
      El aviso de durabilidad ya NO aparece en la interfaz.
@@ -13,106 +14,84 @@
      producto NO es un respaldo, y ni la interfaz ni la documentación pueden
      ofrecer, sugerir ni automatizar el borrado del origen tras subir. -->
 
-<header>
-  <div class="cabecera-superior">
-    <nav class="migas">
-      {{range .Migas}}<a href="{{listadoCon . $.Orden}}">{{.Nombre}}</a>{{end}}
-    </nav>
+<nav class="migas">
+  {{range .Migas}}<a href="{{listadoCon . $.Orden}}">{{.Nombre}}</a>{{end}}
+</nav>
 
-    <!-- LAS ACCIONES VIVEN AQUÍ, NO AL PIE. Antes estaban debajo de la tabla,
-         que es donde nadie las busca: en cualquier gestor de archivos el
-         «subir» y el «crear carpeta» están arriba y a la vista.
+<!-- LAS ACCIONES VIVEN AQUÍ, NO AL PIE. Antes estaban debajo de la tabla,
+     que es donde nadie las busca: en cualquier gestor de archivos el
+     «subir» y el «crear carpeta» están arriba y a la vista.
 
-         Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
-         purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y si
-         estos menús dependieran de JS, un navegador sin él se quedaría sin
-         poder crear carpetas ni subir por el formulario de respaldo.
-         menus.js solo añade el cierre al pulsar fuera; sin él los menús
-         siguen funcionando con su propio botón. -->
-    <div class="barra-acciones">
-      <details class="menu">
-        <summary class="boton-barra">Subir</summary>
-        <div class="menu-panel">
-          <!-- Camino normal: tus, reanudable (RF-12). -->
-          <div id="zona-subida" data-destino="{{.Ruta.Rel}}" data-csrf="{{.Csrf}}">
-            <label for="archivos">Archivos a subir</label>
-            <input type="file" id="archivos" multiple>
-            <button type="button" id="boton-subir">Subir</button>
-            <ul id="progreso"></ul>
-          </div>
+     Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
+     purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y si
+     estos menús dependieran de JS, un navegador sin él se quedaría sin
+     poder crear carpetas ni subir por el formulario de respaldo.
+     menus.js solo añade el cierre al pulsar fuera; sin él los menús
+     siguen funcionando con su propio botón.
 
-          <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
-          <noscript>
-            <form method="post" action="/subir" enctype="multipart/form-data">
-              <!-- El ORDEN importa: el servidor recorre el flujo una sola vez y
-                   valida el testigo antes de aceptar ningún archivo. -->
-              <input type="hidden" name="csrf" value="{{.Csrf}}">
-              <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
-              <input type="file" name="archivo" required>
-              <button type="submit">Subir (sin JavaScript)</button>
-            </form>
-          </noscript>
-        </div>
-      </details>
+     ESTADO, ADMINISTRACIÓN, SEGURIDAD Y SALIR YA NO VIVEN AQUÍ (ADR-0075):
+     son navegación entre módulos, no órdenes de este módulo, y ahora viven
+     en el rail — construido una sola vez por marco.go a partir de la MISMA
+     regla que antes se repetía en cada {{"{{if}}"}} de esta plantilla. Lo
+     que queda es lo que Archivos, y solo Archivos, sabe hacer. -->
+<div class="barra-acciones">
+  <details class="menu">
+    <summary class="boton-barra">Subir</summary>
+    <div class="menu-panel">
+      <!-- Camino normal: tus, reanudable (RF-12). -->
+      <div id="zona-subida" data-destino="{{.Ruta.Rel}}" data-csrf="{{.Csrf}}">
+        <label for="archivos">Archivos a subir</label>
+        <input type="file" id="archivos" multiple>
+        <button type="button" id="boton-subir">Subir</button>
+        <ul id="progreso"></ul>
+      </div>
 
-      <details class="menu">
-        <summary class="boton-barra">Nueva carpeta</summary>
-        <div class="menu-panel">
-          <form method="post" action="/directorio">
-            <input type="hidden" name="csrf" value="{{.Csrf}}">
-            <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
-            <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
-            <button type="submit">Crear</button>
-          </form>
-        </div>
-      </details>
+      <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
+      <noscript>
+        <form method="post" action="/subir" enctype="multipart/form-data">
+          <!-- El ORDEN importa: el servidor recorre el flujo una sola vez y
+               valida el testigo antes de aceptar ningún archivo. -->
+          <input type="hidden" name="csrf" value="{{.Csrf}}">
+          <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
+          <input type="file" name="archivo" required>
+          <button type="submit">Subir (sin JavaScript)</button>
+        </form>
+      </noscript>
+    </div>
+  </details>
 
-      {{/* «Usuarios» — atajo a homeUsers/, solo para el superusuario.
-           NO ES UNA PUERTA NUEVA: homeUsers/ sigue siendo una carpeta
-           navegable dentro de la raíz (ADR-0055), y sigue sin ruta propia ni
-           envoltura soloSuperusuario en el servidor: /ver/homeUsers pasa por
-           conAlmacen igual que cualquier otro /ver, y el aislamiento de
-           SIEMPRE decide qué hay dentro. Para un usuario normal, esa ruta cae
-           dentro de SU PROPIA carpeta —nunca la de la casa— y no encontraría
-           nada; se esconde para no ofrecer un enlace que no lleva a ningún
-           lado, no porque haga falta cerrarlo.
-           DESDE EL 06/08 YA NO APARECE EN EL LISTADO de la raíz del
-           superusuario —verListado la filtra, ver manejadores.go—, pedido
-           expresamente para que este botón deje de ser una segunda ruta a lo
-           mismo. El filtro no reemplaza este atajo: sin él, homeUsers/ dejaría
-           de ser alcanzable sin teclear la URL a mano. */}}
-      {{if .EsSuperusuario}}<a class="boton-barra" href="/ver/homeUsers">Usuarios</a>{{end}}
-
-      {{/* «Estado» solo para el superusuario (ADR-0055). Publica temperatura,
-           capacidad y ritmo de uso de TODO el nodo, no de la carpeta de quien
-           mira: a un usuario normal no le informa de nada suyo y le entrega
-           reconocimiento del sistema entero.
-           ESCONDERLO NO ES EL CONTROL —eso es soloSuperusuario en el servidor,
-           que responde 403 a quien teclee la ruta—; esto solo evita ofrecer
-           una puerta que no se va a abrir. */}}
-      {{if .EsSuperusuario}}<a class="boton-barra" href="/estado">Estado</a>{{end}}
-
-      {{/* «Administración» — P-4, etapa 2 (ADR-0055). Alta y baja de
-           cuentas. Solo para el superusuario, igual que «Estado»: esconderlo
-           aquí es cortesía, el control de verdad es soloSuperusuario en el
-           servidor.
-           Y ADEMÁS solo desde dentro: decidir quién entra es la operación más
-           consecuente de esta web, así que desde Internet no se ofrece — la
-           niega soloDesdeDentro (sesion.go), esto solo evita el botón muerto.
-           «Seguridad» NO cuelga de esa regla, a propósito: mirar quién toca el
-           nodo es justo lo que uno quiere poder hacer desde fuera, y no cambia
-           nada. */}}
-      {{if .EsSuperusuario}}{{if .PuedeAdministrar}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}<a class="boton-barra" href="/seguridad">Seguridad{{if .Novedades}} <span class="pastilla">{{.Novedades}}</span>{{end}}</a>{{end}}
-      <form method="post" action="/salir" class="salir">
-        <button type="submit">Salir</button>
+  <details class="menu">
+    <summary class="boton-barra">Nueva carpeta</summary>
+    <div class="menu-panel">
+      <form method="post" action="/directorio">
+        <input type="hidden" name="csrf" value="{{.Csrf}}">
+        <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
+        <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
+        <button type="submit">Crear</button>
       </form>
     </div>
-  </div>
-</header>
+  </details>
 
-{{if .Mensaje}}<p class="mensaje {{if .EsError}}error{{end}}">{{.Mensaje}}</p>{{end}}
+  {{/* «Usuarios» — atajo a homeUsers/, solo para el superusuario.
+       NO ES UNA PUERTA NUEVA: homeUsers/ sigue siendo una carpeta
+       navegable dentro de la raíz (ADR-0055), y sigue sin ruta propia ni
+       envoltura soloSuperusuario en el servidor: /ver/homeUsers pasa por
+       conAlmacen igual que cualquier otro /ver, y el aislamiento de
+       SIEMPRE decide qué hay dentro. Para un usuario normal, esa ruta cae
+       dentro de SU PROPIA carpeta —nunca la de la casa— y no encontraría
+       nada; se esconde para no ofrecer un enlace que no lleva a ningún
+       lado, no porque haga falta cerrarlo.
+       DESDE EL 06/08 YA NO APARECE EN EL LISTADO de la raíz del
+       superusuario —verListado la filtra, ver manejadores.go—, pedido
+       expresamente para que este botón deje de ser una segunda ruta a lo
+       mismo. El filtro no reemplaza este atajo: sin él, homeUsers/ dejaría
+       de ser alcanzable sin teclear la URL a mano. */}}
+  {{if .EsSuperusuario}}<a class="boton-barra" href="/ver/homeUsers">Usuarios</a>{{end}}
+</div>
 
-<main>
+{{if .Mensaje}}<p class="mensaje mensaje-modulo {{if .EsError}}error{{end}}">{{.Mensaje}}</p>{{end}}
+
+<main class="cuerpo-modulo">
 <table class="archivos">
   <!-- LOS ENCABEZADOS ORDENAN, Y CADA UNO TIENE UNA SOLA DIRECCIÓN (P-3).
        No alternan: pulsar dos veces «Tamaño» no invierte nada. Lo pidió así
@@ -236,6 +215,8 @@
 {{if .Truncado}}<p class="mensaje error">Listado recortado: hay más entradas de las que se muestran.</p>{{end}}
 {{if .Ocultas}}<p class="oculto">{{.Ocultas}} elemento(s) oculto(s) — nombres que empiezan por punto, normalmente temporales del sistema o del iPhone.</p>{{end}}
 </main>
+</div>{{/* cierra .cont — Archivos no tiene panel de detalle */}}
+{{template "marco-cierra" .}}
 
 <script src="/estatico/menus.js"></script>
 <script src="/estatico/subida.js"></script>

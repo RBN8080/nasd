@@ -187,7 +187,10 @@ func TestLaBarraEnsenaLaMarcaYMirarLaApaga(t *testing.T) {
 
 	cookie := superusuarioEn(t, s)
 	conMarca := pedirDesde(t, s.Rutas(), http.MethodGet, "/", "192.168.1.18:5000", cookie).Body.String()
-	if !strings.Contains(conMarca, `Seguridad <span class="pastilla">1</span>`) {
+	// La marca vive en el rail desde ADR-0075 (ver marco.go/_marco.html):
+	// «.ct», no «.pastilla» — esa clase queda para los veredictos de las
+	// tablas, que es un semáforo distinto.
+	if !strings.Contains(conMarca, `<span>Seguridad</span><span class="ct">1</span>`) {
 		t.Errorf("la barra no enseña la marca con una cuarentena recién disparada:\n%s", conMarca)
 	}
 
@@ -197,13 +200,13 @@ func TestLaBarraEnsenaLaMarcaYMirarLaApaga(t *testing.T) {
 		t.Errorf("tras mirar el panel la marca sigue en %d", n)
 	}
 	sinMarca := pedirDesde(t, s.Rutas(), http.MethodGet, "/", "192.168.1.18:5000", cookie).Body.String()
-	if strings.Contains(sinMarca, `class="pastilla">1<`) {
+	if strings.Contains(sinMarca, `class="ct">1<`) {
 		t.Error("la marca sigue pintada después de mirar el panel")
 	}
-	// Y «Seguridad» sigue estando: lo que desaparece es la pastilla, no el
-	// botón.
-	if !strings.Contains(sinMarca, `href="/seguridad">Seguridad`) {
-		t.Error("desapareció el botón entero en vez de solo la marca")
+	// Y «Seguridad» sigue estando: lo que desaparece es la marca, no el
+	// ítem del rail.
+	if !strings.Contains(sinMarca, `href="/seguridad">`) || !strings.Contains(sinMarca, `<span>Seguridad</span>`) {
+		t.Error("desapareció el ítem del rail entero en vez de solo la marca")
 	}
 }
 
