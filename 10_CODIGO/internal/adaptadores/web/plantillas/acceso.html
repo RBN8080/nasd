@@ -15,10 +15,14 @@
      aquí amplía esa superficie, así que se piensa antes. */}}
 <main class="sola">
   <div class="tarjeta">
+    {{/* SOLO EL NOMBRE. Aquí había un cuadrado con «rb» y un rótulo
+         «Servidor de archivos»; los dos se retiran por indicación sobre
+         captura el 2026-08-26. El cuadrado era un logotipo inventado —el
+         proyecto no tiene marca— y el rótulo explicaba lo que ya sabe quien
+         está tecleando su contraseña para entrar. Lo que queda es lo único
+         que esta pantalla tiene que decir: a qué se está entrando. */}}
     <div class="marca-sola">
-      <div class="g">rb</div>
       <b>NAS</b>
-      <span>Servidor de archivos</span>
     </div>
 
     {{if .Aviso}}<p class="aviso mal">{{.Aviso}}</p>{{end}}

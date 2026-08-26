@@ -27,8 +27,11 @@
   <div class="marco">
 
     <aside class="rail">
+      {{/* SIN CUADRADO CON LAS INICIALES DEL NODO. Eran las dos primeras
+           letras de «192.168.1.38», o sea «19», que no le dicen nada a
+           nadie: tenía la forma de un dato sin serlo. Queda el nombre
+           entero y desde cuándo lleva en línea. */}}
       <div class="marca">
-        <div class="g">{{marcaCorta .Marco.Nodo}}</div>
         <div class="nm"><b>{{.Marco.Nodo}}</b>{{if .Marco.NodoSub}}<span><i></i>{{.Marco.NodoSub}}</span>{{end}}</div>
       </div>
 
@@ -73,8 +76,10 @@
 
     <div class="top">
       <div class="f1">
-        {{/* La marca solo aparece en el teléfono, donde no hay rail. */}}
-        <div class="mmarca"><div class="g">{{marcaCorta .Marco.Nodo}}</div></div>
+        {{/* En el teléfono había aquí una copia del mismo cuadrado «19», y se
+             va por lo mismo. Quien abre esta página sabe a qué NAS entró; lo
+             que necesita saber al llegar es en qué módulo está, y eso lo dice
+             el título del cuerpo. */}}
         {{/* EL BUSCADOR ES REAL: un GET a «/» que filtra el listado por
              nombre. Va en los cinco módulos porque su promesa es «buscar en
              todo el NAS» y no «buscar en esta página»: desde donde uno esté,

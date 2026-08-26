@@ -924,27 +924,6 @@ func funciones() template.FuncMap {
 		// Y las rutas de las URL se escapan POR COMPONENTE. html/template no
 		// puede hacerlo por su cuenta: dentro de un href no distingue el «#»
 		// de un nombre de archivo del que abre un fragmento. Ver apertura.go.
-		// marcaCorta son las dos primeras letras del nombre del nodo, para el
-		// cuadrado de la esquina del rail — «nas-ejemplo» → «rb». Se compone
-		// aquí y no en la plantilla porque recortar una cadena por índice de
-		// BYTES parte una letra acentuada por la mitad; esto recorta por
-		// runas.
-		"marcaCorta": func(nodo string) string {
-			r := []rune(nodo)
-			for i, c := range r {
-				if c == '.' || c == '-' {
-					r = r[:i]
-					break
-				}
-			}
-			if len(r) > 2 {
-				r = r[:2]
-			}
-			if len(r) == 0 {
-				return "NA"
-			}
-			return strings.ToUpper(string(r[:1])) + string(r[1:])
-		},
 		// ext es la extension de un archivo, para el cuadradito que sustituye
 		// a la miniatura cuando no hay ninguna. Sin punto, en minusculas y
 		// acotada: «.JPEG» cabe, «.velocidad-de-transferencia» no, y el

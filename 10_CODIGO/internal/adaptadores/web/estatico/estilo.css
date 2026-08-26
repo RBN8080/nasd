@@ -92,8 +92,17 @@ img,svg{max-width:100%;}
 .marco{display:grid;grid-template-columns:minmax(0,1fr);
   grid-template-rows:auto minmax(0,1fr) auto;
   grid-template-areas:"top" "cuerpo" "tabs";height:100dvh;}
+/* LA COLUMNA DE DETALLE ES «auto», Y ESE ES EL PUNTO.
+   Con «var(--det)» la rejilla reservaba 308 px SIEMPRE, hubiera panel o no:
+   en Archivos —que nunca abre detalle— y en Estado sin indicador
+   seleccionado, la tabla se cortaba a 308 px del borde y quedaba una franja
+   negra a la derecha. Reportado sobre captura el 2026-08-26.
+   Con «auto» la columna mide lo que mida su contenido, y una columna sin
+   ningún elemento dentro mide cero: el cuerpo se lleva el ancho entero sin
+   que ninguna plantilla tenga que avisar de nada. El ancho fijo se declara
+   entonces donde vive el panel, no donde vive la rejilla. */
 @container (min-width:880px){
-  .marco{grid-template-columns:var(--rail) minmax(0,1fr) var(--det);
+  .marco{grid-template-columns:var(--rail) minmax(0,1fr) auto;
     grid-template-rows:auto minmax(0,1fr) auto;
     grid-template-areas:"rail top top" "rail cuerpo detalle" "rail estado estado";}
 }
@@ -105,9 +114,13 @@ img,svg{max-width:100%;}
 .rail{display:none;background:var(--n1);border-right:1px solid var(--n4);
   flex-direction:column;overflow-y:auto;padding:var(--e2) var(--e1);}
 @container (min-width:880px){.rail{display:flex;}}
+/* SIN CUADRADO DE MARCA. Llevaba las dos primeras letras del nombre del
+   nodo, que en «192.168.1.38» son «19» y no significan nada: un adorno con
+   forma de dato. Retirado por indicación sobre captura el 2026-08-26. Lo que
+   queda es el nombre del nodo entero y desde cuándo lleva en línea, que sí
+   se leen. El color que tenía —fondo de acento, texto negro— pasa al avatar
+   de la esquina, donde la inicial SÍ dice de quién es la sesión. */
 .marca{display:flex;align-items:center;gap:var(--e2);padding:var(--e1) var(--e2) var(--e2);}
-.marca .g{width:28px;height:28px;flex:0 0 28px;border-radius:var(--r2);background:var(--ac);
-  display:grid;place-items:center;font-weight:700;font-size:.76rem;color:#000;}
 .marca .nm{display:flex;flex-direction:column;line-height:1.15;min-width:0;}
 .marca .nm b{font-size:.87rem;font-weight:700;letter-spacing:-.01em;}
 .marca .nm span{font-size:.63rem;color:var(--tx3);display:flex;align-items:center;gap:4px;}
@@ -138,24 +151,37 @@ img,svg{max-width:100%;}
   display:flex;flex-direction:column;gap:var(--e2);padding:var(--e2);}
 @container (min-width:880px){.top{padding:var(--e2) var(--e3);}}
 .f1{display:flex;align-items:center;gap:var(--e2);}
-.mmarca{display:flex;align-items:center;gap:var(--e1);}
-@container (min-width:880px){.mmarca{display:none;}}
-.mmarca .g{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r2);background:var(--ac);
-  display:grid;place-items:center;font-weight:700;font-size:.7rem;color:#000;}
 .miga{display:none;align-items:center;gap:6px;font-size:.8rem;color:var(--tx3);flex:0 0 auto;}
 @container (min-width:880px){.miga{display:flex;}}
 .miga b{color:var(--tx);font-weight:600;}
 .miga svg{opacity:.4;flex:0 0 auto;}
-.busc{flex:1;min-width:0;display:flex;align-items:center;gap:var(--e1);background:var(--n2);
-  border:1px solid var(--n4);border-radius:var(--r2);padding:6px var(--e2);}
+/* EL BUSCADOR NO LLEVA CAJA EN REPOSO.
+   Llevaba contorno y fondo propios, y con la línea de la barra de órdenes
+   justo debajo el resultado eran dos rectángulos encajados alrededor de un
+   campo de texto. Reportado sobre captura el 2026-08-26: «un diseño más
+   simple sin las dos líneas que cubren el cuadro de búsqueda».
+   La caja aparece cuando sirve de algo —al posar el puntero y al escribir—,
+   que es cuando el usuario necesita saber dónde va a caer lo que teclee. El
+   borde transparente se declara igualmente para que al enfocar no se mueva
+   nada: si naciera sin borde, el de foco empujaría el renglón un píxel. */
+.busc{flex:1;min-width:0;display:flex;align-items:center;gap:var(--e1);background:none;
+  border:1px solid transparent;border-radius:var(--r2);padding:6px var(--e2);}
+.busc:hover{background:var(--n2);}
 .busc:focus-within{border-color:var(--acB);background:var(--n3);}
 .busc svg{flex:0 0 14px;opacity:.5;}
 .busc input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--tx);
   font-family:inherit;font-size:.8rem;}
 .busc input::placeholder{color:var(--tx3);}
-.usr{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r2);background:var(--n4);
-  display:grid;place-items:center;color:var(--tx);font-weight:700;font-size:.68rem;}
-.ordenes{display:none;align-items:center;gap:var(--e0);padding-top:var(--e1);border-top:1px solid var(--n4);}
+/* LA INICIAL DE QUIEN TIENE LA SESIÓN, con el color que antes gastaba el
+   cuadrado del nodo. Es el único sitio de la barra donde un cuadrado de
+   acento se gana el sitio: dice de quién es la sesión abierta, y basta una
+   letra para reconocerse sin anunciarle la cuenta a quien mire de reojo. */
+.usr{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r2);background:var(--ac);
+  display:grid;place-items:center;color:#000;font-weight:700;font-size:.68rem;}
+/* Sin línea propia: la separación de la barra de órdenes la da el hueco, y
+   una regla más ahí era la segunda de las dos que encajonaban el buscador.
+   La única línea de esta zona es la que cierra «.top» por abajo. */
+.ordenes{display:none;align-items:center;gap:var(--e0);padding-top:var(--e1);}
 /* La barra de ordenes NO es global: su contenido lo decide el modulo, y en
    Resumen y Estado no hay ninguna orden real que ofrecer, asi que la barra
    entera desaparece. Un control que no puede cambiar nada es ruido con
@@ -308,6 +334,15 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
   border:1px solid currentColor;
 }
 .p:empty{display:none;}
+/* NI SE ESTIRAN, que es la otra mitad de la misma regla.
+   Una pastilla suelta dentro de «.vw» —que es una columna flexible— recibe
+   «align-self:stretch» del contenedor y se dibuja del ancho de la FILA
+   ENTERA: así salía «EN LÍNEA» en Estado, una banda verde de borde a borde
+   para una palabra de siete letras. Reportado sobre captura el 2026-08-26.
+   «inline-block» no la salva: dentro de un flex el display se bloquifica y
+   manda el eje transversal. Las que viven en «.pls» ya están a salvo porque
+   esa fila mide por contenido; esto cubre a las que van sueltas. */
+.vw > .p{align-self:flex-start;}
 .p-ok{color:var(--ok);} .p-av{color:var(--av);} .p-fa{color:var(--fa);} .p-na{color:var(--nada);}
 .p-ll{background:var(--acT);color:var(--ac2);border-color:var(--acB);}
 
@@ -350,7 +385,9 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 /* ── DETALLE ── */
 .detalle{display:none;background:var(--n1);border-left:1px solid var(--n4);
   overflow-y:auto;padding:var(--e3);flex-direction:column;gap:var(--e3);}
-@container (min-width:880px){.detalle{display:flex;}}
+/* El ancho del panel se declara AQUÍ y no en la rejilla, para que la columna
+   pueda medir cero cuando la plantilla no pinta ningún panel. Ver «.marco». */
+@container (min-width:880px){.detalle{display:flex;width:var(--det);}}
 .dc{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--e2);}
 .dc h3{margin:0 0 2px;font-size:.9rem;font-weight:700;letter-spacing:-.01em;}
 .dc .x{background:none;border:0;color:var(--tx3);cursor:pointer;font-size:1rem;line-height:1;padding:0;}
@@ -528,13 +565,14 @@ details.plg > summary:hover{color:var(--tx);}
 .tarjeta h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;}
 .tarjeta > p{margin:0;font-size:.8rem;color:var(--tx2);line-height:1.55;}
 
-/* La marca del acceso: el mismo cuadrado del rail, centrado y algo mayor. */
+/* La marca del acceso: el nombre y nada más. Tenía además un cuadrado con un
+   logotipo inventado y un rótulo «Servidor de archivos»; los dos se retiran
+   el 2026-08-26. Se conserva la clase porque sigue habiendo algo que colocar
+   —el nombre— y porque este bloque es el que decide cuánto aire hay entre él
+   y la primera casilla. */
 .marca-sola{display:flex;flex-direction:column;align-items:center;gap:var(--e1);
-  margin-bottom:var(--e1);}
-.marca-sola .g{width:38px;height:38px;border-radius:var(--r2);background:var(--ac);
-  display:grid;place-items:center;font-weight:700;font-size:.95rem;color:#000;}
-.marca-sola b{font-size:.9rem;font-weight:700;letter-spacing:-.01em;}
-.marca-sola span{font-size:.63rem;letter-spacing:.15em;text-transform:uppercase;color:var(--tx3);}
+  margin-bottom:var(--e2);}
+.marca-sola b{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;}
 
 label.cmp{display:flex;flex-direction:column;gap:var(--e0);
   font-size:.6rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
