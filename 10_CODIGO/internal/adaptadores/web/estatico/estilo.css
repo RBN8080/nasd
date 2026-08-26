@@ -186,8 +186,21 @@ img,svg{max-width:100%;}
    Resumen y Estado no hay ninguna orden real que ofrecer, asi que la barra
    entera desaparece. Un control que no puede cambiar nada es ruido con
    contorno. Conmuta por el mismo :has() que ya conmuta las vistas. */
-.ordenes{display:flex;overflow-x:auto;scrollbar-width:none;}
-.ordenes::-webkit-scrollbar{display:none;}
+/* LA BARRA DE ÓRDENES NO RECORTA: ENVUELVE.
+   Llevaba «overflow-x:auto» para poder deslizarse en el teléfono, y eso se
+   comió los tres desplegables que cuelgan de ella. Un elemento con
+   «overflow-x» distinto de visible convierte también su «overflow-y» en
+   automático, así que el panel de «Crear cuenta», «Subir» y «Nueva
+   carpeta» —posicionado a «top:100%», es decir JUSTO DEBAJO de la barra—
+   caía fuera de una caja de 35 px de alto y se recortaba entero. El botón
+   abría el <details> y no pasaba nada visible: exactamente «no sirve este
+   botón», reportado el 2026-08-26 sobre Cuentas, y valía igual para
+   Archivos.
+   Envolver en vez de deslizar cura los tres de una vez y no deja el
+   problema esperando al siguiente desplegable que alguien cuelgue aquí. Y
+   en el teléfono es además mejor: dos renglones se ven, un deslizamiento
+   lateral sin barra visible hay que adivinarlo. */
+.ordenes{display:flex;flex-wrap:wrap;row-gap:var(--e1);}
 .ordenes:empty{display:none;}
 .od{display:inline-flex;align-items:center;gap:6px;padding:5px var(--e2);border-radius:var(--r1);
   background:none;border:0;color:var(--tx2);font-family:inherit;font-size:.77rem;cursor:pointer;flex:0 0 auto;}
@@ -573,6 +586,17 @@ details.plg > summary:hover{color:var(--tx);}
 .marca-sola{display:flex;flex-direction:column;align-items:center;gap:var(--e1);
   margin-bottom:var(--e2);}
 .marca-sola b{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;}
+
+/* EL FORMULARIO DE ACCESO: columna con aire y el botón CENTRADO.
+   El <form> era un bloque corriente, así que «Entrar» caía pegado al campo
+   de la contraseña y alineado a la izquierda, como si fuera un renglón más
+   del formulario en vez de su conclusión. Reportado sobre captura el
+   2026-08-26. El hueco de arriba es el doble que el que separa las casillas
+   entre sí: es lo que dice que ahí se termina de escribir y se pulsa.
+   El ancho mínimo evita que «Entrar» quede como una pastilla diminuta en
+   mitad de una tarjeta de 23 rem. */
+.acc{display:flex;flex-direction:column;gap:var(--e2);}
+.acc .bt{align-self:center;margin-top:var(--e2);min-width:9rem;}
 
 label.cmp{display:flex;flex-direction:column;gap:var(--e0);
   font-size:.6rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}

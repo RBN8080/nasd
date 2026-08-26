@@ -244,3 +244,75 @@ func TestLaRejillaNoReservaAnchoParaUnPanelQueNoEsta(t *testing.T) {
 			"el panel se quedaría del ancho de su texto")
 	}
 }
+
+// UN MENU QUE NO SE VE NO ES UN MENU, Y ESTO CUBRE LAS DOS FORMAS DE
+// DESAPARECER QUE YA SE DIERON.
+//
+// La primera fue de CSS: «.ordenes» llevaba «overflow-x:auto» para poder
+// deslizarse en el telefono, y con eso recorto los tres desplegables que
+// cuelgan de ella —«Crear cuenta», «Subir», «Nueva carpeta»—, que se colocan
+// a top:100%, o sea justo debajo de una barra de 35 px de alto. El boton
+// abria el <details> y no pasaba nada visible. Reportado el 2026-08-26 como
+// «no sirve este boton».
+//
+// La segunda fue de ANCLA: menus.js cierra los menus al pulsar fuera
+// buscando «details.menu[open]», y al reescribir las plantillas para
+// ADR-0075 ningun <details> se quedo con esa clase. El archivo seguia
+// cargandose y no seleccionaba nada, asi que la comodidad que el responsable
+// pidio el 05/08/2026 dejo de existir sin que fallara nada a gritos. Es el
+// mismo genero de defecto que data-clave y data-usuario, y se vigila igual:
+// el ancla se LEE del propio JavaScript, para que renombrarla obligue a
+// pasar por aqui en vez de dejar la prueba comprobando un nombre muerto.
+//
+// El barrido va sobre el CODIGO de las plantillas y no sobre unas cuantas
+// paginas servidas: asi cubre tambien a mover.html —que no sale de ninguna
+// URL fija— y no hay una lista de rutas que se quede corta cuando aparezca
+// el siguiente modulo.
+func TestTodoMenuDesplegableSigueSiendoUsable(t *testing.T) {
+	js, ok := estaticos()["/estatico/menus.js"]
+	if !ok {
+		t.Fatal("no esta menus.js entre los recursos incrustados")
+	}
+	const ancla = "details.menu[open]"
+	if !strings.Contains(string(js.crudo), ancla) {
+		t.Fatalf("menus.js ya no busca %q; si el ancla cambio de nombre, "+
+			"cambiela tambien aqui — no la borre", ancla)
+	}
+
+	hoja, ok := estaticos()["/estatico/estilo.css"]
+	if !ok {
+		t.Fatal("no esta la hoja de estilos entre los recursos incrustados")
+	}
+	reglas := regexp.MustCompile(`\.ordenes\{([^}]*)\}`)
+	for _, m := range reglas.FindAllStringSubmatch(string(hoja.crudo), -1) {
+		if strings.Contains(m[1], "overflow") {
+			t.Errorf("«.ordenes» vuelve a recortar su contenido (%q), y los paneles "+
+				"que cuelgan de ella caen fuera de la caja y no se ven", m[1])
+		}
+	}
+
+	s := servidorConAuth(t)
+	vistos := 0
+	for _, plantilla := range s.plantillas.Templates() {
+		if plantilla.Tree == nil || plantilla.Tree.Root == nil {
+			continue
+		}
+		trozos := strings.Split(plantilla.Tree.Root.String(), "<details")
+		for _, trozo := range trozos[1:] {
+			bloque, _, _ := strings.Cut(trozo, "</details>")
+			if !strings.Contains(bloque, "menu-panel") {
+				continue // un <details> de texto plegable, no un menu
+			}
+			vistos++
+			apertura, _, _ := strings.Cut(trozo, ">")
+			if !strings.Contains(apertura, `class="menu`) {
+				t.Errorf("%s: un menu abre con «<details%s>» y le falta la clase "+
+					"«menu»; menus.js no lo cerrara al pulsar fuera",
+					plantilla.Name(), apertura)
+			}
+		}
+	}
+	if vistos == 0 {
+		t.Error("no se encontro ni un solo menu desplegable; el barrido no esta mirando nada")
+	}
+}

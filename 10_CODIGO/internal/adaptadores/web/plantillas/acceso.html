@@ -27,7 +27,7 @@
 
     {{if .Aviso}}<p class="aviso mal">{{.Aviso}}</p>{{end}}
 
-    <form method="post" action="/acceso">
+    <form class="acc" method="post" action="/acceso">
       {{if .Usuario}}
       {{/* Este aparato ya sabe a quién pertenece: solo se pide la contraseña.
            La inicial sigue estando —dentro del enlace de abajo— porque basta
