@@ -5,45 +5,32 @@
 </head>
 <body>
 
-<header>
-  <div class="cabecera-superior">
-    <div class="titulo-estado">
-      <span class="titulo-pagina">Bloquear</span>
-      <span class="filtro-activo">{{.IP}}{{if .TieneGeo}} · AS{{.Geo.ASN}} {{.Geo.Nombre}} · {{.Geo.Pais}}{{end}}</span>
-    </div>
-    <div class="barra-acciones">
-      <a class="boton-barra" href="/seguridad">Cancelar</a>
-    </div>
-  </div>
-</header>
+<main class="sola">
+  <div class="tarjeta ancha">
+    <h1>Bloquear</h1>
+    <p class="ruta-grande">{{.IP}}{{if .TieneGeo}}<br><small>AS{{.Geo.ASN}} {{.Geo.Nombre}} · {{.Geo.Pais}}</small>{{end}}</p>
 
-<main>
-
-{{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
+{{if .Aviso}}<p class="aviso mal">{{.Aviso}}</p>{{end}}
 
 <!-- LAS TRES OPCIONES SE ENSEÑAN JUNTAS Y YA CALCULADAS.
      El defecto que originó esta pantalla fue elegir el alcance a ciegas: un
      /48 que parecía cubrir al operador y cubría 1 de sus 11 redes. Un menú
      obliga a elegir antes de ver; una tabla deja comparar. La columna
      «Tramos» es la que destapa un alcance insuficiente. -->
-<h2>Qué se bloquea</h2>
-<table class="datos">
-  <thead>
-    <tr><th>Alcance</th><th>Cubre</th><th>Tramos</th><th>Paquetes</th><th>Conex.</th><th>Rechazos</th></tr>
-  </thead>
-  <tbody>
-    {{range .Propuestas}}
-    <tr>
-      <td class="rotulo">{{.Alcance.Etiqueta}}</td>
-      <td>{{if .Disponible}}{{.Cubre}}{{else}}<span class="suave">{{.Porque}}</span>{{end}}</td>
-      <td class="num">{{if .Disponible}}{{.Tramos}}{{else}}—{{end}}</td>
-      <td class="num">{{if .Disponible}}{{.Paquetes}}{{else}}—{{end}}</td>
-      <td class="num">{{if .Disponible}}{{.Conexiones}}{{else}}—{{end}}</td>
-      <td class="num">{{if .Disponible}}{{.Rechazos}}{{else}}—{{end}}</td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+<div class="sch"><h2>Qué se bloquea</h2></div>
+<div class="t-blo">
+      <div class="th"><span>Alcance</span><span>Cubre</span><span>Tramos</span><span>Frenaría</span></div>
+      <div class="fls">
+        {{range .Propuestas}}
+        <div class="fl">
+          <div class="cl"><span class="et">Alcance</span><span class="pls"><span class="p p-ll">{{.Alcance.Etiqueta}}</span></span></div>
+          <div class="cl"><span class="et">Cubre</span><span class="op">{{if .Disponible}}{{.Cubre}}{{else}}{{.Porque}}{{end}}</span></div>
+          <div class="cl"><span class="et">Tramos</span><span class="ct2">{{if .Disponible}}<b>{{.Tramos}}</b>{{else}}—{{end}}</span></div>
+          <div class="cl"><span class="et">Frenaría</span><span class="ct2">{{if .Disponible}}<b>{{.Paquetes}}</b> <small>paq</small> · <b>{{.Conexiones}}</b> <small>conex</small> · <b>{{.Rechazos}}</b> <small>rech</small>{{else}}—{{end}}</span></div>
+        </div>
+        {{end}}
+      </div>
+    </div>
 
 <!-- LO QUE ESTA PÁGINA SABE Y LO QUE NO, dicho antes de que nadie pulse.
      Las tres cifras son lo que la regla HABRÍA frenado en la ventana, contado
@@ -58,13 +45,13 @@
   está mirando ahora sí está protegida — un alcance que la incluya se rechaza.
 </p>
 
-<h2>Aplicar</h2>
+<div class="sch"><h2>Aplicar</h2></div>
 <form method="post" action="/seguridad/bloquear" class="filtros">
   <input type="hidden" name="csrf" value="{{.Csrf}}">
   <input type="hidden" name="ip" value="{{.IP}}">
 
   <div>
-    <label for="alcance">Alcance</label>
+    <label class="cmp" for="alcance">Alcance</label>
     <select id="alcance" name="alcance">
       {{range .Propuestas}}{{if .Disponible}}
       <option value="{{.Alcance}}">{{.Alcance.Etiqueta}} — {{.Cubre}}</option>
@@ -73,7 +60,7 @@
   </div>
 
   <div>
-    <label for="dias">Caduca</label>
+    <label class="cmp" for="dias">Caduca</label>
     <select id="dias" name="dias">
       {{range .Caducidades}}<option value="{{.Dias}}">{{.Etiqueta}}</option>{{end}}
     </select>
@@ -85,17 +72,18 @@
        motivo tiene que quedar escrito o dentro de dos sesiones nadie sabrá
        por qué». -->
   <div>
-    <label for="motivo">Por qué</label>
+    <label class="cmp" for="motivo">Por qué</label>
     <input type="text" id="motivo" name="motivo" required
            placeholder="Reputación del operador; barrido del 16/08; …">
   </div>
 
-  <div class="acciones-filtro">
-    <button type="submit" class="boton-barra">Bloquear</button>
-    <a class="boton-barra" href="/seguridad">Cancelar</a>
+  <div class="fila-bt">
+    <button type="submit" class="bt pel">Bloquear</button>
+    <a class="bt" href="/seguridad">Cancelar</a>
   </div>
 </form>
 
+  </div>
 </main>
 </body>
 </html>

@@ -102,12 +102,18 @@ func comprimible(tipo string) bool {
 //
 // # DE DÓNDE SALE LA LISTA
 //
-// De acceso.html, que a través de la plantilla «cabeza» pide el icono y la
-// hoja de estilos, y ningún script. No se escribe aquí «por si acaso» ni se
-// deja de más: TestSoloSonPublicosLosAssetsQueElFormularioNecesita lee las
-// plantillas del formulario, extrae sus referencias y exige que este conjunto
-// sea exactamente ese. Si mañana el formulario referencia algo nuevo, la
-// prueba lo dice antes de que el formulario salga sin estilos.
+// De acceso.html —que a través de la plantilla «cabeza» pide el icono y la
+// hoja de estilos, y ningún script— Y DE LA PROPIA HOJA, que pide las seis
+// tipografías con url(). No se escribe aquí «por si acaso» ni se deja de
+// más: TestSoloSonPublicosLosAssetsQueElFormularioNecesita lee las plantillas
+// del formulario Y el CSS, extrae sus referencias y exige que este conjunto
+// sea exactamente ese.
+//
+// LAS FUENTES ENTRAN POR EL CSS Y NO POR EL HTML, y por eso la prueba tuvo
+// que aprender a seguir un url(): una @font-face referenciada solo desde la
+// hoja no aparece en ningún href ni src del formulario, así que la versión
+// anterior de esa prueba no la habría visto — y la pantalla de acceso habría
+// salido con la fuente del sistema mientras el resto de la consola no.
 //
 // Es una lista y no un cálculo en el arranque a propósito: derivarla
 // analizando HTML en producción sería inferir en caliente algo que se puede
@@ -115,6 +121,28 @@ func comprimible(tipo string) bool {
 var assetsPublicos = []string{
 	"/estatico/estilo.css",
 	"/estatico/icono.svg",
+	// Las seis caras de Archivo y DM Mono. Son seis y no dos porque cada
+	// familia se sirve partida por subconjunto Unicode: «unicode-range» hace
+	// que el navegador baje SOLO el que la página necesita —para una página
+	// en español, latin— y nunca latin-ext, salvo que un nombre de archivo lo
+	// exija.
+	"/estatico/archivo-latin.woff2",
+	"/estatico/archivo-latinext.woff2",
+	"/estatico/dmmono400-latin.woff2",
+	"/estatico/dmmono400-latinext.woff2",
+	"/estatico/dmmono500-latin.woff2",
+	"/estatico/dmmono500-latinext.woff2",
+}
+
+// tiposPropios completa la tabla de mime.TypeByExtension.
+//
+// Go trae de fábrica una tabla corta —css, js, svg, png…— y en Linux la
+// amplía con /etc/mime.types, que es un archivo del SISTEMA: puede no existir
+// en el nodo, o no traer woff2. Depender de él haría que la misma compilación
+// sirviera las tipografías con un tipo en el PC y con otro en la Raspberry.
+// Se declara aquí, que es donde se puede leer y comprobar.
+var tiposPropios = map[string]string{
+	".woff2": "font/woff2",
 }
 
 // estaticos es el mapa de ruta HTTP a recurso, calculado una sola vez.
@@ -129,6 +157,9 @@ var estaticos = sync.OnceValue(func() map[string]recursoEstatico {
 			return err
 		}
 		tipo := mime.TypeByExtension(path.Ext(p))
+		if tipo == "" {
+			tipo = tiposPropios[path.Ext(p)]
+		}
 		if tipo == "" {
 			tipo = "application/octet-stream"
 		}

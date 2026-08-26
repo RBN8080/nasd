@@ -203,17 +203,17 @@ func TestNingunaImagenAbreEnPestanaNuevaSobreHTTP(t *testing.T) {
 	s, a := servidorDeApertura(t)
 	a.agregar(t, "foto.png", []byte("\x89PNG\r\n\x1a\n"))
 
+	// SE MIRA EL ATRIBUTO Y NO LA VECINDAD DEL TEXTO. Desde ADR-0075, entre
+	// el «>» del enlace y el nombre va la miniatura —o el cuadradito de la
+	// extensión—, así que buscar «href=…>foto.png» comprobaba la maquetación
+	// y no la regla. Lo que ADR-0053 gobierna es si ESE enlace lleva target.
 	cuerpo := peticionConSesion(t, s, "/").Body.String()
-	for linea := range strings.SplitSeq(cuerpo, "\n") {
-		if !strings.Contains(linea, "foto.png") {
-			continue
-		}
-		if strings.Contains(linea, `target="_blank"`) {
-			t.Error("una imagen abre en pestaña nueva sobre HTTP: eso es justo lo que Safari en iOS bloquea (ADR-0053)")
-		}
+	const enlace = `href="/abrir/foto.png"`
+	if !strings.Contains(cuerpo, enlace) {
+		t.Fatalf("el listado no enlaza la imagen a /abrir: %s", cuerpo)
 	}
-	if !strings.Contains(cuerpo, `href="/abrir/foto.png">foto.png`) {
-		t.Fatalf("el enlace de la imagen no navega en la misma pestaña sobre HTTP: %s", cuerpo)
+	if strings.Contains(cuerpo, enlace+` target="_blank"`) {
+		t.Error("una imagen abre en pestaña nueva sobre HTTP: eso es justo lo que Safari en iOS bloquea (ADR-0053)")
 	}
 }
 

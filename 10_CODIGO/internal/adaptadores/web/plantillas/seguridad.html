@@ -4,595 +4,419 @@
 {{template "cabeza" "NAS — Seguridad"}}
 </head>
 <body>
+{{/* El interruptor del filtro: un checkbox de verdad, fuera de la vista, que
+     el CSS lee con :has(). Es el MISMO mecanismo de la maqueta y funciona sin
+     una línea de JavaScript (ADR-0027). */}}
+<input class="ctl" type="checkbox" id="f-abre"{{if .FiltroAbierto}} checked{{end}}>
 {{template "marco-abre" .}}
 
-<!-- ESTADO, ADMINISTRACIÓN Y SALIR YA NO VIVEN AQUÍ (ADR-0075): viven en el
-     rail. El filtro sí es propio de este módulo, y por eso se queda —bajo
-     demanda, plegado tras «Filtrar», que es lo único que puede cambiar lo
-     que esta tabla enseña. -->
-<div class="barra-acciones">
-  <details class="menu">
-    <summary class="boton-barra">Filtrar</summary>
-    <div class="menu-panel">
-      <!-- method="get": el filtro viaja en la URL, igual que el orden del
-           listado (P-3). Así un filtro concreto se puede guardar en
-           marcadores y compartir, y la página no guarda estado de nadie —
-           la regla R1 de ADR-0015. -->
-      <form method="get" action="/seguridad" class="filtros">
-        <div>
-          <label for="red">Origen</label>
-          <select id="red" name="red">
-            {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-          </select>
-        </div>
-        <div>
-          <label for="horas">Ventana</label>
-          <select id="horas" name="horas">
-            {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-          </select>
-        </div>
-        <div>
-          <label for="motivo">Motivo</label>
-          <select id="motivo" name="motivo">
-            {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-          </select>
-        </div>
-        <div class="acciones-filtro">
-          <button type="submit">Filtrar</button>
-        </div>
-      </form>
-    </div>
-  </details>
-  <!-- EL ESTADO DEL FILTRO VA DONDE SE MIRA PRIMERO, no contado en prosa —
-       igual que antes, solo que junto al botón que lo cambia y no junto al
-       título: es un adjetivo del control, no de la página entera. -->
-  <span class="filtro-activo">{{.FiltroActivo}}</span>
+<!-- «Estado», «Cuentas» y «Salir» ya no viven aquí (ADR-0075): son navegación
+     y su sitio es el rail. El filtro SÍ es propio de este módulo, y por eso se
+     queda — plegado, porque es lo único que puede cambiar lo que la tabla
+     enseña, no algo que se mire todo el rato. -->
+<div class="ordenes">
+  <label class="fbtn" for="f-abre">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+    Filtrar
+    <svg class="cv" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m6 9 6 6 6-6"/></svg>
+  </label>
+  <!-- EL ESTADO DEL FILTRO VA JUNTO AL CONTROL QUE LO CAMBIA: es un adjetivo
+       del control, no de la página. Se compone en el servidor a partir de las
+       MISMAS listas que pintan los desplegables, así que no puede decir una
+       cosa mientras el control enseña otra. -->
+  <span class="rango">{{.FiltroActivo}}</span>
 </div>
 
-<main class="cuerpo-modulo">
+<!-- method="get": el filtro viaja en la URL, igual que el orden del listado
+     (P-3), así que se puede guardar en marcadores y compartir, y la página no
+     guarda estado de nadie — regla R1 de ADR-0015. «abierto=1» conserva el
+     panel desplegado tras filtrar: es justo cuando hay que corregir. -->
+<div class="chips">
+  <form method="get" action="/seguridad" class="filtros">
+    <input type="hidden" name="abierto" value="1">
+    <div><label class="cmp" for="red">Origen</label>
+      <select id="red" name="red">
+        {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+      </select></div>
+    <div><label class="cmp" for="horas">Ventana</label>
+      <select id="horas" name="horas">
+        {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+      </select></div>
+    <div><label class="cmp" for="motivo">Motivo</label>
+      <select id="motivo" name="motivo">
+        {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+      </select></div>
+    <div><button type="submit" class="bt">Filtrar</button></div>
+  </form>
+</div>
 
-<!-- LA NOTA QUE HACE HONESTA LA PÁGINA ENTERA, en una línea.
-     La cifra del historial se dice con Capacidad y no con los eventos de la
-     ventana: aquello llegaba a afirmar «se conservan los 3 más recientes de
-     5000», que es falso. Se conservan 2000. -->
-{{if .Resumen.Truncado}}
-<p class="nota">
-  Historial: <strong>{{.Capacidad}}</strong> rechazos conservados de
-  <strong>{{.Resumen.TotalHistorico}}</strong> vistos.
-</p>
+{{template "marco-cuerpo" .}}
+
+<!-- LAS TRES CAPAS, cada cifra con su etiqueta al lado. Son tres
+     profundidades de la MISMA pregunta y NO se suman: todo rechazo tuvo una
+     conexión, y toda conexión empezó por un paquete (ADR-0064, ADR-0066). -->
+<div class="esc">
+  <div class="pl"><div class="n mono">{{if .HayToques}}{{.Toques}}{{else}}—{{end}}</div><div class="t"><div class="q">Paquetes</div><div class="d">{{if .HayToques}}De Internet · nas-sensor{{else}}Sin sensor instalado{{end}}</div></div></div>
+  <div class="pl"><div class="n mono">{{.Conexiones}}</div><div class="t"><div class="q">Conexiones</div><div class="d">Aceptadas en TCP</div></div></div>
+  <div class="pl"><div class="n mono">{{.Resumen.Eventos}}</div><div class="t"><div class="q">Peticiones</div><div class="d">Rechazadas por nasd</div></div></div>
+</div>
+
+{{if .HuecoDePaquetes}}
+<p class="nota">Las tres no se restan entre sí: <b>nas-sensor</b> reinicia su historial al arrancar. Paquetes registrados desde el {{fecha .PaquetesDesde}}.</p>
 {{end}}
 
-<!-- ACTIVIDAD POR DÍA (ADR-0075) — se pinta SOLO con lo que el anillo
-     recuerda de los eventos ya filtrados; el rótulo declara hasta cuándo
-     alcanza en vez de dar por hecho «doce días». Sin capa de acumulados por
-     hora —requisito de una fase futura, el panel SIEM— no hay serie más
-     larga que enseñar, y esta gráfica no promete una.
-     SVG con geometría en atributos numéricos (x/y/width/height) y color por
-     clase CSS: ninguno de los dos es «style="..."», así que «style-src
-     'self'» sin 'unsafe-inline' no se toca. -->
-<h2>Actividad por día</h2>
-<p class="nota">
-  {{if .ActividadDesde.IsZero}}Sin rechazos en esta ventana.{{else}}Desde {{fecha .ActividadDesde}}, dentro de lo que el anillo recuerda.{{end}}
-</p>
-<svg class="grafica-actividad" viewBox="0 0 300 90" role="img"
-     aria-label="Rechazos por día, últimos {{len .Actividad}} días">
-  {{range .Actividad}}
-  <rect class="barra{{if .Pico}} pico{{end}}" x="{{.X}}" y="{{.Y}}" width="{{.Ancho}}" height="{{.Alto}}"></rect>
-  <text class="eje" x="{{.EjeX}}" y="{{.EjeY}}">{{.Etiqueta}}</text>
-  {{end}}
-</svg>
+<!-- ACTIVIDAD POR DÍA. Se pinta SOLO con lo que el anillo recuerda; el rótulo
+     declara hasta cuándo alcanza en vez de dar por hecho doce días. Sin capa
+     de acumulados por hora —requisito de la fase SIEM, que no existe— no hay
+     serie más larga que enseñar, y esta gráfica no promete una.
+     La escala es la raíz cuadrada y SE DICE: con lineal, un barrido de 732
+     contra treintenas dejaría once columnas planas. Ver graficaDeActividad. -->
+<section class="sc">
+  <div class="sch">
+    <h2>Actividad por día</h2>
+    <span class="ms">escala √ · {{if .ActividadDesde.IsZero}}sin rechazos en la ventana{{else}}desde {{fecha .ActividadDesde}}{{end}}</span>
+  </div>
+  <div class="grc">
+    <svg class="grl" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
+         aria-label="Rechazos por día, últimos {{len .Actividad}} días, escala de raíz cuadrada">
+      {{range .Actividad}}<rect class="b{{if .Pico}} pk{{end}}" x="{{.X}}" y="{{.Y}}" width="{{.Ancho}}" height="{{.Alto}}"><title>{{.Titulo}}</title></rect>{{end}}
+    </svg>
+    <div class="gre">{{range .Actividad}}<span>{{.Etiqueta}}</span>{{end}}</div>
+  </div>
+</section>
 
-<!-- LO QUE HABLA DEL NODO Y NO DE QUIEN LLAMA — va PRIMERO de todo.
-     Las tres tablas siguientes dicen qué hizo un extraño; esta dice qué hace
-     este servidor. Es la única de la página que pide ir a arreglar algo, y por
-     eso se pone donde la vista cae antes.
-     FUERA DE LOS FILTROS, como los apartados y los bloqueos, y con un motivo
-     propio: un hallazgo no caduca porque pasen 24 horas. Que el nodo
-     respondiera donde no debía sigue siendo verdad hasta que alguien lo mire.
-     Solo aparece si hay algo: una tabla vacía titulada así se leería como una
-     acusación permanente contra un nodo sano. -->
+<!-- LO QUE HABLA DEL NODO Y NO DE QUIEN LLAMA — va primero de las tablas. Las
+     siguientes dicen qué hizo un extraño; esta dice qué hace este servidor, y
+     es la única que pide ir a arreglar algo. FUERA DE LOS FILTROS: un hallazgo
+     no caduca porque pasen 24 horas. Solo aparece si hay algo — una tabla
+     vacía titulada así se leería como una acusación permanente contra un nodo
+     sano. -->
 {{if .Hallazgos}}
-<h2>Respuestas inesperadas</h2>
-<div class="leyenda">
-  <p class="nota">
-    Rutas ajenas a este servidor que recibieron respuesta con contenido.
-    Requieren revisión.
-    {{if gt .TotalHallazgos 0}}Vistas <strong>{{.TotalHallazgos}}</strong> veces
-    desde que existe el registro.{{end}}
-  </p>
-</div>
-<table class="datos tabla-ancha">
-  <thead>
-    <tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th><th>Último origen</th></tr>
-  </thead>
-  <tbody>
-    {{range .Hallazgos}}
-    <tr class="g-atencion">
-      <td class="rotulo">{{.Metodo}} {{.Ruta}}</td>
-      <td class="num">{{.Estado}}</td>
-      <td class="num">{{.Veces}}</td>
-      <td class="num">{{fecha .Primera}}</td>
-      <td class="num">{{fecha .Ultima}}</td>
-      {{/* Quién la obtuvo la última vez, y solo el último: una ruta publicada
-           lo está para todo el mundo, así que el origen es contexto y no el
-           sujeto de la fila. La lista completa está en el diario. */}}
-      <td>{{if .UltimoOrigen.IsValid}}{{.UltimoOrigen}} <span class="pastilla">{{.UltimaRed.Etiqueta}}</span>{{else}}<span class="suave">—</span>{{end}}</td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+<section class="sc">
+  <div class="sch"><h2>Respuestas inesperadas</h2><span class="ms">Requieren revisión{{if .TotalHallazgos}} · vistas {{.TotalHallazgos}} veces{{end}}</span></div>
+  <div class="t-blo">
+    <div class="th"><span>Petición</span><span>Estado</span><span>Veces</span><span>Última</span></div>
+    <div class="fls">
+      {{range .Hallazgos}}
+      <div class="fl">
+        <div class="cl"><span class="et">Petición</span><span class="ip">{{.Metodo}} {{.Ruta}}</span></div>
+        <div class="cl"><span class="et">Estado</span><span class="pls"><span class="p p-fa">{{.Estado}}</span></span></div>
+        <div class="cl"><span class="et">Veces</span><span class="ct2">{{.Veces}}</span></div>
+        <div class="cl"><span class="et">Última</span><span class="ct2">{{fecha .Ultima}}</span></div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+</section>
 {{end}}
 
-<!-- LO ÚNICO DE ESTA PÁGINA QUE NO ES HISTORIA.
-     Va arriba del todo y fuera de los filtros a propósito: los filtros
-     gobiernan lo que PASÓ, y esto es lo que está pasando ahora. Filtrarlo por
-     una ventana de 24 horas escondería a un apartado de anteayer que sigue
-     apartado, que es justo lo que aquí hay que ver.
-     Solo aparece si hay algo. Una tabla vacía titulada «Apartados» se lee como
-     «no me estoy defendiendo», cuando lo que dice es «no ha hecho falta». -->
+<!-- LO ÚNICO DE ESTA PÁGINA QUE NO ES HISTORIA. Fuera de los filtros a
+     propósito: los filtros gobiernan lo que PASÓ, y esto es lo que está
+     pasando ahora. Filtrarlo por 24 horas escondería a un apartado de anteayer
+     que sigue apartado, que es justo lo que aquí hay que ver. -->
 {{if .Apartados}}
-<h2>Apartados por conducta</h2>
-<div class="leyenda">
-  <p class="nota">
-    Puestos por el nodo según la conducta observada. Caducan solos.
-    {{if $.CierresFallidos}}<strong>Atención:</strong> {{$.CierresFallidos}}
-    cierres no se pudieron completar desde que arrancó el servicio; esas
-    conexiones siguieron vivas y no están contadas aquí.{{end}}
-  </p>
-</div>
-<table class="datos tabla-ancha">
-  <thead>
-    <tr><th>Dirección</th><th>Por qué</th><th>Hasta</th><th>Frenados</th><th>Último</th><th class="col-accion"></th></tr>
-  </thead>
-  <tbody>
-    {{range .Apartados}}
-    <tr class="g-aviso">
-      <td class="rotulo">{{.IP}}</td>
-      <td>{{.Senal.Etiqueta}}</td>
-      <td class="num">{{fecha .Hasta}}</td>
-      {{/* La cifra que permite retirar lo que no sirve: un apartado con cero
-           frenados no ha protegido de nada todavía. Ojo con leerlo al revés
-           cuando además hay un bloqueo manual sobre la misma dirección: el
-           cierre se le atribuye a la lista, así que este cero significa «la
-           puerta ya estaba cerrada por otro». */}}
-      <td class="num">{{.Frenados}}</td>
-      <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
-      <td class="col-accion">
-        <form method="post" action="/seguridad/soltar">
-          <input type="hidden" name="csrf" value="{{$.Csrf}}">
-          <input type="hidden" name="ip" value="{{.IP}}">
-          <button type="submit">Soltar</button>
-        </form>
-      </td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
+<section class="sc">
+  <div class="sch"><h2>Apartados por conducta</h2><span class="ms">los puso el nodo · caducan solos</span></div>
+  <div class="t-blo">
+    <div class="th"><span>Dirección</span><span>Por qué</span><span>Frenados</span><span></span></div>
+    <div class="fls">
+      {{range .Apartados}}
+      <div class="fl">
+        <div class="cl"><span class="et">Dirección</span><span class="ip">{{.IP}}</span></div>
+        <div class="cl"><span class="et">Por qué</span><span class="pls"><span class="p p-av">{{.Senal.Etiqueta}}</span></span></div>
+        <div class="cl"><span class="et">Frenados</span><span class="ct2">{{.Frenados}} <small>hasta {{fecha .Hasta}}</small></span></div>
+        <div class="cl">
+          <form method="post" action="/seguridad/soltar">
+            <input type="hidden" name="csrf" value="{{$.Csrf}}">
+            <input type="hidden" name="ip" value="{{.IP}}">
+            <button type="submit" class="bt">Soltar</button>
+          </form>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{if .CierresFallidos}}
+  <p class="nota"><b>Atención:</b> {{.CierresFallidos}} cierres no se pudieron completar desde que arrancó el servicio; esas conexiones siguieron vivas y no están contadas aquí.</p>
+  {{end}}
+</section>
 {{end}}
 
 {{if .Bloqueos}}
-<h2>Bloqueos puestos</h2>
-<div class="leyenda">
-  <p class="nota">
-    Bloqueos manuales vigentes.
-  </p>
-</div>
-<table class="datos tabla-ancha">
-  <thead>
-    <tr><th>Cubre</th><th>Alcance</th><th>Por qué</th><th>Caduca</th><th>Frenados</th><th>Último</th><th class="col-accion"></th></tr>
-  </thead>
-  <tbody>
-    {{range .Bloqueos}}
-    <tr>
-      <td class="rotulo">{{.Etiqueta}}</td>
-      <td>
-        {{.Alcance.Etiqueta}}{{if gt (len .Tramos) 1}} · {{len .Tramos}} tramos{{end}}
+<section class="sc">
+  <div class="sch"><h2>Bloqueos puestos</h2><span class="ms">{{len .Bloqueos}} · motivo obligatorio</span></div>
+  <div class="t-blo">
+    <div class="th"><span>Cubre</span><span>Alcance</span><span>Frenados</span><span></span></div>
+    <div class="fls">
+      {{range .Bloqueos}}
+      <div class="fl">
+        <div class="cl"><span class="et">Cubre</span><span class="op">{{.Etiqueta}}<br><i>«{{.Motivo}}»</i></span></div>
+        <div class="cl"><span class="et">Alcance</span><span class="pls">
+          <span class="p p-ll">{{.Alcance.Etiqueta}}</span>
+          <span class="p p-na">{{len .Tramos}} tramos</span>
+        </span>
         {{/* LA FECHA DE LA FOTO, que se guardaba y no se pintaba en ninguna
              parte. Sin ella el alcance envejece EN SILENCIO, que es justo el
-             modo de fallo contra el que se guardaba. Ver filaBloqueo. */}}
-        {{if not .BaseGeo.IsZero}}<br><span class="suave">base de {{fecha .BaseGeo}}</span>{{end}}
-        {{if .BaseMasNueva}}<br><span class="pastilla">hay una base más nueva: conviene revisarlo</span>{{end}}
-      </td>
-      <td>{{.Motivo}}</td>
-      {{/* «Sin caducidad» se dice con palabras y no con una celda vacía: una
-           regla permanente es una decisión, y tiene que leerse como tal. */}}
-      <td class="num">{{if .Caduca.IsZero}}<span class="suave">sin caducidad</span>{{else}}{{fecha .Caduca}}{{end}}</td>
-      <td class="num">{{.Frenados}}</td>
-      <td class="num">{{if .UltimoFrenado.IsZero}}<span class="suave">nunca</span>{{else}}{{fecha .UltimoFrenado}}{{end}}</td>
-      <td class="col-accion">
-        <form method="post" action="/seguridad/retirar">
-          <input type="hidden" name="csrf" value="{{$.Csrf}}">
-          <input type="hidden" name="id" value="{{.ID}}">
-          <button type="submit">Retirar</button>
-        </form>
-      </td>
-    </tr>
-    {{end}}
-  </tbody>
-</table>
-{{end}}
-
-<!-- LOS FILTROS SE MOVIERON A LA BARRA DE ARRIBA (ADR-0075): el mismo
-     formulario, bajo demanda tras «Filtrar», en vez de siempre abierto entre
-     la tabla y lo que gobierna. Las capas de paquetes y conexiones no saben
-     de motivos -un paquete no tiene ninguno-, asi que con un motivo elegido
-     la tabla se acota a las direcciones que SI lo produjeron. Ver
-     soloConRechazos en panel_seguridad.go. -->
-
-<!-- LA TABLA VA PRIMERA, ANTES INCLUSO DEL RESUMEN: es lo unico que el
-     responsable declaro querer ver, y ahora ademas es lo unico que ve a quien
-     toca el puerto sin llegar a hablar. El 16/08 veinte direcciones de DRIFTNET
-     recorrieron el 443 y el panel solo pudo ensenar una.
-
-     UNA SOLA TABLA CON LAS TRES CAPAS EN COLUMNAS (ADR-0066). Paquete,
-     conexion y peticion son la misma pregunta a distinta profundidad, y cada
-     una es superconjunto de la siguiente. Con tres tablas habia que cruzar tres
-     filas a ojo para reconstruir una sola historia. Las cifras NO se mezclan:
-     son tres columnas distintas, que es lo que ADR-0064 exigia al prohibir
-     sumarlas. -->
-<h2>Orígenes</h2>
-<!-- ESTE ROTULO EXPLICA LA TABLA; NO REPITE SUS CIFRAS.
-     Antes decia «0 paquetes · 1 conexiones · 1 rechazos en esta ventana.
-     Desde siempre: 8 paquetes y 1 conexiones»: seis numeros seguidos, sin
-     etiqueta que dijera que son tres profundidades y no tres cosas sumables,
-     y con dos bases de tiempo distintas en una frase. Quien no hubiera
-     construido esto no podia leerlo, y quien si, veia una contradiccion. Las
-     cifras se han ido al Resumen, que es donde un numero tiene su etiqueta al
-     lado; aqui queda lo unico que la tabla no puede ensenar por si sola, que
-     es que significan sus columnas. -->
-<!-- LA EXPLICACION Y EL METADATO, EN UNA SOLA BANDA DEL ANCHO DE LA TABLA.
-     Eran dos parrafos sueltos: la explicacion acotada a su medida legible con
-     media pagina vacia a la derecha, y «Base de operadores» ocupando una linea
-     entera para decir una fecha. Ver .leyenda en estilo.css. -->
-<div class="leyenda">
-  <p class="nota">
-    Direcciones que han contactado con el nodo, de más a menos actividad.
-    {{if .HuecoDePaquetes}}Paquetes registrados desde el
-    {{fecha .PaquetesDesde}}.{{end}}
-  </p>
-  {{if .HayGeo}}
-  <!-- La base se refresca una vez al mes, asi que puede ir por detras de la
-       realidad. Decirlo es lo que la hace honesta.
-
-       CUIDADO AL EDITAR ESTE COMENTARIO: Go analiza las acciones ANTES de tratar
-       el HTML, asi que una llave doble escrita aqui dentro NO es texto: se
-       ejecuta. Este mismo comentario citaba la funcion de fecha entre llaves y
-       rompio la plantilla entera -- el panel devolvia 200 con la pagina cortada a
-       la mitad, porque la cabecera ya se habia enviado cuando fallo el render. -->
-  <p class="nota leyenda-dato">Base de operadores: {{fecha .FechaGeo}}.</p>
-  {{end}}
-</div>
-<table class="datos tabla-ancha tabla-origenes">
-  <!-- COLUMNAS CONDICIONALES, y las tres por el mismo motivo: una columna que
-       dice lo mismo en todas las filas, o que esta vacia por construccion, no
-       informa de nada y ademas se lee como un cero.
-         Procedencia  solo con «Cualquier origen»: con el filtro por omision
-                      diria «Internet» en todas.
-         Operador     solo con base instalada.
-         Paquetes y Conexiones  solo con el filtro EN Internet: las dos capas
-                      son de Internet por construccion. -->
-  <thead>
-    <tr><th>Dirección</th>{{if .SinFiltroDeRed}}<th>Procedencia</th>{{end}}{{if .HayGeo}}<th>Operador</th>{{end}}{{if and .SoloInternet .HayToques}}<th>Paquetes</th>{{end}}{{if .SoloInternet}}<th>Conex.</th>{{end}}<th>Rechazos</th><th>Actividad</th><th>Motivos</th><th class="col-accion"></th></tr>
-  </thead>
-  <tbody>
-  {{range .Origenes}}
-    <tr{{if .Destacar}} class="g-{{.Gravedad}}"{{end}}>
-      <!-- La dirección abre el detalle («?origen=», ADR-0075): la MISMA
-           atribución, conducta, señales y evidencia que ya se pintan más
-           abajo en esta fila, solo que también disponibles en un panel — sin
-           dirección válida no hay «?origen=» que construir. -->
-      <td class="rotulo">{{if .IP.IsValid}}<a href="?origen={{.IP}}">{{.IP}}</a>{{else}}sin dirección{{end}}</td>
-      {{if $.SinFiltroDeRed}}<td>{{.Red.Etiqueta}}</td>{{end}}
-      <!-- LA COLUMNA QUE HACE INTERPRETABLE LA FILA. «203.0.113.7» no le dice
-           nada a nadie; «DIGITALOCEAN-ASN · DE» si. Los de casa no se resuelven
-           a proposito -una IP privada no tiene operador- y se dice, en vez de
-           dejar el hueco. -->
-      {{if $.HayGeo}}
-      <td class="operador">
-        {{- if .TieneGeo}}<strong>{{.Geo.Nombre}}</strong>{{if .Geo.Pais}} · {{.Geo.Pais}}{{end}}
-          <span class="asn">AS{{.Geo.ASN}}</span>
-        {{- else if .Red.DeFuera}}<em>operador desconocido</em>
-        {{- else}}<span class="suave">—</span>{{end}}
-      </td>
+             modo de fallo contra el que se guardaba (ver filaBloqueo). */}}
+        {{if not .BaseGeo.IsZero}}<span class="op">base de {{fecha .BaseGeo}}</span>{{end}}
+        {{if .BaseMasNueva}}<p class="nota">hay una base más nueva: conviene revisarlo</p>{{end}}
+        </div>
+        <div class="cl"><span class="et">Frenados</span><span class="ct2">{{.Frenados}} <small>{{if .Caduca.IsZero}}sin caducidad{{else}}caduca {{fecha .Caduca}}{{end}}</small></span></div>
+        <div class="cl">
+          <form method="post" action="/seguridad/retirar">
+            <input type="hidden" name="csrf" value="{{$.Csrf}}">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button type="submit" class="bt pel">Retirar</button>
+          </form>
+        </div>
+      </div>
       {{end}}
-      {{if and $.SoloInternet $.HayToques}}<td class="num">{{.Toques}}</td>{{end}}
-      {{if $.SoloInternet}}<td class="num">{{.Conexiones}}</td>{{end}}
-      <td class="num">{{.Rechazos}}</td>
-      <td class="num">{{intervalo .Primera .Ultima}}</td>
-      <td>
-        <!-- Los puertos van de pastilla y no de columna propia: casi siempre
-             estan vacios -un rechazo no trae puerto- y una columna vacia en la
-             mayoria de las filas es ancho regalado. Es el mismo sitio y el
-             mismo trato que «cuentas». -->
-        {{if .Puertos}}<span class="pastilla">puertos: {{range .Puertos}}{{.}} {{end}}</span>{{end}}
-        {{range $motivo, $n := .PorMotivo}}<span class="pastilla">{{$motivo.Etiqueta}} · {{$n}}</span> {{end}}
-        {{if .Cuentas}}<span class="pastilla">cuentas: {{range .Cuentas}}{{.}} {{end}}</span>{{end}}
-        <!-- LAS SENALES VAN APARTE Y CON SU EXPLICACION DENTRO, no como una
-             etiqueta mas: son inferencias, no hechos, y cada una lleva escrito
-             con que se puede confundir. Un <details> deja la sospecha visible y
-             su letra pequena a un clic, sin JavaScript. El enfasis lo decide la
-             senal: la de software ajeno informa pero no alarma, porque su
-             propio texto dice que no va dirigida a este nodo. Ver
-             Senal.Destacar. -->
-        {{range .Senales}}
-        <details class="senal{{if .Destacar}} senal-aviso{{end}}">
-          <summary>{{.Etiqueta}}</summary>
-          <p class="nota">{{.Explicacion}}</p>
-        </details>
-        {{end}}
-
-        <!-- EL ESTADO DE ENFORCEMENT DE ESTA MISMA DIRECCIÓN.
-             La pregunta «¿y a este le estamos cerrando la puerta?» se hace
-             mirando su fila, no cruzando a ojo las dos tablas de arriba.
-             Y lleva LA ADVERTENCIA que hace honesta la fila entera: mientras
-             está frenado, sus cifras de rechazos dejan de crecer porque ya no
-             hay peticiones que contar. Sin decirlo, un apartado con muchos
-             frenados y pocos rechazos se lee como una contradicción. -->
-        {{if .Frenada}}
-        <details class="senal senal-aviso">
-          <summary>Se le está cerrando la puerta{{if .Frenados}} · {{.Frenados}} conexiones cerradas{{end}}</summary>
-          {{with .Apartado}}
-          <p class="nota">
-            <strong>Cuarentena por conducta</strong> desde {{fecha .Desde}} y hasta
-            {{fecha .Hasta}}. La disparó: {{.Senal.Etiqueta}}. La puso el nodo solo.
-          </p>
-          {{end}}
-          {{with .Bloqueo}}
-          <p class="nota">
-            <strong>Bloqueo puesto a mano</strong> — {{.Alcance.Etiqueta}}, cubre {{.Etiqueta}}
-            ({{len .Tramos}} tramo{{if gt (len .Tramos) 1}}s{{end}}).
-            Alta {{fecha .Alta}}{{if .Autor}} por {{.Autor}}{{end}}.
-            {{if .Caduca.IsZero}}Sin caducidad.{{else}}Caduca {{fecha .Caduca}}.{{end}}
-            {{if not .BaseGeo.IsZero}}Alcance compuesto con la base de {{fecha .BaseGeo}}.{{end}}
-            Motivo: {{.Motivo}}
-          </p>
-          {{end}}
-          {{if and .Apartado .Bloqueo}}
-          <p class="nota">
-            Coinciden los dos controles. <strong>La conexión se cierra UNA sola vez</strong>
-            y el cierre se le atribuye al bloqueo puesto a mano, que es la decisión
-            que firmó una persona; por eso el apartado puede enseñar cero frenados
-            aunque la puerta esté cerrada.
-          </p>
-          {{end}}
-          <p class="nota">
-            Mientras esté frenada, sus conexiones se cierran <strong>antes</strong> de
-            que hablen HTTP: las columnas de rechazos y de rutas dejan de crecer
-            porque ya no hay peticiones, no porque haya dejado de venir.
-          </p>
-        </details>
-        {{end}}
-      </td>
-      <!-- LA ACCION, DONDE ESTA LA EVIDENCIA. Solo para lo de Internet: la
-           casa y el tunel no se bloquean nunca —lo impide tambien la
-           barandilla del servidor— y ofrecer el enlace seria prometer algo
-           que se va a rechazar. Es un enlace y no un boton porque no cambia
-           nada: lleva a la pantalla que ENSEÑA que se bloquearia. -->
-      <td class="col-accion">
-        <!-- FORMULARIO GET Y NO UN ENLACE, aunque siga siendo una navegación.
-             Reportado sobre captura el 24/08/2026: un enlace azul subrayado
-             entre botones nativos es el mismo conflicto estético que ya se
-             reportó el 05/08 en la barra superior y que documenta «.boton-barra».
-             Aquí se resuelve por el otro lado —botón de verdad en vez de enlace
-             disfrazado— porque cuesta lo mismo y no estrena CSS: el método sigue
-             siendo GET, así que no cambia nada de lo que esta acción es. -->
-        {{if and .IP.IsValid .Red.DeFuera}}
-        <form method="get" action="/seguridad/bloquear">
-          <input type="hidden" name="ip" value="{{.IP}}">
-          <button type="submit">Bloquear…</button>
-        </form>
-        {{end}}
-      </td>
-    </tr>
-
-    <!-- LA EVIDENCIA, EN SU PROPIA FILA Y A TODO EL ANCHO.
-         Antes de esto el panel afirmaba «Exploración automatizada» y quien lo
-         leyera tenía que creerse el umbral o irse al diario a reconstruirlo a
-         mano. Aquí está lo que se pidió, con qué método, qué contestó el
-         servidor y cuántas veces: los mismos hechos que ya están en el anillo,
-         agrupados para poder leerlos.
-
-         POR QUÉ UNA FILA PROPIA Y NO DENTRO DE «Motivos», QUE ES DONDE ESTABA.
-         Reportado sobre captura el 24/08/2026: se leía EN VERTICAL, una letra
-         por línea. Metida en una celda, esta tabla solo podía repartir el ancho
-         de ESA celda —una novena parte de la página—, y con «.datos» a reparto
-         fijo eso dejaba «Petición» con el ancho de dos caracteres. El problema
-         no era la tabla: era el sitio. Aquí dispone del ancho entero y las
-         rutas se leen de corrido, sin barras que mover y sin recortar un dato.
-
-         VA PLEGADA porque son hasta diez líneas por fila y la tabla tiene que
-         seguir leyéndose de un vistazo — mismo criterio que la cronología. -->
-    {{if .Evidencia}}
-    <tr class="fila-evidencia">
-      <td colspan="{{$.ColumnasDeOrigenes}}">
-        <details class="senal">
-          <summary>En qué se basa esto ({{.Rechazos}} rechazos)</summary>
-          {{if gt .SondasVistas $.TopeSondas}}
-          <p class="nota">Las {{$.TopeSondas}} más repetidas de {{.SondasVistas}} peticiones distintas.</p>
-          {{end}}
-          {{if .RutasInexistentes}}
-          <p class="nota">
-            Rutas distintas que no existen: <strong>{{.RutasInexistentes}}</strong>.
-            {{/* La ENTRADA del umbral de exploración, aquí y no en una columna
-                 de la tabla: ADR-0065 quitó esa columna porque enseñaba el
-                 cálculo al lado de su conclusión sin decir que eran lo mismo.
-                 Dentro de la evidencia sí contesta la pregunta que se hace
-                 aquí, que es «¿por qué dice eso el panel?». */}}
-          </p>
-          {{end}}
-          <table class="datos tabla-ancha tabla-evidencia">
-            <thead><tr><th>Petición</th><th>Estado</th><th>Veces</th><th>Primera</th><th>Última</th></tr></thead>
-            <tbody>
-            {{range .Evidencia}}
-              <tr>
-                <td class="ruta">{{.Metodo}} {{.Ruta}}</td>
-                <td class="num">{{.Estado}}</td>
-                <td class="num">{{.Veces}}</td>
-                <td class="num">{{fecha .Primera}}</td>
-                <td class="num">{{fecha .Ultima}}</td>
-              </tr>
-            {{end}}
-            </tbody>
-          </table>
-        </details>
-      </td>
-    </tr>
-    {{end}}
-  {{else}}
-    <!-- El colspan sale del modelo y no de un número escrito a mano: aquí ponía
-         «9», que solo era cierto con las cuatro columnas condicionales a la
-         vez. Ver vistaSeguridad.ColumnasDeOrigenes. -->
-    <tr><td colspan="{{.ColumnasDeOrigenes}}">Nadie ha tocado el nodo en esta ventana con estos filtros.</td></tr>
-  {{end}}
-  </tbody>
-</table>
-
-<h2>Resumen</h2>
-<table class="datos">
-  <tbody>
-    <!-- «Desde Internet» va primera y es la unica fila con veredicto: es el
-         objetivo declarado del panel y se lee sin saber de redes. -->
-    <tr{{if .Resumen.DesdeFuera}} class="g-aviso"{{end}}>
-      <td class="rotulo">Direcciones desde Internet</td>
-      <td class="num">{{if .Resumen.DesdeFuera}}{{.Resumen.DesdeFuera}}{{else}}ninguna{{end}}</td>
-    </tr>
-    <!-- LAS TRES CAPAS, UNA POR FILA Y EN ORDEN DE PROFUNDIDAD. Estaban en el
-         rotulo de «Origenes» como una tirada de numeros; aqui cada cifra lleva
-         su etiqueta al lado y se lee sin haber leido nada antes.
-         «sin sensor» y no un cero cuando nas-sensor no esta instalado, por lo
-         mismo que la columna se esconde: un cero afirmaria que nadie toca el
-         nodo cuando lo que pasa es que nadie esta mirando. -->
-    <tr><td class="rotulo">Paquetes de Internet</td><td class="num">{{if .HayToques}}{{.Toques}}{{else}}sin sensor{{end}}</td></tr>
-    <tr><td class="rotulo">Conexiones aceptadas</td><td class="num">{{.Conexiones}}</td></tr>
-    {{if .HayMasConexiones}}<tr><td class="rotulo">Conexiones desde siempre</td><td class="num">{{.TotalConexiones}}</td></tr>{{end}}
-    <tr><td class="rotulo">Rechazos en la ventana</td><td class="num">{{.Resumen.Eventos}}</td></tr>
-    <tr><td class="rotulo">Contraseñas incorrectas</td><td class="num">{{.Resumen.AutenticacionFallida}}</td></tr>
-  </tbody>
-</table>
-
-<h2>Rutas más rechazadas</h2>
-<!-- «Más rechazadas» y no «más pedidas», que era lo que decía: esta tabla sale
-     del anillo de RECHAZOS, así que una ruta servida con éxito mil veces no
-     aparece aquí. El título anterior prometía otra cosa. -->
-{{if .HayMasRutas}}
-<p class="nota">Las {{.TopeRutas}} más frecuentes de {{.Resumen.RutasVistas}} rutas distintas.</p>
+    </div>
+  </div>
+</section>
 {{end}}
-<table class="datos">
-  <thead><tr><th>Ruta</th><th>Veces</th></tr></thead>
-  <tbody>
-  {{range .Resumen.RutasMasPedidas}}
-    <tr><td class="rotulo">{{.Valor}}</td><td class="num">{{.Veces}}</td></tr>
-  {{else}}
-    <tr><td colspan="2">Nada que mostrar.</td></tr>
-  {{end}}
-  </tbody>
-</table>
 
-<h2>Cronología</h2>
-<!-- PLEGADA. Es el bloque más largo de la página y el que menos se mira: la
-     tabla de orígenes ya dice agregado lo que esta dice suelto, y el diario
-     del nodo (ADR-0037) guarda la historia completa. Lo que solo está aquí es
-     el orden exacto y la ruta de cada suceso, y por eso no se retira.
-     SIN COLUMNAS «Método» y «Código»: el verbo se deduce del motivo, y el
-     código es casi función de él —está al lado y en palabras— (ADR-0065). -->
-<details class="cronologia">
-  <summary>Ver los rechazos uno a uno</summary>
-  {{if .HayMas}}
-  <p class="nota">{{.TopeCronologico}} de {{.Resumen.Eventos}}. Acote la ventana para ver el resto.</p>
-  {{end}}
-  <table class="datos tabla-ancha tabla-cronologia">
-    <thead>
-      <tr><th>Momento</th><th>Dirección</th><th>Ruta</th><th>Motivo</th><th>Cliente</th></tr>
-    </thead>
-    <tbody>
-    {{range .Eventos}}
-      <tr{{if .Destacar}} class="g-{{.Motivo.Gravedad}}"{{end}}>
-        <td class="num">{{fecha .Momento}}</td>
-        <td class="rotulo">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</td>
-        <td class="ruta">{{.Ruta}}</td>
-        <td>{{.Motivo.Etiqueta}}{{if .Cuenta}} · {{.Cuenta}}{{end}}</td>
-        <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
-             automatizado a menudo no envía ninguno. Se dice, no se deja en
-             blanco como si faltara el dato por descuido. -->
-        <td class="agente">{{if .Agente}}{{.Agente}}{{else}}<em>sin identificar</em>{{end}}</td>
-      </tr>
-    {{else}}
-      <tr><td colspan="5">Ningún rechazo en esta ventana con estos filtros.</td></tr>
+<!-- LA TABLA DE LA PÁGINA: una fila por dirección con las TRES CAPAS en la
+     misma celda (ADR-0066). Con tres tablas había que cruzar tres filas a ojo
+     para reconstruir una sola historia. Las cifras NO se mezclan: van
+     etiquetadas una a una, que es lo que ADR-0064 exigía al prohibir
+     sumarlas. -->
+<section class="sc">
+  <div class="sch">
+    <h2>Orígenes</h2>
+    <span class="ms">{{len .Origenes}} · lista completa{{if .HayGeo}} · base de operadores {{fecha .FechaGeo}}{{end}}</span>
+  </div>
+  <div class="t-seg">
+    <!-- COLUMNAS CONDICIONALES, y las dos por el mismo motivo: una columna
+         que dice lo mismo en todas las filas no informa de nada y encima se
+         lee como un cero. «Procedencia» solo con «Cualquier origen» —con el
+         filtro por omisión diría «Internet» en todas—; «Operador» solo con
+         base instalada. -->
+    <div class="th">
+      <span>Dirección</span>
+      {{if .SinFiltroDeRed}}<span>Procedencia</span>{{else if .HayGeo}}<span>Operador</span>{{else}}<span>Red</span>{{end}}
+      <span>Actividad</span>
+      <span>Señales</span>
+    </div>
+    <div class="fls">
+      {{range .Origenes}}
+      <div class="fl{{if .Seleccionada}} sel{{end}}">
+        <div class="cl"><span class="et">Dirección</span>{{if .IP.IsValid}}<a class="ip" href="?origen={{.IP}}">{{.IP}}</a>{{else}}<span class="ip">sin dirección</span>{{end}}</div>
+
+        <div class="cl"><span class="et">Operador</span><span class="op">
+          {{- if $.SinFiltroDeRed}}{{.Red.Etiqueta}}{{if .TieneGeo}} · {{.Geo.Pais}} AS{{.Geo.ASN}} {{.Geo.Nombre}}{{end}}
+          {{- else if .TieneGeo}}{{if .Geo.Pais}}{{.Geo.Pais}} · {{end}}AS{{.Geo.ASN}} {{.Geo.Nombre}}
+          {{- else if .Red.DeFuera}}operador desconocido
+          {{- else}}{{.Red.Etiqueta}}{{end}}</span></div>
+
+        <!-- LAS TRES CAPAS, etiquetadas. Un paquete no tiene motivo y una
+             conexión no tiene ruta: son hechos distintos, no sumandos. -->
+        <div class="cl"><span class="et">Actividad</span><span class="ct2">
+          {{if and $.SoloInternet $.HayToques}}{{.Toques}} <small>paq</small> · {{end}}
+          {{if $.SoloInternet}}{{.Conexiones}} <small>conex</small> · {{end}}
+          {{.Rechazos}} <small>rech</small>
+          <small>· {{intervalo .Primera .Ultima}}</small>
+        </span></div>
+
+        <div class="cl"><span class="et">Señales</span>
+          <span class="pls">
+            {{range .Senales}}<span class="p {{if .Destacar}}p-av{{else}}p-na{{end}}">{{.Etiqueta}}</span>{{end}}
+            {{range $motivo, $n := .PorMotivo}}<span class="p p-na">{{$motivo.Etiqueta}} · {{$n}}</span>{{end}}
+            {{if .Puertos}}<span class="p p-na">puertos: {{range .Puertos}}{{.}} {{end}}</span>{{end}}
+            {{if .Cuentas}}<span class="p p-na">cuentas: {{range .Cuentas}}{{.}} {{end}}</span>{{end}}
+            {{if .Bloqueo}}<span class="p p-ll">Bloqueado</span>{{else if .Apartado}}<span class="p p-av">Apartado</span>{{end}}
+          </span>
+
+          <!-- UNA SEÑAL NUNCA APARECE SIN AQUELLO CON LO QUE SE PUEDE
+               CONFUNDIR. Son INFERENCIAS, no hechos, y sin esta mitad una
+               sospecha derivada se lee como un veredicto — el responsable
+               pidió expresamente lo contrario (ADR-0061). -->
+          {{range .Senales}}
+          <details class="plg"><summary>{{.Etiqueta}}: en qué se basa</summary><p class="nota">{{.Explicacion}}</p></details>
+          {{end}}
+
+          <!-- LA ADVERTENCIA QUE HACE HONESTA LA FILA ENTERA: mientras está
+               frenado, sus cifras de rechazos dejan de crecer porque ya no hay
+               peticiones que contar. Sin decirlo, un apartado con muchos
+               frenados y pocos rechazos se lee como una contradicción. -->
+          {{if .Frenada}}
+          <details class="plg">
+            <summary>Se le está cerrando la puerta{{if .Frenados}} · {{.Frenados}} conexiones cerradas{{end}}</summary>
+            {{with .Apartado}}<p class="nota"><b>Cuarentena por conducta</b> desde {{fecha .Desde}} y hasta {{fecha .Hasta}}. La disparó: {{.Senal.Etiqueta}}. La puso el nodo solo.</p>{{end}}
+            {{with .Bloqueo}}<p class="nota"><b>Bloqueo puesto a mano</b> — {{.Alcance.Etiqueta}}, cubre {{.Etiqueta}} ({{len .Tramos}} tramos). Motivo: {{.Motivo}}</p>{{end}}
+            {{if and .Apartado .Bloqueo}}
+            <p class="nota">Coinciden los dos controles. <b>La conexión se cierra UNA sola vez</b> y el cierre se le atribuye al bloqueo puesto a mano, que es la decisión que firmó una persona; por eso el apartado puede enseñar cero frenados aunque la puerta esté cerrada.</p>
+            {{end}}
+            <p class="nota">Mientras esté frenada, sus conexiones se cierran <b>antes</b> de que hablen HTTP: las columnas de rechazos y de rutas dejan de crecer porque ya no hay peticiones, no porque haya dejado de venir.</p>
+          </details>
+          {{end}}
+
+          <!-- LA EVIDENCIA, plegada: hasta diez líneas por fila, y la tabla
+               tiene que seguir leyéndose de un vistazo. -->
+          {{if .Evidencia}}
+          <details class="plg">
+            <summary>En qué se basa esto ({{.Rechazos}} rechazos)</summary>
+            {{if gt .SondasVistas $.TopeSondas}}<p class="nota">Las {{$.TopeSondas}} más repetidas de {{.SondasVistas}} peticiones distintas.</p>{{end}}
+            {{if .RutasInexistentes}}<p class="nota">Rutas distintas que no existen: <b>{{.RutasInexistentes}}</b>.</p>{{end}}
+            <div class="dsn">{{range .Evidencia}}<code>{{.Metodo}} {{.Ruta}} <b>{{.Estado}}</b> · {{.Veces}} veces</code>{{end}}</div>
+          </details>
+          {{end}}
+
+          <!-- LA ACCIÓN, DONDE ESTÁ LA EVIDENCIA. Solo para lo de Internet: la
+               casa y el túnel no se bloquean nunca —lo impide también la
+               barandilla del servidor— y ofrecer el enlace sería prometer algo
+               que se va a rechazar. -->
+          {{if and .IP.IsValid .Red.DeFuera}}{{if not .Bloqueo}}
+          <form method="get" action="/seguridad/bloquear">
+            <input type="hidden" name="ip" value="{{.IP}}">
+            <button type="submit" class="bt">Bloquear…</button>
+          </form>
+          {{end}}{{end}}
+        </div>
+      </div>
+      {{else}}
+      <div class="vacio">Nadie ha tocado el nodo en esta ventana con estos filtros.</div>
+      {{end}}
+    </div>
+  </div>
+</section>
+
+<section class="sc">
+  <div class="sch"><h2>Resumen</h2><span class="ms">en esta ventana</span></div>
+  <div class="cif">
+    <div class="cf{{if .Resumen.DesdeFuera}} mk{{end}}"><div class="n mono">{{.Resumen.DesdeFuera}}</div><div class="r">Desde Internet</div></div>
+    <div class="cf"><div class="n mono">{{.Resumen.AutenticacionFallida}}</div><div class="r">Contraseñas incorrectas</div></div>
+    <div class="cf"><div class="n mono">{{.Resumen.IPsUnicas}}</div><div class="r">Direcciones</div></div>
+    {{if .HayMasConexiones}}<div class="cf"><div class="n mono">{{.TotalConexiones}}</div><div class="r">Conexiones desde siempre</div></div>{{end}}
+  </div>
+</section>
+
+<!-- «Más rechazadas» y no «más pedidas»: esta tabla sale del anillo de
+     RECHAZOS, así que una ruta servida con éxito mil veces no aparece aquí. -->
+{{if .Resumen.RutasMasPedidas}}
+<section class="sc">
+  <div class="sch">
+    <h2>Rutas más rechazadas</h2>
+    {{if .HayMasRutas}}<span class="ms">las {{.TopeRutas}} más frecuentes de {{.Resumen.RutasVistas}} distintas</span>{{end}}
+  </div>
+  <div class="mts">
+    {{range .Resumen.RutasMasPedidas}}
+    <div class="mt">
+      <div class="mn">{{.Valor}}<i>{{.Veces}}</i></div>
+      <svg class="mb" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="v" x="0" y="0" width="{{porcentaje .Veces $.Resumen.Eventos}}" height="6"></rect>
+      </svg>
+      <div class="mv">{{.Veces}}</div>
+    </div>
     {{end}}
-    </tbody>
-  </table>
-</details>
+  </div>
+</section>
+{{end}}
 
-</main>
-</div>{{/* cierra .cont */}}
+<!-- LA CRONOLOGÍA VA PLEGADA. Es el bloque más largo y el que menos se mira:
+     la tabla de orígenes ya dice agregado lo que esta dice suelto, y el diario
+     del nodo (ADR-0037) guarda la historia completa. Lo que solo está aquí es
+     el orden exacto y la ruta de cada suceso. -->
+<section class="sc">
+  <div class="sch"><h2>Cronología</h2>{{if .HayMas}}<span class="ms">{{.TopeCronologico}} de {{.Resumen.Eventos}} · acote la ventana para ver el resto</span>{{end}}</div>
+  <details class="plg">
+    <summary>Ver los rechazos uno a uno</summary>
+    <div class="t-cro">
+      <div class="th"><span>Momento</span><span>Dirección</span><span>Ruta</span><span>Motivo</span><span>Cliente</span></div>
+      <div class="fls">
+        {{range .Eventos}}
+        <div class="fl">
+          <div class="cl"><span class="et">Momento</span><span class="ct2">{{fecha .Momento}}</span></div>
+          <div class="cl"><span class="et">Dirección</span><span class="ip">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</span></div>
+          <div class="cl"><span class="et">Ruta</span><span class="ip">{{.Ruta}}</span></div>
+          <div class="cl"><span class="et">Motivo</span><span class="pls"><span class="p {{if .Destacar}}p-av{{else}}p-na{{end}}">{{.Motivo.Etiqueta}}</span>{{if .Cuenta}}<span class="p p-na">{{.Cuenta}}</span>{{end}}</span></div>
+          <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
+               automatizado a menudo no envía ninguno. Se dice, no se deja en
+               blanco como si faltara por descuido. -->
+          <div class="cl"><span class="et">Cliente</span><span class="op">{{if .Agente}}{{.Agente}}{{else}}<i>sin identificar</i>{{end}}</span></div>
+        </div>
+        {{else}}
+        <div class="vacio">Ningún rechazo en esta ventana con estos filtros.</div>
+        {{end}}
+      </div>
+    </div>
+  </details>
+</section>
+
+<div class="notas">
+  <span class="rt">Notas</span>
+  <span class="nt">Historial: <b>{{.Capacidad}}</b> rechazos conservados{{if .Resumen.Truncado}} de <b>{{.Resumen.TotalHistorico}}</b> vistos{{end}}.</span>
+  <span class="nt">Las señales son inferencias, no veredictos: cada una lleva escrito con qué se puede confundir.</span>
+</div>
+
+{{template "marco-fin" .}}
+
 {{if .Detalle}}
 <aside class="detalle">
-  {{with .Detalle}}
-  <div class="det-cabecera">
-    <div><h3>{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</h3><div class="dip">{{.Red.Etiqueta}}</div></div>
-    <a class="det-cerrar" href="/seguridad" aria-label="Cerrar">✕</a>
-  </div>
+  <div class="dvw">
+    {{with .Detalle}}
+    <div class="dc">
+      <div>
+        <h3>{{if .TieneGeo}}{{.Geo.Nombre}}{{else}}Origen{{end}}</h3>
+        <div class="dip">{{.IP}}</div>
+      </div>
+      <a class="x" href="/seguridad" aria-label="Cerrar">✕</a>
+    </div>
 
-  {{if .TieneGeo}}
-  <div class="det-bloque">
-    <h4>Atribución</h4>
-    <div class="det-fila"><span>Operador</span><b>{{.Geo.Nombre}}</b></div>
-    {{if .Geo.Pais}}<div class="det-fila"><span>País</span><b>{{.Geo.Pais}}</b></div>{{end}}
-    <div class="det-fila"><span>AS</span><b>{{.Geo.ASN}}</b></div>
-  </div>
-  {{end}}
-
-  <div class="det-bloque">
-    <h4>Conducta</h4>
-    <div class="det-fila"><span>Primera</span><b>{{fecha .Primera}}</b></div>
-    <div class="det-fila"><span>Última</span><b>{{fecha .Ultima}}</b></div>
-    <div class="det-fila"><span>Rechazos</span><b>{{.Rechazos}}</b></div>
-    {{if .RutasInexistentes}}<div class="det-fila"><span>Rutas nuevas</span><b>{{.RutasInexistentes}}</b></div>{{end}}
-  </div>
-
-  {{if .Senales}}
-  <div class="det-bloque">
-    <h4>Señales</h4>
-    {{range .Senales}}<p class="nota"><strong>{{.Etiqueta}}</strong> — {{.Explicacion}}</p>{{end}}
-  </div>
-  {{end}}
-
-  {{if .Evidencia}}
-  <div class="det-bloque">
-    <h4>Evidencia · {{len .Evidencia}} de {{.SondasVistas}}</h4>
-    {{range .Evidencia}}<div class="det-fila"><span>{{.Metodo}} {{.Ruta}}</span><b>{{.Veces}} · {{.Estado}}</b></div>{{end}}
-  </div>
-  {{end}}
-
-  <div class="det-bloque">
-    <h4>Estado</h4>
-    {{if .Bloqueo}}
-    <p class="nota"><strong>Bloqueo puesto a mano</strong> — {{.Bloqueo.Alcance.Etiqueta}}, {{.Frenados}} conexiones cerradas.</p>
-    <form method="post" action="/seguridad/retirar">
-      <input type="hidden" name="csrf" value="{{$.Csrf}}">
-      <input type="hidden" name="id" value="{{.Bloqueo.ID}}">
-      <button type="submit" class="destructivo">Retirar el bloqueo</button>
-    </form>
-    {{else if .Apartado}}
-    <p class="nota"><strong>Apartado por conducta</strong> — el nodo solo, hasta {{fecha .Apartado.Hasta}}, {{.Frenados}} conexiones cerradas.</p>
-    <form method="post" action="/seguridad/soltar">
-      <input type="hidden" name="csrf" value="{{$.Csrf}}">
-      <input type="hidden" name="ip" value="{{.IP}}">
-      <button type="submit">Soltar</button>
-    </form>
-    {{else}}
-    <p class="nota">Sin restricción vigente.</p>
-    {{if and .IP.IsValid .Red.DeFuera}}
-    <form method="get" action="/seguridad/bloquear">
-      <input type="hidden" name="ip" value="{{.IP}}">
-      <button type="submit" class="boton-barra">Bloquear…</button>
-    </form>
+    {{if .TieneGeo}}
+    <div class="db">
+      <div class="h">Atribución</div>
+      {{if .Geo.Pais}}<div class="dp"><span>País</span><b>{{.Geo.Pais}}</b></div>{{end}}
+      <div class="dp"><span>Operador</span><b>AS{{.Geo.ASN}}</b></div>
+      <div class="dp"><span>Base</span><b>{{fecha $.FechaGeo}}</b></div>
+    </div>
     {{end}}
+
+    <div class="db">
+      <div class="h">Conducta</div>
+      <div class="dp"><span>Primera</span><b>{{fecha .Primera}}</b></div>
+      <div class="dp"><span>Última</span><b>{{fecha .Ultima}}</b></div>
+      {{if $.HayToques}}<div class="dp"><span>Paquetes</span><b>{{.Toques}}</b></div>{{end}}
+      <div class="dp"><span>Conexiones</span><b>{{.Conexiones}}</b></div>
+      <div class="dp"><span>Rechazos</span><b>{{.Rechazos}}</b></div>
+      {{if .RutasInexistentes}}<div class="dp"><span>Rutas nuevas</span><b>{{.RutasInexistentes}}</b></div>{{end}}
+    </div>
+
+    {{if .Evidencia}}
+    <div class="db">
+      <div class="h">Evidencia · {{len .Evidencia}} de {{.SondasVistas}}</div>
+      <div class="dsn">{{range .Evidencia}}<code>{{.Metodo}} {{.Ruta}} <b>{{.Estado}}</b> · {{.Veces}} veces</code>{{end}}</div>
+    </div>
+    {{end}}
+
+    {{if .Senales}}
+    <div class="db">
+      <div class="h">Señales</div>
+      <div class="pls">{{range .Senales}}<span class="p {{if .Destacar}}p-av{{else}}p-na{{end}}">{{.Etiqueta}}</span>{{end}}</div>
+      {{range .Senales}}<p class="nota">{{.Explicacion}}</p>{{end}}
+    </div>
+    {{end}}
+
+    <div class="dac">
+      {{if .Bloqueo}}
+      <form method="post" action="/seguridad/retirar">
+        <input type="hidden" name="csrf" value="{{$.Csrf}}">
+        <input type="hidden" name="id" value="{{.Bloqueo.ID}}">
+        <button type="submit" class="bt pel">Retirar el bloqueo</button>
+      </form>
+      {{else if .Apartado}}
+      <form method="post" action="/seguridad/soltar">
+        <input type="hidden" name="csrf" value="{{$.Csrf}}">
+        <input type="hidden" name="ip" value="{{.IP}}">
+        <button type="submit" class="bt">Soltar</button>
+      </form>
+      {{end}}
+    </div>
     {{end}}
   </div>
-  {{end}}
 </aside>
 {{end}}
+
 {{template "marco-cierra" .}}
 </body>
 </html>

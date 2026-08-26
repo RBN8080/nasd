@@ -363,6 +363,24 @@ func TestSoloSonPublicosLosAssetsQueElFormularioNecesita(t *testing.T) {
 	for _, m := range ref.FindAllStringSubmatch(fuente.String(), -1) {
 		necesarios[m[1]] = true
 	}
+
+	// Y LO QUE ESA HOJA PIDE A SU VEZ, que es la mitad que faltaba.
+	//
+	// Las tipografías entran por un url() del CSS, no por un href del HTML,
+	// así que mirar solo la plantilla las dejaba fuera: la lista pública se
+	// habría quedado corta y la pantalla de acceso —la ÚNICA que se dibuja
+	// sin sesión— habría salido con la fuente del sistema mientras el resto
+	// de la consola usa la suya. Se sigue una indirección y solo una: si
+	// algún día una fuente cargara otra cosa, esto volvería a quedarse corto,
+	// y entonces toca extenderlo con el mismo criterio.
+	css, ok := estaticos()["/estatico/estilo.css"]
+	if !ok {
+		t.Fatal("no está la hoja de estilos entre los recursos incrustados")
+	}
+	deCSS := regexp.MustCompile(`url\((/estatico/[^)]+)\)`)
+	for _, m := range deCSS.FindAllStringSubmatch(string(css.crudo), -1) {
+		necesarios[m[1]] = true
+	}
 	if len(necesarios) == 0 {
 		t.Fatal("el formulario de acceso no pidió ningún recurso; ¿cambió la forma de referenciarlos?")
 	}

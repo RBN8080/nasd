@@ -618,22 +618,25 @@ func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
 	}
 	h := s.Rutas()
 
-	// Las carpetas se renderizan con una barra final (listado.html:
-	// «{{.Nombre}}/»), de ahí el «/» en cada comprobación.
+	// El nombre de cada entrada se pinta dentro de «<span class="txt">»
+	// (ADR-0075). Antes llevaba una barra final —«{{.Nombre}}/»— que el icono
+	// de carpeta de la consola dice mejor; lo que esta prueba vigila no es esa
+	// barra sino A QUIÉN se le esconde homeUsers, así que se ancla al nombre.
+	entrada := func(n string) string { return ">" + n + "</span>" }
 	cuerpoAdmin := listadoCon(t, h, cookieLlamada(
 		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie))
-	if strings.Contains(cuerpoAdmin, ">homeUsers/<") {
-		t.Errorf("la raíz del superusuario sigue listando homeUsers/:\n%s", cuerpoAdmin)
+	if strings.Contains(cuerpoAdmin, entrada("homeUsers")) {
+		t.Errorf("la raíz del superusuario sigue listando homeUsers:\n%s", cuerpoAdmin)
 	}
-	if !strings.Contains(cuerpoAdmin, ">fotos/<") {
+	if !strings.Contains(cuerpoAdmin, entrada("fotos")) {
 		t.Errorf("se escondió también una carpeta que no era homeUsers:\n%s", cuerpoAdmin)
 	}
 
 	cuerpoJuan := listadoCon(t, h, cookieLlamada(entrar(t, h, "juan", claveDeJuan), nombreCookie))
-	if !strings.Contains(cuerpoJuan, ">homeUsers/<") {
+	if !strings.Contains(cuerpoJuan, entrada("homeUsers")) {
 		t.Errorf("a juan se le escondió SU PROPIA carpeta, que solo coincide en el nombre:\n%s", cuerpoJuan)
 	}
-	if !strings.Contains(cuerpoJuan, ">recibos/<") {
+	if !strings.Contains(cuerpoJuan, entrada("recibos")) {
 		t.Errorf("no aparece la otra carpeta de juan:\n%s", cuerpoJuan)
 	}
 }

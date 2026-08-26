@@ -580,7 +580,7 @@ func TestSoloLosOrigenesDeInternetSeResuelven(t *testing.T) {
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), deCasa)
 
 	cuerpo := panelSeguridad(t, s, "")
-	if !strings.Contains(cuerpo, "<th>Operador</th>") {
+	if !strings.Contains(cuerpo, "<span>Operador</span>") {
 		t.Fatal("con base instalada debe aparecer la columna de operador")
 	}
 	if !strings.Contains(cuerpo, "GOOGLE") {
@@ -646,7 +646,7 @@ func TestElPanelDeSeguridadSeRenderizaEntero(t *testing.T) {
 			t.Errorf("falta la sección %q", seccion)
 		}
 	}
-	if !strings.Contains(cuerpo, `<summary class="boton-barra">Filtrar</summary>`) {
+	if !strings.Contains(cuerpo, `<label class="fbtn" for="f-abre">`) {
 		t.Error("falta el control de filtros en la barra de órdenes")
 	}
 }
@@ -693,10 +693,10 @@ func TestLaProcedenciaSoloApareceCuandoDistingue(t *testing.T) {
 	deFuera.RemoteAddr = "203.0.113.7:44001"
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), deFuera)
 
-	if strings.Contains(panelSeguridad(t, s, ""), "<th>Procedencia</th>") {
+	if strings.Contains(panelSeguridad(t, s, ""), "<span>Procedencia</span>") {
 		t.Error("con el filtro por omisión la procedencia es constante y no debe enseñarse")
 	}
-	if !strings.Contains(panelSeguridad(t, s, "?red="), "<th>Procedencia</th>") {
+	if !strings.Contains(panelSeguridad(t, s, "?red="), "<span>Procedencia</span>") {
 		t.Error("con «cualquier origen» la procedencia distingue y tiene que estar")
 	}
 }
@@ -794,8 +794,11 @@ func TestUnEscaneoAPuertosCerradosApareceAunqueNoHablara(t *testing.T) {
 	if strings.Contains(panel, "192.168.1.23") {
 		t.Error("un toque de la LAN se coló en la tabla de Internet")
 	}
-	if !strings.Contains(panel, "<th>Paquetes</th>") {
-		t.Error("con sensor instalado debe existir la columna de paquetes")
+	// Desde ADR-0075 las tres capas viven en UNA celda con su etiqueta cada
+	// una, no en tres columnas: la propiedad que se vigila —que una capa que
+	// no aplica no se pinte— es la misma, y se comprueba por esa etiqueta.
+	if !strings.Contains(panel, "<small>paq</small>") {
+		t.Error("con sensor instalado deben verse los paquetes")
 	}
 	// Los puertos distintos son lo que separa «un cliente reintentando» de
 	// «alguien recorriendo el nodo».
@@ -897,14 +900,14 @@ func TestLasColumnasDeInternetSoloSalenConElFiltroEnInternet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if p := panelSeguridad(t, s, ""); !strings.Contains(p, "<th>Conex.</th>") {
+	if p := panelSeguridad(t, s, ""); !strings.Contains(p, "<small>conex</small>") {
 		t.Error("con el filtro en Internet deben verse las conexiones")
 	}
 	todo := panelSeguridad(t, s, "?red=")
-	if strings.Contains(todo, "<th>Paquetes</th>") || strings.Contains(todo, "<th>Conex.</th>") {
+	if strings.Contains(todo, "<small>paq</small>") || strings.Contains(todo, "<small>conex</small>") {
 		t.Error("con «cualquier origen» esas dos capas no aplican y no deben pintarse")
 	}
-	if !strings.Contains(todo, "<th>Procedencia</th>") {
+	if !strings.Contains(todo, "<span>Procedencia</span>") {
 		t.Error("con «cualquier origen» sí debe verse la procedencia")
 	}
 }
@@ -1033,64 +1036,55 @@ func TestLaEvidenciaDiceQueContestoElServidor(t *testing.T) {
 	}
 }
 
-// LA EVIDENCIA SE DESPLIEGA A TODO EL ANCHO, Y NO ES COSMÉTICA.
+// LA EVIDENCIA VIAJA CON SU ORIGEN, y esa es la propiedad que sobrevive.
 //
-// # EL DEFECTO QUE ESTO CIERRA
+// # QUÉ SUSTITUYE A ESTA PRUEBA, Y POR QUÉ
 //
-// Reportado sobre captura el 2026-08-24: la evidencia se leía EN VERTICAL, una
-// letra por línea. La causa es la suma de dos reglas correctas por separado —
-// «.datos» reparte con table-layout fixed, y «.datos td» lleva overflow-wrap
-// anywhere, que permite encoger POR DEBAJO de la palabra más larga—. Metida en
-// una celda de la tabla de orígenes, el ancho a repartir no era el de la página
-// sino el de una novena parte, así que a «Petición» le tocaba el de dos
-// caracteres y la ruta se estrujaba carácter a carácter.
+// Aquí vivía TestLaEvidenciaSeDespliegaATodoElAncho, que contaba los <th> del
+// encabezado y exigía que el «colspan» de la fila de evidencia coincidiera. Se
+// retira con ADR-0075 porque el mecanismo que vigilaba DEJÓ DE EXISTIR: la
+// tabla ya no es un <table> con filas de colspan, es una rejilla de CSS, y la
+// evidencia ya no es una fila aparte sino un <details> DENTRO de la celda de
+// señales de su propio origen. No hay dos números que puedan discrepar, así
+// que no hay nada que contar.
 //
-// Se corrigió MOVIÉNDOLA a una fila propia con colspan, no estilándola: el
-// problema no era la tabla sino el sitio.
+// El defecto original —la evidencia estrujada a una letra por línea, reportado
+// sobre captura el 2026-08-24— tampoco puede volver por el mismo camino: lo
+// causaba «table-layout: fixed» repartiendo el ancho de una novena parte de la
+// página, y ese reparto ya no existe.
 //
-// # POR QUÉ EL COLSPAN SE COMPRUEBA CONTRA LAS COLUMNAS REALES
-//
-// Un colspan que no cuadra no da error: el navegador lo recorta o deja una
-// columna fantasma, y la fila se desalinea sin que nada falle. Es como llegó el
-// «colspan="9"» escrito a mano de la fila vacía, cierto solo con las cuatro
-// columnas condicionales visibles a la vez. Contar los <th> del encabezado y
-// exigir que coincidan es lo único que convierte eso en un fallo ruidoso.
-func TestLaEvidenciaSeDespliegaATodoElAncho(t *testing.T) {
+// Lo que SÍ sigue importando es que la evidencia esté donde está su origen y
+// diga lo que el servidor contestó de verdad. Eso es lo que se comprueba, y
+// con los tres filtros, porque cada uno enciende columnas distintas.
+func TestLaEvidenciaViajaDentroDeLaFilaDeSuOrigen(t *testing.T) {
 	s := servidorConAuth(t)
 	r := httptest.NewRequest(http.MethodGet, "/.git/config", nil)
 	r.RemoteAddr = "203.0.113.7:44001"
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
 
-	// LOS TRES FILTROS, y no solo el de partida: cada uno enciende columnas
-	// condicionales distintas, que es justo lo que el colspan tiene que seguir.
-	// Con un solo caso, un colspan escrito a mano habría pasado la prueba —que
-	// es exactamente como sobrevivió el «9» de la fila vacía.
 	for _, filtro := range []string{"", "?red=", "?red=internet"} {
 		t.Run("filtro"+filtro, func(t *testing.T) {
 			cuerpo := panelSeguridad(t, s, filtro)
-			// Se busca por la clase que IDENTIFICA la tabla, no por la lista
-			// entera: «.tabla-ancha» se le añadió después y dejó la prueba en
-			// rojo sin que nada del comportamiento hubiera cambiado.
-			_, tabla, hay := strings.Cut(cuerpo, `tabla-origenes">`)
+			_, tras, hay := strings.Cut(cuerpo, `class="t-seg"`)
 			if !hay {
 				t.Fatal("no está la tabla de orígenes")
 			}
-			encabezado, cuerpoTabla, _ := strings.Cut(tabla, "</thead>")
-			// SE CUENTAN LOS CIERRES, y las dos alternativas ya fallaron aquí:
-			// «<th» cuenta también el «<thead>» que abre el bloque, y «<th>»
-			// se deja fuera los que llevan atributos —«<th class="accion">»—.
-			// «</th>» es uno por columna, exactamente, lleve lo que lleve.
-			columnas := strings.Count(encabezado, "</th>")
-
-			// La evidencia, en fila suya y no dentro de una celda de datos.
-			_, fila, esFilaPropia := strings.Cut(cuerpoTabla, `<tr class="fila-evidencia">`)
-			if !esFilaPropia {
-				t.Fatal("la evidencia ya no va en fila propia: volverá a estrujarse en una celda")
+			// Se acota a la fila del origen: que la evidencia aparezca en
+			// ALGÚN sitio de la página no demuestra que esté con su origen,
+			// y estar con su origen es justo lo que la hace comprobable.
+			_, fila, hayFila := strings.Cut(tras, "203.0.113.7")
+			if !hayFila {
+				t.Fatal("el origen no llegó a la tabla")
 			}
-			quiero := `colspan="` + strconv.Itoa(columnas) + `"`
-			if !strings.Contains(fila, quiero) {
-				t.Errorf("la fila de evidencia no ocupa las %d columnas de la tabla; falta %s",
-					columnas, quiero)
+			fila, _, _ = strings.Cut(fila, `<div class="fl`)
+
+			if !strings.Contains(fila, "/.git/config") {
+				t.Error("la evidencia no viaja dentro de la fila de su origen")
+			}
+			// El estado REAL, no uno supuesto: es lo que distingue un sondeo
+			// de una exposición cuando la ruta es la misma.
+			if !strings.Contains(fila, "<b>404</b>") {
+				t.Error("la evidencia no dice qué contestó el servidor")
 			}
 		})
 	}

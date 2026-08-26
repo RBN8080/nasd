@@ -5,70 +5,74 @@
 </head>
 <body>
 {{template "marco-abre" .}}
-
-<main class="cuerpo-modulo">
+{{/* Resumen NO tiene barra de órdenes: no crea, no sube y no filtra nada.
+     Cada cifra enlaza al módulo que la explica del todo. */}}
+{{template "marco-cuerpo" .}}
 
 <!-- CUATRO CIFRAS, LAS CUATRO YA MEDIDAS EN OTRO SITIO (ver resumen.go): esta
-     página no añade ni un punto de medición al nodo, reúne los que ya
-     existen. Cada una enlaza a la página que la explica del todo, en vez de
-     repetir aquí su tabla entera — la misma lección que ya aplicó
-     «Rótulo de conexión» en /estado: un dato sin su alcance es una
-     afirmación sin respaldo, y su sitio es donde SÍ tiene ese alcance. -->
-<table class="datos">
-  <tbody>
-    <tr{{if not .DiscoOK}} class="v-desconocido"{{end}}>
-      <td class="rotulo"><a href="/estado">Disco de datos</a></td>
-      <td class="valor">{{if .DiscoOK}}{{.DiscoResumen}}{{else}}no disponible{{end}}</td>
-    </tr>
-    <tr>
-      <td class="rotulo"><a href="/administracion">Cuentas</a></td>
-      <td class="valor">{{.Cuentas}}</td>
-    </tr>
-    <tr{{if not .TemperaturaOK}} class="v-desconocido"{{end}}>
-      <td class="rotulo"><a href="/estado">Temperatura del SoC</a></td>
-      <td class="valor">{{if .TemperaturaOK}}{{.TemperaturaResumen}}{{else}}no disponible{{end}}</td>
-    </tr>
-    <tr>
-      <td class="rotulo"><a href="/estado">En marcha</a></td>
-      <td class="valor">{{if .EnMarcha}}{{.EnMarcha}}{{else}}no disponible{{end}}</td>
-    </tr>
-  </tbody>
-</table>
+     página no añade ni un punto de medición al nodo, reúne los que ya existen.
+     Cada una enlaza a la página que la explica, en vez de repetir aquí su
+     tabla entera. -->
+<div class="cif">
+  <a class="cf" href="/estado">
+    <div class="n mono">{{if .DiscoOK}}{{.DiscoUsado}}{{else}}—{{end}}</div>
+    <div class="r">{{if .DiscoOK}}En uso · {{.DiscoPorcentaje}}{{else}}Disco sin medir{{end}}</div>
+  </a>
+  <a class="cf" href="/administracion">
+    <div class="n mono">{{.Cuentas}}</div>
+    <div class="r">Cuentas</div>
+  </a>
+  <a class="cf" href="/estado">
+    <div class="n mono">{{if .TemperaturaOK}}{{.Temperatura}}{{else}}—{{end}}</div>
+    <div class="r">Temperatura</div>
+  </a>
+  <a class="cf{{if .Interrumpidas}} mk{{end}}" href="/estado">
+    <div class="n mono">{{len .Interrumpidas}}</div>
+    <div class="r">A medias</div>
+  </a>
+</div>
 
 <!-- SUBIDAS INTERRUMPIDAS, de cualquier cuenta. Se reanudan solas al volver
-     a intentarlas (RF-12): esto es solo el aviso de que hay alguna a
-     medias, no una acción — no hay nada que pulsar aquí. -->
+     a intentarlas (RF-12): esto es el aviso de que hay alguna a medias, no
+     una acción — no hay nada que pulsar aquí.
+     La barra de progreso va en SVG y no con «style="width:…%"»: la CSP es
+     «style-src 'self'» sin 'unsafe-inline' (ADR-0060) y un estilo en línea
+     se descarta en silencio, dejando la barra vacía. -->
 {{if .Interrumpidas}}
-<h2>Subidas interrumpidas</h2>
-<table class="datos">
-  <thead><tr><th>Ruta</th><th>Progreso</th></tr></thead>
-  <tbody>
+<section class="sc">
+  <div class="sch"><h2>Subidas interrumpidas</h2><span class="ms">reanudación automática</span></div>
   {{range .Interrumpidas}}
-    <tr>
-      <td class="rotulo">{{.Ruta}}</td>
-      <td class="valor">{{.Progreso}} ({{.Porcentaje}} %)</td>
-    </tr>
+  <div class="tarj">
+    <div class="t1"><b>{{.Ruta}}</b><span>{{.Progreso}}</span></div>
+    <svg class="prog" viewBox="0 0 100 5" preserveAspectRatio="none" aria-hidden="true">
+      <rect class="v" x="0" y="0" width="{{.Porcentaje}}" height="5"></rect>
+    </svg>
+    <p>Se conserva 7 días y se reanuda en el punto alcanzado, no desde cero.</p>
+  </div>
   {{end}}
-  </tbody>
-</table>
+</section>
 {{end}}
 
-<!-- CANAL DE AVISOS, solo si está configurado — mismo criterio que /estado:
-     un indicador permanentemente vacío enseña a ignorar el panel. -->
+<section class="sc">
+  <div class="sch"><h2>El nodo</h2></div>
+  <div class="esc">
+    <div class="pl"><div class="n mono">{{if .TemperaturaOK}}{{.Temperatura}}{{else}}—{{end}}</div><div class="t"><div class="q">Temperatura</div><div class="d">{{.TemperaturaPie}}</div></div></div>
+    <div class="pl"><div class="n mono">{{if .EnMarcha}}{{.EnMarcha}}{{else}}—{{end}}</div><div class="t"><div class="q">En marcha</div><div class="d">servicio {{.ServicioDesde}}</div></div></div>
+    <div class="pl"><div class="n mono">{{if .LatidoOK}}{{.Latido}}{{else}}—{{end}}</div><div class="t"><div class="q">Último latido</div><div class="d">{{.LatidoPie}}</div></div></div>
+  </div>
+</section>
+
 {{if .CanalConfigurado}}
-<h2>Canal de avisos</h2>
-<table class="datos">
-  <tbody>
-    <tr{{if not .CanalOK}} class="v-atencion"{{end}}>
-      <td class="rotulo"><a href="/estado">Entrega</a></td>
-      <td class="valor">{{.CanalResumen}}</td>
-    </tr>
-  </tbody>
-</table>
+<section class="sc">
+  <div class="sch"><h2>Canal de avisos</h2><span class="ms">{{.CanalResumen}}</span></div>
+  <div class="tarj">
+    <div class="t1"><b>{{if .CanalOK}}Entregando{{else}}Con fallos{{end}}</b><span class="pls"><span class="p {{if .CanalOK}}p-ok{{else}}p-av{{end}}">{{if .CanalOK}}Correcto{{else}}Atención{{end}}</span></span></div>
+    <p>El detalle completo, con el latido al testigo externo, está en <a href="/estado">Estado</a>.</p>
+  </div>
+</section>
 {{end}}
 
-</main>
-</div>{{/* cierra .cont — Resumen no tiene panel de detalle */}}
+{{template "marco-fin" .}}
 {{template "marco-cierra" .}}
 </body>
 </html>

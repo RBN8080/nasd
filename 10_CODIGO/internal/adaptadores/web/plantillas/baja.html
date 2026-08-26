@@ -4,34 +4,37 @@
 {{template "cabeza" "NAS — Confirmar baja"}}
 </head>
 <body>
-<main class="acceso borrado">
-  <h1>Confirmar baja</h1>
+<main class="sola">
+  <div class="tarjeta">
+    <h1>Confirmar baja</h1>
 
-  <p class="rotulo-borrado">Se va a dar de baja:</p>
-  <p class="ruta-destacada">{{.Nombre}}</p>
+    <p class="enlace">Se va a dar de baja</p>
+    <p class="ruta-grande">{{.Nombre}}</p>
 
-  <div class="peligro">
-    <p><strong>Su carpeta no se destruye ni se modifica.</strong> Deja de
-    poder entrar, y lo que haya subido sale de <code>homeUsers</code> y
-    queda como una carpeta más en su raíz, con el mismo nombre.</p>
+    <div class="aviso ojo">
+      <p><b>Su carpeta no se destruye ni se modifica.</b> Deja de poder entrar,
+      y lo que haya subido sale de <code>homeUsers</code> y queda como una
+      carpeta más en su raíz, con el mismo nombre.</p>
+    </div>
+
+    {{if .Aviso}}<p class="aviso mal">{{.Aviso}}</p>{{end}}
+
+    <!-- SE PIDE LA CONTRASEÑA DEL SUPERUSUARIO OTRA VEZ, no la de la cuenta
+         que se va. Una sesión abierta demuestra que alguien entró una vez, no
+         que sigue siendo él quien está delante del aparato ahora — pedido por
+         el responsable el 06/08 para esta operación en concreto. -->
+    <form method="post" action="/administracion/baja">
+      <input type="hidden" name="csrf" value="{{.Csrf}}">
+      <input type="hidden" name="nombre" value="{{.Nombre}}">
+      <label class="cmp" for="clave">Su contraseña, para confirmar
+        <input type="password" id="clave" name="clave"
+           autocomplete="current-password" autofocus required>
+      </label>
+      <button type="submit" class="bt pel">Dar de baja definitivamente</button>
+    </form>
+
+    <p class="enlace"><a href="/administracion">Cancelar y volver</a></p>
   </div>
-
-  {{if .Aviso}}<p class="mensaje error">{{.Aviso}}</p>{{end}}
-
-  <!-- SE PIDE LA CONTRASEÑA DEL SUPERUSUARIO OTRA VEZ, no la de la cuenta
-       que se va. Una sesión abierta demuestra que alguien entró una vez, no
-       que sigue siendo él quien está delante del aparato ahora — pedido por
-       el responsable el 06/08 para esta operación en concreto. -->
-  <form method="post" action="/administracion/baja">
-    <input type="hidden" name="csrf" value="{{.Csrf}}">
-    <input type="hidden" name="nombre" value="{{.Nombre}}">
-    <label for="clave">Su contraseña, para confirmar</label>
-    <input type="password" id="clave" name="clave"
-       autocomplete="current-password" autofocus required>
-    <button type="submit" class="destructivo">Dar de baja definitivamente</button>
-  </form>
-
-  <p class="cancelar"><a href="/administracion">Cancelar y volver</a></p>
 </main>
 </body>
 </html>

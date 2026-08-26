@@ -2,6 +2,8 @@ package web
 
 import (
 	"cmp"
+	"fmt"
+	"math"
 	"net/http"
 	"net/netip"
 	"slices"
@@ -120,6 +122,8 @@ type filaOrigen struct {
 
 	Primera time.Time
 	Ultima  time.Time
+	// Seleccionada marca la fila cuyo detalle esta abierto.
+	Seleccionada bool
 }
 
 // Frenados son las conexiones EFECTIVAMENTE CERRADAS a esta dirección, vengan
@@ -303,6 +307,10 @@ type vistaSeguridad struct {
 	PuedeAdministrar bool
 	// Marco es el cromo compartido — ADR-0075.
 	Marco marco
+	// FiltroAbierto conserva el panel de filtros desplegado despues de
+	// filtrar. Sin esto habria que volver a abrirlo para corregir una
+	// eleccion, que es justo cuando uno lo necesita.
+	FiltroAbierto bool
 	// Actividad es «Actividad por día», pintada SOLO con lo que el anillo
 	// recuerda de los eventos ya filtrados — ver seguridad.PorDia. Doce
 	// columnas siempre; ActividadDesde dice hasta dónde alcanzan de verdad.
@@ -316,36 +324,50 @@ type vistaSeguridad struct {
 }
 
 // barraGrafica es UNA columna de «Actividad por día», con su geometría YA
-// CALCULADA — atributos numéricos de SVG (x/y/width/height), no CSS: ninguno
-// de los dos es «style="..."», así que la CSP «style-src 'self'» sin
-// 'unsafe-inline' no se toca (ver el comentario de «.grafica-actividad» en
-// estilo.css). ADR-0017: el formato y ahora también la geometría se deciden
-// en el servidor; la plantilla solo copia números en atributos.
+// CALCULADA en unidades del viewBox del SVG.
+//
+// LA GEOMETRÍA VA EN ATRIBUTOS Y NO EN CSS, y no es una preferencia: la CSP
+// de este servidor es «style-src 'self'» sin 'unsafe-inline' (ADR-0060), así
+// que el «style="height:21%"» de la maqueta se descartaría EN SILENCIO y el
+// gráfico saldría plano sin que nada fallara a gritos. Los atributos x, y,
+// width y height de un <rect> no son CSS y la política no los toca.
+// ADR-0017 ya ponía el formato en el servidor; esto extiende la misma regla
+// a la geometría.
 type barraGrafica struct {
-	X, Y, Ancho, Alto int
-	EjeX, EjeY        int
-	Etiqueta          string
-	// Pico marca el día de mayor actividad de la serie, para que resalte con
-	// el acento en vez de con el gris de las demás columnas — la ÚNICA señal
-	// de color de la gráfica, igual que la pastilla es la única de una tabla.
+	X, Y, Ancho, Alto float64
+	// Pico marca el día de mayor actividad, para que resalte con el ámbar en
+	// vez del gris de las demás — la ÚNICA señal de color del gráfico.
 	Pico bool
+	// Titulo es lo que sale al posar el cursor: «19/08 · 732». Etiqueta es el
+	// número de día del eje de abajo.
+	Titulo   string
+	Etiqueta string
 }
 
-// anchoSlotGrafica, altoMaxGrafica… la geometría fija del SVG. Doce columnas
-// en un viewBox de 300×90 — ver «.grafica-actividad» en estilo.css.
+// La geometría del gráfico, en unidades del viewBox. Cien de ancho y cien de
+// alto, y que el SVG se estire al ancho real con preserveAspectRatio="none".
 const (
-	anchoSlotGrafica  = 25
-	anchoBarraGrafica = 17
-	altoMaxGrafica    = 50
-	baseYGrafica      = 60
-	ejeYGrafica       = 76
+	anchoSlotGrafica   = 100.0 / seguridad.DiasGrafica
+	huecoSlotGrafica   = 0.28 // la parte del hueco que queda entre dos barras
+	altoGrafica        = 100.0
+	minimoVisibleBarra = 1.5 // un día con actividad nunca se pinta a cero
 )
 
 // graficaDeActividad convierte la serie pura de seguridad.PorDia en columnas
-// con su geometría resuelta. Vive en el adaptador y no en internal/seguridad
-// porque es una decisión de PRESENTACIÓN (tamaños en píxeles de un SVG
-// concreto), y ese paquete no sabe de HTML — mismo corte que filaOrigen ya
-// aplica frente a seguridad.Origen.
+// con su geometría resuelta.
+//
+// # LA ESCALA ES LA RAÍZ CUADRADA, Y ESO SE DICE EN LA PANTALLA
+//
+// Con escala lineal, el barrido de DRIFTNET —732 rechazos en un día contra
+// una treintena los demás— dejaría once columnas de dos píxeles y una
+// gigante: el pico se ve, y todo lo demás deja de poder compararse entre sí.
+// La raíz cuadrada conserva el orden y el pico, y devuelve altura a los días
+// normales. NO es una escala neutra, así que el rótulo de la sección lo dice
+// —«escala √»— en vez de dejar creer que las alturas son proporcionales.
+//
+// Vive en el adaptador y no en internal/seguridad porque es una decisión de
+// PRESENTACIÓN —píxeles de un SVG concreto—, y aquel paquete no sabe de HTML:
+// el mismo corte que filaOrigen aplica frente a seguridad.Origen.
 func graficaDeActividad(serie []seguridad.Dia) []barraGrafica {
 	max := 0
 	for _, d := range serie {
@@ -353,60 +375,31 @@ func graficaDeActividad(serie []seguridad.Dia) []barraGrafica {
 			max = d.Rechazos
 		}
 	}
+	raizMax := math.Sqrt(float64(max))
+
+	ancho := anchoSlotGrafica * (1 - huecoSlotGrafica)
+	margen := anchoSlotGrafica * huecoSlotGrafica / 2
+
 	out := make([]barraGrafica, len(serie))
 	for i, d := range serie {
-		alto := 0
-		if max > 0 {
-			alto = d.Rechazos * altoMaxGrafica / max
-			if d.Rechazos > 0 && alto == 0 {
-				alto = 1
+		alto := 0.0
+		if max > 0 && d.Rechazos > 0 {
+			alto = math.Sqrt(float64(d.Rechazos)) / raizMax * altoGrafica
+			if alto < minimoVisibleBarra {
+				alto = minimoVisibleBarra
 			}
 		}
 		out[i] = barraGrafica{
-			X:        i*anchoSlotGrafica + (anchoSlotGrafica-anchoBarraGrafica)/2,
-			Y:        baseYGrafica - alto,
-			Ancho:    anchoBarraGrafica,
-			Alto:     alto,
-			EjeX:     i*anchoSlotGrafica + anchoSlotGrafica/2,
-			EjeY:     ejeYGrafica,
-			Etiqueta: strconv.Itoa(d.Fecha.Day()),
+			X:        redondear(float64(i)*anchoSlotGrafica + margen),
+			Y:        redondear(altoGrafica - alto),
+			Ancho:    redondear(ancho),
+			Alto:     redondear(alto),
 			Pico:     max > 0 && d.Rechazos == max,
+			Titulo:   fmt.Sprintf("%s · %d", d.Fecha.Format("02/01"), d.Rechazos),
+			Etiqueta: strconv.Itoa(d.Fecha.Day()),
 		}
 	}
 	return out
-}
-
-// ColumnasDeOrigenes son las columnas que la tabla de orígenes tiene AHORA
-// MISMO. Existe porque cuatro de ellas son condicionales.
-//
-// # PARA QUÉ HACE FALTA UN NÚMERO Y NO UN OJO
-//
-// Dos filas de esa tabla ocupan el ancho entero con un «colspan»: la de «no ha
-// tocado nadie» y la de evidencia. Un colspan que no cuadra con las columnas
-// reales no da error —el navegador lo recorta o deja una columna fantasma—,
-// así que el defecto se ve raro y no se explica solo.
-//
-// Ya había pasado: la fila vacía llevaba «colspan="9"» escrito a mano, que solo
-// era cierto con las cuatro condicionales visibles. Con el filtro por omisión
-// —donde «Procedencia» no se pinta— sobraba una.
-//
-// Se cuenta DONDE SE DECIDE, junto a las banderas que gobiernan cada columna,
-// para que añadir una futura obligue a pasar por aquí en vez de por la memoria
-// de quien edite la plantilla.
-func (v vistaSeguridad) ColumnasDeOrigenes() int {
-	// Las fijas: Dirección, Rechazos, Actividad, Motivos y la de la acción.
-	n := 5
-	for _, seVe := range []bool{
-		v.SinFiltroDeRed,              // Procedencia
-		v.HayGeo,                      // Operador
-		v.SoloInternet && v.HayToques, // Paquetes
-		v.SoloInternet,                // Conex.
-	} {
-		if seVe {
-			n++
-		}
-	}
-	return n
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -627,9 +620,12 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	v.Actividad = graficaDeActividad(diasActividad)
 	v.ActividadDesde = actividadDesde
 
+	v.FiltroAbierto = q.Get("abierto") != ""
+
 	if ip, err := netip.ParseAddr(q.Get("origen")); err == nil {
 		for i := range v.Origenes {
 			if v.Origenes[i].IP == ip {
+				v.Origenes[i].Seleccionada = true
 				v.Detalle = &v.Origenes[i]
 				v.ConDetalle = true
 				break

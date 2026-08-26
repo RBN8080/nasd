@@ -11,12 +11,16 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"nasd/internal/adaptadores/sistema"
 	"nasd/internal/almacen"
 	"nasd/internal/autenticacion"
 	"nasd/internal/aviso"
@@ -140,6 +144,17 @@ type Servidor struct {
 	// medirlo; el adaptador NUNCA lo usa para construir rutas —esa puerta es
 	// almacen.NuevaRuta y no hay otra (ADR-0014)—.
 	volumen string
+	// volCache y volCuando son la ÚLTIMA lectura del nodo y cuándo se tomó —
+	// ver volumenReciente (marco.go). Existen porque el medidor de disco del
+	// rail sale en las cinco páginas de la consola (ADR-0075) y medirlo cuesta
+	// un statfs, /proc/diskstats y un subproceso `vcgencmd` (ADR-0036): es lo
+	// que estado.go llama «los indicadores lentos» y saca del flujo en vivo.
+	// El candado protege las dos juntas: son un valor y su fecha, y leerlas
+	// por separado permitiría usar un valor nuevo con una fecha vieja.
+	volMu       sync.Mutex
+	volCache    sistema.Nodo
+	volCuando   time.Time
+	volMidiendo bool
 
 	// dirMiniaturas es donde se cachean las miniaturas EXIF (miniatura.go).
 	// VACÍO significa «función no configurada»: servirMiniatura responde 404
@@ -909,6 +924,62 @@ func funciones() template.FuncMap {
 		// Y las rutas de las URL se escapan POR COMPONENTE. html/template no
 		// puede hacerlo por su cuenta: dentro de un href no distingue el «#»
 		// de un nombre de archivo del que abre un fragmento. Ver apertura.go.
+		// marcaCorta son las dos primeras letras del nombre del nodo, para el
+		// cuadrado de la esquina del rail — «nas-ejemplo» → «rb». Se compone
+		// aquí y no en la plantilla porque recortar una cadena por índice de
+		// BYTES parte una letra acentuada por la mitad; esto recorta por
+		// runas.
+		"marcaCorta": func(nodo string) string {
+			r := []rune(nodo)
+			for i, c := range r {
+				if c == '.' || c == '-' {
+					r = r[:i]
+					break
+				}
+			}
+			if len(r) > 2 {
+				r = r[:2]
+			}
+			if len(r) == 0 {
+				return "NA"
+			}
+			return strings.ToUpper(string(r[:1])) + string(r[1:])
+		},
+		// ext es la extension de un archivo, para el cuadradito que sustituye
+		// a la miniatura cuando no hay ninguna. Sin punto, en minusculas y
+		// acotada: «.JPEG» cabe, «.velocidad-de-transferencia» no, y el
+		// recorte va por RUNAS porque una extension puede traer acentos.
+		"ext": func(nombre string) string {
+			i := strings.LastIndexByte(nombre, '.')
+			if i < 0 || i == len(nombre)-1 {
+				return ""
+			}
+			r := []rune(strings.ToLower(nombre[i+1:]))
+			if len(r) > 4 {
+				r = r[:4]
+			}
+			return string(r)
+		},
+		// add existe para UNA frase: «12 de 37 entradas». El total es la suma
+		// de lo que pasó el filtro y lo que no, y componerla en Go habria
+		// pedido un campo mas en la vista para no decir nada nuevo.
+		"add": func(a, b int) int { return a + b },
+		// inicial es la letra del cuadradito de una fila de cuentas. Usa la
+		// misma función que el formulario de acceso (inicialDe) para que las
+		// dos pantallas no puedan discrepar sobre qué letra le toca a quién.
+		"inicial": inicialDe,
+		// porcentaje es la parte que representa un recuento sobre un total,
+		// para el ancho de un <rect> de SVG. Va aqui y no en Go porque el
+		// total es distinto en cada tabla que lo usa, y pasarlo por la vista
+		// habria pedido un campo por fila para no decir nada nuevo. Devuelve
+		// float64: Go lo imprime siempre con punto decimal, que es lo unico
+		// que un atributo de SVG entiende.
+		"porcentaje": func(parte, total int) float64 {
+			if total <= 0 {
+				return 0
+			}
+			return math.Round(float64(parte)*100/float64(total)*100) / 100
+		},
 		"rutaURL": escaparRutaURL,
 		"listado": urlDeListado,
 		// Navegar sin perder la columna por la que se está ordenando (P-3).

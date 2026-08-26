@@ -190,7 +190,7 @@ func TestLaBarraEnsenaLaMarcaYMirarLaApaga(t *testing.T) {
 	// La marca vive en el rail desde ADR-0075 (ver marco.go/_marco.html):
 	// «.ct», no «.pastilla» — esa clase queda para los veredictos de las
 	// tablas, que es un semáforo distinto.
-	if !strings.Contains(conMarca, `<span>Seguridad</span><span class="ct">1</span>`) {
+	if !strings.Contains(conMarca, `Seguridad<span class="ct">1</span>`) {
 		t.Errorf("la barra no enseña la marca con una cuarentena recién disparada:\n%s", conMarca)
 	}
 
@@ -205,7 +205,7 @@ func TestLaBarraEnsenaLaMarcaYMirarLaApaga(t *testing.T) {
 	}
 	// Y «Seguridad» sigue estando: lo que desaparece es la marca, no el
 	// ítem del rail.
-	if !strings.Contains(sinMarca, `href="/seguridad">`) || !strings.Contains(sinMarca, `<span>Seguridad</span>`) {
+	if !strings.Contains(sinMarca, `href="/seguridad"`) || !strings.Contains(sinMarca, `Seguridad`) {
 		t.Error("desapareció el ítem del rail entero en vez de solo la marca")
 	}
 }

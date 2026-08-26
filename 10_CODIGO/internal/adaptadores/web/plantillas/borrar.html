@@ -4,36 +4,37 @@
 {{template "cabeza" "NAS — Confirmar borrado"}}
 </head>
 <body>
-<main class="acceso borrado">
-  <h1>Confirmar borrado</h1>
+<main class="sola">
+  <div class="tarjeta">
+    <h1>Confirmar borrado</h1>
 
-  <!-- Centrado a petición del responsable (06/08/2026). El nombre es el
-       dato que hay que leer antes de destruir nada, y RF-18 exige que se
-       muestre: alineado al centro bajo su rótulo, se lee como una sola
-       cosa en vez de como dos párrafos sueltos. -->
-  <p class="rotulo-borrado">Se va a borrar:</p>
-  <p class="ruta-destacada">{{.Ruta.Rel}}</p>
+    <!-- Centrado a petición del responsable (06/08/2026). El nombre es el dato
+         que hay que leer antes de destruir nada, y RF-18 exige que se muestre:
+         alineado bajo su rótulo se lee como una sola cosa, no como dos
+         párrafos sueltos. -->
+    <p class="enlace">Se va a borrar</p>
+    <p class="ruta-grande">{{.Ruta.Rel}}</p>
 
-  <div class="peligro">
-    {{if .Conteo.EsDirectorio}}
-      <p><strong>Es una carpeta con {{.Conteo.Archivos}} archivo(s)
-      y {{.Conteo.Directorios}} subcarpeta(s)</strong>, {{tamano .Conteo.Bytes}} en total.</p>
-    {{else}}
-      <p><strong>Archivo de {{tamano .Conteo.Bytes}}.</strong></p>
-    {{end}}
-    <p><strong>Esta acción no se puede deshacer.</strong> No hay papelera, y este
-    disco no tiene copia: lo que se borre aquí desaparece. Si el archivo solo
-    existe en este NAS, se pierde.</p>
+    <div class="aviso mal">
+      {{if .Conteo.EsDirectorio}}
+      <p><b>Es una carpeta con {{.Conteo.Archivos}} archivo(s) y {{.Conteo.Directorios}} subcarpeta(s)</b>, {{tamano .Conteo.Bytes}} en total.</p>
+      {{else}}
+      <p><b>Archivo de {{tamano .Conteo.Bytes}}.</b></p>
+      {{end}}
+      <p><b>Esta acción no se puede deshacer.</b> No hay papelera, y este disco
+      no tiene copia: lo que se borre aquí desaparece. Si el archivo solo
+      existe en este NAS, se pierde.</p>
+    </div>
+
+    <form method="post" action="/borrar">
+      <input type="hidden" name="csrf" value="{{.Csrf}}">
+      <input type="hidden" name="ruta" value="{{.Ruta.Rel}}">
+      <input type="hidden" name="confirmado" value="si">
+      <button type="submit" class="bt pel">Eliminar definitivamente</button>
+    </form>
+
+    <p class="enlace"><a href="{{listado .Ruta.Padre}}">Cancelar y volver</a></p>
   </div>
-
-  <form method="post" action="/borrar">
-    <input type="hidden" name="csrf" value="{{.Csrf}}">
-    <input type="hidden" name="ruta" value="{{.Ruta.Rel}}">
-    <input type="hidden" name="confirmado" value="si">
-    <button type="submit" class="destructivo">Eliminar definitivamente</button>
-  </form>
-
-  <p class="cancelar"><a href="{{listado .Ruta.Padre}}">Cancelar y volver</a></p>
 </main>
 </body>
 </html>

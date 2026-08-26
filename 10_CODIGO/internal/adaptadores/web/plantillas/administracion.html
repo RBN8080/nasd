@@ -1,101 +1,121 @@
 {{define "administracion.html"}}<!doctype html>
 <html lang="es">
 <head>
-{{template "cabeza" "NAS — Administración"}}
+{{template "cabeza" "NAS — Cuentas"}}
 </head>
 <body>
 {{template "marco-abre" .}}
 
 <!-- Mismo patrón que «Subir» y «Nueva carpeta» en listado.html:
      <details>/<summary>, sin JavaScript (ADR-0027). El formulario «Nueva
-     cuenta» vivía siempre visible al fondo de la página; el responsable
-     pidió esconderlo detrás de un botón (P-5, rector §7.sexies).
-     ESTADO, SEGURIDAD Y SALIR YA NO VIVEN AQUÍ (ADR-0075): viven en el rail. -->
-<div class="barra-acciones">
-  <details class="menu">
-    <summary class="boton-barra">Crear Usuario</summary>
+     cuenta» vivía siempre visible al fondo de la página; el responsable pidió
+     esconderlo detrás de un botón (P-5, rector §7.sexies).
+     «Estado», «Seguridad» y «Salir» ya no viven aquí (ADR-0075): viven en el
+     rail. -->
+<div class="ordenes">
+  <details>
+    <summary class="od">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="8.5" cy="7" r="3.5"/><path d="M19 7v6M22 10h-6"/></svg>
+      Crear cuenta
+    </summary>
     <div class="menu-panel">
       <form method="post" action="/administracion/alta">
         <input type="hidden" name="csrf" value="{{.Csrf}}">
-        <label for="nombre">Nombre</label>
-        <input type="text" id="nombre" name="nombre"
-           autocapitalize="off" autocorrect="off" spellcheck="false"
-           required>
-        <label for="clave">Contraseña</label>
-        <input type="password" id="clave" name="clave"
-           autocomplete="new-password" minlength="14" required>
+        <label class="cmp" for="nombre">Nombre
+          <input type="text" id="nombre" name="nombre"
+             autocapitalize="off" autocorrect="off" spellcheck="false" required>
+        </label>
+        <label class="cmp" for="clave">Contraseña
+          <input type="password" id="clave" name="clave"
+             autocomplete="new-password" minlength="14" required>
+        </label>
         <p class="nota">Solo minúsculas, dígitos, «-» y «_», empezando por letra. Mínimo 14 caracteres.</p>
-        <button type="submit">Crear cuenta</button>
+        <button type="submit" class="bt">Crear cuenta</button>
       </form>
     </div>
   </details>
+
   {{if .Usuarios}}
   <form method="post" action="/administracion/refrescar">
     <input type="hidden" name="csrf" value="{{.Csrf}}">
-    <button type="submit" class="boton-barra">Refrescar métricas</button>
+    <button type="submit" class="od">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+      Refrescar métricas
+    </button>
   </form>
   {{end}}
 </div>
 
-<main class="cuerpo-modulo">
+{{template "marco-cuerpo" .}}
 
-{{if .Mensaje}}<p class="mensaje mensaje-modulo {{if .EsError}}error{{else}}exito{{end}}">{{.Mensaje}}</p>{{end}}
+{{if .Mensaje}}<p class="msg {{if .EsError}}mal{{end}}">{{.Mensaje}}</p>{{end}}
 
-<h2>Cuentas</h2>
-<table class="datos tabla-cuentas">
-  <thead><tr><th>Cuenta</th><th>Sesión</th><th>Uso de disco</th><th></th></tr></thead>
-  <tbody id="tabla-cuentas">
-  {{range .Usuarios}}
-    <!-- data-usuario es el ANCLA del flujo en vivo (P-7), igual que data-clave
-         en estado.html: es un identificador, no un rótulo. Si cambia sin
-         cambiar cuentas.js, la pastilla deja de actualizarse y no falla nada a
-         gritos. El texto y la clase salen de Sesion/Veredicto —las mismas
-         constantes que viajan en el marco— para que esta carga y el primer tic
-         no puedan decir cosas distintas. -->
-    <tr data-usuario="{{.Nombre}}"{{if .Veredicto}} class="v-{{.Veredicto}}"{{end}}>
-      <!-- El nombre abre el detalle («?cuenta=», ADR-0075) — mismo patrón
-           que la clave en estado.html. cuentas.js opera por data-usuario
-           sobre .pastilla y no toca este enlace, así que el flujo en vivo
-           sigue actualizando la fila con el detalle abierto o cerrado. -->
-      <td class="rotulo"><a href="?cuenta={{.Nombre}}">{{.Nombre}}</a></td>
-      <td class="estado"><span class="pastilla">{{.Sesion}}</span></td>
+<div class="t-cta">
+  <div class="th"><span>Cuenta</span><span>Sesión</span><span>Uso de disco</span><span></span></div>
+  <div class="fls">
+    {{range .Usuarios}}
+    <!-- data-usuario es el ANCLA del flujo en vivo (P-7), igual que
+         data-clave en estado.html: es un identificador, no un rótulo. Si
+         cambia sin cambiar cuentas.js, la pastilla deja de actualizarse y no
+         falla nada a gritos. El texto y la clase salen de Sesion/Veredicto
+         —las mismas constantes que viajan en el marco— para que esta carga y
+         el primer tic no puedan decir cosas distintas.
+         EL NOMBRE ABRE EL DETALLE («?cuenta=», ADR-0075). cuentas.js opera
+         por data-usuario sobre .pastilla y no toca este enlace, así que el
+         flujo sigue actualizando la fila con el detalle abierto o cerrado. -->
+    <div class="fl{{if .Seleccionada}} sel{{end}}" data-usuario="{{.Nombre}}">
+      <div class="cl">
+        <a class="nomb" href="?cuenta={{.Nombre}}">
+          <span class="ico-f">{{inicial .Nombre}}</span>
+          <span class="txt">{{.Nombre}}</span>
+        </a>
+      </div>
+      <div class="cl"><span class="et">Sesión</span><span class="pls"><span class="pastilla p{{with .Veredicto.Clase}} {{.}}{{end}}">{{.Sesion}}</span></span></div>
       <!-- Bajo demanda, no en vivo (P-4, etapa 3): se dice explícitamente
-           CUÁNDO se midió, para no confundirlo con Cuenta/Sesión de al
-           lado, que sí son de ahora mismo. -->
-      <td class="num">{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}} · medido {{fecha .Medido}}{{end}}</td>
-      <td class="num"><a class="destructivo" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></td>
-    </tr>
-  {{else}}
-    <tr><td colspan="4">Todavía no hay ninguna cuenta dada de alta.</td></tr>
-  {{end}}
-  </tbody>
-</table>
+           CUÁNDO se midió, para no confundirlo con la sesión de al lado, que
+           sí es de ahora mismo. -->
+      <div class="cl"><span class="et">Disco</span><span class="ct2">{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}} <small>· medido {{fecha .Medido}}</small>{{end}}</span></div>
+      <div class="cl"><a class="bt pel" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></div>
+    </div>
+    {{else}}
+    <div class="vacio">Todavía no hay ninguna cuenta dada de alta.</div>
+    {{end}}
+  </div>
+</div>
 
-<!-- El superusuario (admin) no aparece en esta lista: no está en el
-     registro (ADR-0055) y no se puede dar de baja a sí mismo por aquí. -->
+<!-- LAS DOS SALVEDADES QUE SON CIERTAS Y NO SON EL MOTIVO DE ABRIR ESTA
+     PÁGINA. Van al pie, en gris y dentro del cuadro del módulo, por decisión
+     del responsable sobre captura: quien no las busca no las lee, quien
+     necesita saber por qué la página no abre desde fuera lo tiene ahí. -->
+<div class="notas">
+  <span class="rt">Notas</span>
+  <span class="nt">La administración de cuentas no responde desde Internet — <b>RF-35</b>.</span>
+  <span class="nt">El superusuario no figura en esta lista: no está en el registro (<b>ADR-0055</b>) y no puede darse de baja a sí mismo por aquí.</span>
+</div>
 
-</main>
-</div>{{/* cierra .cont */}}
+{{template "marco-fin" .}}
+
 {{if .Detalle}}
 <aside class="detalle">
-  {{with .Detalle}}
-  <div class="det-cabecera">
-    <div><h3>{{.Nombre}}</h3><div class="dip">cuenta {{if .Activo}}activa{{else}}sin sesión{{end}}</div></div>
-    <a class="det-cerrar" href="/administracion" aria-label="Cerrar">✕</a>
+  <div class="dvw">
+    {{with .Detalle}}
+    <div class="dc">
+      <div><h3>{{.Nombre}}</h3><div class="dip">{{if .Activo}}sesión activa{{else}}sin sesión{{end}}</div></div>
+      <a class="x" href="/administracion" aria-label="Cerrar">✕</a>
+    </div>
+    <div class="db">
+      <div class="h">Uso de disco</div>
+      <div class="dp"><span>Ocupa</span><b>{{if .Medido.IsZero}}sin medir{{else}}{{.UsoDisco}}{{end}}</b></div>
+      {{if not .Medido.IsZero}}<div class="dp"><span>Medido</span><b>{{fecha .Medido}}</b></div>{{end}}
+    </div>
+    <div class="dac">
+      <a class="bt pel" href="/administracion/baja/{{.Nombre}}">Dar de baja</a>
+    </div>
+    {{end}}
   </div>
-  <div class="det-bloque">
-    <h4>Uso</h4>
-    <div class="det-fila"><span>Disco</span><b>{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}}{{end}}</b></div>
-    {{if not .Medido.IsZero}}<div class="det-fila"><span>Medido</span><b>{{fecha .Medido}}</b></div>{{end}}
-  </div>
-  <div class="det-bloque">
-    <h4>Baja</h4>
-    <p class="nota">Es definitiva: la carpeta no se destruye, pero la cuenta deja de poder entrar.</p>
-    <p><a class="destructivo" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></p>
-  </div>
-  {{end}}
 </aside>
 {{end}}
+
 {{template "marco-cierra" .}}
 <script src="/estatico/menus.js"></script>
 <script src="/estatico/cuentas.js"></script>

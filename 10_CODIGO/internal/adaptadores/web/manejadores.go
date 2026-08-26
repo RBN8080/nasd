@@ -56,11 +56,20 @@ type vistaListado struct {
 	// arma construirMarco a partir de las MISMAS EsSuperusuario/
 	// PuedeAdministrar/Novedades de arriba, así que las dos no pueden discrepar.
 	Marco marco
-	// ConDetalle es siempre falso aquí: Archivos no tiene panel de detalle
-	// (ver el comentario en marco.go sobre por qué "/" es de Archivos y no
-	// de Resumen). Existe solo para que _marco.html pueda preguntarlo sin
-	// que html/template falle por campo inexistente.
-	ConDetalle bool
+	// Busqueda es lo que se tecleó en el buscador de la barra superior, ya
+	// recortado. El listado se acota a las entradas cuyo nombre lo contengan,
+	// sin distinguir mayúsculas.
+	//
+	// SE FILTRA AQUÍ Y NO EN EL NAVEGADOR a propósito: una carpeta puede
+	// traer hasta maxEntradasPorPagina entradas, y filtrar en el cliente
+	// obligaría a mandarlas todas para esconder casi todas. Además así el
+	// filtro viaja en la URL —misma regla R1 de ADR-0015 que el orden— y un
+	// enlace copiado lo conserva.
+	Busqueda string
+	// Encontradas es cuántas entradas pasaron el filtro y Descartadas cuántas
+	// no. La segunda se dice: un listado recortado que no avisa de que
+	// recorta es el defecto que este panel lleva corrigiendo desde ADR-0065.
+	Descartadas int
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -90,7 +99,8 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
 	}
-	v.Marco = s.construirMarco(r, "archivos", "Archivos", "")
+	v.Busqueda = strings.TrimSpace(r.URL.Query().Get("q"))
+	v.Marco = s.construirMarco(r, "archivos", tituloDeListado(ruta), "")
 
 	n := 0
 	for e, err := range alm.Listar(r.Context(), ruta) {
@@ -126,6 +136,15 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		// NO se ocultan en silencio: se cuentan y la vista lo dice.
 		if strings.HasPrefix(e.Nombre, ".") {
 			v.Ocultas++
+			continue
+		}
+		// EL BUSCADOR DE LA BARRA SUPERIOR. Se cuenta lo descartado en vez de
+		// esconderlo sin más: «esta carpeta está vacía» y «tu búsqueda no
+		// encontró nada» son dos cosas distintas, y la pantalla las
+		// distingue.
+		if v.Busqueda != "" && !strings.Contains(
+			strings.ToLower(e.Nombre), strings.ToLower(v.Busqueda)) {
+			v.Descartadas++
 			continue
 		}
 		v.Entradas = append(v.Entradas, e)
@@ -475,4 +494,14 @@ func (s *Servidor) fallo(w http.ResponseWriter, r *http.Request, err error) {
 	// P5 y P7: el fallo se registra siempre, aunque el usuario vea poco.
 	s.reg.Warn("fallo", "ruta", r.URL.Path, "estado", estado, "error", err)
 	http.Error(w, mensaje, estado)
+}
+
+// tituloDeListado es lo que se lee arriba del módulo de Archivos: el nombre
+// de la carpeta abierta, y «Archivos» en la raíz —donde el nombre de la ruta
+// es "." y no dice nada—.
+func tituloDeListado(r almacen.RutaSegura) string {
+	if r.EsRaiz() {
+		return "Archivos"
+	}
+	return r.Nombre()
 }

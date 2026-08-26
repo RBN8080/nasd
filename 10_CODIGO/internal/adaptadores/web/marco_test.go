@@ -69,10 +69,10 @@ func TestElRailSoloPintaLosModulosQueLaSesionPuedeAbrir(t *testing.T) {
 // positivos que esconderían justo el defecto que esta prueba busca.
 func extraerRail(t *testing.T, cuerpo string) string {
 	t.Helper()
-	re := regexp.MustCompile(`(?s)<nav class="rail">.*?</nav>`)
+	re := regexp.MustCompile(`(?s)<aside class="rail">.*?</aside>`)
 	m := re.FindString(cuerpo)
 	if m == "" {
-		t.Fatal("no se encontró <nav class=\"rail\"> en la página")
+		t.Fatal("no se encontró <aside class=\"rail\"> en la página")
 	}
 	return m
 }
@@ -203,7 +203,7 @@ func TestLaPaginaDeSeguridadDeclaraElAlcanceDeLaGrafica(t *testing.T) {
 	if !strings.Contains(cuerpo, "Actividad por día") {
 		t.Fatal("falta la sección de actividad")
 	}
-	if !strings.Contains(cuerpo, "Sin rechazos en esta ventana.") {
+	if !strings.Contains(cuerpo, "sin rechazos en la ventana") {
 		t.Errorf("sin eventos, la página no declaró que no hay datos:\n%s", cuerpo)
 	}
 }

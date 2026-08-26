@@ -14,38 +14,31 @@
      producto NO es un respaldo, y ni la interfaz ni la documentación pueden
      ofrecer, sugerir ni automatizar el borrado del origen tras subir. -->
 
-<nav class="migas">
-  {{range .Migas}}<a href="{{listadoCon . $.Orden}}">{{.Nombre}}</a>{{end}}
-</nav>
-
-<!-- LAS ACCIONES VIVEN AQUÍ, NO AL PIE. Antes estaban debajo de la tabla,
-     que es donde nadie las busca: en cualquier gestor de archivos el
-     «subir» y el «crear carpeta» están arriba y a la vista.
+<!-- LA BARRA DE ÓRDENES DE ARCHIVOS. «Estado», «Seguridad», «Cuentas» y
+     «Salir» ya NO viven aquí (ADR-0075): son navegación entre módulos y su
+     sitio es el rail. Lo que queda es lo que Archivos, y solo Archivos, sabe
+     hacer.
 
      Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
-     purismo: ADR-0027 mantiene un camino de subida sin JavaScript, y si
-     estos menús dependieran de JS, un navegador sin él se quedaría sin
-     poder crear carpetas ni subir por el formulario de respaldo.
-     menus.js solo añade el cierre al pulsar fuera; sin él los menús
-     siguen funcionando con su propio botón.
-
-     ESTADO, ADMINISTRACIÓN, SEGURIDAD Y SALIR YA NO VIVEN AQUÍ (ADR-0075):
-     son navegación entre módulos, no órdenes de este módulo, y ahora viven
-     en el rail — construido una sola vez por marco.go a partir de la MISMA
-     regla que antes se repetía en cada {{"{{if}}"}} de esta plantilla. Lo
-     que queda es lo que Archivos, y solo Archivos, sabe hacer. -->
-<div class="barra-acciones">
-  <details class="menu">
-    <summary class="boton-barra">Subir</summary>
+     purismo — ADR-0027 mantiene un camino de subida SIN JavaScript, y si
+     estos menús dependieran de JS, un navegador sin él se quedaría sin poder
+     crear carpetas ni usar el formulario de respaldo. menus.js solo añade el
+     cierre al pulsar fuera. -->
+<div class="ordenes">
+  <details>
+    <summary class="od">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M12 3v13M7 8l5-5 5 5"/></svg>
+      Subir
+    </summary>
     <div class="menu-panel">
       <!-- Camino normal: tus, reanudable (RF-12). -->
       <div id="zona-subida" data-destino="{{.Ruta.Rel}}" data-csrf="{{.Csrf}}">
-        <label for="archivos">Archivos a subir</label>
-        <input type="file" id="archivos" multiple>
-        <button type="button" id="boton-subir">Subir</button>
+        <label class="cmp" for="archivos">Archivos a subir
+          <input type="file" id="archivos" multiple>
+        </label>
+        <button type="button" id="boton-subir" class="bt">Subir</button>
         <ul id="progreso"></ul>
       </div>
-
       <!-- Camino de respaldo SIN JavaScript (ADR-0027). -->
       <noscript>
         <form method="post" action="/subir" enctype="multipart/form-data">
@@ -54,150 +47,146 @@
           <input type="hidden" name="csrf" value="{{.Csrf}}">
           <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
           <input type="file" name="archivo" required>
-          <button type="submit">Subir (sin JavaScript)</button>
+          <button type="submit" class="bt">Subir (sin JavaScript)</button>
         </form>
       </noscript>
     </div>
   </details>
 
-  <details class="menu">
-    <summary class="boton-barra">Nueva carpeta</summary>
+  <details>
+    <summary class="od">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
+      Nueva carpeta
+    </summary>
     <div class="menu-panel">
       <form method="post" action="/directorio">
         <input type="hidden" name="csrf" value="{{.Csrf}}">
         <input type="hidden" name="destino" value="{{.Ruta.Rel}}">
-        <input type="text" name="nombre" placeholder="Nombre de la carpeta" required>
-        <button type="submit">Crear</button>
+        <label class="cmp" for="nombre-carpeta">Nombre
+          <input type="text" id="nombre-carpeta" name="nombre" placeholder="Nombre de la carpeta" required>
+        </label>
+        <button type="submit" class="bt">Crear</button>
       </form>
     </div>
   </details>
 
   {{/* «Usuarios» — atajo a homeUsers/, solo para el superusuario.
-       NO ES UNA PUERTA NUEVA: homeUsers/ sigue siendo una carpeta
-       navegable dentro de la raíz (ADR-0055), y sigue sin ruta propia ni
-       envoltura soloSuperusuario en el servidor: /ver/homeUsers pasa por
-       conAlmacen igual que cualquier otro /ver, y el aislamiento de
-       SIEMPRE decide qué hay dentro. Para un usuario normal, esa ruta cae
-       dentro de SU PROPIA carpeta —nunca la de la casa— y no encontraría
-       nada; se esconde para no ofrecer un enlace que no lleva a ningún
-       lado, no porque haga falta cerrarlo.
-       DESDE EL 06/08 YA NO APARECE EN EL LISTADO de la raíz del
-       superusuario —verListado la filtra, ver manejadores.go—, pedido
-       expresamente para que este botón deje de ser una segunda ruta a lo
-       mismo. El filtro no reemplaza este atajo: sin él, homeUsers/ dejaría
-       de ser alcanzable sin teclear la URL a mano. */}}
-  {{if .EsSuperusuario}}<a class="boton-barra" href="/ver/homeUsers">Usuarios</a>{{end}}
+       NO ES UNA PUERTA NUEVA: homeUsers/ sigue siendo una carpeta navegable
+       dentro de la raíz (ADR-0055), sin ruta propia ni envoltura
+       soloSuperusuario. Para un usuario normal esa ruta cae dentro de SU
+       carpeta y no encontraría nada; se esconde para no ofrecer un enlace
+       que no lleva a ningún lado, no porque haga falta cerrarlo. */}}
+  {{if .EsSuperusuario}}
+  <a class="od" href="/ver/homeUsers">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="8" r="3"/></svg>
+    Usuarios
+  </a>
+  {{end}}
+
+  {{/* La miga de pan vive en la barra de órdenes, a la derecha: dice DÓNDE
+       se está, que es contexto de este módulo y de ninguno más. */}}
+  <nav class="miga rango">
+    {{range .Migas}}<a href="{{listadoCon . $.Orden}}">{{if .EsRaiz}}Inicio{{else}}{{.Nombre}}{{end}}</a>{{end}}
+  </nav>
 </div>
 
-{{if .Mensaje}}<p class="mensaje mensaje-modulo {{if .EsError}}error{{end}}">{{.Mensaje}}</p>{{end}}
+{{template "marco-cuerpo" .}}
 
-<main class="cuerpo-modulo">
-<table class="archivos">
+{{if .Mensaje}}<p class="msg {{if .EsError}}mal{{end}}">{{.Mensaje}}</p>{{end}}
+{{if .Busqueda}}<p class="nota">Filtrando por <b>{{.Busqueda}}</b> — {{len .Entradas}} de {{add (len .Entradas) .Descartadas}} entradas. <a href="{{listadoCon .Ruta .Orden}}">Quitar el filtro</a></p>{{end}}
+
+<div class="t-arc">
   <!-- LOS ENCABEZADOS ORDENAN, Y CADA UNO TIENE UNA SOLA DIRECCIÓN (P-3).
        No alternan: pulsar dos veces «Tamaño» no invierte nada. Lo pidió así
        el responsable y la razón se sostiene sola — la dirección útil de cada
        columna no es discutible: los nombres se buscan de la A a la Z, los
        archivos que estorban son los grandes, y de las fechas interesa lo
-       recién tocado. Un sentido que cambia obliga a mirar el encabezado
-       para saber qué se está viendo.
-       El orden viaja en la URL, así que un enlace copiado lo conserva. -->
-  <thead><tr>
-    <th><a class="orden{{if eq .Orden "nombre"}} orden-activo{{end}}" href="{{listadoCon .Ruta "nombre"}}">Nombre</a></th>
-    <th><a class="orden{{if eq .Orden "tamano"}} orden-activo{{end}}" href="{{listadoCon .Ruta "tamano"}}">Tamaño</a></th>
-    <th><a class="orden{{if eq .Orden "modificado"}} orden-activo{{end}}" href="{{listadoCon .Ruta "modificado"}}">Modificado</a></th>
-    <th></th>
-  </tr></thead>
-  <tbody>
-  {{if not .Ruta.EsRaiz}}
-    <tr><td colspan="4"><a href="{{listadoCon .Ruta.Padre $.Orden}}">.. subir</a></td></tr>
-  {{end}}
-  {{range .Entradas}}
-    <tr>
+       recién tocado. El orden viaja en la URL, así que un enlace copiado lo
+       conserva. -->
+  <div class="th">
+    <a class="{{if eq .Orden "nombre"}}act{{end}}" href="{{listadoCon .Ruta "nombre"}}">Nombre</a>
+    <a class="{{if eq .Orden "tamano"}}act{{end}}" href="{{listadoCon .Ruta "tamano"}}">Tamaño</a>
+    <a class="{{if eq .Orden "modificado"}}act{{end}}" href="{{listadoCon .Ruta "modificado"}}">Modificado</a>
+    <span></span>
+  </div>
+  <div class="fls">
+    {{if not .Ruta.EsRaiz}}
+    <div class="fl">
+      <div class="cl"><a class="nomb" href="{{listadoCon .Ruta.Padre $.Orden}}">
+        <span class="ico-f"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+        <span class="txt">Subir un nivel</span></a></div>
+      <div class="cl"></div><div class="cl"></div><div class="cl"></div>
+    </div>
+    {{end}}
+    {{range .Entradas}}
+    <div class="fl">
       <!-- EL NOMBRE ABRE; SOLO EL MENÚ DESCARGA (RF-25). Hasta D-23 esto
            apuntaba a /descargar, que ordena «attachment»: el navegador hacía
            lo correcto y el producto pedía lo que no quería.
-           Las imágenes van a una PESTAÑA NUEVA, que es lo que pidió el
-           responsable — PERO SOLO SI ESTA PÁGINA LLEGÓ POR HTTPS.
-           EL MOTIVO, encontrado el 2026-08-06 con el diario del propio nodo,
-           no con una suposición: en la LAN, sobre http://192.168.1.38, Safari
-           en iOS bloquea la navegación de target=_blank hacia una URL http://
-           ANTES de emitir la petición —cero peticiones de imagen llegaron a
-           nasd durante las pruebas del responsable, aunque PDF y vídeo, que
-           navegan en la MISMA pestaña, sí llegaban y respondían 200—. No
-           depende de qué responda el puerto 443: se probó cerrando esa vía
-           por completo (ADR-0053) y el bloqueo persistió. Brave no impone
-           esa restricción y por eso solo fallaba ahí.
-           Mismo criterio que Secure en la cookie de sesión (ADR-0046):
-           r.TLS != nil. Por HTTPS —el dominio público, o la LAN cuando
-           resuelve por IPv6 (08_WEB_EXPUESTA.md §2)— las imágenes SÍ abren en
-           pestaña nueva. Por HTTP en la LAN abren en la misma, como el resto:
-           degradado, no roto. «noopener» porque abrir con target sin él le
-           entrega a la página destino una referencia a esta.
-
+           Las imágenes van a una PESTAÑA NUEVA, pero SOLO si esta página
+           llegó por HTTPS. El motivo, encontrado el 2026-08-06 con el diario
+           del propio nodo: en la LAN sobre http://, Safari en iOS bloquea la
+           navegación de target=_blank hacia una URL http:// ANTES de emitir
+           la petición. Por HTTPS las imágenes SÍ abren en pestaña nueva; por
+           HTTP abren en la misma, como el resto: degradado, no roto.
            MINIATURA — rector §7.nonies.bis. «loading="lazy"» es del propio
-           navegador y es TODA la estrategia de carga: solo pide
-           /miniatura de las filas que entran en pantalla, así que abrir
-           una carpeta con 500 fotos no dispara 500 peticiones. No hace
-           falta una línea de JavaScript para esto. Si /miniatura no tiene
-           nada que ofrecer —sin miniatura EXIF, o la función ni siquiera
-           está configurada—, responde 404 y el navegador simplemente deja
-           el hueco vacío: no hay imagen rota, «onerror» de sobra. -->
-      <td>{{if .EsDirectori}}<a class="dir" href="{{listadoCon .Ruta $.Orden}}">{{.Nombre}}/</a>
-          {{else}}{{$tipo := apertura .Nombre}}{{if eq $tipo.Clase "imagen"}}<img class="miniatura" src="/miniatura/{{rutaURL .Ruta.Rel}}" alt="" loading="lazy">{{end}}<a href="{{abrirCon .Ruta $.Orden}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>{{.Nombre}}</a>{{end}}</td>
-      <td class="num">{{if not .EsDirectori}}{{tamano .Tamano}}{{end}}</td>
-      <td class="num">{{fecha .Modificado}}</td>
-      <td class="num acciones-fila">
-        <!-- Un solo botón en lugar de un formulario entero por fila. La tabla
-             pasa de arrastrarse de lado en el móvil a caber, y las acciones
-             destructivas dejan de estar a un clic de distancia por accidente. -->
-        <details class="menu menu-fila">
-          <summary class="boton-puntos" title="Acciones" aria-label="Acciones"></summary>
-          <div class="menu-panel menu-panel-fila">
-            <!-- PRIMERA OPCIÓN DEL MENÚ, y el único gesto de toda la interfaz
-                 que descarga. Va en <form> y no en un enlace para que se lea
-                 como las demás acciones del panel. -->
+           navegador y es TODA la estrategia de carga: abrir una carpeta con
+           500 fotos no dispara 500 peticiones. Si /miniatura no tiene nada
+           que ofrecer responde 404 y queda el icono de la extensión. -->
+      <div class="cl">
+        {{if .EsDirectori}}
+        <a class="nomb" href="{{listadoCon .Ruta $.Orden}}">
+          <span class="ico-f"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+          <span class="txt">{{.Nombre}}</span>
+        </a>
+        {{else}}{{$tipo := apertura .Nombre}}
+        <a class="nomb" href="{{abrirCon .Ruta $.Orden}}"{{if and $.EsHTTPS (eq $tipo.Clase "imagen")}} target="_blank" rel="noopener"{{end}}>
+          {{if eq $tipo.Clase "imagen"}}<img class="ico-f" src="/miniatura/{{rutaURL .Ruta.Rel}}" alt="" loading="lazy">
+          {{else}}<span class="ico-f ext">{{ext .Nombre}}</span>{{end}}
+          <span class="txt">{{.Nombre}}</span>
+        </a>
+        {{end}}
+      </div>
+      <div class="cl"><span class="et">Tamaño</span><span class="ct2">{{if .EsDirectori}}—{{else}}{{tamano .Tamano}}{{end}}</span></div>
+      <div class="cl"><span class="et">Modif.</span><span class="ct2">{{fecha .Modificado}}</span></div>
+      <div class="cl">
+        <!-- Un solo botón en lugar de un formulario entero por fila: la
+             tabla cabe en el móvil y las acciones destructivas dejan de
+             estar a un clic por accidente. -->
+        <details class="menu-fila">
+          <summary class="menu-p" title="Acciones" aria-label="Acciones">⋯</summary>
+          <div class="menu-panel">
+            <!-- PRIMERA OPCIÓN, y el único gesto de toda la interfaz que
+                 descarga. Va en <form> para que se lea como las demás. -->
             {{if not .EsDirectori}}
             <form method="get" action="/descargar/{{rutaURL .Ruta.Rel}}">
-              <button type="submit">Descargar</button>
+              <button type="submit" class="bt">Descargar</button>
             </form>
             {{end}}
-            {{/* RENOMBRAR, MOVER Y BORRAR CUELGAN DE acotadoPorRed (sesion.go).
-                 Desde Internet, y solo al superusuario, no se ofrecen: RF-18
-                 dice que la confirmación de borrado es «la única barrera del
-                 sistema» y desde fuera esa barrera está a una contraseña de
-                 distancia. Esconderlas no es el control —lo es soloDesdeDentro
-                 en la tabla de rutas—, es no ofrecer un botón que va a
-                 responder 403. */}}
+            {{/* RENOMBRAR, MOVER Y BORRAR CUELGAN DE acotadoPorRed
+                 (sesion.go). Desde Internet, y solo al superusuario, no se
+                 ofrecen: RF-18 dice que la confirmación de borrado es «la
+                 única barrera del sistema» y desde fuera esa barrera está a
+                 una contraseña de distancia. Esconderlas no es el control
+                 —lo es soloDesdeDentro en la tabla de rutas—, es no ofrecer
+                 un botón que va a responder 403. */}}
             {{if $.PuedeAdministrar}}
             <form method="post" action="/renombrar">
               <input type="hidden" name="csrf" value="{{$.Csrf}}">
               <input type="hidden" name="origen" value="{{.Ruta.Rel}}">
-              <label>Renombrar
+              <label class="cmp">Renombrar
                 <input type="text" name="destino" value="{{.Nombre}}">
               </label>
-              <button type="submit">Guardar</button>
+              <button type="submit" class="bt">Guardar</button>
             </form>
-            <!-- MOVER YA NO ES UN CAMPO DE TEXTO (ADR-0054).
-                 Aquí hubo un «Mover a» con una ruta escrita a mano, y en uso
-                 real no funcionó: el servidor distinguía mover de renombrar
-                 por si el texto llevaba una barra, regla que la interfaz
-                 nunca enseñó. Se escribía el nombre de la carpeta destino y
-                 salía «ya existe un elemento con ese nombre». El destino se
-                 elige ahora navegando, que es lo único que no se puede
-                 escribir mal.
-                 VA EN <form method="get">, IGUAL QUE «Descargar», y no en un
-                 enlace: en el panel conviven botones y el enlace salía suelto
-                 en color de vínculo, como si fuera de otra familia. La acción
-                 es la misma clase de cosa que las de al lado y tiene que
-                 leerse así.
-                 Sin «?a=»: cuando no se indica carpeta, verMover empieza por
-                 la que contiene el elemento, que es adonde llevaba ese
-                 parámetro. Un formulario GET además reescribe la consulta, así
-                 que ponerlo en el «action» no habría servido de nada. -->
+            <!-- MOVER YA NO ES UN CAMPO DE TEXTO (ADR-0054): aquí hubo un
+                 «Mover a» con la ruta escrita a mano y en uso real no
+                 funcionó. El destino se elige navegando, que es lo único
+                 que no se puede escribir mal. -->
             <form method="get" action="/mover/{{rutaURL .Ruta.Rel}}">
-              <button type="submit">Mover…</button>
+              <button type="submit" class="bt">Mover…</button>
             </form>
-            <a class="destructivo" href="/borrar/{{rutaURL .Ruta.Rel}}">Borrar</a>
+            <a class="bt pel" href="/borrar/{{rutaURL .Ruta.Rel}}">Borrar</a>
             {{else}}
             {{/* El menú no se queda vacío: dice DÓNDE se puede, que es lo que
                  convierte una ausencia desconcertante en una regla legible. */}}
@@ -205,17 +194,18 @@
             {{end}}
           </div>
         </details>
-      </td>
-    </tr>
-  {{else}}
-    <tr><td colspan="4" class="vacio">Carpeta vacía</td></tr>
-  {{end}}
-  </tbody>
-</table>
-{{if .Truncado}}<p class="mensaje error">Listado recortado: hay más entradas de las que se muestran.</p>{{end}}
-{{if .Ocultas}}<p class="oculto">{{.Ocultas}} elemento(s) oculto(s) — nombres que empiezan por punto, normalmente temporales del sistema o del iPhone.</p>{{end}}
-</main>
-</div>{{/* cierra .cont — Archivos no tiene panel de detalle */}}
+      </div>
+    </div>
+    {{else}}
+    <div class="vacio">{{if .Busqueda}}Ningún nombre contiene «{{.Busqueda}}» en esta carpeta.{{else}}Carpeta vacía.{{end}}</div>
+    {{end}}
+  </div>
+</div>
+
+{{if .Truncado}}<p class="msg mal">Listado recortado: hay más entradas de las que se muestran.</p>{{end}}
+{{if .Ocultas}}<p class="nota">{{.Ocultas}} elemento(s) oculto(s) — nombres que empiezan por punto, normalmente temporales del sistema o del iPhone.</p>{{end}}
+
+{{template "marco-fin" .}}
 {{template "marco-cierra" .}}
 
 <script src="/estatico/menus.js"></script>
