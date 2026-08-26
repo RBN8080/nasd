@@ -4,63 +4,83 @@
 {{template "cabeza" "NAS — Seguridad"}}
 </head>
 <body>
+{{template "marco-abre" .}}
 
-<header>
-  <div class="cabecera-superior">
-    <div class="titulo-estado">
-      <span class="titulo-pagina">Seguridad</span>
-      <!-- EL ESTADO DEL FILTRO VA DONDE SE MIRA PRIMERO, no contado en prosa.
-           Sustituye a la frase «la página abre mostrando solo Internet», que
-           existía únicamente porque el desplegable que lo demuestra queda
-           media pantalla más abajo (ADR-0065). Se compone en el servidor a
-           partir de las MISMAS listas que pintan los desplegables, así que no
-           puede decir una cosa mientras el control enseña otra. -->
-      <span class="filtro-activo">{{.FiltroActivo}}</span>
-    </div>
-    <!-- La MISMA barra y las MISMAS clases que listado.html, estado.html y
-         administracion.html. Ver el comentario junto a .cabecera-superior en
-         estilo.css: tener una clase propia aquí es lo que dejó a /estado sin
-         los arreglos de alineación que recibía la otra página. -->
-    <div class="barra-acciones">
-      <a class="boton-barra" href="/">Archivos</a>
-      <a class="boton-barra" href="/estado">Estado</a>
-      {{if .PuedeAdministrar}}<a class="boton-barra" href="/administracion">Administración</a>{{end}}
-      <form method="post" action="/salir" class="salir">
-        <button type="submit">Salir</button>
+<!-- ESTADO, ADMINISTRACIÓN Y SALIR YA NO VIVEN AQUÍ (ADR-0075): viven en el
+     rail. El filtro sí es propio de este módulo, y por eso se queda —bajo
+     demanda, plegado tras «Filtrar», que es lo único que puede cambiar lo
+     que esta tabla enseña. -->
+<div class="barra-acciones">
+  <details class="menu">
+    <summary class="boton-barra">Filtrar</summary>
+    <div class="menu-panel">
+      <!-- method="get": el filtro viaja en la URL, igual que el orden del
+           listado (P-3). Así un filtro concreto se puede guardar en
+           marcadores y compartir, y la página no guarda estado de nadie —
+           la regla R1 de ADR-0015. -->
+      <form method="get" action="/seguridad" class="filtros">
+        <div>
+          <label for="red">Origen</label>
+          <select id="red" name="red">
+            {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+          </select>
+        </div>
+        <div>
+          <label for="horas">Ventana</label>
+          <select id="horas" name="horas">
+            {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+          </select>
+        </div>
+        <div>
+          <label for="motivo">Motivo</label>
+          <select id="motivo" name="motivo">
+            {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
+          </select>
+        </div>
+        <div class="acciones-filtro">
+          <button type="submit">Filtrar</button>
+        </div>
       </form>
     </div>
-  </div>
-</header>
+  </details>
+  <!-- EL ESTADO DEL FILTRO VA DONDE SE MIRA PRIMERO, no contado en prosa —
+       igual que antes, solo que junto al botón que lo cambia y no junto al
+       título: es un adjetivo del control, no de la página entera. -->
+  <span class="filtro-activo">{{.FiltroActivo}}</span>
+</div>
 
-<main>
+<main class="cuerpo-modulo">
 
 <!-- LA NOTA QUE HACE HONESTA LA PÁGINA ENTERA, en una línea.
-     Tenía cinco frases: el índice de la página —que ya dan los encabezados—,
-     la explicación de que abrir sin sesión produce un rechazo —que ya dice la
-     columna «Motivo»— y el estado del filtro, que ahora está arriba.
      La cifra del historial se dice con Capacidad y no con los eventos de la
      ventana: aquello llegaba a afirmar «se conservan los 3 más recientes de
      5000», que es falso. Se conservan 2000. -->
-<!-- LOS TEXTOS DE ESTA PAGINA SE REDUJERON A UNA LINEA POR SECCION EL
-     2026-08-24, POR DECISION DEL RESPONSABLE SOBRE CAPTURAS DEL PANEL EN USO:
-     «yo si me esfuerzo en entenderte lo logro, pero solamente tu te lo explicas
-     para ti [...] busco que se vea profesional y no algo casero».
-
-     El diagnostico era correcto y el defecto compartido: estas leyendas
-     explicaban POR QUE se diseño asi —el razonamiento, las salvedades, lo que
-     una cifra no demuestra— en vez de decir QUE es la tabla. Eso es un
-     comentario de codigo, y su sitio es el codigo.
-
-     LA REGLA QUE QUEDA: una linea por seccion, que diga que contiene. Los datos
-     condicionales se quedan, porque son HECHOS y no explicaciones —cuantos
-     rechazos se conservan, cuantos cierres fallaron, desde cuando hay
-     paquetes—. Las definiciones retiradas viven en NAS_OPERACION.txt §15. -->
 {{if .Resumen.Truncado}}
 <p class="nota">
   Historial: <strong>{{.Capacidad}}</strong> rechazos conservados de
   <strong>{{.Resumen.TotalHistorico}}</strong> vistos.
 </p>
 {{end}}
+
+<!-- ACTIVIDAD POR DÍA (ADR-0075) — se pinta SOLO con lo que el anillo
+     recuerda de los eventos ya filtrados; el rótulo declara hasta cuándo
+     alcanza en vez de dar por hecho «doce días». Sin capa de acumulados por
+     hora —requisito de una fase futura, el panel SIEM— no hay serie más
+     larga que enseñar, y esta gráfica no promete una.
+     SVG con geometría en atributos numéricos (x/y/width/height) y color por
+     clase CSS: ninguno de los dos es «style="..."», así que «style-src
+     'self'» sin 'unsafe-inline' no se toca. -->
+<h2>Actividad por día</h2>
+<p class="nota">
+  {{if .ActividadDesde.IsZero}}Sin rechazos en esta ventana.{{else}}Desde {{fecha .ActividadDesde}}, dentro de lo que el anillo recuerda.{{end}}
+</p>
+<svg class="grafica-actividad" viewBox="0 0 300 90" role="img"
+     aria-label="Rechazos por día, últimos {{len .Actividad}} días">
+  {{range .Actividad}}
+  <rect class="barra{{if .Pico}} pico{{end}}" x="{{.X}}" y="{{.Y}}" width="{{.Ancho}}" height="{{.Alto}}"></rect>
+  <text class="eje" x="{{.EjeX}}" y="{{.EjeY}}">{{.Etiqueta}}</text>
+  {{end}}
+</svg>
 
 <!-- LO QUE HABLA DEL NODO Y NO DE QUIEN LLAMA — va PRIMERO de todo.
      Las tres tablas siguientes dicen qué hizo un extraño; esta dice qué hace
@@ -192,48 +212,12 @@
 </table>
 {{end}}
 
-<!-- LOS FILTROS VAN ARRIBA, ANTES DE LA TABLA QUE GOBIERNAN. Estaban debajo, y
-     debajo de la unica tabla que NO obedecia a la mitad de ellos, asi que
-     cambiar «Motivo» dejaba inmovil lo de arriba y parecia una averia.
-     Las capas de paquetes y conexiones no saben de motivos -un paquete no tiene
-     ninguno-, asi que con un motivo elegido la tabla se acota a las direcciones
-     que SI lo produjeron. Ver soloConRechazos en panel_seguridad.go. -->
-<h2>Filtros</h2>
-<!-- method="get": el filtro viaja en la URL, igual que el orden del listado
-     (P-3). Así un filtro concreto se puede guardar en marcadores y compartir,
-     y la página no guarda estado de nadie — la regla R1 de ADR-0015.
-
-     Se retiraron las cajas de «Dirección» y «Ruta contiene» —el responsable
-     declaró por uso real que no le servían— y el desplegable «Gravedad», que
-     filtraba por una columna que esta página no enseña en ninguna tabla
-     (ADR-0065). Con ellos se fue el botón «Quitar filtros», cuya etiqueta
-     además mentía: no quitaba filtros, restauraba el de Internet. -->
-<form method="get" action="/seguridad" class="filtros">
-  <div>
-    <label for="red">Origen</label>
-    <select id="red" name="red">
-      {{range .Redes}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-    </select>
-  </div>
-
-  <div>
-    <label for="horas">Ventana</label>
-    <select id="horas" name="horas">
-      {{range .Ventanas}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-    </select>
-  </div>
-
-  <div>
-    <label for="motivo">Motivo</label>
-    <select id="motivo" name="motivo">
-      {{range .Motivos}}<option value="{{.Valor}}"{{if .Elegido}} selected{{end}}>{{.Etiqueta}}</option>{{end}}
-    </select>
-  </div>
-
-  <div class="acciones-filtro">
-    <button type="submit" class="boton-barra">Filtrar</button>
-  </div>
-</form>
+<!-- LOS FILTROS SE MOVIERON A LA BARRA DE ARRIBA (ADR-0075): el mismo
+     formulario, bajo demanda tras «Filtrar», en vez de siempre abierto entre
+     la tabla y lo que gobierna. Las capas de paquetes y conexiones no saben
+     de motivos -un paquete no tiene ninguno-, asi que con un motivo elegido
+     la tabla se acota a las direcciones que SI lo produjeron. Ver
+     soloConRechazos en panel_seguridad.go. -->
 
 <!-- LA TABLA VA PRIMERA, ANTES INCLUSO DEL RESUMEN: es lo unico que el
      responsable declaro querer ver, y ahora ademas es lo unico que ve a quien
@@ -293,7 +277,11 @@
   <tbody>
   {{range .Origenes}}
     <tr{{if .Destacar}} class="g-{{.Gravedad}}"{{end}}>
-      <td class="rotulo">{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</td>
+      <!-- La dirección abre el detalle («?origen=», ADR-0075): la MISMA
+           atribución, conducta, señales y evidencia que ya se pintan más
+           abajo en esta fila, solo que también disponibles en un panel — sin
+           dirección válida no hay «?origen=» que construir. -->
+      <td class="rotulo">{{if .IP.IsValid}}<a href="?origen={{.IP}}">{{.IP}}</a>{{else}}sin dirección{{end}}</td>
       {{if $.SinFiltroDeRed}}<td>{{.Red.Etiqueta}}</td>{{end}}
       <!-- LA COLUMNA QUE HACE INTERPRETABLE LA FILA. «203.0.113.7» no le dice
            nada a nadie; «DIGITALOCEAN-ASN · DE» si. Los de casa no se resuelven
@@ -536,6 +524,76 @@
 </details>
 
 </main>
+</div>{{/* cierra .cont */}}
+{{if .Detalle}}
+<aside class="detalle">
+  {{with .Detalle}}
+  <div class="det-cabecera">
+    <div><h3>{{if .IP.IsValid}}{{.IP}}{{else}}sin dirección{{end}}</h3><div class="dip">{{.Red.Etiqueta}}</div></div>
+    <a class="det-cerrar" href="/seguridad" aria-label="Cerrar">✕</a>
+  </div>
+
+  {{if .TieneGeo}}
+  <div class="det-bloque">
+    <h4>Atribución</h4>
+    <div class="det-fila"><span>Operador</span><b>{{.Geo.Nombre}}</b></div>
+    {{if .Geo.Pais}}<div class="det-fila"><span>País</span><b>{{.Geo.Pais}}</b></div>{{end}}
+    <div class="det-fila"><span>AS</span><b>{{.Geo.ASN}}</b></div>
+  </div>
+  {{end}}
+
+  <div class="det-bloque">
+    <h4>Conducta</h4>
+    <div class="det-fila"><span>Primera</span><b>{{fecha .Primera}}</b></div>
+    <div class="det-fila"><span>Última</span><b>{{fecha .Ultima}}</b></div>
+    <div class="det-fila"><span>Rechazos</span><b>{{.Rechazos}}</b></div>
+    {{if .RutasInexistentes}}<div class="det-fila"><span>Rutas nuevas</span><b>{{.RutasInexistentes}}</b></div>{{end}}
+  </div>
+
+  {{if .Senales}}
+  <div class="det-bloque">
+    <h4>Señales</h4>
+    {{range .Senales}}<p class="nota"><strong>{{.Etiqueta}}</strong> — {{.Explicacion}}</p>{{end}}
+  </div>
+  {{end}}
+
+  {{if .Evidencia}}
+  <div class="det-bloque">
+    <h4>Evidencia · {{len .Evidencia}} de {{.SondasVistas}}</h4>
+    {{range .Evidencia}}<div class="det-fila"><span>{{.Metodo}} {{.Ruta}}</span><b>{{.Veces}} · {{.Estado}}</b></div>{{end}}
+  </div>
+  {{end}}
+
+  <div class="det-bloque">
+    <h4>Estado</h4>
+    {{if .Bloqueo}}
+    <p class="nota"><strong>Bloqueo puesto a mano</strong> — {{.Bloqueo.Alcance.Etiqueta}}, {{.Frenados}} conexiones cerradas.</p>
+    <form method="post" action="/seguridad/retirar">
+      <input type="hidden" name="csrf" value="{{$.Csrf}}">
+      <input type="hidden" name="id" value="{{.Bloqueo.ID}}">
+      <button type="submit" class="destructivo">Retirar el bloqueo</button>
+    </form>
+    {{else if .Apartado}}
+    <p class="nota"><strong>Apartado por conducta</strong> — el nodo solo, hasta {{fecha .Apartado.Hasta}}, {{.Frenados}} conexiones cerradas.</p>
+    <form method="post" action="/seguridad/soltar">
+      <input type="hidden" name="csrf" value="{{$.Csrf}}">
+      <input type="hidden" name="ip" value="{{.IP}}">
+      <button type="submit">Soltar</button>
+    </form>
+    {{else}}
+    <p class="nota">Sin restricción vigente.</p>
+    {{if and .IP.IsValid .Red.DeFuera}}
+    <form method="get" action="/seguridad/bloquear">
+      <input type="hidden" name="ip" value="{{.IP}}">
+      <button type="submit" class="boton-barra">Bloquear…</button>
+    </form>
+    {{end}}
+    {{end}}
+  </div>
+  {{end}}
+</aside>
+{{end}}
+{{template "marco-cierra" .}}
 </body>
 </html>
 {{end}}
