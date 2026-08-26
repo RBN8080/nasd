@@ -207,3 +207,40 @@ func TestLaPaginaDeSeguridadDeclaraElAlcanceDeLaGrafica(t *testing.T) {
 		t.Errorf("sin eventos, la página no declaró que no hay datos:\n%s", cuerpo)
 	}
 }
+
+// LA REJILLA DEL MARCO NO RESERVA LA COLUMNA DEL DETALLE.
+//
+// Se desplegó reservándola siempre —«grid-template-columns: var(--rail)
+// minmax(0,1fr) var(--det)»— y el efecto fue que en Archivos, que nunca abre
+// panel, y en Estado sin indicador seleccionado, la tabla se cortaba a 308 px
+// del borde derecho y dejaba una franja negra. El responsable lo reportó
+// sobre captura el 2026-08-26, con una flecha de lado a lado.
+//
+// Aquí no hay navegador, así que esto no puede medir píxeles: lo que
+// comprueba es la CAUSA, que sí es texto. «var(--det)» puede aparecer donde
+// se declara el ancho del panel —dentro de una regla de «.detalle»— pero
+// NUNCA dentro de un «grid-template-columns», porque una pista de ancho fijo
+// ocupa el hueco haya o no haya nada dentro. Que la columna sea «auto» es lo
+// que la deja medir cero cuando la plantilla no pinta ningún panel, y las
+// plantillas ya solo lo pintan bajo {{if .Detalle}}
+// (TestElDetalleSeAbreYSeCierraPorLaURLSinJavaScript comprueba esa mitad).
+func TestLaRejillaNoReservaAnchoParaUnPanelQueNoEsta(t *testing.T) {
+	hoja, ok := estaticos()["/estatico/estilo.css"]
+	if !ok {
+		t.Fatal("no está la hoja de estilos entre los recursos incrustados")
+	}
+	css := string(hoja.crudo)
+
+	pistas := regexp.MustCompile(`grid-template-columns:([^;}]*)`)
+	for _, m := range pistas.FindAllStringSubmatch(css, -1) {
+		if strings.Contains(m[1], "--det") {
+			t.Errorf("una rejilla reserva el ancho del detalle en sus pistas: %q\n"+
+				"el ancho va en la regla de «.detalle»; la pista va «auto» para poder medir cero",
+				strings.TrimSpace(m[0]))
+		}
+	}
+	if !strings.Contains(css, "width:var(--det)") {
+		t.Error("nadie declara ya el ancho del panel de detalle; con la pista en «auto» " +
+			"el panel se quedaría del ancho de su texto")
+	}
+}
