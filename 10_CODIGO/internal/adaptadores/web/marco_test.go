@@ -197,14 +197,25 @@ func TestElDetalleSeAbreYSeCierraPorLaURLSinJavaScript(t *testing.T) {
 // La gráfica de actividad declara su alcance en la propia página — no solo
 // en la función pura de internal/seguridad (ver pordia_test.go) — porque es
 // ahí donde alguien podría llegar a confiar en una promesa que no se hizo.
+//
+// EL RÓTULO DEJÓ DE DECIR «en la ventana» EL 2026-08-31, y no por estilo: ese
+// día la serie salió del filtro de ventana —era la causa de que el histórico
+// de días anteriores no apareciera nunca—, así que seguir diciéndolo habría
+// dejado la frase siendo falsa.
 func TestLaPaginaDeSeguridadDeclaraElAlcanceDeLaGrafica(t *testing.T) {
 	s := servidorConAuth(t)
 	cuerpo := peticionConSesion(t, s, "/seguridad").Body.String()
 	if !strings.Contains(cuerpo, "Actividad por día") {
 		t.Fatal("falta la sección de actividad")
 	}
-	if !strings.Contains(cuerpo, "sin rechazos en la ventana") {
+	if !strings.Contains(cuerpo, "sin rechazos registrados") {
 		t.Errorf("sin eventos, la página no declaró que no hay datos:\n%s", cuerpo)
+	}
+	// Y NO SE PINTA UNA SOLA BARRA: desde el 2026-08-31 la sección es una
+	// línea. Siguen existiendo <rect> —la franja del pico y las zonas
+	// sensibles del <title>—, así que lo que se vigila es que haya trazo.
+	if !strings.Contains(cuerpo, `<polyline class="gl"`) {
+		t.Error("la gráfica de actividad no lleva la polilínea: ¿volvieron las barras?")
 	}
 }
 

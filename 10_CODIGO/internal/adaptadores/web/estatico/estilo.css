@@ -271,10 +271,11 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 
 /* Gráfico */
 .grc{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);padding:var(--e3);}
-.grl{display:flex;align-items:flex-end;gap:3px;height:88px;}
-@container (min-width:620px){.grl{height:112px;gap:5px;}}
-.gre{display:flex;gap:3px;margin-top:6px;font-size:.56rem;color:var(--tx3);}
-@container (min-width:620px){.gre{gap:5px;font-size:.62rem;}}
+.gre{display:flex;margin-top:6px;font-size:.56rem;color:var(--tx3);}
+@container (min-width:620px){.gre{font-size:.62rem;}}
+/* El eje va SIN hueco entre rótulos y con cada uno centrado en su franja: son
+   las mismas doce franjas en las que la gráfica reparte los días, así que un
+   «gap» aquí y no allí desalineaba el número respecto de su punto. */
 .gre span{flex:1;text-align:center;min-width:0;}
 
 /* ═══ TABLAS ═══
@@ -300,14 +301,39 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .fl:hover{background:var(--n3);}
 .fl[aria-selected=true],.fl.sel{background:var(--acT);border-color:var(--acB);}
 .fl > *{min-width:0;}
-.cl{display:flex;align-items:baseline;gap:var(--e1);min-width:0;}
+/* LA CELDA EN MODO TARJETA ES UNA REJILLA, Y ESA ES LA CAUSA DEL DESBORDE
+   DEL TELÉFONO — no el ancho de ninguna pastilla.
+   Era «display:flex» sin envolver, así que TODO lo que cuelga de una celda se
+   ponía en fila: el rótulo, la fila de pastillas, los tres <details> de las
+   señales y el formulario de «Bloquear…». A 390 px eso son seis columnas de
+   texto de un dedo de ancho, y el cuerpo medía 664 px de contenido para 390 de
+   caja. Es literalmente la captura del 2026-08-29.
+   Con la rejilla, el rótulo se queda a la izquierda y TODO lo demás baja en
+   columna, cada cosa en su renglón y ninguna más ancha que la celda.
+   El «:has» es el mismo mecanismo que ya conmuta el filtro: una celda SIN
+   rótulo —el nombre de un archivo, el menú de acciones— no reserva los 58 px
+   y sigue ocupando el ancho entero, que es como se veía antes. */
+.cl{display:grid;grid-template-columns:minmax(0,1fr);
+  gap:var(--e0) var(--e1);align-items:baseline;min-width:0;}
+.cl:has(> .et){grid-template-columns:58px minmax(0,1fr);}
+.cl > .et{grid-column:1;}
+.cl:has(> .et) > :not(.et){grid-column:2;}
 .cl>.et{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);
-  font-weight:600;flex:0 0 58px;}
+  font-weight:600;}
 .cl .ip{font-family:"DM Mono",monospace;font-size:.74rem;word-break:break-all;line-height:1.3;}
 .cl .op{font-size:.7rem;color:var(--tx2);}
 .cl .ct2{font-family:"DM Mono",monospace;font-size:.75rem;line-height:1.5;
   flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:break-word;}
 .cl .ct2 small{color:var(--tx3);font-size:.64rem;}
+/* CADA CAPA DE «Actividad» ES UNA PIEZA, no un trozo de frase. En tarjeta van
+   en línea separadas por el punto medio; en la tabla, una debajo de otra. Sin
+   esto la columna partía «2026-08-30 08:32 →» por donde le cabía. */
+.ct2 .cp{white-space:nowrap;}
+.ct2 .cp + .cp::before{content:"· ";color:var(--tx3);}
+/* El intervalo SÍ puede bajar de línea —es lo único de la celda que no cabe
+   entero en ningún ancho razonable—, y es la mitad que faltaba de la regla de
+   las pastillas: el VALOR se parte, la PASTILLA no. */
+.ct2 .lapso{white-space:normal;}
 
 @container (min-width:1100px){
   .th{display:grid;gap:var(--e2);padding:0 var(--e2) 5px;border-bottom:1px solid var(--n4);}
@@ -323,9 +349,48 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
   .fl[aria-selected=true],.fl.sel{border-left-color:var(--ac);}
   .cl>.et{display:none;}
   .cl{display:block;}
+  .t-seg .ct2 .cp{display:block;}
+  .t-seg .ct2 .cp + .cp::before{content:none;}
   /* Rejillas por tipo de tabla */
-  .t-seg .th,.t-seg .fl{grid-template-columns:minmax(0,2.2fr) minmax(0,1.4fr) 76px minmax(128px,1.5fr);}
-  .t-blo .th,.t-blo .fl{grid-template-columns:minmax(0,2fr) 104px 84px 76px;}
+  /* ORÍGENES. El reparto anterior daba 2,2fr a «Dirección» —que solo tiene que
+     alojar una IPv6 de 27 caracteres— y 76 px a «Actividad», donde tres capas
+     y un intervalo de fechas se partían en cuatro renglones ilegibles. La
+     columna que necesitaba sitio era «Señales», que es la que lleva las
+     pastillas y la evidencia plegada: el recuadro rojo de la captura del
+     2026-08-29.
+     Se recorta lo que sobraba —Dirección y Operador—, «Actividad» pasa a un
+     ancho FIJO donde su contenido cabe sin partirse por la mitad, y todo lo
+     que se libera va a «Señales». */
+  .t-seg .th,.t-seg .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,.95fr) 124px minmax(0,2.8fr);}
+  /* «Operador» recorrido al centro, encabezado y celda a la vez: si solo se
+     centrara uno de los dos, la columna diría una cosa y su rótulo otra. */
+  /* «justify-content» Y NO SOLO «text-align»: los rotulos de «.th» son
+     inline-flex —lo pide el indicador de orden que llevan algunos—, y un
+     contenedor flexible no atiende a text-align. Se puso primero solo
+     text-align y no movio nada. La celda, en cambio, es un bloque corriente y
+     con text-align basta. */
+  .t-seg .th > :nth-child(2){justify-content:center;}
+  .t-seg .fl > .cl:nth-child(2){text-align:center;}
+  /* BLOQUEOS Y APARTADOS. «Alcance» tenía 104 px para dos pastillas, la fecha
+     de la base y el aviso de base nueva: de ahí salía la pastilla que se
+     dibujaba encima de «Frenados» y del botón. Se le da ancho de verdad a
+     costa de «Cubre», que era un 2fr casi vacío — y con eso el rótulo CUBRE
+     deja de quedarse solo contra el borde izquierdo. */
+  .t-blo .th,.t-blo .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 132px 96px;}
+  /* EL ROTULO RECORRIDO AL CENTRO ES SOLO EL DE «Cubre», y por eso lleva
+     modificador propio. Se pidio para «Bloqueos puestos», donde la columna es
+     ancha y el rotulo quedaba solo contra el borde; se aplico a «.t-blo» y
+     alcanzo tambien a «Respuestas inesperadas» y a «Apartados por conducta»,
+     donde el contenido es corto y el efecto fue el contrario: el rotulo
+     flotando en mitad de un hueco, lejos de la fila que titula. Reportado
+     sobre captura el 2026-08-31.
+     Las columnas 2 y 3 SI se centran en las tres tablas, porque ahi tambien se
+     centra el contenido y rotulo y celda comparten eje. */
+  .t-cub .th > :first-child{justify-content:center;}
+  .t-blo .th > :nth-child(2),
+  .t-blo .th > :nth-child(3){justify-content:center;}
+  .t-blo .fl > .cl:nth-child(2),.t-blo .fl > .cl:nth-child(3){text-align:center;}
+  .t-blo .fl > .cl:nth-child(2) .pls{justify-content:center;}
   .t-arc .th,.t-arc .fl{grid-template-columns:minmax(0,3fr) 96px 120px 40px;}
   .t-cta .th,.t-cta .fl{grid-template-columns:minmax(0,1.6fr) 132px 104px minmax(140px,1.4fr);}
   .t-est .th,.t-est .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,2fr) 116px;}
@@ -335,13 +400,36 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
   .t-cro .th,.t-cro .fl{grid-template-columns:132px minmax(0,1.4fr) minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,1.2fr);}
 }
 
-/* ═══ PASTILLAS — la regla es simple: NI SE ENCOGEN NI SE PARTEN ═══
-   Sin min-width, sin max-width, sin overflow-wrap. Cualquiera de esos
-   tres le daba permiso al navegador para dejarla en una letra. Si no
-   caben dos en una línea, flex-wrap las baja a la siguiente. */
-.pls{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+/* ═══ PASTILLAS — NO SE PARTEN MIENTRAS QUEPAN, Y NUNCA SE SALEN ═══
+
+   La regla anterior era «ni se encogen ni se parten», con «flex:0 0 auto» y
+   «white-space:nowrap». Contiene media verdad y por eso duró: evita que una
+   pastilla quede reducida a una letra. Pero una pastilla que NO puede
+   encogerse tampoco puede caber, y entonces se dibuja ENCIMA de la columna de
+   al lado — que es el traslape de «Apartados por conducta», donde «SONDEO DE
+   SOFTWARE QUE AQUÍ NO EXISTE» mide 240 px y su columna 104: la pastilla se
+   comía «Frenados» y el botón «Soltar».
+
+   La regla correcta tiene tres partes y las tres hacen falta:
+
+     1. «flex:0 1 auto» — puede encogerse, pero solo cuando hace falta. Con
+        flex-wrap, una línea que no llega a llenarse NO encoge a nadie: la
+        pastilla que no cabe baja a la siguiente línea antes que estrecharse.
+     2. «max-width:100%» — nunca más ancha que su celda. Es lo único que de
+        verdad impide el traslape, porque el resto son preferencias y esto es
+        un tope.
+     3. «overflow-wrap:anywhere» — cuando una pastilla es más ancha que la
+        celda ENTERA y ya no hay adónde bajarla, parte por dentro en vez de
+        salirse. Y a diferencia de «break-word», también reduce su tamaño
+        mínimo, que es lo que evita que el navegador la deje sobresalir igual.
+
+   Lo que la regla vieja protegía sigue protegido: el mínimo de un elemento
+   flexible es su contenido, así que ninguna pastilla se queda en una letra
+   mientras tenga sitio para su palabra más larga. */
+.pls{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0;}
 .p{
-  display:inline-block; flex:0 0 auto; white-space:nowrap;
+  display:inline-block; flex:0 1 auto; max-width:100%;
+  overflow-wrap:anywhere;
   font-size:.6rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
   padding:2px 7px; line-height:1.6; border-radius:var(--r1);
   border:1px solid currentColor;
@@ -364,7 +452,12 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .mt{display:grid;grid-template-columns:1fr;gap:3px;min-width:0;}
 @container (min-width:620px){.mt{grid-template-columns:164px 1fr 50px;align-items:center;gap:var(--e2);}}
 .mt > *{min-width:0;}
-.mt .mn{font-size:.72rem;display:flex;justify-content:space-between;gap:var(--e1);}
+/* Una ruta de sondeo puede medir mas que su columna —«/vendor/phpunit/…/
+   eval-stdin.php» son 51 caracteres— y sin permiso para partirse se dibujaba
+   sobre la barra de al lado. Misma regla que el VALOR de una celda: el texto
+   se parte, la pastilla no. */
+.mt .mn{font-size:.72rem;display:flex;justify-content:space-between;gap:var(--e1);
+  min-width:0;overflow-wrap:anywhere;}
 @container (min-width:620px){.mt .mn{display:block;}}
 .mt .mn i{font-style:normal;color:var(--tx3);font-family:"DM Mono",monospace;font-size:.68rem;}
 @container (min-width:620px){.mt .mn i{display:none;}}
@@ -479,13 +572,33 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .rail > .gr:last-of-type{margin-bottom:auto;}
 .salir-rail .od{width:100%;}
 
-/* La gráfica de actividad. Misma caja y misma altura que la maqueta; lo que
-   cambia es que las barras son <rect> de un SVG en vez de <div> con altura
-   en línea. El eje de días se queda tal cual, en «.gre». */
+/* LA GRÁFICA DE ACTIVIDAD — UNA LÍNEA.
+   Eran barras y no comunicaban: sin eje de valores, la altura de una barra
+   solo se puede juzgar contra la de al lado. La línea dice la tendencia, que
+   es lo que se puede afirmar sin escala, y la cifra exacta la da el <title>
+   del día. Corrección pedida el 2026-08-31.
+
+   «vector-effect:non-scaling-stroke» NO ES OPCIONAL AQUÍ. El SVG se estira al
+   ancho real con preserveAspectRatio="none", así que la transformación es
+   ANISÓTROPA: un trazo de 1,6 unidades saldría multiplicado por el factor
+   horizontal —once veces a 1100 px de ancho— y en vez de una línea se
+   dibujaría una franja. Con el efecto, el grosor se mide en píxeles de
+   pantalla y la deformación solo afecta a la POSICIÓN de los puntos, que es
+   justo lo que se quiere. Por el mismo motivo no hay círculos en los vértices:
+   un <circle> saldría convertido en una elipse tumbada. */
 .grl{display:block;width:100%;height:88px;}
 @container (min-width:620px){.grl{height:112px;}}
-.grl .b{fill:var(--n5);}
-.grl .b.pk{fill:var(--av);}
+.grl .gl{fill:none;stroke:var(--tx2);stroke-width:1.6;
+  stroke-linejoin:round;stroke-linecap:round;}
+.grl .ga{fill:var(--n4);}
+/* El día del pico se marca con su FRANJA y no con un punto de color: un punto
+   distinto sobre la línea se confunde con un vértice cualquiera, y la franja
+   además alinea el realce con el número del eje que hay debajo. Sigue siendo
+   la única señal de color de la gráfica. */
+.grl .gpk{fill:var(--av);opacity:.14;}
+/* La zona sensible del día. «transparent» y no «none»: con fill:none el <rect>
+   deja de recibir el puntero y el <title> no llega a salir nunca. */
+.grl .gz{fill:transparent;}
 
 /* La barra de progreso de una subida a medias. */
 .prog{display:block;width:100%;height:5px;background:var(--n3);}

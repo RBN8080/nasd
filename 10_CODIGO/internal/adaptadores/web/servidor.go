@@ -865,6 +865,9 @@ func (c *capturaDeEstado) Unwrap() http.ResponseWriter { return c.ResponseWriter
 // uno dejaría dos formatos distintos en la misma tabla.
 const formatoFecha = "2006-01-02 15:04"
 
+// formatoDiaSolo es el mismo dia sin la hora, para lo que se mide POR DIAS.
+const formatoDiaSolo = "2006-01-02"
+
 func funciones() template.FuncMap {
 	return template.FuncMap{
 		"tamano": func(n int64) string {
@@ -895,6 +898,12 @@ func funciones() template.FuncMap {
 		// las pruebas: hasta entonces ninguna fila habia tenido datos de las dos
 		// procedencias a la vez.
 		"fecha": func(t time.Time) string { return t.Local().Format(formatoFecha) },
+
+		// «dia» pinta SOLO la fecha, sin hora. Lo usa el rotulo de «Actividad
+		// por dia», cuyo extremo es un dia de calendario y no un instante: con
+		// «fecha» se leia «desde 2026-08-20 00:00», y esa medianoche es un
+		// artefacto del truncado, no un dato que nadie haya medido.
+		"dia": func(t time.Time) string { return t.Local().Format(formatoDiaSolo) },
 
 		// «Primera» y «Última» eran DOS columnas en el panel de seguridad y son
 		// un intervalo: se funden en una (ADR-0065).

@@ -65,24 +65,99 @@
 <p class="nota">Las tres no se restan entre sí: <b>nas-sensor</b> reinicia su historial al arrancar. Paquetes registrados desde el {{fecha .PaquetesDesde}}.</p>
 {{end}}
 
-<!-- ACTIVIDAD POR DÍA. Se pinta SOLO con lo que el anillo recuerda; el rótulo
-     declara hasta cuándo alcanza en vez de dar por hecho doce días. Sin capa
-     de acumulados por hora —requisito de la fase SIEM, que no existe— no hay
-     serie más larga que enseñar, y esta gráfica no promete una.
-     La escala es la raíz cuadrada y SE DICE: con lineal, un barrido de 732
-     contra treintenas dejaría once columnas planas. Ver graficaDeActividad. -->
+<!-- ACTIVIDAD POR DÍA — UNA LÍNEA, no barras. Sin eje de valores una barra
+     solo se puede leer comparándola con la de al lado, que es justo lo que la
+     falta de eje impide; una línea no promete magnitud, promete tendencia, y
+     la magnitud exacta la da el rótulo de cada punto. Ver graficaDeActividad.
+
+     LA SERIE SALE DEL CONTEO PERSISTIDO (pordia.go) y no de los eventos de la
+     ventana: con «24 horas» —como abre el panel— once de las doce columnas
+     salían en cero para todo el mundo. Obedece al filtro de RED, y por eso el
+     rótulo dice de qué origen habla; el de motivo y el de ventana no la tocan.
+
+     El trazo lleva vector-effect="non-scaling-stroke" porque el SVG se estira
+     con preserveAspectRatio="none": sin él, el grosor de la línea se
+     multiplicaría por el ancho y se dibujaría una franja en vez de un trazo. -->
 <section class="sc">
   <div class="sch">
     <h2>Actividad por día</h2>
-    <span class="ms">escala √ · {{if .ActividadDesde.IsZero}}sin rechazos en la ventana{{else}}desde {{fecha .ActividadDesde}}{{end}}</span>
+    <span class="ms">escala √ · {{if .ActividadDesde.IsZero}}sin rechazos registrados{{else}}desde {{dia .ActividadDesde}}{{end}}</span>
   </div>
   <div class="grc">
     <svg class="grl" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
          aria-label="Rechazos por día, últimos {{len .Actividad}} días, escala de raíz cuadrada">
-      {{range .Actividad}}<rect class="b{{if .Pico}} pk{{end}}" x="{{.X}}" y="{{.Y}}" width="{{.Ancho}}" height="{{.Alto}}"><title>{{.Titulo}}</title></rect>{{end}}
+      {{range .Actividad}}{{if .Pico}}<rect class="gpk" x="{{.X}}" y="0" width="{{.Ancho}}" height="100"></rect>{{end}}{{end}}
+      <polygon class="ga" points="{{.Relleno}}"></polygon>
+      <polyline class="gl" points="{{.Trazo}}" vector-effect="non-scaling-stroke"></polyline>
+      <!-- La zona sensible de cada día va ENCIMA y transparente: una línea no
+           tiene superficie que señalar, así que el <title> necesita una banda
+           propia o el rótulo al posar el cursor se pierde. -->
+      {{range .Actividad}}<rect class="gz" x="{{.X}}" y="0" width="{{.Ancho}}" height="100"><title>{{.Titulo}}</title></rect>{{end}}
     </svg>
     <div class="gre">{{range .Actividad}}<span>{{.Etiqueta}}</span>{{end}}</div>
   </div>
+</section>
+
+<section class="sc">
+  <div class="sch"><h2>Resumen</h2><span class="ms">en esta ventana</span></div>
+  <div class="cif">
+    <div class="cf{{if .Resumen.DesdeFuera}} mk{{end}}"><div class="n mono">{{.Resumen.DesdeFuera}}</div><div class="r">Desde Internet</div></div>
+    <div class="cf"><div class="n mono">{{.Resumen.AutenticacionFallida}}</div><div class="r">Contraseñas incorrectas</div></div>
+    <div class="cf"><div class="n mono">{{.Resumen.IPsUnicas}}</div><div class="r">Direcciones</div></div>
+    {{if .HayMasConexiones}}<div class="cf"><div class="n mono">{{.TotalConexiones}}</div><div class="r">Conexiones desde siempre</div></div>{{end}}
+  </div>
+</section>
+
+<!-- «Más rechazadas» y no «más pedidas»: esta tabla sale del anillo de
+     RECHAZOS, así que una ruta servida con éxito mil veces no aparece aquí. -->
+{{if .Resumen.RutasMasPedidas}}
+<section class="sc">
+  <div class="sch">
+    <h2>Rutas más rechazadas</h2>
+    {{if .HayMasRutas}}<span class="ms">las {{.TopeRutas}} más frecuentes de {{.Resumen.RutasVistas}} distintas</span>{{end}}
+  </div>
+  <div class="mts">
+    {{range .Resumen.RutasMasPedidas}}
+    <div class="mt">
+      <div class="mn">{{.Valor}}<i>{{.Veces}}</i></div>
+      <svg class="mb" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="v" x="0" y="0" width="{{porcentaje .Veces $.Resumen.Eventos}}" height="6"></rect>
+      </svg>
+      <div class="mv">{{.Veces}}</div>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+<!-- LA CRONOLOGÍA VA PLEGADA. Es el bloque más largo y el que menos se mira:
+     la tabla de orígenes ya dice agregado lo que esta dice suelto, y el diario
+     del nodo (ADR-0037) guarda la historia completa. Lo que solo está aquí es
+     el orden exacto y la ruta de cada suceso. -->
+<section class="sc">
+  <div class="sch"><h2>Cronología</h2>{{if .HayMas}}<span class="ms">{{.TopeCronologico}} de {{.Resumen.Eventos}} · acote la ventana para ver el resto</span>{{end}}</div>
+  <details class="plg">
+    <summary>Ver los rechazos uno a uno</summary>
+    <div class="t-cro">
+      <div class="th"><span>Momento</span><span>Dirección</span><span>Ruta</span><span>Motivo</span><span>Cliente</span></div>
+      <div class="fls">
+        {{range .Eventos}}
+        <div class="fl">
+          <div class="cl"><span class="et">Momento</span><span class="ct2">{{fecha .Momento}}</span></div>
+          <div class="cl"><span class="et">Dirección</span><span class="ip">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</span></div>
+          <div class="cl"><span class="et">Ruta</span><span class="ip">{{.Ruta}}</span></div>
+          <div class="cl"><span class="et">Motivo</span><span class="pls"><span class="p {{if .Destacar}}p-av{{else}}p-na{{end}}">{{.Motivo.Etiqueta}}</span>{{if .Cuenta}}<span class="p p-na">{{.Cuenta}}</span>{{end}}</span></div>
+          <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
+               automatizado a menudo no envía ninguno. Se dice, no se deja en
+               blanco como si faltara por descuido. -->
+          <div class="cl"><span class="et">Cliente</span><span class="op">{{if .Agente}}{{.Agente}}{{else}}<i>sin identificar</i>{{end}}</span></div>
+        </div>
+        {{else}}
+        <div class="vacio">Ningún rechazo en esta ventana con estos filtros.</div>
+        {{end}}
+      </div>
+    </div>
+  </details>
 </section>
 
 <!-- LO QUE HABLA DEL NODO Y NO DE QUIEN LLAMA — va primero de las tablas. Las
@@ -145,7 +220,7 @@
 {{if .Bloqueos}}
 <section class="sc">
   <div class="sch"><h2>Bloqueos puestos</h2><span class="ms">{{len .Bloqueos}} · motivo obligatorio</span></div>
-  <div class="t-blo">
+  <div class="t-blo t-cub">
     <div class="th"><span>Cubre</span><span>Alcance</span><span>Frenados</span><span></span></div>
     <div class="fls">
       {{range .Bloqueos}}
@@ -211,11 +286,16 @@
 
         <!-- LAS TRES CAPAS, etiquetadas. Un paquete no tiene motivo y una
              conexión no tiene ruta: son hechos distintos, no sumandos. -->
+        <!-- CADA CAPA EN SU PROPIO ELEMENTO, y no una sola frase con puntos
+             medios: en la tabla la columna es estrecha y una frase corrida se
+             partía por donde le tocaba —«2026-08-30 08:32 →» a mitad de
+             renglón—. Con «.cp» la celda decide dónde corta: en el teléfono
+             van en línea, y en la tabla uno debajo de otro. -->
         <div class="cl"><span class="et">Actividad</span><span class="ct2">
-          {{if and $.SoloInternet $.HayToques}}{{.Toques}} <small>paq</small> · {{end}}
-          {{if $.SoloInternet}}{{.Conexiones}} <small>conex</small> · {{end}}
-          {{.Rechazos}} <small>rech</small>
-          <small>· {{intervalo .Primera .Ultima}}</small>
+          {{if and $.SoloInternet $.HayToques}}<span class="cp">{{.Toques}} <small>paq</small></span>{{end}}
+          {{if $.SoloInternet}}<span class="cp">{{.Conexiones}} <small>conex</small></span>{{end}}
+          <span class="cp">{{.Rechazos}} <small>rech</small></span>
+          <span class="cp lapso"><small>{{intervalo .Primera .Ultima}}</small></span>
         </span></div>
 
         <div class="cl"><span class="et">Señales</span>
@@ -279,68 +359,6 @@
       {{end}}
     </div>
   </div>
-</section>
-
-<section class="sc">
-  <div class="sch"><h2>Resumen</h2><span class="ms">en esta ventana</span></div>
-  <div class="cif">
-    <div class="cf{{if .Resumen.DesdeFuera}} mk{{end}}"><div class="n mono">{{.Resumen.DesdeFuera}}</div><div class="r">Desde Internet</div></div>
-    <div class="cf"><div class="n mono">{{.Resumen.AutenticacionFallida}}</div><div class="r">Contraseñas incorrectas</div></div>
-    <div class="cf"><div class="n mono">{{.Resumen.IPsUnicas}}</div><div class="r">Direcciones</div></div>
-    {{if .HayMasConexiones}}<div class="cf"><div class="n mono">{{.TotalConexiones}}</div><div class="r">Conexiones desde siempre</div></div>{{end}}
-  </div>
-</section>
-
-<!-- «Más rechazadas» y no «más pedidas»: esta tabla sale del anillo de
-     RECHAZOS, así que una ruta servida con éxito mil veces no aparece aquí. -->
-{{if .Resumen.RutasMasPedidas}}
-<section class="sc">
-  <div class="sch">
-    <h2>Rutas más rechazadas</h2>
-    {{if .HayMasRutas}}<span class="ms">las {{.TopeRutas}} más frecuentes de {{.Resumen.RutasVistas}} distintas</span>{{end}}
-  </div>
-  <div class="mts">
-    {{range .Resumen.RutasMasPedidas}}
-    <div class="mt">
-      <div class="mn">{{.Valor}}<i>{{.Veces}}</i></div>
-      <svg class="mb" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
-        <rect class="v" x="0" y="0" width="{{porcentaje .Veces $.Resumen.Eventos}}" height="6"></rect>
-      </svg>
-      <div class="mv">{{.Veces}}</div>
-    </div>
-    {{end}}
-  </div>
-</section>
-{{end}}
-
-<!-- LA CRONOLOGÍA VA PLEGADA. Es el bloque más largo y el que menos se mira:
-     la tabla de orígenes ya dice agregado lo que esta dice suelto, y el diario
-     del nodo (ADR-0037) guarda la historia completa. Lo que solo está aquí es
-     el orden exacto y la ruta de cada suceso. -->
-<section class="sc">
-  <div class="sch"><h2>Cronología</h2>{{if .HayMas}}<span class="ms">{{.TopeCronologico}} de {{.Resumen.Eventos}} · acote la ventana para ver el resto</span>{{end}}</div>
-  <details class="plg">
-    <summary>Ver los rechazos uno a uno</summary>
-    <div class="t-cro">
-      <div class="th"><span>Momento</span><span>Dirección</span><span>Ruta</span><span>Motivo</span><span>Cliente</span></div>
-      <div class="fls">
-        {{range .Eventos}}
-        <div class="fl">
-          <div class="cl"><span class="et">Momento</span><span class="ct2">{{fecha .Momento}}</span></div>
-          <div class="cl"><span class="et">Dirección</span><span class="ip">{{if .Origen.IsValid}}{{.Origen}}{{else}}—{{end}}</span></div>
-          <div class="cl"><span class="et">Ruta</span><span class="ip">{{.Ruta}}</span></div>
-          <div class="cl"><span class="et">Motivo</span><span class="pls"><span class="p {{if .Destacar}}p-av{{else}}p-na{{end}}">{{.Motivo.Etiqueta}}</span>{{if .Cuenta}}<span class="p p-na">{{.Cuenta}}</span>{{end}}</span></div>
-          <!-- La ausencia de User-Agent es en sí misma un dato: un cliente
-               automatizado a menudo no envía ninguno. Se dice, no se deja en
-               blanco como si faltara por descuido. -->
-          <div class="cl"><span class="et">Cliente</span><span class="op">{{if .Agente}}{{.Agente}}{{else}}<i>sin identificar</i>{{end}}</span></div>
-        </div>
-        {{else}}
-        <div class="vacio">Ningún rechazo en esta ventana con estos filtros.</div>
-        {{end}}
-      </div>
-    </div>
-  </details>
 </section>
 
 <div class="notas">
