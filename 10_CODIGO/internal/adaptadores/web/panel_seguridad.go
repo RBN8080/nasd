@@ -311,10 +311,19 @@ type vistaSeguridad struct {
 	// filtrar. Sin esto habria que volver a abrirlo para corregir una
 	// eleccion, que es justo cuando uno lo necesita.
 	FiltroAbierto bool
-	// Actividad es «Actividad por día», pintada SOLO con lo que el anillo
-	// recuerda de los eventos ya filtrados — ver seguridad.PorDia. Doce
-	// columnas siempre; ActividadDesde dice hasta dónde alcanzan de verdad.
-	Actividad      []barraGrafica
+	// Actividad es «Actividad por día»: un punto por día, con su zona
+	// sensible y su rótulo de eje. Trazo y Relleno son la MISMA serie ya
+	// resuelta como listas de coordenadas para la polilínea y para el área de
+	// debajo — ver graficaDeActividad.
+	//
+	// Sale del conteo persistido del anillo (seguridad.Anillo.Serie) y NO de
+	// los eventos filtrados: la ventana del filtro gobierna la tabla, y una
+	// serie de doce días alimentada por una ventana de veinticuatro horas
+	// tenía once columnas en cero por construcción. ActividadDesde dice desde
+	// qué día hay dato de verdad.
+	Actividad      []diaGrafica
+	Trazo          string
+	Relleno        string
 	ActividadDesde time.Time
 	// Detalle es el origen seleccionado por «?origen=», o nil si no vino el
 	// parámetro o la dirección no está en Origenes. Se busca en la MISMA
@@ -323,20 +332,26 @@ type vistaSeguridad struct {
 	ConDetalle bool
 }
 
-// barraGrafica es UNA columna de «Actividad por día», con su geometría YA
-// CALCULADA en unidades del viewBox del SVG.
+// diaGrafica es UN día de «Actividad por día», con su geometría YA CALCULADA
+// en unidades del viewBox del SVG.
 //
 // LA GEOMETRÍA VA EN ATRIBUTOS Y NO EN CSS, y no es una preferencia: la CSP
 // de este servidor es «style-src 'self'» sin 'unsafe-inline' (ADR-0060), así
 // que el «style="height:21%"» de la maqueta se descartaría EN SILENCIO y el
 // gráfico saldría plano sin que nada fallara a gritos. Los atributos x, y,
-// width y height de un <rect> no son CSS y la política no los toca.
+// points y width de un SVG no son CSS y la política no los toca.
 // ADR-0017 ya ponía el formato en el servidor; esto extiende la misma regla
 // a la geometría.
-type barraGrafica struct {
-	X, Y, Ancho, Alto float64
+type diaGrafica struct {
+	// X y Ancho son la banda vertical del día: la zona sensible que lleva el
+	// <title> del que sale el rótulo al posar el cursor. Con barras esa zona
+	// era la barra misma; una línea no tiene superficie que señalar, así que
+	// la banda se dibuja aparte y transparente.
+	X, Ancho float64
+	// Cx y Cy son el punto de ese día sobre la línea.
+	Cx, Cy float64
 	// Pico marca el día de mayor actividad, para que resalte con el ámbar en
-	// vez del gris de las demás — la ÚNICA señal de color del gráfico.
+	// vez del gris de los demás — la ÚNICA señal de color del gráfico.
 	Pico bool
 	// Titulo es lo que sale al posar el cursor: «19/08 · 732». Etiqueta es el
 	// número de día del eje de abajo.
@@ -346,29 +361,45 @@ type barraGrafica struct {
 
 // La geometría del gráfico, en unidades del viewBox. Cien de ancho y cien de
 // alto, y que el SVG se estire al ancho real con preserveAspectRatio="none".
+//
+// margenGrafica reserva arriba y abajo la mitad del grosor del trazo. Sin él,
+// el día más alto y los días en cero se dibujarían JUSTO sobre el borde del
+// viewBox y el navegador les recortaría media línea: el pico saldría más
+// delgado que el resto de la curva sin que nada lo explicara.
 const (
-	anchoSlotGrafica   = 100.0 / seguridad.DiasGrafica
-	huecoSlotGrafica   = 0.28 // la parte del hueco que queda entre dos barras
-	altoGrafica        = 100.0
-	minimoVisibleBarra = 1.5 // un día con actividad nunca se pinta a cero
+	anchoSlotGrafica = 100.0 / seguridad.DiasGrafica
+	altoGrafica      = 100.0
+	margenGrafica    = 4.0
 )
 
-// graficaDeActividad convierte la serie pura de seguridad.PorDia en columnas
-// con su geometría resuelta.
+// graficaDeActividad convierte la serie pura de seguridad.Anillo.Serie en los
+// puntos de la línea, con su geometría resuelta.
 //
-// # LA ESCALA ES LA RAÍZ CUADRADA, Y ESO SE DICE EN LA PANTALLA
+// # ES UNA LÍNEA Y NO BARRAS, POR UNA RAZÓN QUE SE PUEDE ENUNCIAR
 //
-// Con escala lineal, el barrido de DRIFTNET —732 rechazos en un día contra
-// una treintena los demás— dejaría once columnas de dos píxeles y una
-// gigante: el pico se ve, y todo lo demás deja de poder compararse entre sí.
-// La raíz cuadrada conserva el orden y el pico, y devuelve altura a los días
+// Este gráfico no tiene eje de valores —ni lo tendrá mientras quepa en la
+// altura de una fila del panel—, y una barra sin escala no comunica nada: su
+// altura solo es legible comparada con la barra de al lado, que es justo lo
+// que un eje ausente impide hacer con precisión. Una línea no promete
+// magnitud: promete TENDENCIA, y la tendencia sí se lee de la forma del trazo
+// sin necesidad de números en el margen. Es la corrección que pidió el
+// responsable el 2026-08-31 y coincide con la práctica de las consolas de
+// seguridad, donde la serie temporal se dibuja como línea o área y la magnitud
+// se consulta en el rótulo del punto.
+//
+// # LA ESCALA SIGUE SIENDO LA RAÍZ CUADRADA, Y ESO SE DICE EN LA PANTALLA
+//
+// Con escala lineal, el barrido de DRIFTNET —732 rechazos en un día contra una
+// treintena los demás— aplasta contra el suelo los once días restantes: el
+// pico se ve, y todo lo demás deja de poder compararse entre sí. La raíz
+// cuadrada conserva el orden y el pico, y devuelve relieve a los días
 // normales. NO es una escala neutra, así que el rótulo de la sección lo dice
 // —«escala √»— en vez de dejar creer que las alturas son proporcionales.
 //
 // Vive en el adaptador y no en internal/seguridad porque es una decisión de
-// PRESENTACIÓN —píxeles de un SVG concreto—, y aquel paquete no sabe de HTML:
-// el mismo corte que filaOrigen aplica frente a seguridad.Origen.
-func graficaDeActividad(serie []seguridad.Dia) []barraGrafica {
+// PRESENTACIÓN —coordenadas de un SVG concreto—, y aquel paquete no sabe de
+// HTML: el mismo corte que filaOrigen aplica frente a seguridad.Origen.
+func graficaDeActividad(serie []seguridad.Dia) (dias []diaGrafica, trazo, relleno string) {
 	max := 0
 	for _, d := range serie {
 		if d.Rechazos > max {
@@ -376,30 +407,35 @@ func graficaDeActividad(serie []seguridad.Dia) []barraGrafica {
 		}
 	}
 	raizMax := math.Sqrt(float64(max))
+	util := altoGrafica - 2*margenGrafica
+	suelo := altoGrafica - margenGrafica
 
-	ancho := anchoSlotGrafica * (1 - huecoSlotGrafica)
-	margen := anchoSlotGrafica * huecoSlotGrafica / 2
-
-	out := make([]barraGrafica, len(serie))
+	dias = make([]diaGrafica, len(serie))
+	puntos := make([]string, len(serie))
 	for i, d := range serie {
-		alto := 0.0
+		y := suelo
 		if max > 0 && d.Rechazos > 0 {
-			alto = math.Sqrt(float64(d.Rechazos)) / raizMax * altoGrafica
-			if alto < minimoVisibleBarra {
-				alto = minimoVisibleBarra
-			}
+			y = redondear(suelo - math.Sqrt(float64(d.Rechazos))/raizMax*util)
 		}
-		out[i] = barraGrafica{
-			X:        redondear(float64(i)*anchoSlotGrafica + margen),
-			Y:        redondear(altoGrafica - alto),
-			Ancho:    redondear(ancho),
-			Alto:     redondear(alto),
+		cx := redondear(float64(i)*anchoSlotGrafica + anchoSlotGrafica/2)
+		dias[i] = diaGrafica{
+			X:        redondear(float64(i) * anchoSlotGrafica),
+			Ancho:    redondear(anchoSlotGrafica),
+			Cx:       cx,
+			Cy:       y,
 			Pico:     max > 0 && d.Rechazos == max,
 			Titulo:   fmt.Sprintf("%s · %d", d.Fecha.Format("02/01"), d.Rechazos),
 			Etiqueta: strconv.Itoa(d.Fecha.Day()),
 		}
+		puntos[i] = fmt.Sprintf("%g,%g", cx, y)
 	}
-	return out
+	trazo = strings.Join(puntos, " ")
+	// El área es el MISMO trazo cerrado contra el suelo, sin recalcular ni un
+	// punto: dos listas compuestas por separado podrían despegarse la una de
+	// la otra en cuanto alguien tocara una de las dos fórmulas.
+	relleno = fmt.Sprintf("%g,%g %s %g,%g",
+		dias[0].Cx, suelo, trazo, dias[len(dias)-1].Cx, suelo)
+	return dias, trazo, relleno
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -616,8 +652,12 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		Marco:            s.construirMarco(r, "seguridad", "Seguridad", ""),
 	}
 
-	diasActividad, actividadDesde := seguridad.PorDia(eventos, ahora)
-	v.Actividad = graficaDeActividad(diasActividad)
+	// LA SERIE NO PASA POR EL FILTRO DE VENTANA, y ese era el defecto: con
+	// «24 horas» —que es como abre el panel— once de las doce columnas salían
+	// en cero para todo el mundo. Sí obedece al filtro de RED, que es el que
+	// decide de quién se está hablando en toda la página. Ver pordia.go.
+	diasActividad, actividadDesde := s.seguridad.Serie(ahora, f.Red)
+	v.Actividad, v.Trazo, v.Relleno = graficaDeActividad(diasActividad)
 	v.ActividadDesde = actividadDesde
 
 	v.FiltroAbierto = q.Get("abierto") != ""

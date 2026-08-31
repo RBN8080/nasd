@@ -83,6 +83,16 @@ type Anillo struct {
 	// sucio dice si hay algo sin volcar. Evita reescribir el archivo cada
 	// minuto en un nodo tranquilo, que es el caso normal de este NAS.
 	sucio bool
+	// dias es el conteo por dia y por red que sostiene «Actividad por dia»
+	// (pordia.go). Vive AQUI y no en una estructura aparte porque cuenta
+	// exactamente los mismos rechazos que este anillo anota: con dos
+	// escritores separados, uno podria perder un evento que el otro registro y
+	// la grafica contradiria a la tabla sin que nada fallara a gritos.
+	//
+	// No crece con el trafico —un dia son cinco enteros— asi que conserva
+	// DiasGrafica dias completos donde el buffer solo conserva Capacidad
+	// eventos.
+	dias porDia
 
 	ruta string
 }
@@ -157,6 +167,7 @@ func (a *Anillo) releer() error {
 	var (
 		leidos []Evento
 		total  int64
+		dias   porDia
 	)
 	s := bufio.NewScanner(f)
 	// Una línea no puede pasar del tamaño de un evento con sus topes; se deja
@@ -168,6 +179,9 @@ func (a *Anillo) releer() error {
 		if linea == "" || strings.HasPrefix(linea, "#") {
 			if n, ok := totalDeCabecera(linea); ok {
 				total = n
+			}
+			if clave, redes, ok := diaDeCabecera(linea); ok {
+				dias.absorber(porDia{dias: map[string]map[Red]int{clave: redes}})
 			}
 			continue
 		}
@@ -200,6 +214,16 @@ func (a *Anillo) releer() error {
 	// es la real. Y un total menor que lo guardado seria un archivo
 	// inconsistente: nunca puede haber mas eventos conservados que vistos.
 	a.total = max(total, int64(len(leidos)))
+
+	// EL CONTEO POR DÍA SE RECONSTRUYE CON LO QUE HAYA EN EL BUFFER, y por eso
+	// la gráfica no nace vacía el día que se estrena: los eventos que el anillo
+	// ya guardaba llevan su fecha, así que los días a los que alcanzan se
+	// pueden contar otra vez. absorber toma el MÁXIMO de las dos fuentes —ver
+	// pordia.go—, de modo que un archivo sin líneas «# dia:» se cae a lo que el
+	// buffer sostiene, y uno que ya las trae conserva además los días que el
+	// buffer olvidó por rotación.
+	a.dias = dias
+	a.dias.absorber(deEventos(leidos))
 	return nil
 }
 
@@ -218,6 +242,7 @@ func (a *Anillo) Anotar(e Evento) {
 	a.buf[a.siguiente] = e
 	a.siguiente = (a.siguiente + 1) % Capacidad
 	a.total++
+	a.dias.anotar(e.Momento, e.Red)
 	a.sucio = true
 }
 
@@ -303,10 +328,17 @@ func (a *Anillo) Volcar() error {
 	for i := cuantos - 1; i >= 0; i-- {
 		orden = append(orden, a.buf[(a.siguiente-1-i+Capacidad)%Capacidad])
 	}
+	a.dias.podar(time.Now())
+	lineasDias := a.dias.lineas()
+	// El total se copia DENTRO del candado, con el resto de la foto. Antes se
+	// leía fuera con a.Total(), que es seguro pero toma una segunda foto: entre
+	// las dos podía entrar un rechazo, y el archivo salía diciendo un total que
+	// no correspondía a los eventos que llevaba debajo.
+	total := a.total
 	a.sucio = false
 	a.mu.Unlock()
 
-	if err := a.guardar(orden, a.Total()); err != nil {
+	if err := a.guardar(orden, total, lineasDias); err != nil {
 		// Volver a marcarlo sucio para que el siguiente intento lo reintente.
 		// Sin esto, un fallo transitorio de disco perdería en silencio todo lo
 		// anotado hasta entonces.
@@ -319,11 +351,18 @@ func (a *Anillo) Volcar() error {
 }
 
 // guardar escribe el historial de rechazos.
-func (a *Anillo) guardar(eventos []Evento, total int64) error {
+func (a *Anillo) guardar(eventos []Evento, total int64, dias []string) error {
 	return atomico.Escribir(a.ruta, ".seguridad-*", func(w io.Writer) error {
 		fmt.Fprintf(w, "# Historial de rechazos — anillo de %d eventos, del más antiguo al más reciente.\n", Capacidad)
 		fmt.Fprint(w, "# Un evento por línea, en JSON. NUNCA contiene contraseñas, cookies ni cuerpos (04_SEGURIDAD §6).\n")
 		fmt.Fprintf(w, "%s%d\n", marcaTotal, total)
+		// El conteo por día va en la CABECERA y no al final: si un corte deja
+		// el archivo a medias, lo que sobrevive es lo que menos se puede
+		// reconstruir —los días a los que el buffer ya no alcanza—, y los
+		// eventos perdidos siguen en el diario (ADR-0037).
+		for _, linea := range dias {
+			fmt.Fprintln(w, linea)
+		}
 		enc := json.NewEncoder(w)
 		for _, e := range eventos {
 			if err := enc.Encode(deEvento(e)); err != nil {
