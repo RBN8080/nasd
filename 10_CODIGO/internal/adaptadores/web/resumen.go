@@ -22,6 +22,15 @@ import (
 //
 // NO TIENE PANEL DE DETALLE: no hay una fila de Resumen que abrir aparte —
 // cada cifra enlaza a la página que la explica del todo.
+//
+// # SE REFRESCA SOLA, Y POR EL FLUJO DE /estado
+//
+// La temperatura y el uso de CPU se enganchan a /estado/flujo con el mismo
+// estado.js y las mismas claves (ADR-0051). No hay un flujo propio ni un
+// segundo muestreador: el de /estado ya reparte un marco a todos sus oyentes,
+// así que tener Resumen abierto cuesta una conexión y CERO lecturas extra
+// sobre el nodo — que es justo el motivo por el que ADR-0056 lo hizo genérico
+// en vez de copiarlo.
 
 type vistaResumen struct {
 	// Todo lo que se pinta viene YA FORMATEADO (ADR-0017): el servidor decide
@@ -32,12 +41,20 @@ type vistaResumen struct {
 
 	Cuentas int
 
-	TemperaturaOK  bool
+	// Temperatura y CPU son LAS DOS CIFRAS VIVAS de esta página: el flujo de
+	// /estado las reescribe cuatro veces por segundo (ADR-0051). Llegan ya
+	// escritas por filasVivas —la misma función que compone la tabla de
+	// /estado y cada marco del flujo— y NO se formatean aquí: si el texto
+	// inicial se compusiera aparte, la página diría «56.9°» al cargar y
+	// «56.9 °C» un cuarto de segundo después, sobre la misma celda.
+	//
+	// Por eso tampoco hay un «TemperaturaOK»: cuando no hay lectura, filasVivas
+	// ya escribe «no disponible», que es lo que dirá el flujo y lo que dice
+	// /estado. Un guion propio aquí era una tercera versión del mismo hueco.
 	Temperatura    string
 	TemperaturaPie string
-
-	EnMarcha      string
-	ServicioDesde string
+	CPU            string
+	CPUPie         string
 
 	// LatidoOK distingue «no hay testigo configurado» de «lo hay y no ha
 	// salido». Sin esa distinción, un nodo sin la capa de avisos y uno con el
@@ -56,9 +73,12 @@ type vistaResumen struct {
 	// CanalConfigurado y los suyos resumen la salud del canal externo con los
 	// mismos datos de /estado, sin repetir su tabla entera: solo si está
 	// configurado, y solo lo mínimo para saber si hace falta ir a mirar.
+	//
+	// SIN LOS CONTADORES —«3 entregados · 0 fallidos»—: son la vista detallada
+	// del canal y viven en /estado, que es donde se va a mirar cuando esta
+	// línea diga «Con fallos». En el resumen no se actúa sobre ellos.
 	CanalConfigurado bool
 	CanalOK          bool
-	CanalResumen     string
 
 	Marco marco
 	// ConDetalle es siempre falso: Resumen no tiene panel de detalle propio.
@@ -82,9 +102,13 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 	inst := s.instantaneaCompleta()
 
 	v := vistaResumen{
-		Cuentas:       len(s.usuarios.Lista()),
-		ServicioDesde: inst.DesdeElArranque,
-		Marco:         s.construirMarco(r, "resumen", "Resumen", ""),
+		Cuentas: len(s.usuarios.Lista()),
+		Marco:   s.construirMarco(r, "resumen", "Resumen", ""),
+		// El porcentaje de CPU no se lee, se RESTA entre dos muestras
+		// separadas por un cuarto de segundo (ver sistema.VentanaCPU y el
+		// encabezado de vivo.go). Decirlo evita la lectura equivocada de un
+		// «0 %», que no significa que el nodo no haya hecho nada hoy.
+		CPUPie: "lectura del instante, no del día",
 	}
 
 	if d := n.Datos; d.Disponible && d.TotalBytes > 0 {
@@ -93,9 +117,19 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 		v.DiscoPorcentaje = fmt.Sprintf("%.0f %%", d.UsoPorcentaje())
 	}
 
-	if n.Vivo.TemperaturaOK {
-		v.TemperaturaOK = true
-		v.Temperatura = fmt.Sprintf("%.1f°", n.Vivo.TemperaturaC)
+	// LAS CIFRAS VIVAS SE COGEN DE filasVivas, NO SE VUELVEN A ESCRIBIR AQUÍ.
+	// Es la única función que decide cómo se lee un indicador del nodo, y la
+	// que alimenta cada marco del flujo que va a sobrescribir estas mismas
+	// celdas. Componer el texto inicial por separado era garantizar que la
+	// página y el flujo dijeran cosas distintas sobre el mismo dato.
+	nodo, _ := filasVivas(n.Vivo, inst)
+	for _, f := range nodo {
+		switch f.Clave {
+		case "temperatura":
+			v.Temperatura = f.Valor
+		case "cpu":
+			v.CPU = f.Valor
+		}
 	}
 	// El pie de la temperatura dice si el SoC está limitado AHORA, que es lo
 	// único accionable: el bit pegajoso de «alcanzado alguna vez» ya está
@@ -108,10 +142,6 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 		v.TemperaturaPie = "limitado ahora mismo"
 	default:
 		v.TemperaturaPie = "sin limitación activa"
-	}
-
-	if n.Vivo.UptimeOK {
-		v.EnMarcha = duracionCorta(n.Vivo.Uptime)
 	}
 
 	// LO QUE ESTA TARJETA AFIRMA ES LO QUE EL NODO PUEDE AFIRMAR, y ni una
@@ -148,7 +178,6 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 	if c := inst.Canal; c.Configurado {
 		v.CanalConfigurado = true
 		v.CanalOK = c.Fallidos == 0 && !c.SecretoRechazado
-		v.CanalResumen = fmt.Sprintf("%d entregados · %d fallidos", c.Entregados, c.Fallidos)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

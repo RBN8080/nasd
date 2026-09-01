@@ -61,8 +61,8 @@ func TestElAccesoValidoSigueFuncionando(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("acceso válido -> %d; se esperaba 303", w.Code)
 	}
-	if destino := w.Header().Get("Location"); destino != "/" {
-		t.Errorf("tras entrar se redirige a %q; se esperaba «/»", destino)
+	if destino := w.Header().Get("Location"); destino != "/resumen" {
+		t.Errorf("tras entrar se redirige a %q; se esperaba «/resumen»", destino)
 	}
 	var sesion, recuerdo *http.Cookie
 	for _, c := range w.Result().Cookies() {

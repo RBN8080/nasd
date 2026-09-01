@@ -22,15 +22,12 @@
      corrigiendo. -->
 <span id="latido" class="p p-na" hidden></span>
 
-<!-- LA ESCALERA: las tres cifras que se leen de un vistazo antes de entrar
-     en la tabla. Salen de los MISMOS indicadores de abajo, no de una segunda
-     medición. -->
-<div class="esc">
-  <div class="pl"><div class="n mono">{{.Esc.SoC}}</div><div class="t"><div class="q">SoC</div><div class="d">{{.Esc.SoCPie}}</div></div></div>
-  <div class="pl"><div class="n mono">{{.Esc.Disco}}</div><div class="t"><div class="q">Disco</div><div class="d">{{.Esc.DiscoPie}}</div></div></div>
-  <div class="pl"><div class="n mono">{{.Esc.Marcha}}</div><div class="t"><div class="q">En marcha</div><div class="d">{{.Esc.MarchaPie}}</div></div></div>
-</div>
-
+<!-- LA ESCALERA SE FUE, Y LA TABLA EMPIEZA JUSTO BAJO EL RÓTULO DE CONEXIÓN.
+     Eran tres cifras —SoC, disco, en marcha— que Resumen ya enseña, así que
+     aquí sobraban dos veces: repetían la primera pantalla del superusuario y
+     repetían las filas de esta misma tabla, tres renglones más abajo. Quien
+     llega a /estado viene a leer los quince indicadores, no un resumen del
+     resumen. -->
 <div class="t-est">
   <div class="th"><span>Indicador</span><span>Valor</span><span>Veredicto</span></div>
   <div class="fls">

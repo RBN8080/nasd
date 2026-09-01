@@ -325,6 +325,14 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .cl .ct2{font-family:"DM Mono",monospace;font-size:.75rem;line-height:1.5;
   flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:break-word;}
 .cl .ct2 small{color:var(--tx3);font-size:.64rem;}
+/* LA COLUMNA «VALOR» DE LOS INDICADORES VA UN PUNTO MÁS GRANDE, y solo ella.
+   .75rem son 12 px = 9 pt, que en las demás tablas es correcto porque ahí la
+   celda lleva IPs y fechas que se buscan con el dedo. En /estado la celda es
+   LO QUE SE VA A LEER —«55.8 °C», «21 % — 715.9 MB libres de 904.8 MB»— y a
+   9 pt de monoespaciada obligaba a acercarse a la pantalla. .84rem son
+   13.44 px = 10.08 pt: un punto justo, en la MISMA DM Mono, sin tocar el
+   resto de la tabla ni las otras cinco que comparten «.ct2». */
+.t-est .cl .ct2{font-size:.84rem;}
 /* CADA CAPA DE «Actividad» ES UNA PIEZA, no un trozo de frase. En tarjeta van
    en línea separadas por el punto medio; en la tabla, una debajo de otra. Sin
    esto la columna partía «2026-08-30 08:32 →» por donde le cabía. */
@@ -553,16 +561,33 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* El medidor del rail: la maqueta usaba un flex de <i>; aquí es un SVG que
-   se estira al ancho del rail gracias a preserveAspectRatio="none". */
+   se estira al ancho del rail gracias a preserveAspectRatio="none".
+
+   ═══ LOS TRAMOS SE VEN, Y ANTES NO — reportado sobre captura el 2026-08-31.
+   Los tres tonos eran #30343c, #5b616b y #21242a sobre una pista de #16181b:
+   dos de ellos a menos de un 5 % de luminancia de la propia pista. La barra
+   salía en gris plano en las cinco páginas, y la de «otros» —que en este nodo
+   es el 35 % del disco— quedaba a un paso de ser invisible. Un medidor que
+   hay que adivinar no mide.
+
+   Se sube la escala entera y se le da JERARQUÍA, que es lo que la barra tiene
+   que contestar de un vistazo: lo de las CUENTAS va en el acento —es sobre lo
+   único que se puede actuar—, «otros» en un gris que se lee pero no compite,
+   y lo libre sigue siendo la pista. La alternancia entre cuentas se conserva;
+   lo que cambia es el escalón, no la idea.
+
+   VA EN EL CSS COMPARTIDO Y POR ESO ALCANZA A LAS CINCO PÁGINAS DE GOLPE: el
+   rail es uno solo (_marco.html) y su medidor no sabe en qué módulo está. */
 .seg{display:block;width:100%;height:6px;background:var(--n3);}
-.sg-a{fill:var(--n5);}
-.sg-b{fill:var(--tx3);}
-.sg-o{fill:var(--n4);}
+.sg-a{fill:var(--ac);}
+.sg-b{fill:var(--ac2);}
+.sg-o{fill:var(--tx3);}
 /* Los cuadraditos de la leyenda son <u>, no SVG: ahí el color es lo único
-   que hay que decir, y una clase basta. */
-.disco .ley u.sg-a{background:var(--n5);}
-.disco .ley u.sg-b{background:var(--tx3);}
-.disco .ley u.sg-o{background:var(--n4);}
+   que hay que decir, y una clase basta. Van EN EL MISMO TONO que su tramo —si
+   se quedaran atrás, la leyenda dejaría de nombrar lo que hay en la barra. */
+.disco .ley u.sg-a{background:var(--ac);}
+.disco .ley u.sg-b{background:var(--ac2);}
+.disco .ley u.sg-o{background:var(--tx3);}
 
 /* «Salir» cierra el rail, pegado abajo cuando no hay medidor de disco que
    ocupe ese sitio. Reutiliza «.od» —el botón de la barra de órdenes— para

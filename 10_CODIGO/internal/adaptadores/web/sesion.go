@@ -667,7 +667,17 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		// siempre lleva Secure.
 		Secure: r.TLS != nil,
 	})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+
+	// EL SUPERUSUARIO ATERRIZA EN RESUMEN Y NO EN ARCHIVOS (ADR-0075). Es la
+	// única cuenta que ve Resumen, y la única para la que la primera pantalla
+	// puede contestar «¿está bien el nodo?» antes de que lo pregunte. Una
+	// cuenta normal sigue entrando por «/», su listado, porque para ella no
+	// hay ninguna otra página: llevarla a /resumen sería un 403 al entrar.
+	destino := "/"
+	if usuario == autenticacion.NombreSuperusuario {
+		destino = "/resumen"
+	}
+	http.Redirect(w, r, destino, http.StatusSeeOther)
 }
 
 // accesoFallido es la ÚNICA salida de un intento de acceso que no abrió sesión.

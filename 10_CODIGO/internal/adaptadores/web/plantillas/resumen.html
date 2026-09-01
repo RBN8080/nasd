@@ -9,10 +9,13 @@
      Cada cifra enlaza al módulo que la explica del todo. */}}
 {{template "marco-cuerpo" .}}
 
-<!-- CUATRO CIFRAS, LAS CUATRO YA MEDIDAS EN OTRO SITIO (ver resumen.go): esta
+<!-- TRES CIFRAS, LAS TRES YA MEDIDAS EN OTRO SITIO (ver resumen.go): esta
      página no añade ni un punto de medición al nodo, reúne los que ya existen.
      Cada una enlaza a la página que la explica, en vez de repetir aquí su
-     tabla entera. -->
+     tabla entera.
+     LA TEMPERATURA NO ESTÁ AQUÍ, y es lo único que cambió: la enseña la
+     tarjeta de «El nodo», más abajo, con su pie y su rótulo. Dos veces en la
+     misma pantalla es una vez de más. -->
 <div class="cif">
   <a class="cf" href="/estado">
     <div class="n mono">{{if .DiscoOK}}{{.DiscoUsado}}{{else}}—{{end}}</div>
@@ -21,10 +24,6 @@
   <a class="cf" href="/administracion">
     <div class="n mono">{{.Cuentas}}</div>
     <div class="r">Cuentas</div>
-  </a>
-  <a class="cf" href="/estado">
-    <div class="n mono">{{if .TemperaturaOK}}{{.Temperatura}}{{else}}—{{end}}</div>
-    <div class="r">Temperatura</div>
   </a>
   <a class="cf{{if .Interrumpidas}} mk{{end}}" href="/estado">
     <div class="n mono">{{len .Interrumpidas}}</div>
@@ -53,27 +52,46 @@
 </section>
 {{end}}
 
+<!-- EL NODO: DOS CIFRAS VIVAS Y UNA DE LA CARGA, y ninguna repetida de la
+     tabla de /estado.
+     Se fue «En marcha»: era una duración que no se mueve en la escala en la
+     que se mira esta página —un nodo lleva días encendido— y ya la dice el
+     rail («en línea · 8d 20h») dos dedos a la izquierda. Su sitio lo ocupa el
+     USO DE CPU, que es lo único del nodo que cambia de verdad entre un marco
+     y el siguiente, y que además EXPLICA la temperatura de al lado: la misma
+     razón por la que filasVivas las pone juntas en /estado.
+     El rótulo de conexión es el de /estado, con el mismo gancho y el mismo
+     motivo: sin él, un flujo caído dejaría estas dos cifras congeladas con
+     cara de estar al día. Nace oculto —sin JavaScript no hay nada que
+     anunciar—. El último latido NO es vivo: se calcula al abrir la página,
+     como antes, y por eso no lleva «data-clave». -->
 <section class="sc">
-  <div class="sch"><h2>El nodo</h2></div>
+  <div class="sch"><h2>El nodo</h2><span id="latido" class="p p-na" hidden></span></div>
   <div class="esc">
-    <div class="pl"><div class="n mono">{{if .TemperaturaOK}}{{.Temperatura}}{{else}}—{{end}}</div><div class="t"><div class="q">Temperatura</div><div class="d">{{.TemperaturaPie}}</div></div></div>
-    <div class="pl"><div class="n mono">{{if .EnMarcha}}{{.EnMarcha}}{{else}}—{{end}}</div><div class="t"><div class="q">En marcha</div><div class="d">servicio {{.ServicioDesde}}</div></div></div>
+    <div class="pl" data-clave="temperatura"><div class="n mono cifra">{{.Temperatura}}</div><div class="t"><div class="q">Temperatura</div><div class="d">{{.TemperaturaPie}}</div></div></div>
+    <div class="pl" data-clave="cpu"><div class="n mono cifra">{{.CPU}}</div><div class="t"><div class="q">Uso de CPU</div><div class="d">{{.CPUPie}}</div></div></div>
     <div class="pl"><div class="n mono">{{if .LatidoOK}}{{.Latido}}{{else}}—{{end}}</div><div class="t"><div class="q">Último latido</div><div class="d">{{.LatidoPie}}</div></div></div>
   </div>
 </section>
 
+<!-- CANAL DE AVISOS: UNA SOLA LÍNEA, que es toda la pregunta que el resumen
+     contesta —«¿salen los avisos?»— y toda la respuesta que se puede dar sin
+     abrir /estado.
+     Se fueron los contadores del encabezado («3 entregados · 0 fallidos») y
+     el renglón que remitía a /estado: los primeros son la vista detallada, y
+     el segundo decía en una frase lo que el rail ya dice con un enlace. -->
 {{if .CanalConfigurado}}
 <section class="sc">
-  <div class="sch"><h2>Canal de avisos</h2><span class="ms">{{.CanalResumen}}</span></div>
+  <div class="sch"><h2>Canal de avisos</h2></div>
   <div class="tarj">
     <div class="t1"><b>{{if .CanalOK}}Entregando{{else}}Con fallos{{end}}</b><span class="pls"><span class="p {{if .CanalOK}}p-ok{{else}}p-av{{end}}">{{if .CanalOK}}Correcto{{else}}Atención{{end}}</span></span></div>
-    <p>El detalle completo, con el latido al testigo externo, está en <a href="/estado">Estado</a>.</p>
   </div>
 </section>
 {{end}}
 
 {{template "marco-fin" .}}
 {{template "marco-cierra" .}}
+<script src="/estatico/estado.js"></script>
 </body>
 </html>
 {{end}}

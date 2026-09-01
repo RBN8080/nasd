@@ -1,4 +1,12 @@
-// Flujo en vivo de la página de estado — ADR-0051.
+// Flujo en vivo del estado del nodo — ADR-0051.
+//
+// LO USAN DOS PÁGINAS: /estado, con su tabla de quince indicadores, y /resumen,
+// con tres tarjetas. No hay dos archivos ni dos flujos, por el mismo motivo por
+// el que solo hay un muestreador (ADR-0056): una copia sería un segundo cliente
+// del mismo canal, y el día que uno cambiara el otro seguiría pintando lo de
+// antes sin fallar a gritos. Lo único que hace falta para engancharse es un
+// «data-clave» con un «.cifra» dentro; lo que la página no tenga —la pastilla,
+// la acción, el rótulo de conexión— sencillamente no se toca.
 //
 // Escrito a mano e incrustado en el binario, como subida.js: ADR-0017 prohíbe
 // CDN y dependencias externas. Aquí no hacía falta ni eso — EventSource es
@@ -28,16 +36,22 @@ let fallos = 0;
 // todo porque construir un selector CSS con texto que llega por la red es una
 // costumbre que conviene no tener, aunque hoy ese texto salga de una constante
 // nuestra.
+//
+// UNA CLAVE, UN SITIO EN LA PÁGINA: el mapa guarda un destino suelto porque
+// ninguna de las dos páginas repite un indicador. Si alguna llegara a hacerlo,
+// el segundo pisaría al primero aquí y uno de los dos se quedaría congelado en
+// el valor de la carga al lado del otro actualizándose — el indicador que
+// miente de 00_RECTOR.md §12.5. La regla es no repetirlo, no indexar listas.
 function indexar() {
-  const filas = new Map();
-  for (const fila of document.querySelectorAll('.fls [data-clave]')) {
-    filas.set(fila.dataset.clave, {
-      cifra: fila.querySelector('.cifra'),
-      accion: fila.querySelector('.accion'),
-      pastilla: fila.querySelector('.pastilla'),
+  const claves = new Map();
+  for (const nodo of document.querySelectorAll('[data-clave]')) {
+    claves.set(nodo.dataset.clave, {
+      cifra: nodo.querySelector('.cifra'),
+      accion: nodo.querySelector('.accion'),
+      pastilla: nodo.querySelector('.pastilla'),
     });
   }
-  return filas;
+  return claves;
 }
 
 // Solo se escribe si el texto cambió. La mayoría de las filas son idénticas de
@@ -54,8 +68,9 @@ function aplicar(indice, filas) {
   for (const fila of filas) {
     const destino = indice.get(fila.clave);
     // Una clave que no está en la página es una fila que el servidor conoce y
-    // esta versión del HTML no. Se ignora: mejor una fila de menos que un
-    // error que deje el resto del marco sin aplicar.
+    // esta página no enseña —todas las de /resumen menos dos—. Se ignora:
+    // mejor una fila de menos que un error que deje el resto del marco sin
+    // aplicar.
     if (!destino) continue;
 
     ponerTexto(destino.cifra, fila.valor);
