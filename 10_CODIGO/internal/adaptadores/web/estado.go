@@ -448,20 +448,10 @@ type grupoEstado struct {
 	Filas  []filaViva
 }
 
-// escaleraEstado son las tres cifras que se leen de un vistazo antes de
-// entrar en la tabla. NO son una segunda medición: salen de los mismos
-// indicadores de abajo.
-type escaleraEstado struct {
-	SoC, SoCPie       string
-	Disco, DiscoPie   string
-	Marcha, MarchaPie string
-}
-
 type vistaEstado struct {
 	// Grupos es la tabla entera. Los dos primeros los mantiene el flujo en
 	// vivo (ADR-0051); sin JavaScript se quedan en esta foto, que es correcta.
 	Grupos []grupoEstado
-	Esc    escaleraEstado
 	// Peor es el veredicto más grave de todos: lo que se lee de un vistazo.
 	Peor   veredicto
 	Avisos []string
@@ -670,7 +660,6 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	v := vistaEstado{
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
-		Esc:              escaleraDe(n, inst),
 		Peor:             peorDe(indicadores),
 		Avisos:           n.Avisos,
 		Version:          versionDelBinario(),
@@ -742,33 +731,11 @@ func marcarSeleccionada(clave string, grupos []grupoEstado) *filaViva {
 	return nil
 }
 
-// escaleraDe compone las tres cifras de cabecera a partir de la MISMA lectura
-// que alimenta la tabla. Si algo no se pudo medir se dice, en vez de pintar
-// un cero que se leería como una medida.
-func escaleraDe(n sistema.Nodo, i Instantanea) escaleraEstado {
-	e := escaleraEstado{
-		SoC: sinMedida, SoCPie: "sin lectura",
-		Disco: sinMedida, DiscoPie: "sin lectura",
-		Marcha: sinMedida, MarchaPie: "servicio " + i.DesdeElArranque,
-	}
-	if n.Vivo.TemperaturaOK {
-		e.SoC = fmt.Sprintf("%.1f°", n.Vivo.TemperaturaC)
-	}
-	if t := evaluarThrottled(n.Throttled); t.Valor != "" {
-		e.SoCPie = t.Valor
-	}
-	if v := n.Datos; v.Disponible && v.TotalBytes > 0 {
-		e.Disco = legibleBytes(v.TotalBytes - v.LibresBytes)
-		e.DiscoPie = legibleBytes(v.LibresBytes) + " libres de " + legibleBytes(v.TotalBytes)
-	}
-	if n.Vivo.UptimeOK {
-		e.Marcha = duracionCorta(n.Vivo.Uptime)
-	}
-	return e
-}
-
-// duracionCorta es la forma de cabecera: dos unidades y sin espacios, «4d 20h».
-// duracionLegible sigue siendo la de las tablas, donde cabe el detalle.
+// duracionCorta es la forma de tarjeta: dos unidades y sin espacios, «4d 20h».
+// La usa Resumen, que tiene el ancho de un tercio de fila; duracionLegible
+// sigue siendo la de las tablas, donde cabe el detalle. Vive aquí, junto a
+// duracionLegible, para que las dos formas de escribir una duración se lean
+// una al lado de la otra y no se inventen una tercera.
 func duracionCorta(d time.Duration) string {
 	d = d.Round(time.Minute)
 	dias, horas, minutos := int(d.Hours())/24, int(d.Hours())%24, int(d.Minutes())%60

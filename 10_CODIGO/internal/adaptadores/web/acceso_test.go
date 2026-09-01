@@ -181,6 +181,26 @@ func listadoCon(t *testing.T, h http.Handler, cookies ...*http.Cookie) string {
 	return w.Body.String()
 }
 
+// EL ATERRIZAJE DEPENDE DE LA CUENTA, y las dos mitades importan por igual:
+// /resumen vive detrás de soloSuperusuario, así que mandar ahí a juan sería
+// recibirlo con un 403 nada más teclear bien la contraseña.
+func TestElAterrizajeDependeDeLaCuenta(t *testing.T) {
+	s, _ := servidorMultiusuario(t)
+
+	for _, c := range []struct{ usuario, clave, destino string }{
+		{autenticacion.NombreSuperusuario, claveDePrueba, "/resumen"},
+		{"juan", claveDeJuan, "/"},
+	} {
+		w := postAcceso(t, s, credenciales(c.usuario, c.clave), "", "")
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("acceso de %q -> %d; se esperaba 303", c.usuario, w.Code)
+		}
+		if destino := w.Header().Get("Location"); destino != c.destino {
+			t.Errorf("%q aterriza en %q; se esperaba %q", c.usuario, destino, c.destino)
+		}
+	}
+}
+
 // LA PRUEBA CENTRAL DE LA ETAPA: quien entra como juan recibe el almacén de
 // juan, y no el de la casa.
 func TestCadaUsuarioRecibeElAlmacenDeSuCarpeta(t *testing.T) {
