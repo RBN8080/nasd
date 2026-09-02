@@ -634,12 +634,33 @@ function Write-EstadoRespaldo {
 
     if (-not $PSCmdlet.ShouldProcess((Join-Path $Carpeta 'ESTADO.txt'), 'Escribir estado')) { return }
 
+    # LO DE LOS OTROS SE CONSERVA. Esta funcion reescribia el archivo entero
+    # desde cero, asi que cada corrida al nodo BORRABA el veredicto de la copia
+    # fria y las fechas de comprobacion: el tablero decia 'ultima copia al
+    # disco: nunca' y 'huellas: nunca' a los pocos minutos de haberlas hecho.
+    # Medido el 2026-09-02 pintando la ventana y leyendola.
+    #
+    # Es el mismo error que Write-EstadoDelDisco existe para no cometer, visto
+    # desde el otro lado. Cada destino y cada comprobacion son duenos de sus
+    # claves, y quien escribe solo pisa las suyas.
+    $previo = Read-EstadoRespaldo -Carpeta $Carpeta
+    $heredadas = @{}
+    foreach ($clave in $previo.Keys) {
+        if ($clave -like 'disco_*' -or $clave -like 'huellas_*' -or
+            $clave -like 'semilla_*' -or $clave -like 'restauracion_*') {
+            if (-not $Datos.ContainsKey($clave)) { $heredadas[$clave] = $previo[$clave] }
+        }
+    }
+
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine('# ESTADO.txt - lo que lee el indicador (seccion 10.2)')
     [void]$sb.AppendLine('# Escrito de forma atomica: nunca se lee a medias.')
     [void]$sb.AppendLine(('estado={0}' -f $Estado))
     [void]$sb.AppendLine(('momento={0}' -f (Get-Date -Format 's')))
     [void]$sb.AppendLine(('detalle={0}' -f ($Detalle -replace '[\r\n]+', ' ')))
+    foreach ($clave in ($heredadas.Keys | Sort-Object)) {
+        [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $heredadas[$clave]) -replace '[\r\n]+', ' ')))
+    }
     foreach ($clave in ($Datos.Keys | Sort-Object)) {
         [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $Datos[$clave]) -replace '[\r\n]+', ' ')))
     }
@@ -1459,4 +1480,270 @@ function Publish-EstadoAlNodo {
             -Mensaje "No se pudo publicar ESTADO.txt en el nodo: $($_.Exception.Message)"
         return $false
     }
+}
+
+function Write-EstadoPorRaiz {
+    <#
+        .SYNOPSIS
+            Anota como quedo CADA RAIZ en UN destino, sin tocar el otro destino.
+
+        .DESCRIPTION
+            EL TABLERO NO PUEDE ESCANEAR PARA PINTARSE. La tabla por raiz que
+            pide el plan -que raiz, de que clase, cuanto le falta y como esta en
+            cada destino- es la respuesta a "que exactamente"; pero medirla en
+            vivo significa recorrer ocho raices por SMB, y eso son minutos. Un
+            tablero que tarda minutos en aparecer no se abre nunca.
+
+            Asi que LA MIDE QUIEN YA LA MIDIO: el motor acaba de copiar y sabe,
+            raiz por raiz, cuantos archivos quedaron pendientes y si robocopy
+            fue limpio. Ese dato se guarda aqui y el tablero solo lo lee.
+
+            UN ARCHIVO, DOS DESTINOS, Y CADA UNO ESCRIBE SOLO SU MITAD: se
+            reemplazan unicamente las lineas de $Destino y las del otro se
+            conservan tal cual. Es la misma regla que Write-EstadoDelDisco:
+            que la copia fria haya ido bien no dice nada del nodo.
+
+            Formato TSV porque una ruta lleva espacios y comas pero nunca un
+            tabulador, y porque en una emergencia se abre con cualquier cosa.
+        .PARAMETER Destino
+            'nodo' o 'disco'.
+        .PARAMETER Copias
+            Lo que devolvio Invoke-Robocopy por cada raiz.
+        .PARAMETER Carpeta
+            Donde vive el estado.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('nodo', 'disco')]
+        [string] $Destino,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [psobject[]] $Copias,
+
+        [ValidateNotNull()]
+        [string] $QuitarPrefijo = '',
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $ruta = Join-Path $Carpeta 'RAICES.tsv'
+    $momento = Get-Date -Format 's'
+
+    # Lo que ya habia del OTRO destino se conserva palabra por palabra.
+    $otras = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $ruta -PathType Leaf) {
+        try {
+            foreach ($linea in (Get-Content -LiteralPath $ruta -Encoding UTF8 -ErrorAction Stop)) {
+                if ($linea -match '^\s*#' -or [string]::IsNullOrWhiteSpace($linea)) { continue }
+                if (($linea -split "`t")[0] -ne $Destino) { $otras.Add($linea) }
+            }
+        }
+        catch {
+            # Un TSV ilegible no puede tumbar una corrida que ya copio bien. Se
+            # pierde la tabla anterior y se reconstruye con esta.
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'estado' `
+                -Mensaje "RAICES.tsv no se pudo leer, se reconstruye: $($_.Exception.Message)"
+        }
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($ruta, "Anotar $(@($Copias).Count) raices del destino $Destino")) { return }
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('# RAICES.tsv - una linea por raiz y destino. Lo pinta el tablero.')
+    [void]$sb.AppendLine('# destino	raiz	clase	pendientes	estado	momento')
+    foreach ($linea in $otras) { [void]$sb.AppendLine($linea) }
+    foreach ($c in $Copias) {
+        if ($null -eq $c) { continue }
+        # Pendientes es lo que robocopy DIJO que faltaba por copiar en esta
+        # pasada. Tras una copia buena es 0; si no lo es, algo se quedo.
+        $pendientes = 0
+        if ($null -ne $c.NumACopiar) { $pendientes = [int]$c.NumACopiar }
+        $estadoRaiz = if ($c.Correcto) { 'AlDia' } else { 'Falla' }
+
+        # LA ETIQUETA TIENE QUE CASAR ENTRE LOS DOS DESTINOS O LA TABLA MIENTE.
+        # La copia fria corre dos pasadas: una desde el equipo, cuyas raices se
+        # llaman C:\dev, y otra desde el nodo, cuyas raices son rutas UNC. Sin
+        # recortar el prefijo, la misma raiz saldria dos veces con dos nombres y
+        # ninguna de las dos filas tendria las dos columnas.
+        $etiqueta = '' + $c.Origen
+        if ($QuitarPrefijo -and $etiqueta.StartsWith($QuitarPrefijo, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $etiqueta = $etiqueta.Substring($QuitarPrefijo.Length).TrimStart('\')
+        }
+        [void]$sb.AppendLine(('{0}	{1}	{2}	{3}	{4}	{5}' -f `
+                    $Destino, $etiqueta, $c.Clase, $pendientes, $estadoRaiz, $momento))
+    }
+    Set-ContenidoAtomico -Ruta $ruta -Contenido $sb.ToString() -Confirm:$false
+}
+
+function Read-EstadoPorRaiz {
+    <#
+        .SYNOPSIS
+            Lee RAICES.tsv. Nunca lanza: el tablero se pinta igual sin el.
+        .PARAMETER Carpeta
+            Donde vive el estado.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $ruta = Join-Path $Carpeta 'RAICES.tsv'
+    $filas = New-Object System.Collections.Generic.List[psobject]
+    try {
+        if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return $filas.ToArray() }
+        foreach ($linea in (Get-Content -LiteralPath $ruta -Encoding UTF8 -ErrorAction Stop)) {
+            if ($linea -match '^\s*#' -or [string]::IsNullOrWhiteSpace($linea)) { continue }
+            $campos = $linea -split "`t"
+            if ($campos.Count -lt 6) { continue }
+            $filas.Add([pscustomobject]@{
+                    Destino    = $campos[0]
+                    Raiz       = $campos[1]
+                    Clase      = $campos[2]
+                    Pendientes = [int]$campos[3]
+                    Estado     = $campos[4]
+                    Momento    = $campos[5]
+                })
+        }
+    }
+    catch {
+        return @()
+    }
+    return $filas.ToArray()
+}
+
+function Get-EspacioLibre {
+    <#
+        .SYNOPSIS
+            Bytes libres en una ruta, incluida una ruta UNC. $null si no se sabe.
+
+        .DESCRIPTION
+            SE PREGUNTA POR LA RUTA, NO POR LA UNIDAD. El destino principal es
+            \192.168.1.38\datos y ahi no hay letra de unidad que consultar:
+            DriveInfo y Win32_LogicalDisk no ven un recurso de red, asi que
+            devolvian nada justo para el destino que importa.
+
+            GetDiskFreeSpaceEx si acepta UNC, y ademas devuelve el espacio QUE
+            LE TOCA A ESTE USUARIO -no el del volumen- que es el numero honesto
+            cuando hay cuota.
+
+            Nunca lanza: es un adorno del tablero. Si no se puede saber, se
+            dice que no se sabe, que es distinto de decir cero.
+        .PARAMETER Ruta
+            Carpeta local o UNC.
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Nullable[long]])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Ruta
+    )
+
+    try {
+        if (-not ('NasRespaldo.Espacio' -as [type])) {
+            Add-Type -Namespace 'NasRespaldo' -Name 'Espacio' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+public static extern bool GetDiskFreeSpaceEx(string lpDirectoryName,
+    out ulong lpFreeBytesAvailable, out ulong lpTotalNumberOfBytes, out ulong lpTotalNumberOfFreeBytes);
+'@
+        }
+        [uint64] $libres = 0; [uint64] $total = 0; [uint64] $librestotal = 0
+        # La barra final importa: sin ella la API trata el ultimo tramo como
+        # nombre de archivo y falla en las raices de recurso compartido.
+        $arg = $Ruta.TrimEnd('\') + '\'
+        if ([NasRespaldo.Espacio]::GetDiskFreeSpaceEx($arg, [ref]$libres, [ref]$total, [ref]$librestotal)) {
+            return [long]$libres
+        }
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
+function Write-EstadoDeComprobacion {
+    <#
+        .SYNOPSIS
+            Anota cuando se comprobo por ultima vez y como salio, sin tocar los
+            veredictos de copia.
+
+        .DESCRIPTION
+            COPIAR NO ES COMPROBAR, Y EL TABLERO TENIA QUE PODER DECIRLO. Hasta
+            ahora verificar.ps1 y la prueba de restauracion imprimian su
+            resultado en pantalla y no lo guardaban en ninguna parte: al cerrar
+            la ventana, la unica prueba de que el respaldo servia desaparecia.
+
+            El plan pide dos fechas visibles -"huellas 24/08 sin diferencias" y
+            "restauracion 18/08 OK"- y una fecha vieja ahi es una senal tan util
+            como un fallo: dice que hace semanas que nadie comprueba que lo
+            copiado se puede leer.
+
+            Se funde con lo que hubiera: las claves de copia se conservan.
+        .PARAMETER Tipo
+            'huellas' -la verificacion- o 'restauracion' -la prueba de leer.
+        .PARAMETER Correcto
+            Si salio limpio.
+        .PARAMETER Detalle
+            Una frase corta para la persona.
+        .PARAMETER Carpeta
+            Donde vive ESTADO.txt.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        # 'semilla' NO ES 'restauracion'. Leer la semilla desde el nodo prueba
+        # que el kit de arranque esta entero y se puede leer; el criterio 11
+        # -restaurar de verdad en una maquina limpia- es otra cosa y sigue
+        # abierto. Llamarlas igual convertiria el tablero en el semaforo que
+        # miente: verde en "restauracion" sin haber restaurado nada.
+        [Parameter(Mandatory)]
+        [ValidateSet('huellas', 'semilla')]
+        [string] $Tipo,
+
+        [Parameter(Mandatory)]
+        [bool] $Correcto,
+
+        [ValidateNotNull()]
+        [string] $Detalle = '',
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $previo = Read-EstadoRespaldo -Carpeta $Carpeta
+
+    $datos = @{}
+    foreach ($clave in $previo.Keys) {
+        if ($clave -in @('estado', 'momento', 'detalle')) { continue }
+        if ($clave -like "$Tipo`_*") { continue }
+        $datos[$clave] = $previo[$clave]
+    }
+    $datos["$Tipo`_momento"] = (Get-Date -Format 's')
+    $datos["$Tipo`_estado"]  = if ($Correcto) { 'OK' } else { 'Falla' }
+    $datos["$Tipo`_detalle"] = $Detalle
+
+    $estadoPrincipal = '' + $previo['estado']
+    if ($estadoPrincipal -notin @('Protegido', 'Copiando', 'Atencion', 'Falla', 'SinDatos')) {
+        $estadoPrincipal = 'SinDatos'
+    }
+
+    if (-not $PSCmdlet.ShouldProcess((Join-Path $Carpeta 'ESTADO.txt'), "Anotar la comprobacion $Tipo")) { return }
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('# ESTADO.txt - lo que lee el indicador (seccion 10.2)')
+    [void]$sb.AppendLine('# Escrito de forma atomica: nunca se lee a medias.')
+    [void]$sb.AppendLine(('estado={0}' -f $estadoPrincipal))
+    [void]$sb.AppendLine(('momento={0}' -f ('' + $previo['momento'])))
+    [void]$sb.AppendLine(('detalle={0}' -f (('' + $previo['detalle']) -replace '[\r\n]+', ' ')))
+    foreach ($clave in ($datos.Keys | Sort-Object)) {
+        [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $datos[$clave]) -replace '[\r\n]+', ' ')))
+    }
+    Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'ESTADO.txt') -Contenido $sb.ToString() -Confirm:$false
 }

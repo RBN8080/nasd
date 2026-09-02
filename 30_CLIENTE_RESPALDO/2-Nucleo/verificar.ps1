@@ -347,4 +347,20 @@ $parametrosConfig = @{}
 if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
-Get-EstadoDeRespaldo -Configuracion $configuracion -Muestra $TamanoMuestra -RevisarDisco:$RevisarDisco
+$informe = Get-EstadoDeRespaldo -Configuracion $configuracion -Muestra $TamanoMuestra -RevisarDisco:$RevisarDisco
+
+# LA COMPROBACION SE GUARDA, NO SOLO SE IMPRIME. Hasta ahora este resultado
+# salia por pantalla y moria al cerrar la ventana: el tablero no podia decir
+# cuando se comprobo por ultima vez, y "hace tres semanas que nadie comprueba
+# que lo copiado se lee" es una senal tan util como un fallo rojo.
+$detalleComprobacion = if ($informe.TodoCoincide) {
+    'sin diferencias en {0} raices' -f @($informe.Coincidencias).Count
+}
+else {
+    '{0} de {1} raices con diferencias' -f `
+        @($informe.Coincidencias | Where-Object { -not $_.Coincide }).Count, @($informe.Coincidencias).Count
+}
+Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto ([bool]$informe.TodoCoincide) `
+    -Detalle $detalleComprobacion -Carpeta (Get-CarpetaDeEstado -Configuracion $configuracion) -Confirm:$false
+
+$informe
