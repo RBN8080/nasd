@@ -20,13 +20,24 @@
         respeta por omision:
 
           DESDE EL MENU              SOLO EDITANDO respaldo.jsonc
-          hora de corrida            UMBRAL DEL FRENO
-          pausar raices              CENTINELAS
-          verbosidad                 POLITICA DE BORRADO
-          lanzar acciones            CLASES
+          pausar raices              UMBRAL DEL FRENO
+          verbosidad                 CENTINELAS
+          lanzar acciones            POLITICA DE BORRADO
+          re-registrar la tarea      CLASES
+                                     VENTANAS DE CORRIDA
 
-        La ventana ENSENA esos cuatro valores para que se puedan mirar, y dice
-        donde se cambian. Ver no es poder cambiar.
+        La ventana los ENSENA todos para que se puedan mirar, y dice donde se
+        cambian. Ver no es poder cambiar.
+
+        "HORA DE CORRIDA" CAMBIO DE COLUMNA AL CERRAR EL PENDIENTE 26, y no es
+        un detalle. Cuando habia UNA hora, cambiarla era elegir un momento del
+        dia. Ahora son TRES VENTANAS SACADAS DE UNA MEDICION de 30 dias, y de
+        ellas cuelgan el umbral del icono, el ambar de la tabla y lo que espera
+        el testigo: juntarlas o moverlas a ojo degrada la proteccion sin que se
+        note, que es justo el riesgo que la seccion 10.1 nombra al partir el
+        reparto en dos. Lo que si queda en el menu es RE-REGISTRAR LA TAREA, que
+        es lo que hay que hacer despues de editar el archivo. Queda anotado en el
+        contrato como enmienda pendiente del visto bueno del responsable.
 
         LAS CINCO ACCIONES QUE PIDE LA SECCION 10.1 ESTAN TODAS: copiar al nodo,
         copiar al disco, verificar huellas, probar restauracion y ajustes. Las
@@ -305,12 +316,29 @@ function Write-CuerpoDeTabla {
             Lo que devolvio Read-EstadoPorRaiz.
         .PARAMETER Paleta
             Los colores.
+        .PARAMETER HorasParaAmbar
+            A partir de cuantas horas una copia buena deja de pintarse verde.
+
+            NO ES UN DIA DE CALENDARIO, Y ESE ERA UN DEFECTO REAL. Hasta el
+            2026-09-02 la celda se pintaba verde solo si la ultima copia habia
+            sido HOY, asi que con la corrida unica de las 22:30 el tablero
+            habria pintado las ocho raices en AMBAR diciendo "ayer 22:30" desde
+            medianoche hasta las 22:30 del dia siguiente: 22 horas y media de
+            ambar al dia con el sistema perfectamente sano. Nadie lo habia visto
+            porque la tarea no habia llegado a correr ni una vez -su LastRunTime
+            era 11/30/1999- y las corridas de ese dia fueron a mano.
+
+            Ahora el color sale del HUECO NOMINAL de la cadencia: mientras la
+            copia sea mas reciente que lo que el reparto de ventanas promete, es
+            verde. La etiqueta sigue diciendo "hoy 05:26" o "ayer 21:14", que es
+            como lo lee una persona; lo que cambia es quien decide el color.
     #>
     [CmdletBinding()]
     [OutputType([void])]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
-        [Parameter(Mandatory)][hashtable] $Paleta
+        [Parameter(Mandatory)][hashtable] $Paleta,
+        [ValidateRange(1, 720)][double] $HorasParaAmbar = 12
     )
 
     if (@($Filas).Count -eq 0) {
@@ -325,7 +353,7 @@ function Write-CuerpoDeTabla {
         $porDestino[$f.Destino][$f.Raiz] = $f
     }
 
-    # El orden lo manda el nodo -es la corrida diaria- y lo que solo tenga el
+    # El orden lo manda el nodo -es la que corre sola- y lo que solo tenga el
     # disco se anade detras, sin perderse.
     $orden = New-Object System.Collections.Generic.List[string]
     foreach ($clave in @('nodo', 'disco')) {
@@ -374,12 +402,23 @@ function Write-CuerpoDeTabla {
                 $celdas += (Format-Celda -Texto 'FALLO' -Ancho 13 -Paleta $Paleta -Color $Paleta.Rojo)
                 continue
             }
-            # AL DIA A SECAS CUANDO ES DE HOY, Y LA EDAD CUANDO NO LO ES. Poner
-            # la fecha siempre no cabia en la columna y se recortaba a "AL DIA
-            # hoy...", que es ruido; y una copia de hace doce dias que dijera
-            # solo "AL DIA" seria peor: al dia de cuando.
+            # AL DIA A SECAS CUANDO ESTA DENTRO DEL HUECO QUE PROMETE LA
+            # CADENCIA, Y LA EDAD CUANDO NO. Poner la fecha siempre no cabia en
+            # la columna y se recortaba a "AL DIA hoy...", que es ruido; y una
+            # copia de hace doce dias que dijera solo "AL DIA" seria peor: al
+            # dia de cuando.
+            #
+            # EL CORTE ES POR HORAS Y NO POR DIA DE CALENDARIO. Con el corte por
+            # dia, una corrida de las 21:14 se ponia ambar a medianoche -tres
+            # horas despues- aunque la siguiente ventana no abriera hasta las
+            # 04:00. Eso es avisar de algo que no ha pasado.
             $edad = Format-Antiguedad -Momento $lado.Momento
-            if ($edad -like 'hoy *') {
+            [datetime] $cuando = [datetime]::MinValue
+            $reciente = $false
+            if ([datetime]::TryParse(('' + $lado.Momento), [ref] $cuando)) {
+                $reciente = (((Get-Date) - $cuando).TotalHours -le $HorasParaAmbar)
+            }
+            if ($reciente) {
                 $celdas += (Format-Celda -Texto 'AL DIA' -Ancho 13 -Paleta $Paleta -Color $Paleta.Verde)
             }
             else {
@@ -420,14 +459,24 @@ function Get-EstadoDeTarea {
 
         $hora = ''
         if ($par.Eti -eq 'motor') {
+            # SE CUENTAN LAS VENTANAS, NO SE ENSENA LA PRIMERA HORA. Esta linea
+            # decia "motor 04:00" tomando el primer disparador, y con tres
+            # ventanas eso se lee como "corre una vez al dia a las 04:00", que es
+            # falso en la unica pantalla que no puede mentir. Ademas el numero de
+            # disparadores es justo lo que hay que vigilar: uno que desaparece es
+            # un tercio del respaldo que deja de correr.
+            #
             # Indexado y no `Select-Object -First 1`: -First corta la tuberia
             # lanzando StopUpstreamCommandsException, y esa excepcion de control
-            # queda suelta en el flujo de errores. Aparece al capturarlo con
-            # -ErrorVariable y ensucia cualquier diagnostico posterior.
-            $d = @($t.Triggers)[0]
-            if ($d -and $d.StartBoundary) {
+            # queda suelta en el flujo de errores.
+            $cuantos = @($t.Triggers).Count
+            $hora = ' {0} ventanas' -f $cuantos
+            if ($cuantos -eq 1) {
+                $d = @($t.Triggers)[0]
                 [datetime] $h = [datetime]::MinValue
-                if ([datetime]::TryParse($d.StartBoundary, [ref] $h)) { $hora = ' {0:HH:mm}' -f $h }
+                if ($d -and $d.StartBoundary -and [datetime]::TryParse($d.StartBoundary, [ref] $h)) {
+                    $hora = ' {0:HH:mm}' -f $h
+                }
             }
         }
         $partes.Add(('{0}{1} {2}' -f $par.Eti, $hora, $t.State))
@@ -569,7 +618,14 @@ function Show-Ventana {
         (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
         (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))
     Write-Linea (Get-Regla -Paleta $p -Unicode $u)
-    Write-CuerpoDeTabla -Filas $filas -Paleta $p
+    # EL CORTE DEL VERDE SALE DE LA CADENCIA, no de un numero escrito aqui: es el
+    # hueco que el propio reparto de ventanas promete. Si no se puede leer, 12 h,
+    # que es el hueco de la cadencia de hoy -pintar de mas no es la falla grave;
+    # pintar de verde algo viejo si-.
+    $horasVerde = 12
+    try { $horasVerde = (Get-CadenciaDeCorrida -Configuracion $Configuracion).HuecoNominalMaximoHoras }
+    catch { Write-Verbose "Cadencia ilegible; el corte del verde se queda en $horasVerde h: $($_.Exception.Message)" }
+    Write-CuerpoDeTabla -Filas $filas -Paleta $p -HorasParaAmbar $horasVerde
     Write-Linea ' '
 
     # --- Las lineas de resumen que pide la maqueta ---------------------------
@@ -760,38 +816,74 @@ function Show-Reparto {
     )
 
     $p = $script:Paleta
-    $t = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
-    $hora = 'sin tarea'
-    if ($t) {
-        $d = @($t.Triggers) | Select-Object -First 1
-        [datetime] $h = [datetime]::MinValue
-        if ($d -and $d.StartBoundary -and [datetime]::TryParse($d.StartBoundary, [ref] $h)) { $hora = '{0:HH:mm}' -f $h }
+
+    # LA HORA UNICA YA NO EXISTE, Y ESO MUEVE UNA LINEA DE LA SECCION 10.1.
+    # El reparto de 10.1 ponia "hora de corrida" en la columna del menu, cuando
+    # habia UNA hora y cambiarla era elegir un momento del dia. Con el pendiente
+    # 26 lo que hay son TRES VENTANAS SACADAS DE UNA MEDICION de 30 dias, y de
+    # ellas cuelgan el umbral del indicador, el ambar de la tabla y lo que espera
+    # el testigo. Juntarlas o moverlas a ojo degrada la proteccion sin que se
+    # note, que es exactamente el riesgo que 10.1 nombra al partir el reparto en
+    # dos. Asi que las ventanas pasan a la columna del ARCHIVO, junto al umbral
+    # del freno, y aqui se ENSENAN.
+    #
+    # Queda anotado como lo que es: una enmienda a 10.1 pendiente del visto bueno
+    # del responsable, no una decision del agente. Lo que si sigue en el menu es
+    # re-registrar la tarea, que es lo que hay que hacer despues de tocar el
+    # archivo -y sortear de nuevo las horas del dia-.
+    $cadencia = $null
+    try { $cadencia = Get-CadenciaDeCorrida -Configuracion $Configuracion }
+    catch { Write-Verbose "No se pudo leer la cadencia para el reparto: $($_.Exception.Message)" }
+    $proxima = 'sin cadencia legible'
+    if ($cadencia) {
+        $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia -NombreTarea $script:NombreTarea
+        $proxima = $siguiente.Descripcion
+        if (-not $siguiente.Existe) { $proxima = 'LA TAREA NO EXISTE: no corre solo' }
+        elseif (-not $siguiente.Habilitada) { $proxima = 'TAREA DESHABILITADA' }
     }
 
     Write-Linea ''
     Write-Linea ('   {0}SE CAMBIAN DESDE AQUI{1}' -f $p.Fuerte, $p.Fin)
-    Write-Linea ('   Hora de la corrida diaria : {0}' -f $hora)
+    Write-Linea ('   Re-registrar la tarea     : vuelve a sortear las horas del dia'    )
     Write-Linea ''
     Write-Linea ('   {0}SOLO EDITANDO 3-Config/respaldo.jsonc{1}   (seccion 10.1)' -f $p.Fuerte, $p.Fin)
+    if ($cadencia) {
+        # PARTIDA EN DOS LINEAS a proposito: las tres ventanas juntas se pasan
+        # del ancho del tablero, y una linea que se sale rompe la unica pantalla
+        # que tiene que poder leerse de un vistazo.
+        Write-Linea ('   Corridas al dia           : {0}, a minuto sorteado' -f $cadencia.CorridasPorDia)
+        Write-Linea ('   Ventanas                  : {0}' -f $cadencia.Resumen)
+        Write-Linea ('   Hueco recibol maximo      : {0} h  -> ambar de la tabla' -f $cadencia.HuecoNominalMaximoHoras)
+        Write-Linea ('   Avisa sin corrida buena   : {0} h  -> ambar del icono' -f $cadencia.HorasParaAvisar)
+    }
+    else {
+        Write-Linea ('   Ventanas de corrida       : {0}NO SE PUDO LEER LA CADENCIA{1}' -f $p.Rojo, $p.Fin)
+    }
     Write-Linea ('   Umbral del freno          : {0} %' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian)
     Write-Linea ('   Centinelas                : {0} declarados' -f @($Configuracion.centinelas).Count)
     Write-Linea  '   Politica de borrado       : clase A nunca borra, clase B espeja'
     Write-Linea ('   Clases                    : {0} contenedores, {1} raices' -f @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
     Write-Linea ''
+    Write-Linea ('   {0}Proxima corrida: {1}{2}' -f $p.Valor, $proxima, $p.Fin)
+    # SE ENSENA LA VENTANA Y NO UN MINUTO, Y LA LINEA LO DICE. El Programador
+    # sortea el retraso en CADA consulta: pedirle la hora diez veces da diez
+    # respuestas distintas. Poner una de ellas aqui seria ensenar como promesa un
+    # numero que cambia solo, en la unica pantalla que no puede mentir.
+    Write-Linea '   El minuto lo sortea Windows dentro de la ventana; no se sabe hasta que dispara.'
+    Write-Linea ''
     Write-Linea '   Cada uno lleva encima, en el archivo, un comentario que dice que pasa si se cambia.'
     Write-Linea ''
 
-    $nueva = Read-Host '   Nueva hora HH:mm (Enter para dejarla igual)'
-    if ([string]::IsNullOrWhiteSpace($nueva)) {
+    $respuesta = Read-Host '   Re-registrar la tarea y volver a sortear? (s/N)'
+    if ('' + $respuesta -notmatch '^[sS]') {
         Write-Linea '   Sin cambios.'
         return
     }
-    if ($nueva -notmatch '^([01]\d|2[0-3]):[0-5]\d$') {
-        Write-Warning 'Formato no valido. Se esperaba HH:mm, por ejemplo 22:30. Sin cambios.'
-        return
-    }
-    & "$PSScriptRoot\Registrar-Tarea.ps1" -Pieza Motor -Accion Registrar -Hora $nueva -Confirm:$false -InformationAction Continue | Out-Null
-    Write-Linea ('   {0}Hora de la corrida cambiada a {1}.{2}' -f $p.Verde, $nueva, $p.Fin)
+    & "$PSScriptRoot\Registrar-Tarea.ps1" -Pieza Motor -Accion Registrar -Confirm:$false -InformationAction Continue | Out-Null
+    $t = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
+    $cuantos = 0
+    if ($t) { $cuantos = @($t.Triggers).Count }
+    Write-Linea ('   {0}Tarea re-registrada con {1} disparadores, uno por ventana.{2}' -f $p.Verde, $cuantos, $p.Fin)
 }
 
 # CARGADO CON PUNTO SE EXPONEN LAS FUNCIONES Y NO SE ABRE NADA. Es la misma

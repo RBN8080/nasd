@@ -55,26 +55,56 @@
            quedarse sin icono. Medido el 2026-09-02, cuando un apagon dejo el
            equipo sin indicador y nadie se habria enterado.
 
-           Por eso son DOS tareas y no una: el motor corre A UNA HORA y termina;
-           el indicador arranca AL ENTRAR A LA SESION y no termina nunca. Un
-           disparador diario para el icono no tendria sentido, y un limite de
-           tiempo de ejecucion lo mataria a media jornada.
+           Por eso son DOS tareas y no una: el motor corre A UNAS HORAS y
+           termina; el indicador arranca AL ENTRAR A LA SESION y no termina
+           nunca. Un disparador diario para el icono no tendria sentido, y un
+           limite de tiempo de ejecucion lo mataria a media jornada.
+
+        5. YA NO HAY "LA HORA": HAY TRES VENTANAS Y UN SORTEO, y el sorteo lo
+           hace el Programador. Es el cierre del pendiente 26, y la hora unica
+           de las 22:30 que habia aqui la habia puesto un agente SIN MEDIR NADA.
+
+           Se registran TANTOS DISPARADORES DIARIOS COMO VENTANAS declare
+           `cadencia` en 3-Config/respaldo.jsonc, cada uno con la base en el
+           principio de su ventana y `RandomDelay` igual a su largo. Windows
+           sortea el minuto en cada ocurrencia.
+
+           LO QUE HACE QUE ESTO SEA AUDITABLE Y NO SOLO ALEATORIO ES LA VENTANA,
+           NO UN MINUTO. Antes del inicio no le tocaba; dentro, le toca y puede
+           caer en cualquier momento; pasado el fin sin corrida, NO CORRIO. Esas
+           tres cosas son las que hay que distinguir, y la ventana las distingue.
+           La hora exacta la aporta el registro DESPUES, con su desfase.
+
+           OJO, PORQUE ESTO SE ESCRIBIO MAL PRIMERO: `NextRunTime` NO devuelve
+           un minuto comprometido. Leerlo diez veces seguidas sin tocar la tarea
+           da diez horas distintas dentro de la ventana -medido el 2026-09-02-,
+           porque el Programador sortea el retraso en cada consulta y solo lo
+           fija al disparar. Ensenar esa muestra como "proxima corrida: 20:27"
+           seria publicar como promesa un numero que cambia solo.
+
+           Y por eso no hay semilla ni archivo de sal: fijar el minuto de
+           antemano obligaria a re-registrar los disparadores cada dia, y un
+           disparador que se re-registra a si mismo es un disparador que un dia
+           no se re-registra -y entonces el respaldo deja de correr sin que nadie
+           lo note-. Se cambiaria una fragilidad real por una precision que el
+           criterio no pide.
 
     .PARAMETER Pieza
-        Motor (la corrida diaria) o Indicador (el icono de la barra).
+        Motor (las corridas del dia) o Indicador (el icono de la barra).
 
     .PARAMETER Accion
         Registrar, Consultar, Deshabilitar, Habilitar o Retirar.
 
-    .PARAMETER Hora
-        Hora diaria de la corrida, formato HH:mm.
+    .PARAMETER RutaConfiguracion
+        De donde salen las ventanas. Por omision la de 3-Config. Las pruebas
+        apuntan a un arenero.
 
     .PARAMETER NombreTarea
         Como se llama en el Programador de tareas.
 
     .EXAMPLE
         .\Registrar-Tarea.ps1 -Accion Consultar
-        .\Registrar-Tarea.ps1 -Accion Registrar -Hora 22:30
+        .\Registrar-Tarea.ps1 -Accion Registrar
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
 [OutputType([psobject])]
@@ -85,8 +115,8 @@ param(
     [ValidateSet('Registrar', 'Consultar', 'Deshabilitar', 'Habilitar', 'Retirar')]
     [string] $Accion = 'Consultar',
 
-    [ValidatePattern('^([01]\d|2[0-3]):[0-5]\d$')]
-    [string] $Hora = '22:30',
+    [ValidateNotNullOrEmpty()]
+    [string] $RutaConfiguracion,
 
     [ValidateNotNullOrEmpty()]
     [string] $NombreTarea
@@ -94,6 +124,12 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# comun.ps1 NO tiene param(), asi que cargarlo con punto es seguro: es la
+# libreria, no un guion. La regla dura del contrato prohibe cargar con punto un
+# guion CON param(), que es lo que puso $SoloSimular a $false y convirtio una
+# simulacion en una copia real al disco frio.
+. "$(Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\comun.ps1')"
 
 # EL NOMBRE NO SE PONE POR OMISION EN EL BLOQUE param: un valor por defecto no
 # puede depender de otro parametro, y un nombre equivocado aqui registraria el
@@ -125,6 +161,19 @@ switch ($Accion) {
     'Registrar' {
         $usuario   = '{0}\{1}' -f $env:USERDOMAIN, $env:USERNAME
         $principal = New-ScheduledTaskPrincipal -UserId $usuario -LogonType Interactive -RunLevel Limited
+
+        # LA CADENCIA SE LEE ANTES DE TOCAR NADA, y solo para el motor. Si el
+        # archivo declara ventanas que se solapan o un umbral de aviso que
+        # avisaria de corridas que todavia no tocaban, Get-CadenciaDeCorrida
+        # lanza AQUI y la tarea que ya estaba registrada se queda como estaba.
+        # Registrar primero y validar despues dejaria al equipo con una cadencia
+        # incoherente y sin nadie que lo dijera.
+        $cadencia = $null
+        if ($Pieza -eq 'Motor') {
+            $parametrosConfig = @{}
+            if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }
+            $cadencia = Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo @parametrosConfig)
+        }
 
         if ($Pieza -eq 'Indicador') {
             # NI -NonInteractive NI -Confirm: el indicador es una ventana de
@@ -173,14 +222,31 @@ switch ($Accion) {
                 '-Confirm:$false'
             ) -join ' '
 
-            $disparador = New-ScheduledTaskTrigger -Daily -At $Hora
+            # UN DISPARADOR POR VENTANA, CON EL SORTEO DELEGADO EN WINDOWS.
+            # La base es el principio de la ventana y RandomDelay su largo, asi
+            # que cada ocurrencia cae en un minuto distinto dentro de la ventana
+            # y `NextRunTime` deja leer cual antes de que ocurra.
+            $disparador = @()
+            foreach ($v in $cadencia.Ventanas) {
+                $d = New-ScheduledTaskTrigger -Daily -At $v.Inicio
+                $d.RandomDelay = $v.RandomDelay
+                $disparador += $d
+            }
 
-            # -StartWhenAvailable importa: el equipo esta APAGADO MEDIA JORNADA
-            # (ADR-0079). Sin eso, una corrida que caiga con el equipo apagado
-            # simplemente no ocurre y nadie se entera hasta que el testigo lo
-            # diga. -MultipleInstances IgnoreNew evita dos motores a la vez
-            # sobre el mismo destino, que con clase B seria una carrera con el
-            # espejo.
+            # -StartWhenAvailable SE QUEDA, Y AHORA HAY NUMERO PARA SOSTENERLO.
+            # El motivo escrito aqui hasta el 2026-09-02 -"el equipo esta APAGADO
+            # MEDIA JORNADA"- era FALSO: medido sobre 30 dias del registro de
+            # eventos, la PC esta despierta el 94.1 % de las horas y no hubo un
+            # solo dia con 0 h. La razon buena es otra y es medida: sobre 200
+            # meses simulados, StartWhenAvailable convirtio 726 corridas
+            # perdidas en 726 recuperadas y bajo el peor hueco entre corridas
+            # buenas de 37.4 h a 18.4 h. Sin el se pierde el 4 % de las corridas.
+            #
+            # -MultipleInstances IgnoreNew tambien se queda. Con las ventanas a
+            # 8 h y corridas de ~107 s, dos corridas solo se pisan si una se
+            # COLGO, y entonces la marca vieja ya la pinto FALLA a los 90 min,
+            # mucho antes de que abra la siguiente ventana. Encolarlas (Queue)
+            # apilaria corridas detras de un cuelgue, que es peor.
             $ajustes = New-ScheduledTaskSettingsSet `
                 -AllowStartIfOnBatteries `
                 -DontStopIfGoingOnBatteries `
@@ -188,9 +254,9 @@ switch ($Accion) {
                 -MultipleInstances IgnoreNew `
                 -ExecutionTimeLimit (New-TimeSpan -Hours 4)
 
-            $descripcion = 'Cliente de respaldo del NAS. Corre sin menu y sin indicador (30_CLIENTE_RESPALDO seccion 15, criterio 8). NO se autoriza el freno: si salta, espera a una persona.'
-            $queHace     = "Registrar tarea diaria a las $Hora"
-            $confirmado  = "Tarea '$NombreTarea' registrada, diaria a las $Hora."
+            $descripcion = "Cliente de respaldo del NAS. $($cadencia.CorridasPorDia) corridas al dia a minuto sorteado dentro de $($cadencia.Resumen) (30_CLIENTE_RESPALDO seccion 10.2 y pendiente 26). Corre sin menu y sin indicador. NO se autoriza el freno: si salta, espera a una persona."
+            $queHace     = "Registrar $($cadencia.CorridasPorDia) corridas diarias en $($cadencia.Resumen)"
+            $confirmado  = "Tarea '$NombreTarea' registrada: $($cadencia.CorridasPorDia) corridas al dia, minuto sorteado dentro de $($cadencia.Resumen)."
         }
 
         # Ruta absoluta y no 'conhost.exe' a secas: el Programador de tareas no
@@ -272,12 +338,23 @@ switch ($Accion) {
             Write-Warning "La tarea '$NombreTarea' NO existe. El respaldo no corre solo."
             return $null
         }
+        # LOS DISPARADORES SE ENSENAN UNO A UNO, con su base y su sorteo. Con
+        # una hora fija bastaba mirar `Info.NextRunTime`; con tres ventanas hay
+        # que poder comprobar de un vistazo que SIGUEN SIENDO TRES. Un
+        # disparador que desaparece de la lista es un tercio del respaldo que
+        # deja de correr, y ninguna otra pantalla lo diria.
+        $ventanas = @($t.Triggers | ForEach-Object {
+                $base = $null
+                if ($_.StartBoundary) { $base = ([datetime]$_.StartBoundary).ToString('HH:mm') }
+                '{0} +{1}' -f $base, $(if ($_.RandomDelay) { $_.RandomDelay } else { 'sin sorteo' })
+            })
         return [pscustomobject]@{
-            Nombre    = $t.TaskName
-            Estado    = $t.State
-            Info      = ($t | Get-ScheduledTaskInfo)
-            Accion    = ($t.Actions | Select-Object -First 1).Execute
-            Argumento = ($t.Actions | Select-Object -First 1).Arguments
+            Nombre       = $t.TaskName
+            Estado       = $t.State
+            Info         = ($t | Get-ScheduledTaskInfo)
+            Disparadores = $ventanas
+            Accion       = ($t.Actions | Select-Object -First 1).Execute
+            Argumento    = ($t.Actions | Select-Object -First 1).Arguments
         }
     }
 }
