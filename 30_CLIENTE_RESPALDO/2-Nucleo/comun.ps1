@@ -274,6 +274,10 @@ function Test-DestinoNodo {
             Las dos condiciones, y las dos abortan. No basta con que el nodo
             responda: si la ruta no es UNC, robocopy escribira felizmente en un
             disco local con un nombre que parece una direccion IP.
+        .PARAMETER Intentos
+            Cuantas veces se pregunta antes de darlo por caido.
+        .PARAMETER SegundosEntreIntentos
+            Cuanto se espera entre preguntas.
         .PARAMETER Unc
             Raiz UNC del recurso, por ejemplo \\192.168.1.38\datos
     #>
@@ -282,18 +286,42 @@ function Test-DestinoNodo {
     param(
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string] $Unc
+        [string] $Unc,
+
+        [ValidateRange(1, 20)][int] $Intentos = 5,
+        [ValidateRange(1, 300)][int] $SegundosEntreIntentos = 30
     )
 
+    # QUE NO SEA UNC NO SE REINTENTA: es un error de configuracion, y esperar no
+    # lo arregla. Ademas robocopy escribiria feliz en un disco local con un
+    # nombre que parece una direccion IP, asi que esto aborta al instante.
     if (-not (Test-RutaUnc -Ruta $Unc)) {
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'guarda' -Mensaje "El destino NO es una ruta UNC: '$Unc'. Abortado antes de escribir nada."
         return $false
     }
-    if (-not (Test-Path -LiteralPath $Unc)) {
-        Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'guarda' -Mensaje "El nodo no responde en '$Unc'. Abortado antes de escribir nada."
-        return $false
+    # QUE EL NODO NO CONTESTE SI SE REINTENTA, y esto no es terquedad. El nodo es
+    # una Raspberry Pi de la casa: se reinicia tras un corte de luz y tarda un
+    # par de minutos en levantar la red y montar los discos. Preguntar UNA vez y
+    # abortar convierte un reinicio normal en un respaldo perdido y en un icono
+    # rojo que nadie va a mirar hasta el dia siguiente. Medido el 2026-09-02: el
+    # nodo se cayo por un apagon y la corrida aborto al primer intento.
+    for ($i = 1; $i -le $Intentos; $i++) {
+        if (Test-Path -LiteralPath $Unc) {
+            if ($i -gt 1) {
+                Write-RegistroRespaldo -Etapa 'guarda' -Mensaje "El nodo respondio en el intento $i de $Intentos."
+            }
+            return $true
+        }
+        if ($i -lt $Intentos) {
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'guarda' `
+                -Mensaje "El nodo no responde en '$Unc' (intento $i de $Intentos). Se reintenta en $SegundosEntreIntentos s."
+            Start-Sleep -Seconds $SegundosEntreIntentos
+        }
     }
-    return $true
+
+    Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'guarda' `
+        -Mensaje "El nodo no responde en '$Unc' tras $Intentos intentos. Abortado antes de escribir nada."
+    return $false
 }
 
 function Get-DiscoFrio {
@@ -416,7 +444,19 @@ function Invoke-Robocopy {
 
     foreach ($linea in $salida) {
         $texto = [string]$linea
-        if ([string]::IsNullOrWhiteSpace($texto)) { continue }
+
+        # ARTEFACTO DE /MT, NO UN FALLO. Con ocho hilos escribiendo a la vez, la
+        # salida de robocopy se entrelaza y de vez en cuando sale una linea
+        # partida con bytes de control dentro -incluido NUL, que NO cuenta como
+        # espacio en blanco-. Esa linea no cuelga del origen ni del destino, asi
+        # que caia en el cubo de "sin clasificar" y TUMBABA LA CORRIDA ENTERA.
+        # Medido el 2026-09-02: 'C:\dev' reportado como fallido con codigo 3
+        # -copia correcta con sobrantes- por una linea que se veia vacia.
+        #
+        # Se limpian los caracteres de control ANTES de decidir si la linea esta
+        # vacia. Una linea de error de verdad -"Acceso denegado"- tiene texto y
+        # sobrevive a esta limpieza intacta: la guarda no se debilita.
+        if (Test-LineaDeRobocopyVacia -Linea $texto) { continue }
         # Las lineas de directorio terminan en barra; solo interesan archivos.
         if ($texto.TrimEnd().EndsWith('\')) { continue }
 
@@ -1195,4 +1235,176 @@ public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
         Write-Verbose "No se pudo esconder la consola: $($_.Exception.Message)"
         return $false
     }
+}
+
+
+function Write-EstadoDelDisco {
+    <#
+        .SYNOPSIS
+            Anota como quedo la copia fria SIN tocar el veredicto del nodo.
+
+        .DESCRIPTION
+            DOS DESTINOS, DOS SALUDES, Y CONFUNDIRLAS BORRO UN FALLO REAL. Hasta
+            el 2026-09-02 la copia al disco escribia `estado=Protegido` al
+            terminar bien. Ese dia la corrida al nodo habia ABORTADO -el nodo no
+            respondia- y el icono estaba en rojo, correctamente; al copiar al
+            disco, el rojo se puso verde y el fallo del nodo desaparecio sin que
+            nadie lo hubiera arreglado.
+
+            Que la copia fria haya ido bien no dice NADA sobre si el respaldo
+            diario al nodo funciona. Son dos destinos independientes (seccion
+            6), asi que el disco escribe sus propias claves -`disco_*`- y el
+            veredicto principal, el que pinta el icono, sigue siendo el del
+            nodo.
+
+            SE LEE Y SE FUNDE, no se sobrescribe: cualquier otra clave que
+            hubiera en ESTADO.txt se conserva.
+        .PARAMETER Estado
+            Como quedo la copia fria.
+        .PARAMETER Detalle
+            Una frase para la persona.
+        .PARAMETER Carpeta
+            Donde vive ESTADO.txt.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Protegido', 'Copiando', 'Atencion', 'Falla', 'SinDatos')]
+        [string] $Estado,
+
+        [ValidateNotNull()]
+        [string] $Detalle = '',
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $previo = Read-EstadoRespaldo -Carpeta $Carpeta
+
+    $datos = @{}
+    foreach ($clave in $previo.Keys) {
+        if ($clave -in @('estado', 'momento', 'detalle')) { continue }
+        if ($clave -like 'disco_*') { continue }
+        $datos[$clave] = $previo[$clave]
+    }
+    $datos['disco_estado']  = $Estado
+    $datos['disco_detalle'] = $Detalle
+    $datos['disco_momento'] = (Get-Date -Format 's')
+
+    # El veredicto principal se conserva TAL CUAL. Si no habia ninguno todavia,
+    # SinDatos: decir "protegido" porque el disco fue bien seria justo la
+    # mentira que esta funcion existe para impedir.
+    $estadoPrincipal = '' + $previo['estado']
+    if ($estadoPrincipal -notin @('Protegido', 'Copiando', 'Atencion', 'Falla', 'SinDatos')) {
+        $estadoPrincipal = 'SinDatos'
+    }
+    $detallePrincipal = '' + $previo['detalle']
+
+    if (-not $PSCmdlet.ShouldProcess((Join-Path $Carpeta 'ESTADO.txt'), 'Anotar el resultado del disco frio')) { return }
+
+    # Se reescribe entero -es un archivo de tres lineas y pico- pero conservando
+    # momento, que es cuando corrio EL NODO y no cuando corrio el disco.
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('# ESTADO.txt - lo que lee el indicador (seccion 10.2)')
+    [void]$sb.AppendLine('# Escrito de forma atomica: nunca se lee a medias.')
+    [void]$sb.AppendLine(('estado={0}' -f $estadoPrincipal))
+    [void]$sb.AppendLine(('momento={0}' -f ('' + $previo['momento'])))
+    [void]$sb.AppendLine(('detalle={0}' -f ($detallePrincipal -replace '[\r\n]+', ' ')))
+    foreach ($clave in ($datos.Keys | Sort-Object)) {
+        [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $datos[$clave]) -replace '[\r\n]+', ' ')))
+    }
+    Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'ESTADO.txt') -Contenido $sb.ToString() -Confirm:$false
+}
+
+
+function Test-LineaDeRobocopyVacia {
+    <#
+        .SYNOPSIS
+            Dice si una linea de robocopy no lleva informacion.
+
+        .DESCRIPTION
+            ES UNA FUNCION Y NO UNA LINEA SUELTA PARA QUE SE PUEDA PROBAR. El
+            criterio decide si una linea rara se ignora o TUMBA LA CORRIDA
+            ENTERA, asi que merece una prueba propia.
+
+            Con /MT robocopy escribe desde ocho hilos y la salida se entrelaza:
+            de vez en cuando sale una linea partida con bytes de control dentro,
+            NUL incluido. NUL no cuenta como espacio en blanco, asi que
+            IsNullOrWhiteSpace la daba por buena, no colgaba del origen ni del
+            destino, y el motor declaraba fallida una copia correcta. Medido el
+            2026-09-02 sobre 'C:\dev' con codigo 3.
+
+            LO QUE NO SE PUEDE PERDER: una linea con texto de verdad -"Acceso
+            denegado"- tiene que seguir contando. Por eso solo se quitan
+            caracteres de control, nunca texto.
+        .PARAMETER Linea
+            La linea tal cual la escribio robocopy.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][AllowNull()][string] $Linea
+    )
+    if ($null -eq $Linea) { return $true }
+    return [string]::IsNullOrWhiteSpace(($Linea -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''))
+}
+
+
+function Resolve-EstadoVigente {
+    <#
+        .SYNOPSIS
+            Ajusta un veredicto guardado a lo que sigue siendo cierto AHORA.
+
+        .DESCRIPTION
+            UN ROJO CUYA CAUSA YA NO EXISTE NO PUEDE SEGUIR SIENDO ROJO. El
+            2026-09-02 el nodo se cayo por un apagon, la corrida aborto y el
+            icono se puso rojo -correctamente-. Cuando el nodo volvio, el icono
+            seguia parpadeando en rojo mientras el tablero, en la misma
+            pantalla, decia "Nodo: responde". Dos cosas contradictorias a la vez
+            no son un estado: son un semaforo roto.
+
+            TRES COSAS DISTINTAS DONDE ANTES HABIA DOS:
+
+              Rojo    esto esta roto AHORA
+              Ambar   la ultima corrida fallo, la causa ya no existe, FALTA
+                      una corrida
+              Verde   hubo una corrida buena
+
+            El ambar no miente en ninguna direccion: no dice que estes protegido
+            -no lo estas hasta que corra- ni grita por algo que ya paso. El rojo
+            se reserva para lo que sigue roto, que es lo unico que lo mantiene
+            util (ISA-18.2, fatiga de alarmas).
+
+            ES UNA FUNCION PURA A PROPOSITO: recibe la medicion, no la hace. Asi
+            se puede probar sin nodo, sin disco y sin barra de tareas.
+
+        .PARAMETER Estado
+            El veredicto guardado.
+        .PARAMETER Causa
+            El token de por que aborto, si aborto.
+        .PARAMETER DestinoResponde
+            Si el destino responde AHORA MISMO.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Estado,
+        [AllowEmptyString()][AllowNull()][string] $Causa = '',
+        [bool] $DestinoResponde = $false
+    )
+
+    # La UNICA causa que se cura sola es que el destino no respondiera: es la
+    # unica que se puede volver a medir y que puede haber cambiado sin que nadie
+    # toque nada. Un centinela alterado NO se cura solo, y el freno espera una
+    # decision de una persona: los dos siguen valiendo lo que valian.
+    if ($Estado -eq 'Falla' -and $Causa -eq 'destinoInalcanzable' -and $DestinoResponde) {
+        return [pscustomobject]@{
+            Estado   = 'Atencion'
+            Detalle  = 'La ultima corrida fallo porque el nodo no respondia. El nodo YA responde: falta una corrida'
+            Ajustado = $true
+        }
+    }
+
+    return [pscustomobject]@{ Estado = $Estado; Detalle = ''; Ajustado = $false }
 }

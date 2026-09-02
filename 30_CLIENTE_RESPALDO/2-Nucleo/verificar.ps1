@@ -291,11 +291,28 @@ function Get-EstadoDeRespaldo {
     if ($nodoVivo) {
         $raizNodo = '{0}\{1}\{2}' -f $unc.TrimEnd('\'), $Configuracion.destinos.nodo.raiz, $Configuracion.destinos.nodo.prefijoEquipo
         $traducciones = @($Configuracion.destinos.nodo.traduccionDeRutas)
+        # SE DICE POR DONDE VA, Y NO ES UN ADORNO. El nivel 3 lee archivos
+        # enteros por SMB y la muestra puede caer sobre videos del drone de
+        # cientos de MB: a 13.4 MB/s eso son minutos POR RAIZ. Sin una linea que
+        # se mueva, quien mira la pantalla concluye que se colgo y lo mata.
+        # Medido el 2026-09-02: se dio por colgado y se corto a mano.
+        $n = 0
+        $total = @($raices).Count
         foreach ($r in $raices) {
+            $n++
             $destino = Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $raizNodo -Traducciones $traducciones
+            Write-Progress -Activity 'Verificando contra el nodo' `
+                -Status ("{0} de {1}: {2}" -f $n, $total, $r.Ruta) `
+                -PercentComplete ([int](100 * ($n - 1) / [Math]::Max(1, $total)))
+            Write-Information ("   [{0}/{1}] {2}" -f $n, $total, $r.Ruta) -InformationAction Continue
+
             $coincidencias += Test-CoincidenciaDeRaiz -Raiz $r -Destino $destino
+            if ($Muestra -gt 0) {
+                Write-Information ("        comprobando {0} huellas (lee los archivos enteros)..." -f $Muestra) -InformationAction Continue
+            }
             $huellas       += Test-HuellaPorMuestreo -Raiz $r -Destino $destino -Cuantos $Muestra
         }
+        Write-Progress -Activity 'Verificando contra el nodo' -Completed
     }
 
     $disco = Get-DiscoFrio -Configuracion $Configuracion
