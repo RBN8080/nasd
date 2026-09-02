@@ -211,6 +211,12 @@ switch ($Accion) {
             $confirmado  = "Tarea '$NombreTarea' registrada: el icono arranca al entrar a la sesion."
         }
         else {
+            # -DesdeTarea ES LO QUE DISTINGUE UNA CORRIDA PROGRAMADA DE UNA A
+            # MANO, y sin el la cadencia miente. Solo una corrida que disparo el
+            # Programador pertenece a una ventana: la que lanza una persona desde
+            # el tablero a las 17:30 no "llego tarde" a la ventana de las 12:00,
+            # simplemente no iba a esa cita. Medido el 2026-09-02 en la pantalla
+            # del responsable, con una simulacion manual acusada de TARDE.
             $argumentos = @(
                 '--headless'
                 'powershell.exe'
@@ -219,6 +225,7 @@ switch ($Accion) {
                 '-ExecutionPolicy', 'Bypass'
                 '-WindowStyle', 'Hidden'
                 '-File', ('"{0}"' -f $guion)
+                '-DesdeTarea'
                 '-Confirm:$false'
             ) -join ' '
 
