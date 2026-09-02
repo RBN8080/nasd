@@ -217,16 +217,22 @@ function New-IconoDeEstado {
     $g = [System.Drawing.Graphics]::FromImage($mapa)
     try {
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $fondo = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 22, 26, 32))
+        # EL FONDO Y LOS CUATRO COLORES SON LOS DEL PANEL DEL NODO, no unos
+        # parecidos. estilo.css declara --n3 #16181b para las superficies y
+        # --ok/--av/--fa/--nada para los estados. El icono de la barra y el
+        # panel web son el MISMO producto: si su verde y este verde no son el
+        # mismo verde, quien mira aprende dos idiomas de colores y el dia que
+        # importa lee el equivocado.
+        $fondo = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 0x16, 0x18, 0x1b))
         $g.FillRectangle($fondo, 0, 0, $lado, $lado)
         $fondo.Dispose()
 
         $color = switch ($Estado) {
-            'Protegido' { [System.Drawing.Color]::FromArgb(255,  64, 200, 120) }
-            'Copiando'  { [System.Drawing.Color]::FromArgb(255,  64, 200, 120) }
-            'Atencion'  { [System.Drawing.Color]::FromArgb(255, 230, 170,  40) }
-            'Falla'     { [System.Drawing.Color]::FromArgb(255, 225,  70,  70) }
-            default     { [System.Drawing.Color]::FromArgb(255, 140, 145, 155) }
+            'Protegido' { [System.Drawing.Color]::FromArgb(255, 0x3f, 0xb9, 0x50) }   # --ok
+            'Copiando'  { [System.Drawing.Color]::FromArgb(255, 0x3f, 0xb9, 0x50) }   # --ok
+            'Atencion'  { [System.Drawing.Color]::FromArgb(255, 0xd2, 0x99, 0x22) }   # --av
+            'Falla'     { [System.Drawing.Color]::FromArgb(255, 0xf8, 0x51, 0x49) }   # --fa
+            default     { [System.Drawing.Color]::FromArgb(255, 0x6b, 0x72, 0x80) }   # --nada
         }
         if ($Opacidad -lt 255) { $color = [System.Drawing.Color]::FromArgb($Opacidad, $color.R, $color.G, $color.B) }
         $pincel = New-Object System.Drawing.SolidBrush $color

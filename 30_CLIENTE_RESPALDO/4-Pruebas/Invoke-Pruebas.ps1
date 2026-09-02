@@ -957,6 +957,48 @@ Test-Afirmacion -Nombre 'Y un verde no se toca' `
     -Obtenido (Resolve-EstadoVigente -Estado 'Protegido' -Causa '' -DestinoResponde $true).Estado
 
 # ===========================================================================
+# LA PALETA DEL CLIENTE ES LA DEL PANEL DEL NODO
+# ===========================================================================
+# El tablero, el icono de la barra y el panel web son el MISMO producto. Si su
+# verde y este verde no son el mismo verde, quien mira aprende dos idiomas de
+# colores y el dia que importa lee el equivocado. Esta prueba lee estilo.css y
+# comprueba que nadie los ha separado.
+Write-Titulo 'La paleta no se separa del panel'
+
+$css = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) `
+    '10_CODIGO\internal\adaptadores\web\estatico\estilo.css'
+
+if (-not (Test-Path -LiteralPath $css -PathType Leaf)) {
+    Test-Afirmacion -Nombre 'Se encuentra estilo.css del panel, que es la fuente de la paleta' `
+        -Esperado $true -Obtenido $false
+}
+else {
+    $textoCss = Get-Content -LiteralPath $css -Raw -Encoding UTF8
+    $estiloPs = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\estilo.ps1') -Raw -Encoding UTF8
+    $iconoPs  = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\indicador.ps1') -Raw -Encoding UTF8
+
+    foreach ($token in @('ok', 'av', 'fa', 'nada')) {
+        $m = [regex]::Match($textoCss, ('--{0}:\s*#([0-9a-fA-F]{{6}})' -f $token))
+        Test-Afirmacion -Nombre ("estilo.css declara --{0}" -f $token) -Esperado $true -Obtenido $m.Success
+        if (-not $m.Success) { continue }
+
+        $hex = $m.Groups[1].Value.ToLowerInvariant()
+        $r = [Convert]::ToInt32($hex.Substring(0, 2), 16)
+        $g = [Convert]::ToInt32($hex.Substring(2, 2), 16)
+        $b = [Convert]::ToInt32($hex.Substring(4, 2), 16)
+
+        # El tablero escribe color de 24 bits en decimal.
+        Test-Afirmacion -Nombre ("El tablero usa el --{0} del panel ({1})" -f $token, $hex) `
+            -Esperado $true -Obtenido ($estiloPs -match ('38;2;{0};{1};{2}' -f $r, $g, $b))
+
+        # El icono lo dibuja en hexadecimal.
+        $patronIcono = '0x{0:x2}, 0x{1:x2}, 0x{2:x2}' -f $r, $g, $b
+        Test-Afirmacion -Nombre ("El icono usa el --{0} del panel ({1})" -f $token, $hex) `
+            -Esperado $true -Obtenido ($iconoPs -match [regex]::Escape($patronIcono))
+    }
+}
+
+# ===========================================================================
 
 if (-not $Conservar) {
     Remove-Item -LiteralPath $CarpetaCaja -Recurse -Force -ErrorAction SilentlyContinue
