@@ -130,6 +130,29 @@ function Get-EstadoParaElIcono {
         if ($ultimo -eq 'SinDatos') {
             return [pscustomobject]@{ Estado = 'SinDatos'; Detalle = '' + $estado['detalle']; Fuente = 'estado' }
         }
+        # UN ROJO CUYA CAUSA YA NO EXISTE NO PUEDE SEGUIR SIENDO ROJO. El
+        # 2026-09-02 el nodo se cayo por un apagon, la corrida aborto y el icono
+        # se puso rojo -correctamente-. Cuando el nodo volvio, el icono seguia
+        # parpadeando en rojo mientras el tablero, en la misma pantalla, decia
+        # "Nodo: responde". Dos cosas contradictorias a la vez no es un estado,
+        # es un semaforo roto.
+        #
+        # ROJO significa "esto esta roto AHORA". Si lo que lo rompio ya se
+        # arreglo solo, baja a AMBAR: "la ultima corrida fallo y todavia no ha
+        # habido otra buena". Eso es exacto y no miente en ninguna direccion: no
+        # dice que estes protegido -no lo estas hasta que corra- ni grita por
+        # algo que ya paso. El rojo se reserva para lo que sigue roto, que es lo
+        # unico que lo mantiene util (ISA-18.2).
+        # AQUI SOLO SE MIDE; QUIEN DECIDE ES Resolve-EstadoVigente (comun.ps1),
+        # que es una funcion pura y por eso se puede probar sin nodo.
+        $unc = ''
+        try { $unc = (Get-ConfiguracionRespaldo).destinos.nodo.unc } catch { $unc = '' }
+        $responde = [bool]($unc -and (Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue))
+        $vigente = Resolve-EstadoVigente -Estado $ultimo -Causa ('' + $estado['causa']) -DestinoResponde $responde
+        if ($vigente.Ajustado) {
+            return [pscustomobject]@{ Estado = $vigente.Estado; Detalle = $vigente.Detalle; Fuente = 'estado' }
+        }
+
         if ($ultimo -in @('Falla', 'Atencion')) {
             return [pscustomobject]@{ Estado = $ultimo; Detalle = '' + $estado['detalle']; Fuente = 'estado' }
         }

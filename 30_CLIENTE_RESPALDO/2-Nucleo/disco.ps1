@@ -161,6 +161,7 @@ function Invoke-CorridaAlDiscoFrio {
         PasadaNodo    = @()
         NodoAlcanzable= $false
         Completa      = $false
+        ArchivosCopiados = 0
     }
 
     # --- Guarda 1: el disco, por SERIE y por CENTINELA -----------------------
@@ -197,10 +198,12 @@ function Invoke-CorridaAlDiscoFrio {
     # responsable mirando la barra el 2026-09-02. Un indicador que no se entera
     # de la mitad del trabajo no es un indicador.
     $carpetaEstado = Get-CarpetaDeEstado -Configuracion $Configuracion
+    # SOLO LA MARCA, NO EL ESTADO. El icono resuelve "copiando" mirando
+    # EN_CURSO.lock, asi que la marca basta para que la barra lo ensene. Escribir
+    # ademas estado=Copiando pisaria el veredicto del NODO, que es de otro
+    # destino y de otra corrida.
     if (-not $Simular) {
         Enter-MarcaDeCorrida -Carpeta $carpetaEstado -Tipo 'disco' -Confirm:$false | Out-Null
-        Write-EstadoRespaldo -Estado 'Copiando' -Detalle 'Copia al disco frio en curso' `
-            -Carpeta $carpetaEstado -Confirm:$false
     }
 
     try {
@@ -245,17 +248,35 @@ function Invoke-CorridaAlDiscoFrio {
     }
 
     if (-not $Simular) {
+        # SE ANOTA EN LAS CLAVES DEL DISCO, NO EN EL VEREDICTO PRINCIPAL. Que la
+        # copia fria fuera bien no dice nada sobre el respaldo diario al nodo, y
+        # el 2026-09-02 escribir aqui "Protegido" borro un fallo real del nodo
+        # que nadie habia arreglado.
+        #
+        # Ademas se cuenta lo que DE VERDAD se copio: decir "completa" cuando no
+        # se movio un solo archivo es cierto pero no es lo que la persona
+        # pregunta. Lo que quiere saber es si falto algo.
+        $copiados = 0
+        foreach ($r in (@($resultado.PasadaEquipo) + @($resultado.PasadaNodo))) {
+            if ($r) { $copiados += [int]$r.NumACopiar }
+        }
         # UNA COPIA FRIA A LA QUE LE FALTO UNA PASADA NO SE PINTA DE VERDE.
         if ($resultado.Completa) {
-            Write-EstadoRespaldo -Estado 'Protegido' `
-                -Detalle 'Copia fria COMPLETA: las dos pasadas corrieron' `
+            $frase = if ($copiados -eq 0) {
+                'Copia fria al dia: las dos pasadas corrieron y no habia nada nuevo que copiar'
+            }
+            else {
+                'Copia fria COMPLETA: las dos pasadas corrieron, {0} archivos nuevos' -f $copiados
+            }
+            Write-EstadoDelDisco -Estado 'Protegido' -Detalle $frase `
                 -Carpeta $carpetaEstado -Confirm:$false
         }
         else {
-            Write-EstadoRespaldo -Estado 'Atencion' `
+            Write-EstadoDelDisco -Estado 'Atencion' `
                 -Detalle 'Copia fria INCOMPLETA: lo que solo vive en el nodo NO llego al disco' `
                 -Carpeta $carpetaEstado -Confirm:$false
         }
+        $resultado.ArchivosCopiados = $copiados
     }
 
     $resultado.Fin = Get-Date

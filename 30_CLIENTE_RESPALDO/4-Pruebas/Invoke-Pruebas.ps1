@@ -856,6 +856,97 @@ Test-Afirmacion -Nombre 'La tarea de prueba se retiro: no queda basura en el Pro
     -Esperado $null -Obtenido (Get-ScheduledTask -TaskName $tareaPrueba -ErrorAction SilentlyContinue)
 
 # ===========================================================================
+# DOS DESTINOS, DOS SALUDES
+# ===========================================================================
+# El 2026-09-02 la copia al disco escribio estado=Protegido al terminar bien, y
+# con eso BORRO un fallo real del nodo que nadie habia arreglado: el icono paso
+# de rojo a verde sin que el respaldo diario funcionara.
+Write-Titulo 'El disco no pisa el veredicto del nodo'
+
+$cajaEstado = Join-Path $CarpetaCaja 'estado-doble'
+New-Item -ItemType Directory -Path $cajaEstado -Force | Out-Null
+
+Write-EstadoRespaldo -Estado 'Falla' -Detalle 'El nodo no respondia' `
+    -Datos @{ causa = 'destinoInalcanzable' } -Carpeta $cajaEstado -Confirm:$false
+$antesDisco = Read-EstadoRespaldo -Carpeta $cajaEstado
+
+Write-EstadoDelDisco -Estado 'Protegido' -Detalle 'Copia fria al dia' `
+    -Carpeta $cajaEstado -Confirm:$false
+$trasDisco = Read-EstadoRespaldo -Carpeta $cajaEstado
+
+Test-Afirmacion -Nombre 'El veredicto del NODO sobrevive a una copia fria buena' `
+    -Esperado 'Falla' -Obtenido ('' + $trasDisco['estado'])
+Test-Afirmacion -Nombre 'Y su detalle no se reescribe' `
+    -Esperado ('' + $antesDisco['detalle']) -Obtenido ('' + $trasDisco['detalle'])
+Test-Afirmacion -Nombre 'Y el momento sigue siendo el de la corrida al nodo' `
+    -Esperado ('' + $antesDisco['momento']) -Obtenido ('' + $trasDisco['momento'])
+Test-Afirmacion -Nombre 'La causa del fallo se conserva para que el icono la lea' `
+    -Esperado 'destinoInalcanzable' -Obtenido ('' + $trasDisco['causa'])
+Test-Afirmacion -Nombre 'El disco anota SU estado en su propia clave' `
+    -Esperado 'Protegido' -Obtenido ('' + $trasDisco['disco_estado'])
+Test-Afirmacion -Nombre 'Y su propio momento, aparte del momento del nodo' `
+    -Esperado $true -Obtenido $trasDisco.ContainsKey('disco_momento')
+
+# Sin veredicto previo NO se hereda el del disco: decir "protegido" porque la
+# copia fria fue bien seria la misma mentira al reves.
+$cajaVirgen = Join-Path $CarpetaCaja 'estado-virgen'
+New-Item -ItemType Directory -Path $cajaVirgen -Force | Out-Null
+Write-EstadoDelDisco -Estado 'Protegido' -Detalle 'Copia fria al dia' `
+    -Carpeta $cajaVirgen -Confirm:$false
+Test-Afirmacion -Nombre 'Sin corrida al nodo previa, el veredicto es SinDatos, no Protegido' `
+    -Esperado 'SinDatos' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaVirgen)['estado'])
+
+# ===========================================================================
+# LA LINEA RARA DE /MT NO TUMBA UNA COPIA BUENA
+# ===========================================================================
+Write-Titulo 'Lineas de robocopy con basura de control'
+
+$nulo = [string][char]0
+Test-Afirmacion -Nombre 'Una linea de solo NUL se ignora' `
+    -Esperado $true -Obtenido (Test-LineaDeRobocopyVacia -Linea $nulo)
+Test-Afirmacion -Nombre 'Espacios con NUL entre medias tambien' `
+    -Esperado $true -Obtenido (Test-LineaDeRobocopyVacia -Linea ('   ' + $nulo + '  '))
+Test-Afirmacion -Nombre 'Una linea vacia de verdad, igual' `
+    -Esperado $true -Obtenido (Test-LineaDeRobocopyVacia -Linea '')
+
+# LO QUE NO SE PUEDE PERDER, y es el motivo de que la limpieza sea tan estrecha.
+Test-Afirmacion -Nombre 'Pero un Acceso denegado SIGUE contando aunque lleve basura' `
+    -Esperado $false -Obtenido (Test-LineaDeRobocopyVacia -Linea ($nulo + 'ERROR 5 Acceso denegado'))
+Test-Afirmacion -Nombre 'Y cualquier linea con texto real cuenta' `
+    -Esperado $false -Obtenido (Test-LineaDeRobocopyVacia -Linea '   x   ')
+
+# ===========================================================================
+# EL ROJO SE CURA SOLO CUANDO SU CAUSA SE CURO, Y SOLO ENTONCES
+# ===========================================================================
+# El icono se quedaba en rojo parpadeante despues de que el nodo volviera,
+# mientras el tablero decia "Nodo: responde" en la misma pantalla.
+Write-Titulo 'Un fallo cuya causa ya no existe'
+
+Test-Afirmacion -Nombre 'Nodo caido: el rojo SIGUE siendo rojo' `
+    -Esperado 'Falla' `
+    -Obtenido (Resolve-EstadoVigente -Estado 'Falla' -Causa 'destinoInalcanzable' -DestinoResponde $false).Estado
+Test-Afirmacion -Nombre 'Nodo de vuelta: el rojo baja a AMBAR, no a verde' `
+    -Esperado 'Atencion' `
+    -Obtenido (Resolve-EstadoVigente -Estado 'Falla' -Causa 'destinoInalcanzable' -DestinoResponde $true).Estado
+Test-Afirmacion -Nombre 'Y NUNCA sube a Protegido solo: eso exige una corrida' `
+    -Esperado $false `
+    -Obtenido ((Resolve-EstadoVigente -Estado 'Falla' -Causa 'destinoInalcanzable' -DestinoResponde $true).Estado -eq 'Protegido')
+
+# LO QUE NO SE PUEDE CURAR SOLO, y es la mitad importante de esta regla.
+Test-Afirmacion -Nombre 'Un centinela alterado NO se cura porque el nodo responda' `
+    -Esperado 'Falla' `
+    -Obtenido (Resolve-EstadoVigente -Estado 'Falla' -Causa 'centinelaAlterado' -DestinoResponde $true).Estado
+Test-Afirmacion -Nombre 'El freno tampoco: espera una decision de una persona' `
+    -Esperado 'Atencion' `
+    -Obtenido (Resolve-EstadoVigente -Estado 'Atencion' -Causa 'freno' -DestinoResponde $true).Estado
+Test-Afirmacion -Nombre 'Un fallo sin causa anotada se respeta tal cual' `
+    -Esperado 'Falla' `
+    -Obtenido (Resolve-EstadoVigente -Estado 'Falla' -Causa '' -DestinoResponde $true).Estado
+Test-Afirmacion -Nombre 'Y un verde no se toca' `
+    -Esperado 'Protegido' `
+    -Obtenido (Resolve-EstadoVigente -Estado 'Protegido' -Causa '' -DestinoResponde $true).Estado
+
+# ===========================================================================
 
 if (-not $Conservar) {
     Remove-Item -LiteralPath $CarpetaCaja -Recurse -Force -ErrorAction SilentlyContinue

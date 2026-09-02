@@ -285,6 +285,10 @@ function Invoke-CorridaDeRespaldo {
         Simulada     = [bool]$Simular
         Abortada     = $false
         Motivo       = $null
+        # Token estable y legible por maquina de POR QUE se aborto. El Motivo es
+        # una frase para la persona y puede reescribirse; la Causa la lee el
+        # indicador para decidir si un fallo sigue vigente o ya se resolvio solo.
+        Causa        = $null
         Raices       = @()
         Huerfanos    = @()
         Secretos     = @()
@@ -300,6 +304,7 @@ function Invoke-CorridaDeRespaldo {
     if ($raices.Count -eq 0) {
         $resultado.Abortada = $true
         $resultado.Motivo = 'La configuracion no resuelve ninguna raiz. No hay nada que copiar.'
+$resultado.Causa = 'sinRaices'
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'clasificar' -Mensaje $resultado.Motivo
         return [pscustomobject]$resultado
     }
@@ -329,6 +334,7 @@ function Invoke-CorridaDeRespaldo {
                 (($deuda.RaicesDeMas -join '; ')   -replace '^$', 'ninguna'),
                 (($deuda.RaicesDeMenos -join '; ') -replace '^$', 'ninguna'))
             Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'deuda' -Mensaje $resultado.Motivo
+        $resultado.Causa = 'deudaSinSaldar'
             return [pscustomobject]$resultado
         }
         Write-RegistroRespaldo -Etapa 'deuda' -Mensaje "Deuda saldada: las $($deuda.RaicesResueltas) raices resueltas son las declaradas."
@@ -339,6 +345,7 @@ function Invoke-CorridaDeRespaldo {
     if (-not (Test-DestinoNodo -Unc $unc)) {
         $resultado.Abortada = $true
         $resultado.Motivo = "Guarda de destino: '$unc' no es UNC alcanzable."
+$resultado.Causa = 'destinoInalcanzable'
         return [pscustomobject]$resultado
     }
     $raizNodo = '{0}\{1}\{2}' -f $unc.TrimEnd('\'), $Configuracion.destinos.nodo.raiz, $Configuracion.destinos.nodo.prefijoEquipo
@@ -349,6 +356,7 @@ function Invoke-CorridaDeRespaldo {
     if (-not $cent.Correcto) {
         $resultado.Abortada = $true
         $resultado.Motivo = "CENTINELA ALTERADO. $($cent.Fallos.Count) de $($cent.Revisados) no cuadran. No se escribe nada, y esto no se puede autorizar."
+$resultado.Causa = 'centinelaAlterado'
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'centinela' -Mensaje $resultado.Motivo
         foreach ($f in $cent.Fallos) {
             Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'centinela' -Mensaje "$($f.Ruta) -- $($f.Motivo)"
@@ -370,6 +378,7 @@ function Invoke-CorridaDeRespaldo {
         if (-not (Test-OrigenUtilizable -Raiz $r)) {
             $resultado.Abortada = $true
             $resultado.Motivo = "Guarda de origen: $($r.Ruta) no es utilizable."
+$resultado.Causa = 'origenInutilizable'
             $resultado.Frenos = $frenos.ToArray()
             return [pscustomobject]$resultado
         }
@@ -383,6 +392,7 @@ function Invoke-CorridaDeRespaldo {
         $resultado.Abortada = $true
         $resultado.Motivo = ('FRENO: {0} de {1} raices rebasan el umbral del {2} %. No se copia NADA hasta que se autorice con -AutorizarFreno.' -f
             $rebasadas.Count, $frenos.Count, $umbral)
+        $resultado.Causa = 'freno'
         Write-RegistroRespaldo -Nivel 'FRENO' -Etapa 'freno' -Mensaje $resultado.Motivo
         foreach ($f in $rebasadas) {
             Write-RegistroRespaldo -Nivel 'FRENO' -Etapa 'freno' `
@@ -529,6 +539,11 @@ function Invoke-CorridaConEstado {
         copias    = @($resultado.Copias).Count
         fallos    = $fallos.Count
     }
+    # La causa viaja a ESTADO.txt para que el indicador pueda preguntarse si el
+    # motivo del fallo SIGUE VIGENTE. Sin ella solo queda una frase en prosa, y
+    # adivinar el estado del sistema leyendo prosa es como se construyen los
+    # semaforos que mienten.
+    if ($resultado.Causa) { $datos['causa'] = $resultado.Causa }
     Write-EstadoRespaldo -Estado $estado -Detalle $detalle -Datos $datos -Carpeta $carpetaEstado -Confirm:$false
 
     $emision = @{ Nivel = $nivel; Situacion = $situacion; Mensaje = $detalle; Hechos = $datos }

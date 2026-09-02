@@ -17,8 +17,7 @@
 
         EL RIESGO REAL ES OTRO: que el menu permita debilitar la proteccion sin
         que se note. Por eso el reparto NO es negociable, y este archivo lo
-        respeta por omision -aqui no hay ninguna opcion que toque las cuatro de
-        la derecha-:
+        respeta por omision:
 
           DESDE EL MENU              SOLO EDITANDO respaldo.jsonc
           hora de corrida            UMBRAL DEL FRENO
@@ -29,6 +28,23 @@
         La ventana ENSENA esos cuatro valores para que se puedan mirar, y dice
         donde se cambian. Ver no es poder cambiar.
 
+        LAS CINCO ACCIONES QUE PIDE LA SECCION 10.1 ESTAN TODAS: copiar al nodo,
+        copiar al disco, verificar huellas, probar restauracion y ajustes. Las
+        dos ultimas faltaban hasta el 2026-09-02, y su ausencia no se habia
+        notado porque nada las comprobaba.
+
+        NUNCA SE CANALIZA HACIA Write-Information, Y ESTO COSTO UN MENU ROTO.
+        `Write-Information` tiene `MessageData` OBLIGATORIO y por canalizacion:
+        si lo que llega es una cadena vacia -y `Out-String` devuelve exactamente
+        eso cuando no hay nada que formatear-, el enlace del parametro falla y
+        PowerShell SE PARA A PEDIRLO por consola. Desde fuera se ve como "elegi
+        una opcion, salio un mensaje raro y no hizo nada". Se resuelve
+        formateando a variable y escribiendo solo si hay texto: Show-Texto.
+
+        Y CADA OPCION VA EN try/catch: un fallo dentro de una accion tiene que
+        contarse y devolver el menu, no tumbar la ventana. Un tablero que se
+        cierra ante el primer error es un tablero que no se usa el dia malo.
+
         EL ESTADO LO RESUELVE EL INDICADOR, NO ESTE ARCHIVO, y es a proposito:
         si el tablero calculara el suyo, la barra y la ventana podrian contar
         historias distintas del mismo momento y no habria forma de saber cual
@@ -37,9 +53,7 @@
         reinicia esas variables en quien lo carga. Asi se convirtio una
         simulacion en una copia real el 2026-09-02 (seccion 12.undecies).
 
-        EL DIBUJO VIVE EN estilo.ps1. Aqui solo se decide QUE se ensena; COMO se
-        ve es de la otra capa, para que cambiar el aspecto no obligue a tocar el
-        archivo que lanza copias.
+        EL DIBUJO VIVE EN estilo.ps1. Aqui solo se decide QUE se ensena.
 
     .PARAMETER RutaConfiguracion
         Configuracion a usar. Por omision la de 3-Config.
@@ -61,12 +75,65 @@ $nucleo = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo'
 . "$nucleo\comun.ps1"
 . "$PSScriptRoot\estilo.ps1"
 
-$script:NombreTarea    = 'NasRespaldo-Diario'
+$script:NombreTarea     = 'NasRespaldo-Diario'
 $script:NombreIndicador = 'NasRespaldo-Indicador'
 
 $script:Capacidades = Initialize-Consola
 $script:Paleta      = Get-Paleta -Capacidades $script:Capacidades
 $script:Trazo       = Get-TrazoDeMarco -Unicode $script:Capacidades.Unicode
+
+function Show-Texto {
+    <#
+        .SYNOPSIS
+            Escribe un objeto ya formateado, y NADA si no hay nada que escribir.
+        .DESCRIPTION
+            El sustituto de canalizar hacia Write-Information. Ver la cabecera:
+            MessageData es obligatorio y una cadena vacia rompe el enlace del
+            parametro, dejando el menu pidiendo un valor por consola.
+        .PARAMETER Objeto
+            Lo que se quiere ensenar. Puede ser $null.
+        .PARAMETER Vacio
+            Que decir cuando no hay nada. Vacio para no decir nada.
+        .PARAMETER Lista
+            Formatear como lista en vez de como tabla.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowNull()] $Objeto,
+        [string] $Vacio = '',
+        [switch] $Lista
+    )
+
+    $texto = ''
+    if ($null -ne $Objeto) {
+        $texto = if ($Lista) {
+            $Objeto | Format-List | Out-String -Width 200
+        }
+        else {
+            $Objeto | Format-Table -AutoSize | Out-String -Width 200
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($texto)) {
+        if ($Vacio) { Write-Information ('   ' + $Vacio) -InformationAction Continue }
+        return
+    }
+    Write-Information $texto.TrimEnd() -InformationAction Continue
+}
+
+function Write-Linea {
+    <#
+        .SYNOPSIS
+            Una linea suelta fuera del marco. Nunca vacia.
+        .PARAMETER Texto
+            Lo que se escribe.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Texto)
+    if ([string]::IsNullOrEmpty($Texto)) { return }
+    Write-Information $Texto -InformationAction Continue
+}
 
 function Get-EstadoDelIndicador {
     <#
@@ -151,21 +218,20 @@ function Show-Ventana {
         [Parameter(Mandatory)][psobject] $Configuracion
     )
 
-    $v          = Get-EstadoDelIndicador
-    $estado     = Read-EstadoRespaldo
-    $simbolo    = Get-Simbolo -Estado $v.Estado -Unicode $script:Capacidades.Unicode
+    $v           = Get-EstadoDelIndicador
+    $estado      = Read-EstadoRespaldo
+    $simbolo     = Get-Simbolo -Estado $v.Estado -Unicode $script:Capacidades.Unicode
     $colorEstado = Get-ColorDeEstado -Estado $v.Estado -Paleta $script:Paleta
-    $p          = $script:Paleta
+    $p           = $script:Paleta
 
-    Write-Information '' -InformationAction Continue
+    Write-Linea ''
     Write-Separador -Titulo 'Respaldo del NAS' -Posicion 'Superior' -Derecha (Get-Date -Format 'dd/MM HH:mm')
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p) -InformationAction Continue
 
-    # EL SIMBOLO VA ANTES QUE EL COLOR, no al reves: en una terminal sin color
-    # la linea tiene que seguir diciendo lo mismo (seccion 10.2).
-    # Get-Simbolo ya trae su propio espacio a cada lado, y su ancho cambia entre
-    # Unicode y ASCII: no se le suman espacios aqui o la sangria bailaria segun
-    # la terminal.
+    # EL SIMBOLO VA ANTES QUE EL COLOR, no al reves: en una terminal sin color la
+    # linea tiene que seguir diciendo lo mismo (seccion 10.2). Get-Simbolo ya
+    # trae su propio espacio a cada lado y su ancho cambia entre Unicode y ASCII,
+    # asi que no se le suman espacios aqui.
     $titular = '  {0}{1}{2}{3}' -f $colorEstado, $simbolo, $v.Estado.ToUpperInvariant(), $p.Fin
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
             -Texto $titular -Visible (2 + $simbolo.Length + $v.Estado.Length)) -InformationAction Continue
@@ -174,11 +240,10 @@ function Show-Ventana {
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
             -Texto $detalle -Visible $detalle.Length) -InformationAction Continue
 
-    $momento = '' + $estado['momento']
     [datetime] $cuando = [datetime]::MinValue
-    if ([datetime]::TryParse($momento, [ref] $cuando)) {
+    if ([datetime]::TryParse(('' + $estado['momento']), [ref] $cuando)) {
         $horas = ((Get-Date) - $cuando).TotalHours
-        $linea = '      ultima corrida buena  {0:dd/MM HH:mm}  (hace {1:N0} h)' -f $cuando, $horas
+        $linea = '      ultima corrida al nodo  {0:dd/MM HH:mm}  (hace {1:N0} h)' -f $cuando, $horas
         Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
                 -Texto ('{0}{1}{2}' -f $p.Tenue, $linea, $p.Fin) -Visible $linea.Length) -InformationAction Continue
     }
@@ -187,21 +252,36 @@ function Show-Ventana {
     # --- Destinos ---------------------------------------------------------
     Write-Separador -Titulo 'Destinos'
     $unc = $Configuracion.destinos.nodo.unc
-    # Test-Path directo y no Test-DestinoNodo: pintar la ventana no debe
-    # escribir lineas de ERROR en el registro de operacion.
-    $nodoVivo = Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue
-    if ($nodoVivo) { Write-Campo -Etiqueta 'Nodo' -Valor ('{0}  responde' -f $unc) -Color $p.Verde }
-    else           { Write-Campo -Etiqueta 'Nodo' -Valor ('{0}  NO RESPONDE' -f $unc) -Color $p.Rojo }
+    # Test-Path directo y no Test-DestinoNodo: pintar la ventana no debe escribir
+    # lineas de ERROR en el registro, ni esperar reintentos de medio minuto.
+    if (Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue) {
+        Write-Campo -Etiqueta 'Nodo' -Valor ('{0}   responde' -f $unc) -Color $p.Verde
+    }
+    else {
+        Write-Campo -Etiqueta 'Nodo' -Valor ('{0}   NO RESPONDE' -f $unc) -Color $p.Rojo
+    }
 
     $disco = Get-DiscoFrio -Configuracion $Configuracion 2>$null
     if ($disco) {
-        $marcaDisco = Get-Item -LiteralPath $disco.Centinela -ErrorAction SilentlyContinue
-        $texto = '{0}  serie {1}' -f $disco.Raiz, $disco.Serie
-        if ($marcaDisco) {
-            $dias = [int]((Get-Date) - $marcaDisco.LastWriteTime).TotalDays
-            $texto += '  escrito hace {0} d' -f $dias
+        # LA FECHA SALE DE LA ULTIMA CORRIDA, NO DEL CENTINELA. El centinela es
+        # el carnet de identidad del disco y la copia nunca lo toca, asi que
+        # medir su fecha decia "escrito hace 1 dia" justo despues de escribir.
+        $texto = '{0}   serie {1}' -f $disco.Raiz, $disco.Serie
+        $color = $p.Verde
+        [datetime] $cd = [datetime]::MinValue
+        if ($estado.ContainsKey('disco_momento') -and
+            [datetime]::TryParse(('' + $estado['disco_momento']), [ref] $cd)) {
+            $texto += '   copiado {0:dd/MM HH:mm}' -f $cd
         }
-        Write-Campo -Etiqueta 'Disco frio' -Valor $texto -Color $p.Verde
+        else {
+            $texto += '   sin copia registrada'
+            $color = $p.Gris
+        }
+        if (('' + $estado['disco_estado']) -eq 'Atencion') { $color = $p.Ambar }
+        Write-Campo -Etiqueta 'Disco frio' -Valor $texto -Color $color
+        if ($estado.ContainsKey('disco_detalle') -and $estado['disco_detalle']) {
+            Write-Campo -Etiqueta '' -Valor ('' + $estado['disco_detalle']) -Color $p.Tenue
+        }
     }
     else {
         # El disco se conecta A PETICION (seccion 6.3): no hay calendario y es
@@ -219,17 +299,22 @@ function Show-Ventana {
             Write-Campo -Etiqueta $par.Eti -Valor $par.Falta -Color $p.Rojo
         }
         elseif ($t.State -eq 'Disabled') {
-            Write-Campo -Etiqueta $par.Eti -Valor ('{0}  DESHABILITADA' -f $par.Tarea) -Color $p.Ambar
+            Write-Campo -Etiqueta $par.Eti -Valor ('{0}   DESHABILITADA' -f $par.Tarea) -Color $p.Ambar
         }
         else {
-            Write-Campo -Etiqueta $par.Eti -Valor ('{0}  {1}' -f $par.Tarea, $t.State) -Color $p.Verde
+            $extra = ''
+            if ($par.Eti -eq 'Motor') {
+                $d = @($t.Triggers) | Select-Object -First 1
+                if ($d -and $d.StartBoundary) {
+                    [datetime] $h = [datetime]::MinValue
+                    if ([datetime]::TryParse($d.StartBoundary, [ref] $h)) { $extra = '   {0:HH:mm}' -f $h }
+                }
+            }
+            Write-Campo -Etiqueta $par.Eti -Valor ('{0}{1}   {2}' -f $par.Tarea, $extra, $t.State) -Color $p.Verde
         }
     }
 
     # --- Protecciones -----------------------------------------------------
-    # El recordatorio va por la derecha y NO dentro del titulo: el titulo se
-    # escribe en mayusculas, y una ruta de archivo en mayusculas deja de ser
-    # una ruta que alguien pueda copiar.
     Write-Separador -Titulo 'Protecciones' -Derecha 'se cambian en 3-Config/respaldo.jsonc'
     $minimo = if ($Configuracion.freno.PSObject.Properties.Name -contains 'minimoArchivosParaFrenar') {
         $Configuracion.freno.minimoArchivosParaFrenar
@@ -237,17 +322,17 @@ function Show-Ventana {
     Write-Campo -Etiqueta 'Freno' -Valor ('{0} % y minimo de {1} archivos' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian, $minimo)
     Write-Campo -Etiqueta 'Centinelas' -Valor ('{0} declarados' -f @($Configuracion.centinelas).Count)
     Write-Campo -Etiqueta 'Clases' -Valor ('{0} contenedores, {1} raices declaradas' -f @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
-    Write-Campo -Etiqueta 'Borrado' -Valor 'clase A nunca borra  -  clase B espeja'
+    Write-Campo -Etiqueta 'Borrado' -Valor 'clase A nunca borra   -   clase B espeja'
     Write-Separador -Posicion 'Inferior'
 
     # --- Menu -------------------------------------------------------------
-    Write-Information '' -InformationAction Continue
-    Write-Information ('   {0}COPIAR{1}                  {0}COMPROBAR{1}                 {0}SISTEMA{1}' -f $p.Fuerte, $p.Fin) -InformationAction Continue
-    Write-Information '   [1] al nodo             [3] verificar el nodo     [5] semilla' -InformationAction Continue
-    Write-Information '   [2] simular             [4] estado completo       [6] tareas' -InformationAction Continue
-    Write-Information '   [7] al disco frio       [9] revisar el disco      [S] salir' -InformationAction Continue
-    Write-Information '   [8] simular el disco' -InformationAction Continue
-    Write-Information '' -InformationAction Continue
+    Write-Linea ''
+    Write-Linea ('   {0}COPIAR{1}                  {0}COMPROBAR{1}                 {0}SISTEMA{1}' -f $p.Fuerte, $p.Fin)
+    Write-Linea '   [1] al nodo             [3] verificar el nodo     [5] semilla'
+    Write-Linea '   [2] simular             [4] estado completo       [6] tareas'
+    Write-Linea '   [7] al disco frio       [9] revisar el disco      [A] ajustes'
+    Write-Linea '   [8] simular el disco    [R] probar restauracion   [S] salir'
+    Write-Linea ''
 }
 
 function Show-RevisionDelDisco {
@@ -273,14 +358,14 @@ function Show-RevisionDelDisco {
         return
     }
 
-    Write-Information ('  Raices revisadas: {0}' -f @($Revision.Revisadas).Count) -InformationAction Continue
+    Write-Linea ('   Raices revisadas: {0}' -f @($Revision.Revisadas).Count)
     foreach ($s in @($Revision.Saltadas)) {
         Write-Warning ('NO REVISADO ({0}): {1}' -f $s.Lado, $s.Motivo)
     }
 
     $rotos = @($Revision.EnVuelo)
     if ($rotos.Count -eq 0 -and @($Revision.Saltadas).Count -eq 0) {
-        Write-Information ('  {0}Sin archivos a medias. El disco esta cuadrado.{1}' -f $p.Verde, $p.Fin) -InformationAction Continue
+        Write-Linea ('   {0}Sin archivos a medias. El disco esta cuadrado.{1}' -f $p.Verde, $p.Fin)
         return
     }
     if ($rotos.Count -eq 0) {
@@ -288,10 +373,129 @@ function Show-RevisionDelDisco {
         return
     }
 
-    Write-Information ('  {0}{1} archivo(s) a medias de una copia cortada.{2}' -f $p.Rojo, $rotos.Count, $p.Fin) -InformationAction Continue
-    $rotos | Select-Object Motivo, TamanoOrigen, TamanoDestino, Relativa |
-        Format-Table -AutoSize | Out-String -Width 200 | Write-Information -InformationAction Continue
-    Write-Information '  Se reparan con Repair-ArchivosEnVuelo (2-Nucleo/comun.ps1): sobrescribe, nunca borra.' -InformationAction Continue
+    Write-Linea ('   {0}{1} archivo(s) a medias de una copia cortada.{2}' -f $p.Rojo, $rotos.Count, $p.Fin)
+    Show-Texto -Objeto ($rotos | Select-Object Motivo, TamanoOrigen, TamanoDestino, Relativa)
+    Write-Linea '   Se reparan con Repair-ArchivosEnVuelo (2-Nucleo/comun.ps1): sobrescribe, nunca borra.'
+}
+
+function Show-PruebaDeRestauracion {
+    <#
+        .SYNOPSIS
+            Comprueba que la semilla existe, se lee y sabe cuando se probo.
+
+        .DESCRIPTION
+            LO QUE ESTO ES Y LO QUE NO ES, dicho aqui para que nadie confunda
+            una cosa con la otra. Esto comprueba que la semilla ESTA y SE LEE.
+            El criterio 11 de la seccion 15 pide otra cosa -restaurar en una
+            maquina virtual limpia y CRONOMETRARLO- y aprovisionar maquinas esta
+            fuera de alcance (seccion 16), asi que esa prueba la lanza una
+            persona y esta pantalla solo dice cuanto hace que no se hace.
+
+            La linea de "ultima prueba real" esta para incomodar cuando envejezca
+            (seccion 9). Si no hay ninguna, lo dice a gritos: una semilla que
+            nadie ha restaurado nunca es una promesa, no un respaldo.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    $p = $script:Paleta
+    $unc = $Configuracion.destinos.nodo.unc.TrimEnd('\')
+    $raizSemilla = '{0}\{1}\{2}\_SEMILLA' -f $unc, $Configuracion.destinos.nodo.raiz, $Configuracion.destinos.nodo.prefijoEquipo
+
+    Write-Linea ('   Semilla en: {0}' -f $raizSemilla)
+    if (-not (Test-Path -LiteralPath $raizSemilla -PathType Container)) {
+        Write-Warning 'LA SEMILLA NO ESTA EN EL NODO. Regenerala con la opcion [5].'
+        return
+    }
+
+    $archivos = @(Get-ChildItem -LiteralPath $raizSemilla -File -Force -ErrorAction SilentlyContinue)
+    Show-Texto -Objeto ($archivos | Select-Object Name, Length, LastWriteTime) -Vacio 'La carpeta de la semilla esta VACIA.'
+
+    $guion = Join-Path $raizSemilla 'RESTAURAR.ps1'
+    if (Test-Path -LiteralPath $guion -PathType Leaf) {
+        # SE LEE DE VERDAD, no se comprueba solo que exista: un archivo de cero
+        # bytes existe igual de bien que uno bueno.
+        $texto = Get-Content -LiteralPath $guion -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($texto)) {
+            Write-Warning 'RESTAURAR.ps1 existe pero esta VACIO o no se puede leer.'
+        }
+        else {
+            Write-Linea ('   {0}RESTAURAR.ps1 se lee desde el nodo: {1} lineas.{2}' -f $p.Verde, @($texto -split "`n").Count, $p.Fin)
+        }
+    }
+    else {
+        Write-Warning 'Falta RESTAURAR.ps1 dentro de la semilla.'
+    }
+
+    $estado = Read-EstadoRespaldo
+    if ($estado.ContainsKey('restauracion_probada') -and $estado['restauracion_probada']) {
+        Write-Linea ('   Ultima restauracion REAL probada: {0}' -f $estado['restauracion_probada'])
+    }
+    else {
+        Write-Linea ('   {0}NUNCA se ha restaurado en una maquina limpia (criterio 11 abierto).{1}' -f $p.Ambar, $p.Fin)
+        Write-Linea '   Eso lo hace una persona: aprovisionar maquinas esta fuera de alcance (seccion 16).'
+    }
+}
+
+function Show-Reparto {
+    <#
+        .SYNOPSIS
+            El reparto de la seccion 10.1: lo que el menu SI puede cambiar
+            y lo que no. Se llama Reparto y no Ajustes porque el analizador
+            rechaza sustantivos en plural (charter 6.1: advertencia = error), y
+            porque "reparto" es el nombre que usa el contrato.
+        .DESCRIPTION
+            El reparto de la seccion 10.1, hecho pantalla. Aqui solo aparece lo
+            que el menu tiene permitido tocar; las cuatro protecciones se
+            ENSENAN en la ventana y se cambian editando el archivo, que es
+            justamente lo que impide relajarlas con un clic.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    $p = $script:Paleta
+    $t = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
+    $hora = 'sin tarea'
+    if ($t) {
+        $d = @($t.Triggers) | Select-Object -First 1
+        [datetime] $h = [datetime]::MinValue
+        if ($d -and $d.StartBoundary -and [datetime]::TryParse($d.StartBoundary, [ref] $h)) { $hora = '{0:HH:mm}' -f $h }
+    }
+
+    Write-Linea ''
+    Write-Linea ('   {0}SE CAMBIAN DESDE AQUI{1}' -f $p.Fuerte, $p.Fin)
+    Write-Linea ('   Hora de la corrida diaria : {0}' -f $hora)
+    Write-Linea ''
+    Write-Linea ('   {0}SOLO EDITANDO 3-Config/respaldo.jsonc{1}   (seccion 10.1)' -f $p.Fuerte, $p.Fin)
+    Write-Linea ('   Umbral del freno          : {0} %' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian)
+    Write-Linea ('   Centinelas                : {0} declarados' -f @($Configuracion.centinelas).Count)
+    Write-Linea  '   Politica de borrado       : clase A nunca borra, clase B espeja'
+    Write-Linea ('   Clases                    : {0} contenedores, {1} raices' -f @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
+    Write-Linea ''
+    Write-Linea '   Cada uno lleva encima, en el archivo, un comentario que dice que pasa si se cambia.'
+    Write-Linea ''
+
+    $nueva = Read-Host '   Nueva hora HH:mm (Enter para dejarla igual)'
+    if ([string]::IsNullOrWhiteSpace($nueva)) {
+        Write-Linea '   Sin cambios.'
+        return
+    }
+    if ($nueva -notmatch '^([01]\d|2[0-3]):[0-5]\d$') {
+        Write-Warning 'Formato no valido. Se esperaba HH:mm, por ejemplo 22:30. Sin cambios.'
+        return
+    }
+    & "$PSScriptRoot\Registrar-Tarea.ps1" -Pieza Motor -Accion Registrar -Hora $nueva -Confirm:$false -InformationAction Continue | Out-Null
+    Write-Linea ('   {0}Hora de la corrida cambiada a {1}.{2}' -f $p.Verde, $nueva, $p.Fin)
 }
 
 $parametros = @{}
@@ -306,52 +510,81 @@ while ($seguir) {
     $comunes = @{}
     if ($rutaConfig) { $comunes['RutaConfiguracion'] = $rutaConfig }
 
-    switch ($tecla.Trim().ToUpperInvariant()) {
-        '1' {
-            # AUTORIZAR EL FRENO NO ES UNA OPCION DEL MENU y es deliberado: si el
-            # freno salta, quien lo autoriza tiene que verlo primero y volver a
-            # lanzar con -AutorizarFreno desde la consola. Un menu que ofreciera
-            # "copiar de todos modos" convertiria la defensa en un clic.
-            & "$nucleo\respaldo.ps1" @comunes -Confirm:$false | Out-Null
-        }
-        '2' { & "$nucleo\respaldo.ps1" @comunes -SoloSimular -Confirm:$false | Out-Null }
-        '3' { & "$nucleo\verificar.ps1" @comunes | Format-List | Out-String -Width 200 | Write-Information -InformationAction Continue }
-        '4' { Read-EstadoRespaldo | Format-Table -AutoSize | Out-String | Write-Information -InformationAction Continue }
-        '5' {
-            $destino = '{0}\{1}\{2}\_SEMILLA' -f `
-                $configuracion.destinos.nodo.unc.TrimEnd('\'),
-                $configuracion.destinos.nodo.raiz,
-                $configuracion.destinos.nodo.prefijoEquipo
-            & "$nucleo\semilla.ps1" -Destino $destino -Confirm:$false | Format-List | Out-String | Write-Information -InformationAction Continue
-        }
-        '6' {
-            foreach ($n in @($script:NombreTarea, $script:NombreIndicador)) {
-                $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
-                if ($t) { $t | Get-ScheduledTaskInfo | Format-List | Out-String | Write-Information -InformationAction Continue }
-                else { Write-Warning "La tarea '$n' NO existe." }
+    # UN FALLO DENTRO DE UNA OPCION NO PUEDE CERRAR LA VENTANA. Se cuenta y se
+    # vuelve al menu: el dia que algo va mal es justo el dia que hace falta el
+    # tablero.
+    try {
+        switch ($tecla.Trim().ToUpperInvariant()) {
+            '1' {
+                # AUTORIZAR EL FRENO NO ES UNA OPCION DEL MENU y es deliberado:
+                # si el freno salta, quien lo autoriza tiene que verlo primero y
+                # volver a lanzar con -AutorizarFreno desde la consola. Un menu
+                # que ofreciera "copiar de todos modos" convertiria la defensa
+                # en un clic.
+                Write-Linea '   Copiando al nodo...'
+                $r1 = & "$nucleo\respaldo.ps1" @comunes -Confirm:$false
+                if ($r1 -and $r1.Abortada) { Write-Warning $r1.Motivo }
+                else { Write-Linea '   Corrida terminada.' }
             }
-        }
-        '7' {
-            # Las DOS pasadas. Si el nodo no responde corre solo la del equipo y
-            # la copia queda declarada INCOMPLETA: nunca se dice "al dia" a una
-            # copia fria a la que le falto la mitad (seccion 6.2).
-            $rd = & "$nucleo\disco.ps1" @comunes -Confirm:$false
-            if ($rd.Abortada) { Write-Warning $rd.Motivo }
-            elseif (-not $rd.Completa) {
-                Write-Warning 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.'
+            '2' {
+                Write-Linea '   Simulando (no se escribe nada)...'
+                $r2 = & "$nucleo\respaldo.ps1" @comunes -SoloSimular -Confirm:$false
+                Show-Texto -Objeto ($r2 | Select-Object Abortada, Motivo, Freno) -Lista -Vacio 'La simulacion no devolvio nada.'
             }
-            else { Write-Information '   Copia fria COMPLETA: las dos pasadas corrieron.' -InformationAction Continue }
+            '3' {
+                Write-Linea '   Verificando contra el nodo. El nivel 3 LEE LOS ARCHIVOS ENTEROS:'
+                Write-Linea '   con videos del drone en la muestra tarda MINUTOS. No esta colgado.'
+                Show-Texto -Objeto (& "$nucleo\verificar.ps1" @comunes) -Lista -Vacio 'La verificacion no devolvio nada.'
+            }
+            '4' { Show-Texto -Objeto (Read-EstadoRespaldo) -Vacio 'No hay estado escrito todavia.' }
+            '5' {
+                $destino = '{0}\{1}\{2}\_SEMILLA' -f `
+                    $configuracion.destinos.nodo.unc.TrimEnd('\'),
+                    $configuracion.destinos.nodo.raiz,
+                    $configuracion.destinos.nodo.prefijoEquipo
+                Show-Texto -Objeto (& "$nucleo\semilla.ps1" -Destino $destino -Confirm:$false) -Lista -Vacio 'La semilla no devolvio nada.'
+            }
+            '6' {
+                foreach ($n in @($script:NombreTarea, $script:NombreIndicador)) {
+                    $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+                    if ($t) { Show-Texto -Objeto ($t | Get-ScheduledTaskInfo) -Lista }
+                    else { Write-Warning "La tarea '$n' NO existe." }
+                }
+            }
+            '7' {
+                # Las DOS pasadas. Si el nodo no responde corre solo la del
+                # equipo y la copia queda declarada INCOMPLETA: nunca se dice
+                # "al dia" a una copia fria a la que le falto la mitad (6.2).
+                Write-Linea '   Copiando al disco frio (dos pasadas)...'
+                $rd = & "$nucleo\disco.ps1" @comunes -Confirm:$false
+                if ($rd.Abortada) { Write-Warning $rd.Motivo }
+                elseif (-not $rd.Completa) {
+                    Write-Warning 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.'
+                }
+                elseif ($rd.ArchivosCopiados -eq 0) {
+                    Write-Linea '   Copia fria AL DIA: las dos pasadas corrieron y no habia nada nuevo que copiar.'
+                }
+                else {
+                    Write-Linea ('   Copia fria COMPLETA: {0} archivos nuevos.' -f $rd.ArchivosCopiados)
+                }
+            }
+            '8' { Show-Texto -Objeto (& "$nucleo\disco.ps1" @comunes -SoloSimular -Confirm:$false) -Lista -Vacio 'La simulacion no devolvio nada.' }
+            '9' {
+                # Busca lo que una copia cortada dejo a medias. Existe porque un
+                # apagon el 2026-09-02 dejo ocho archivos con el tamano correcto
+                # y el contenido distinto, y /XO los habria saltado para siempre.
+                Write-Linea '   Revisando el disco (recorre las dos rutas: puede tardar)...'
+                $r9 = & "$nucleo\verificar.ps1" @comunes -RevisarDisco -TamanoMuestra 0
+                Show-RevisionDelDisco -Revision $r9.DiscoEnVuelo
+            }
+            'R' { Show-PruebaDeRestauracion -Configuracion $configuracion }
+            'A' { Show-Reparto -Configuracion $configuracion }
+            'S' { $seguir = $false }
+            default { Write-Warning 'Opcion no reconocida.' }
         }
-        '8' { & "$nucleo\disco.ps1" @comunes -SoloSimular -Confirm:$false | Format-List | Out-String -Width 200 | Write-Information -InformationAction Continue }
-        '9' {
-            # Busca lo que una copia cortada dejo a medias. Existe porque un
-            # apagon el 2026-09-02 dejo ocho archivos con el tamano correcto y
-            # el contenido distinto, y /XO los habria saltado para siempre.
-            Write-Information '   Revisando el disco (recorre las dos rutas: puede tardar)...' -InformationAction Continue
-            $r = & "$nucleo\verificar.ps1" @comunes -RevisarDisco -TamanoMuestra 0
-            Show-RevisionDelDisco -Revision $r.DiscoEnVuelo
-        }
-        'S' { $seguir = $false }
-        default { Write-Warning 'Opcion no reconocida.' }
+    }
+    catch {
+        Write-Warning ('La opcion fallo: {0}' -f $_.Exception.Message)
+        Write-Verbose ('' + $_.ScriptStackTrace)
     }
 }
