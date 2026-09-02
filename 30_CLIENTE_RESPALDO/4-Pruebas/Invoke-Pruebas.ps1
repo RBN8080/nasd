@@ -999,6 +999,38 @@ else {
 }
 
 # ===========================================================================
+# LA COPIA DEL ESTADO EN EL NODO - seccion 8
+# ===========================================================================
+# La seccion 8 pide una copia de ESTADO.txt dentro de _SISTEMA en el nodo: en
+# una restauracion desde cero el equipo ya no existe y esa copia es lo unico
+# que dice cuando fue la ultima corrida buena. No se publicaba, y por eso
+# _SISTEMA no llegaba a crearse: quien lo creaba era el emisor de eventos, y
+# el evento verde no se emite (seccion 11).
+Write-Titulo 'El estado se publica en el nodo'
+
+$cajaPub = Join-Path $CarpetaCaja 'publicar'
+$origenPub = Join-Path $cajaPub 'local'
+New-Item -ItemType Directory -Path $origenPub -Force | Out-Null
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'prueba' -Carpeta $origenPub -Confirm:$false
+
+$destinoPub = Join-Path $cajaPub 'nodo\_SISTEMA'
+$publicado = Publish-EstadoAlNodo -RutaSistema $destinoPub -Carpeta $origenPub -Confirm:$false
+
+Test-Afirmacion -Nombre 'Publica y lo dice' -Esperado $true -Obtenido $publicado
+Test-Afirmacion -Nombre 'Crea _SISTEMA si no existe: por eso la carpeta llega a existir' `
+    -Esperado $true -Obtenido (Test-Path -LiteralPath $destinoPub -PathType Container)
+Test-Afirmacion -Nombre 'Y el ESTADO.txt del nodo dice lo mismo que el del equipo' `
+    -Esperado (Get-Content -LiteralPath (Join-Path $origenPub 'ESTADO.txt') -Raw -Encoding UTF8) `
+    -Obtenido (Get-Content -LiteralPath (Join-Path $destinoPub 'ESTADO.txt') -Raw -Encoding UTF8)
+
+# PUBLICAR ES UN EXTRA: si falla, la corrida sigue siendo valida. El respaldo ya
+# esta hecho cuando esto ocurre.
+$sinEstado = Join-Path $cajaPub 'vacio'
+New-Item -ItemType Directory -Path $sinEstado -Force | Out-Null
+Test-Afirmacion -Nombre 'Sin ESTADO.txt que publicar devuelve falso y no lanza' `
+    -Esperado $false -Obtenido (Publish-EstadoAlNodo -RutaSistema $destinoPub -Carpeta $sinEstado -Confirm:$false)
+
+# ===========================================================================
 
 if (-not $Conservar) {
     Remove-Item -LiteralPath $CarpetaCaja -Recurse -Force -ErrorAction SilentlyContinue

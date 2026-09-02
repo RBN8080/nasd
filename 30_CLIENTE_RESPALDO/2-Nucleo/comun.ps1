@@ -1408,3 +1408,55 @@ function Resolve-EstadoVigente {
 
     return [pscustomobject]@{ Estado = $Estado; Detalle = ''; Ajustado = $false }
 }
+
+
+function Publish-EstadoAlNodo {
+    <#
+        .SYNOPSIS
+            Deja una copia de ESTADO.txt en el nodo, dentro de _SISTEMA.
+
+        .DESCRIPTION
+            LA SECCION 8 LA PIDE Y NO EXISTIA. El original vive en el equipo por
+            dos razones que no son de comodidad -el indicador tiene que pintar
+            algo con el nodo caido, y la marca de corrida tiene que estar donde
+            el indicador la vea aunque la red se haya ido con el motor-, pero la
+            COPIA en el nodo tiene otra razon distinta: en una restauracion
+            desde cero, el equipo ya no existe. Lo unico que queda es el nodo, y
+            ahi tiene que poder leerse cuando fue la ultima corrida buena.
+
+            SIN ESTA COPIA, `_SISTEMA/` no llegaba a crearse nunca: el emisor de
+            eventos lo crea al primer aviso, y el aviso verde no se emite (seccion
+            11). Medido el 2026-09-02: la carpeta no existia en el nodo despues
+            de varias fases.
+
+            NO TUMBA LA CORRIDA. Publicar es un extra: si el nodo no responde o
+            no deja escribir, se anota y se sigue. El respaldo ya esta hecho.
+        .PARAMETER RutaSistema
+            La carpeta _SISTEMA del equipo dentro del nodo.
+        .PARAMETER Carpeta
+            Donde vive el ESTADO.txt original.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RutaSistema,
+        [ValidateNotNullOrEmpty()][string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $origen = Join-Path $Carpeta 'ESTADO.txt'
+    if (-not (Test-Path -LiteralPath $origen -PathType Leaf)) { return $false }
+    if (-not $PSCmdlet.ShouldProcess($RutaSistema, 'Publicar ESTADO.txt en el nodo')) { return $false }
+
+    try {
+        if (-not (Test-Path -LiteralPath $RutaSistema -PathType Container)) {
+            New-Item -ItemType Directory -Path $RutaSistema -Force -ErrorAction Stop | Out-Null
+        }
+        Copy-Item -LiteralPath $origen -Destination (Join-Path $RutaSistema 'ESTADO.txt') -Force -ErrorAction Stop
+        return $true
+    }
+    catch {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'estado' `
+            -Mensaje "No se pudo publicar ESTADO.txt en el nodo: $($_.Exception.Message)"
+        return $false
+    }
+}

@@ -546,6 +546,11 @@ function Invoke-CorridaConEstado {
     if ($resultado.Causa) { $datos['causa'] = $resultado.Causa }
     Write-EstadoRespaldo -Estado $estado -Detalle $detalle -Datos $datos -Carpeta $carpetaEstado -Confirm:$false
 
+    # La copia en el nodo, que pide la seccion 8. Va DESPUES de escribir el
+    # original y antes de emitir: si el nodo esta, queda publicado; si no, se
+    # anota y la corrida sigue siendo valida.
+    if ($rutaSistema) { Publish-EstadoAlNodo -RutaSistema $rutaSistema -Carpeta $carpetaEstado -Confirm:$false | Out-Null }
+
     $emision = @{ Nivel = $nivel; Situacion = $situacion; Mensaje = $detalle; Hechos = $datos }
     if ($rutaSistema) { $emision['RutaSistema'] = $rutaSistema }
     Send-EventoAlNodo @emision -Confirm:$false | Out-Null
