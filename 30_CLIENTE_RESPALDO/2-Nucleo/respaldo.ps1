@@ -490,6 +490,30 @@ function Invoke-CorridaConEstado {
     }
     catch { $rutaSistema = $null }
 
+    # A QUE VENTANA PERTENECE ESTA CORRIDA. Es lo que hace auditable el sorteo:
+    # con una hora fija bastaba anotar la hora, pero con un minuto sorteado
+    # dentro de una ventana el registro tiene que poder afirmar que esa hora
+    # CAIA DENTRO de la que le tocaba -o que no caia, y entonces es una corrida
+    # recuperada por StartWhenAvailable despues de un apagon-. Sin esa linea, el
+    # registro no distingue "todavia no le tocaba" de "no corrio".
+    #
+    # UN PROBLEMA DE CADENCIA NO TUMBA LA CORRIDA. Copiar es lo importante y
+    # anotar es lo secundario, que es el mismo orden que ya sigue el testigo.
+    # Las dos declaradas ANTES del try: con StrictMode, leer una variable que el
+    # try no llego a asignar es un error, y aqui se leen mas abajo.
+    $ventana  = $null
+    $cadencia = $null
+    try {
+        $cadencia = Get-CadenciaDeCorrida -Configuracion $Configuracion
+        $ventana  = Get-VentanaDeCorrida -Momento (Get-Date) -Cadencia $cadencia
+        $nivelVentana = if ($ventana.ATiempo) { 'OK' } else { 'ATENCION' }
+        Write-RegistroRespaldo -Nivel $nivelVentana -Etapa 'cadencia' -Mensaje $ventana.Descripcion
+    }
+    catch {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'cadencia' `
+            -Mensaje "No se pudo situar la corrida en su ventana: $($_.Exception.Message)"
+    }
+
     $resultado = $null
     try {
         if (-not $Simular) {
@@ -538,6 +562,28 @@ function Invoke-CorridaConEstado {
         huerfanos = @($resultado.Huerfanos).Count
         copias    = @($resultado.Copias).Count
         fallos    = $fallos.Count
+    }
+
+    # LA VENTANA VIAJA A ESTADO.txt, y hace falta para que el tablero pueda decir
+    # "todavia no le tocaba" en vez de callarse: sin ella, quien abra la ventana
+    # a las 09:00 no sabe si el sistema esta esperando o parado.
+    #
+    # SE ANOTA LA VENTANA Y NO UNA HORA, y esto se escribio mal primero. Se puso
+    # `proxima` sacada de NextRunTime creyendo que traia el sorteo ya hecho.
+    # NO LO TRAE: diez lecturas seguidas dan diez horas distintas -el Programador
+    # sortea en cada consulta y solo fija el minuto al disparar-. Guardar esa
+    # muestra habria puesto en ESTADO.txt un numero que se lee como promesa y
+    # cambia solo, que es la clase de mentira que este archivo existe para no
+    # cometer.
+    if ($ventana) {
+        $datos['ventana']         = $ventana.Ventana
+        $datos['ventana_indice']  = '{0}/{1}' -f $ventana.Indice, $ventana.Total
+        $datos['ventana_atiempo'] = $ventana.ATiempo
+    }
+    if ($cadencia) {
+        $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia
+        $datos['proxima_ventana'] = $siguiente.Ventana
+        $datos['proxima_inicio']  = $siguiente.Inicio.ToString('s')
     }
 
     # LO QUE MIDIO EL FRENO, NO LO QUE DICE LA CONFIGURACION. El tablero

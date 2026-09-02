@@ -115,9 +115,16 @@ function Get-ConfiguracionRespaldo {
 
     $cfg = Get-Content -LiteralPath $Ruta -Raw -Encoding UTF8 | ConvertFrom-Jsonc
 
+    # `cadencia` es OBLIGATORIA desde el cierre del pendiente 26. No tiene valor
+    # por omision a proposito: de ella cuelgan el umbral del indicador, el color
+    # de la tabla del tablero y cuantos latidos espera el testigo. Un valor por
+    # omision silencioso significaria que un dia esos tres numeros describen una
+    # cadencia distinta de la que corre de verdad, y ahi es donde el sistema
+    # empieza a mentir.
     $obligatorias = @(
         'version', 'equipo', 'destinos', 'contenedores', 'raicesDeclaradas',
-        'raicesDelNodo', 'exclusiones', 'freno', 'centinelas', 'deudaPrimeraCorrida'
+        'raicesDelNodo', 'exclusiones', 'freno', 'centinelas', 'cadencia',
+        'deudaPrimeraCorrida'
     )
     $faltan = @($obligatorias | Where-Object { $cfg.PSObject.Properties.Name -notcontains $_ })
     if ($faltan.Count -gt 0) {
@@ -717,7 +724,7 @@ function Enter-MarcaDeCorrida {
         .PARAMETER Carpeta
             Donde ponerla.
         .PARAMETER Tipo
-            'nodo' -la corrida diaria- o 'disco' -la copia fria-. SE GUARDA
+            'nodo' -la que corre sola- o 'disco' -la copia fria-. SE GUARDA
             PORQUE LAS DOS DURAN COSAS DISTINTAS: la del nodo son minutos y la
             del disco puede ser horas, asi que el plazo a partir del cual una
             marca deja de ser creible no puede ser el mismo. Sin esto, una copia
@@ -828,6 +835,355 @@ function Get-MarcaDeCorrida {
         Pid         = $procesoId
         Inicio      = $(if ($hayInicio) { $inicio } else { $null })
         Minutos     = $minutos
+    }
+}
+
+
+# ---------------------------------------------------------------------------
+#  La cadencia de las corridas  -  el pendiente 26, decidido CON DATOS
+#
+#  DE UNA CORRIDA DIARIA A LAS 22:30 -HORA QUE NADIE MIDIO- A TRES CORRIDAS EN
+#  VENTANAS MEDIDAS. La decision salio del registro de eventos de Windows de los
+#  30 dias del 2026-08-03 al 2026-09-02, no de una intuicion:
+#
+#    - La PC esta DESPIERTA el 94.1 % de las horas. Mediana de 23.99 h al dia y
+#      CERO dias con 0 h. No es un equipo que se enciende y se apaga: son 22
+#      sesiones en 30 dias -0.73 al dia- y la mas larga duro 211.7 h.
+#    - NO SE SUSPENDE. Los 25 `Kernel-Power 42` tienen su `107` entre 3 y 8
+#      segundos despues: intenta dormirse a diario y algo la despierta al
+#      instante. Suspension real acumulada en 30 dias: unos 2 minutos.
+#    - De los 22 apagados limpios, 17 son REINICIOS: mediana del hueco 0.3 min.
+#    - Lo que si pasa son 15 APAGONES INESPERADOS, uno cada dos dias, mediana
+#      19 min caida. Ese, y no el horario, es el enemigo -y es el modo de fallo
+#      que persigue la seccion 12.duodecies-.
+#
+#  POR QUE TRES VENTANAS Y NO CUATRO, tambien medido: simulando 200 meses a
+#  resolucion de minuto sobre esos mismos datos, el peor hueco entre corridas
+#  buenas queda en 18.4 h con tres y SUBE a 23.4 h con cuatro. El peor caso no
+#  lo pone el reparto de ventanas sino el unico apagon largo de 15.2 h del
+#  29-30/08, y la cuarta ventana solo cabe en la banda 08:00-11:00, que es la
+#  peor del dia. Mas corridas habrian empeorado el peor caso.
+#
+#  EL SORTEO LO HACE EL PROPIO PROGRAMADOR DE TAREAS, con `RandomDelay` igual al
+#  largo de la ventana. LA PROMESA ES LA VENTANA, NO UN MINUTO, y eso costo una
+#  correccion el mismo dia: se creyo que `NextRunTime` devolvia el minuto ya
+#  sorteado -tres registros seguidos daban 04:30:00, 04:58:50 y 05:26:17- y era
+#  falso. Leerlo diez veces seguidas SIN TOCAR NADA da diez horas distintas: el
+#  Programador sortea en cada consulta y solo fija el minuto al disparar. Lo que
+#  devuelve es una MUESTRA de la ventana. Ver Get-ProximaVentanaDeCorrida.
+#
+#  La condicion del responsable se cumple igual, y con la ventana basta:
+#    antes del inicio      todavia no le tocaba
+#    dentro de la ventana  le toca, puede caer en cualquier momento
+#    pasado el fin         NO CORRIO
+#  El minuto exacto lo aporta el registro DESPUES, con la hora real y su desfase.
+#
+#  Y por eso no hay semilla ni archivo de sal: fijar el minuto de antemano
+#  obligaria a re-registrar los disparadores cada dia, y un disparador que se
+#  re-registra a si mismo es un disparador que un dia no se re-registra.
+# ---------------------------------------------------------------------------
+
+function Get-CadenciaDeCorrida {
+    <#
+        .SYNOPSIS
+            Lee y normaliza el bloque `cadencia` de la configuracion.
+        .DESCRIPTION
+            EL HUECO MAXIMO NO SE DECLARA: SE CALCULA. Es la distancia entre el
+            principio de una ventana y el final de la siguiente, o sea lo peor
+            que puede tardar el sistema en volver a copiar. Si estuviera escrito
+            en el archivo, alguien moveria una ventana y el numero se quedaria
+            atras -y de ese numero cuelgan el umbral del indicador y lo que
+            espera el testigo-. Un valor que puede mentir sobre la propia
+            proteccion no se guarda: se deriva.
+
+            `horasParaAvisar` SI se declara, porque no se deriva de nada: es una
+            politica. Su valor de hoy -22 h- sale de que el peor hueco medido
+            entre corridas buenas fue de 18.4 h (p90 18.2, mediana 17.0) sobre
+            200 meses simulados, y de que 22 h significa exactamente "se
+            perdieron dos ventanas seguidas".
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    if ($Configuracion.PSObject.Properties.Name -notcontains 'cadencia') {
+        throw 'La configuracion no declara "cadencia". Sin ella el sistema no sabe cuantas corridas esperar, y el testigo no puede distinguir "todavia no le tocaba" de "no corrio".'
+    }
+    $c = $Configuracion.cadencia
+    $ventanasCrudas = @($c.ventanas)
+    if ($ventanasCrudas.Count -lt 1) {
+        throw 'La configuracion declara "cadencia" sin ninguna ventana.'
+    }
+
+    $lista = New-Object System.Collections.Generic.List[psobject]
+    $indice = 0
+    foreach ($v in $ventanasCrudas) {
+        $indice++
+        if (('' + $v.inicio) -notmatch '^([01][0-9]|2[0-3]):([0-5][0-9])$') {
+            throw "La ventana $indice tiene un inicio invalido: '$($v.inicio)'. Se esperaba HH:mm."
+        }
+        $horas = [double]$v.duracionHoras
+        if ($horas -le 0 -or $horas -gt 12) {
+            throw "La ventana $indice dura $horas h. Fuera de rango: una ventana de 0 h no sortea nada, y una de mas de 12 h no es una ventana."
+        }
+        $partes    = ('' + $v.inicio) -split ':'
+        $inicioMin = ([int]$partes[0]) * 60 + [int]$partes[1]
+        $largoMin  = [int][math]::Round($horas * 60)
+        $finMin    = $inicioMin + $largoMin
+        $lista.Add([pscustomobject]@{
+                Indice        = $indice
+                Inicio        = '' + $v.inicio
+                InicioMinutos = $inicioMin
+                LargoMinutos  = $largoMin
+                FinMinutos    = $finMin
+                # Los parentesis NO sobran: dentro de un literal de hash, la coma
+                # del operador -f se lee como separador de la tabla y PowerShell
+                # deja de analizar la linea.
+                Fin           = ('{0:00}:{1:00}' -f ([int]($finMin / 60) % 24), ($finMin % 60))
+                RandomDelay   = ('PT{0}M' -f $largoMin)
+            })
+    }
+    $ventanas = @($lista | Sort-Object InicioMinutos)
+    # Se renumera DESPUES de ordenar: el indice que sale en el registro tiene que
+    # ser el orden del dia, no el orden en que estan escritas en el archivo.
+    for ($i = 0; $i -lt $ventanas.Count; $i++) { $ventanas[$i].Indice = $i + 1 }
+
+    # DOS VENTANAS SOLAPADAS SE PIERDEN EN SILENCIO. Con MultipleInstances a
+    # IgnoreNew, la segunda corrida no se encola ni avisa: el Programador la
+    # descarta. Mejor no arrancar que copiar la mitad de las veces que se cree.
+    for ($i = 1; $i -lt $ventanas.Count; $i++) {
+        if ($ventanas[$i].InicioMinutos -lt $ventanas[$i - 1].FinMinutos) {
+            throw ("Las ventanas {0} y {1} se solapan ({2}-{3} y {4}-{5}). Dos corridas solapadas se pierden en silencio por MultipleInstances=IgnoreNew." -f `
+                    $ventanas[$i - 1].Indice, $ventanas[$i].Indice, `
+                    $ventanas[$i - 1].Inicio, $ventanas[$i - 1].Fin, `
+                    $ventanas[$i].Inicio, $ventanas[$i].Fin)
+        }
+    }
+    if ($ventanas[$ventanas.Count - 1].FinMinutos -gt 1440) {
+        throw 'La ultima ventana se pasa de la medianoche. Una ventana que cruza el dia no la puede expresar un disparador diario.'
+    }
+
+    # EL HUECO MAXIMO, CALCULADO. Del principio de una ventana al final de la
+    # siguiente, dando la vuelta al dia en la ultima.
+    $hueco = 0
+    for ($i = 0; $i -lt $ventanas.Count; $i++) {
+        $sig    = ($i + 1) % $ventanas.Count
+        $finSig = $ventanas[$sig].FinMinutos
+        if ($sig -le $i) { $finSig += 1440 }
+        $g = $finSig - $ventanas[$i].InicioMinutos
+        if ($g -gt $hueco) { $hueco = $g }
+    }
+
+    $avisar = 22
+    if (($c.PSObject.Properties.Name -contains 'horasParaAvisar') -and $c.horasParaAvisar) {
+        $avisar = [int]$c.horasParaAvisar
+    }
+    # UN UMBRAL POR DEBAJO DEL HUECO NOMINAL AVISA DE ALGO QUE NO HA PASADO, y es
+    # la fatiga de alarmas de ISA-18.2 que este contrato ya cita para el semaforo
+    # y para los avisos: una alarma que suena con el sistema sano deja de leerse.
+    if (($avisar * 60) -le $hueco) {
+        throw ("horasParaAvisar ({0} h) no puede ser menor o igual que el hueco recibol maximo ({1:N1} h): avisaria de corridas que todavia no tocaban." -f `
+                $avisar, ($hueco / 60))
+    }
+
+    return [pscustomobject]@{
+        Ventanas                = $ventanas
+        CorridasPorDia          = $ventanas.Count
+        HuecoNominalMaximoHoras = [math]::Round($hueco / 60, 2)
+        HorasParaAvisar         = $avisar
+        Resumen                 = (($ventanas | ForEach-Object { '{0}-{1}' -f $_.Inicio, $_.Fin }) -join ', ')
+    }
+}
+
+function Get-VentanaDeCorrida {
+    <#
+        .SYNOPSIS
+            A que ventana pertenece una corrida, y si llego a tiempo o tarde.
+        .DESCRIPTION
+            ESTO ES LO QUE HACE AUDITABLE LA ALEATORIEDAD. Con una hora fija
+            bastaba un registro que dijera "corrio a las 22:31". Con un minuto
+            sorteado dentro de una ventana, "corrio a las 05:26" no dice nada por
+            si solo: hay que poder afirmar que 05:26 CAIA DENTRO de la ventana
+            que le tocaba, o que no caia -y entonces es una corrida recuperada
+            por StartWhenAvailable despues de un apagon-.
+
+            Una corrida fuera de toda ventana NO es un error: es exactamente lo
+            que se decidio que pasara cuando la PC estaba muerta a su hora. Lo
+            que no puede pasar es que no se distinga de una a tiempo.
+        .PARAMETER Momento
+            Cuando arranco la corrida.
+        .PARAMETER Cadencia
+            La que devuelve Get-CadenciaDeCorrida.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][datetime] $Momento,
+        [Parameter(Mandatory)][psobject] $Cadencia
+    )
+
+    $min    = $Momento.Hour * 60 + $Momento.Minute
+    $dentro = @($Cadencia.Ventanas | Where-Object { $min -ge $_.InicioMinutos -and $min -lt $_.FinMinutos })
+
+    if ($dentro.Count -gt 0) {
+        $v = $dentro[0]
+        return [pscustomobject]@{
+            Indice      = $v.Indice
+            Total       = $Cadencia.CorridasPorDia
+            Ventana     = '{0}-{1}' -f $v.Inicio, $v.Fin
+            ATiempo     = $true
+            Desfase     = ($min - $v.InicioMinutos)
+            Descripcion = ('ventana {0}/{1} [{2}-{3}] - corrio {4:HH:mm} - A TIEMPO, {5} min dentro de la ventana' -f `
+                    $v.Indice, $Cadencia.CorridasPorDia, $v.Inicio, $v.Fin, $Momento, ($min - $v.InicioMinutos))
+        }
+    }
+
+    # Fuera de toda ventana: se atribuye a la ULTIMA QUE YA HABIA EMPEZADO, que
+    # es la que quedo sin correr. Si ninguna empezo todavia hoy -madrugada, antes
+    # de la primera- la que quedo colgando es la ULTIMA DE AYER.
+    $previas = @($Cadencia.Ventanas | Where-Object { $_.FinMinutos -le $min } | Sort-Object FinMinutos)
+    if ($previas.Count -gt 0) {
+        $v       = $previas[$previas.Count - 1]
+        $retraso = $min - $v.FinMinutos
+    }
+    else {
+        $v       = $Cadencia.Ventanas[$Cadencia.Ventanas.Count - 1]
+        $retraso = ($min + 1440) - $v.FinMinutos
+    }
+    return [pscustomobject]@{
+        Indice      = $v.Indice
+        Total       = $Cadencia.CorridasPorDia
+        Ventana     = '{0}-{1}' -f $v.Inicio, $v.Fin
+        ATiempo     = $false
+        Desfase     = $retraso
+        Descripcion = ('ventana {0}/{1} [{2}-{3}] - corrio {4:HH:mm} - TARDE, {5} h {6} min despues de cerrarse la ventana (corrida recuperada)' -f `
+                $v.Indice, $Cadencia.CorridasPorDia, $v.Inicio, $v.Fin, $Momento, [int]($retraso / 60), ($retraso % 60))
+    }
+}
+
+function Get-ProximaVentanaDeCorrida {
+    <#
+        .SYNOPSIS
+            Cual es la proxima ventana de corrida, y si la tarea sigue viva.
+        .DESCRIPTION
+            LA PROMESA ES LA VENTANA, NO UN MINUTO, Y ESO SE MIDIO.
+
+            El 2026-09-02 se creyo lo contrario y quedo escrito en tres sitios:
+            que `NextRunTime` devolvia el minuto YA SORTEADO y que por tanto la
+            hora exacta se podia leer antes de que ocurriera. La evidencia
+            parecia clara -tres registros seguidos del disparador de las 04:00
+            con RandomDelay de 3 h dieron 04:30:00, 04:58:50 y 05:26:17-.
+
+            ERA FALSO, Y LO DESTAPO LEERLO DIEZ VECES SEGUIDAS SIN TOCAR NADA:
+            21:21:33, 20:00:53, 21:28:03, 20:10:17, 20:32:43, 19:25:52,
+            20:50:13, 21:58:33, 20:24:36, 20:58:08. El Programador SORTEA EL
+            RETRASO EN CADA CONSULTA y solo lo fija cuando el disparador dispara
+            de verdad. Lo que devuelve `NextRunTime` es UNA MUESTRA de la
+            ventana, no un compromiso.
+
+            Publicar esa muestra como "proxima corrida: 20:27" habria sido
+            exactamente la clase de mentira que este contrato existe para
+            impedir: un dato que se lee como una promesa y que cambia solo.
+
+            LO QUE SI ES CIERTO, Y BASTA. La ventana se sabe de antemano, y con
+            ella se distinguen las tres cosas que hay que distinguir:
+              antes del inicio      todavia no le tocaba
+              dentro de la ventana  le toca, puede caer en cualquier momento
+              pasado el fin         NO CORRIO
+            Esa era la condicion del responsable, y una ventana la cumple entera.
+            El minuto exacto lo aporta el registro DESPUES, con la hora real y su
+            desfase (Get-VentanaDeCorrida).
+
+            POR QUE NO SE VUELVE A UNA SEMILLA. Fijar el minuto de antemano
+            exigiria calcularlo con una semilla y RE-REGISTRAR los disparadores
+            cada dia. Un disparador que se re-registra a si mismo es un
+            disparador que un dia no se re-registra, y entonces el respaldo deja
+            de correr sin que nadie lo note. Se cambiaria una fragilidad real por
+            una precision que el criterio no pide.
+
+            NO LANZA NUNCA. El tablero y el indicador la llaman, y ninguno de los
+            dos puede morirse porque el Programador no conteste -un icono ausente
+            se parece a "todo bien", que es el punto ciego de la seccion 10.2-.
+        .PARAMETER Cadencia
+            La que devuelve Get-CadenciaDeCorrida.
+        .PARAMETER NombreTarea
+            La tarea del motor.
+        .PARAMETER Momento
+            Desde cuando se pregunta. Parametrizado para poder probarlo sin
+            depender de la hora a la que corran las pruebas.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Cadencia,
+
+        [ValidateNotNullOrEmpty()]
+        [string] $NombreTarea = 'NasRespaldo-Diario',
+
+        [datetime] $Momento = (Get-Date)
+    )
+
+    $existe = $false
+    $habilitada = $false
+    $disparadores = 0
+    $motivo = $null
+    try {
+        $t = Get-ScheduledTask -TaskName $NombreTarea -ErrorAction SilentlyContinue
+        if ($t) {
+            $existe = $true
+            $habilitada = ($t.State -ne 'Disabled')
+            $disparadores = @($t.Triggers).Count
+        }
+        else { $motivo = 'la tarea no existe: el respaldo no corre solo' }
+    }
+    catch { $motivo = $_.Exception.Message }
+
+    $min = $Momento.Hour * 60 + $Momento.Minute
+
+    # Dentro de una ventana: le toca AHORA, y lo que importa es cuando se cierra.
+    $dentro = @($Cadencia.Ventanas | Where-Object { $min -ge $_.InicioMinutos -and $min -lt $_.FinMinutos })
+    if ($dentro.Count -gt 0) {
+        $v = $dentro[0]
+        return [pscustomobject]@{
+            Existe       = $existe
+            Habilitada   = $habilitada
+            Disparadores = $disparadores
+            Motivo       = $motivo
+            EnVentana    = $true
+            Ventana      = ('{0}-{1}' -f $v.Inicio, $v.Fin)
+            Inicio       = $Momento.Date.AddMinutes($v.InicioMinutos)
+            Fin          = $Momento.Date.AddMinutes($v.FinMinutos)
+            Descripcion  = ('le toca AHORA, ventana {0}/{1} hasta las {2}' -f $v.Indice, $Cadencia.CorridasPorDia, $v.Fin)
+        }
+    }
+
+    # Si no, la siguiente que empiece hoy; y si no queda ninguna, la primera de
+    # manana. Sin este segundo caso, a las 23:00 el tablero se quedaria mudo.
+    $siguientes = @($Cadencia.Ventanas | Where-Object { $_.InicioMinutos -gt $min } | Sort-Object InicioMinutos)
+    if ($siguientes.Count -gt 0) {
+        $v = $siguientes[0]
+        $dia = $Momento.Date
+        $cuando = 'hoy'
+    }
+    else {
+        $v = $Cadencia.Ventanas[0]
+        $dia = $Momento.Date.AddDays(1)
+        $cuando = 'manana'
+    }
+    return [pscustomobject]@{
+        Existe       = $existe
+        Habilitada   = $habilitada
+        Disparadores = $disparadores
+        Motivo       = $motivo
+        EnVentana    = $false
+        Ventana      = ('{0}-{1}' -f $v.Inicio, $v.Fin)
+        Inicio       = $dia.AddMinutes($v.InicioMinutos)
+        Fin          = $dia.AddMinutes($v.FinMinutos)
+        Descripcion  = ('{0} entre {1} y {2}, ventana {3}/{4}' -f $cuando, $v.Inicio, $v.Fin, $v.Indice, $Cadencia.CorridasPorDia)
     }
 }
 

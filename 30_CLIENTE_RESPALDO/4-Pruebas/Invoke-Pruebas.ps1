@@ -205,7 +205,21 @@ function Write-ConfiguracionDeCaja {
         }
         freno       = @{ umbralPorcentajeDeArchivosQueCambian = $Umbral }
         centinelas  = @($Centinelas)
-        testigo     = @{ proveedor = 'ninguno'; medida = 'pruebas'; periodDias = $null; graceDias = $null }
+        # LAS MISMAS TRES VENTANAS QUE PRODUCCION, y a proposito: el arenero
+        # existe para que el motor corra de verdad contra archivos de mentira,
+        # no para que corra con una cadencia de mentira. Si aqui hubiera una
+        # cadencia distinta, las pruebas no tocarian los umbrales que de verdad
+        # gobiernan el icono y el tablero.
+        cadencia    = [ordered]@{
+            ventanas = @(
+                @{ inicio = '04:00'; duracionHoras = 3 }
+                @{ inicio = '12:00'; duracionHoras = 3 }
+                @{ inicio = '19:00'; duracionHoras = 3 }
+            )
+            horasParaAvisar         = 22
+            recuperarCorridaPerdida = $true
+        }
+        testigo     = @{ proveedor = 'ninguno'; medida = 'pruebas'; latidosPorDia = 3; periodHoras = 12; graceHoras = 10 }
         deudaPrimeraCorrida = [ordered]@{
             fechaDeLaSubidaManual = '2026-09-02'
             totalArchivos = 0
@@ -527,7 +541,7 @@ Test-Afirmacion -Criterio '10' -Nombre 'Y dice que la causa es la tarea, no otra
     -Esperado 'tarea' -Obtenido $vista.Fuente
 
 $registrar = Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\Registrar-Tarea.ps1'
-(& $registrar -Accion Registrar -Hora '23:45' -NombreTarea 'NasRespaldo-Pruebas' -Confirm:$false -WhatIf) 2>$null
+(& $registrar -Accion Registrar -RutaConfiguracion $caja.Config -NombreTarea 'NasRespaldo-Pruebas' -Confirm:$false -WhatIf) 2>$null
 Test-Afirmacion -Criterio '8' -Nombre 'Registrar-Tarea con -WhatIf no crea nada' `
     -Esperado $false -Obtenido ($null -ne (Get-ScheduledTask -TaskName 'NasRespaldo-Pruebas' -ErrorAction SilentlyContinue))
 
@@ -1203,6 +1217,221 @@ $verSinMarca = ('' + $sinAviso[0]) -replace "$([char]27)\[[0-9;]*m", ''
 Test-Afirmacion -Nombre 'La regla lateral no desplaza el contenido ni un caracter' `
     -Esperado $verSinMarca.IndexOf('algo que avisar') `
     -Obtenido $verConMarca.IndexOf('algo que avisar')
+
+# ===========================================================================
+Write-Titulo 'La cadencia: tres ventanas, un sorteo y un registro auditable'
+# ===========================================================================
+
+# Las mismas tres ventanas que produccion. Se arma a mano y no leyendo el
+# .jsonc: lo que se prueba es la REGLA, no si el archivo esta bien escrito.
+function Get-CadenciaCruda {
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject[]] $Ventanas,
+        [int] $Avisar = 22
+    )
+    return [pscustomobject]@{
+        cadencia = [pscustomobject]@{ ventanas = $Ventanas; horasParaAvisar = $Avisar }
+    }
+}
+$v04 = [pscustomobject]@{ inicio = '04:00'; duracionHoras = 3 }
+$v12 = [pscustomobject]@{ inicio = '12:00'; duracionHoras = 3 }
+$v19 = [pscustomobject]@{ inicio = '19:00'; duracionHoras = 3 }
+
+$cad = Get-CadenciaDeCorrida -Configuracion (Get-CadenciaCruda -Ventanas @($v04, $v12, $v19))
+Test-Afirmacion -Nombre 'Tres ventanas dan tres corridas al dia' `
+    -Esperado 3 -Obtenido $cad.CorridasPorDia
+
+# EL NUMERO DEL QUE CUELGA TODO LO DEMAS. Del principio de la ventana de las
+# 19:00 al final de la de las 04:00 del dia siguiente van 12 h, y ese es el
+# hueco que el reparto promete: el ambar de la tabla y lo que espera el testigo
+# salen de aqui. Si esta prueba cambia de valor, esos dos tienen que cambiar.
+Test-Afirmacion -Nombre 'El hueco recibol maximo se CALCULA, y son 12 h' `
+    -Esperado 12 -Obtenido $cad.HuecoNominalMaximoHoras
+Test-Afirmacion -Nombre 'El umbral de aviso sale de la configuracion, no de un valor fijo' `
+    -Esperado 22 -Obtenido $cad.HorasParaAvisar
+
+# El orden del archivo no manda: el indice que sale en el registro es el orden
+# DEL DIA. Escritas al reves tienen que numerarse igual.
+$alReves = Get-CadenciaDeCorrida -Configuracion (Get-CadenciaCruda -Ventanas @($v19, $v04, $v12))
+Test-Afirmacion -Nombre 'Las ventanas se numeran por hora del dia, no por orden en el archivo' `
+    -Esperado '04:00|12:00|19:00' -Obtenido (($alReves.Ventanas | Sort-Object Indice | ForEach-Object { $_.Inicio }) -join '|')
+
+# DOS VENTANAS SOLAPADAS SE PIERDEN EN SILENCIO por MultipleInstances=IgnoreNew,
+# asi que la configuracion no puede llegar viva hasta el Programador.
+$lanzoSolape = $false
+try {
+    Get-CadenciaDeCorrida -Configuracion (Get-CadenciaCruda -Ventanas @(
+            [pscustomobject]@{ inicio = '04:00'; duracionHoras = 5 },
+            [pscustomobject]@{ inicio = '08:00'; duracionHoras = 3 })) | Out-Null
+}
+catch { $lanzoSolape = $true }
+Test-Afirmacion -Nombre 'Ventanas solapadas se rechazan: la segunda corrida se perderia sin avisar' `
+    -Esperado $true -Obtenido $lanzoSolape
+
+# UN UMBRAL POR DEBAJO DEL HUECO AVISA DE ALGO QUE NO HA PASADO, que es la
+# fatiga de alarmas que este contrato cita para el semaforo y para los avisos.
+$lanzoUmbral = $false
+try {
+    Get-CadenciaDeCorrida -Configuracion (Get-CadenciaCruda -Ventanas @($v04, $v12, $v19) -Avisar 8) | Out-Null
+}
+catch { $lanzoUmbral = $true }
+Test-Afirmacion -Nombre 'Un umbral de aviso menor que el hueco se rechaza: avisaria del sistema sano' `
+    -Esperado $true -Obtenido $lanzoUmbral
+
+# Un disparador diario no puede expresar una ventana que cruza la medianoche.
+$lanzoMedianoche = $false
+try {
+    Get-CadenciaDeCorrida -Configuracion (Get-CadenciaCruda -Ventanas @(
+            [pscustomobject]@{ inicio = '23:00'; duracionHoras = 3 })) | Out-Null
+}
+catch { $lanzoMedianoche = $true }
+Test-Afirmacion -Nombre 'Una ventana que cruza la medianoche se rechaza' `
+    -Esperado $true -Obtenido $lanzoMedianoche
+
+# Sin bloque `cadencia` no se arranca, y es deliberado: un valor por omision
+# silencioso dejaria al icono, al tablero y al testigo describiendo una cadencia
+# distinta de la que corre.
+$lanzoSinBloque = $false
+try { Get-CadenciaDeCorrida -Configuracion ([pscustomobject]@{ equipo = 'X' }) | Out-Null }
+catch { $lanzoSinBloque = $true }
+Test-Afirmacion -Nombre 'Sin bloque cadencia, el motor se niega a adivinar' `
+    -Esperado $true -Obtenido $lanzoSinBloque
+
+# --- Que el registro distinga "a tiempo" de "recuperada" -------------------
+# ES LA CONDICION QUE PUSO EL RESPONSABLE: con horas sorteadas, el registro
+# tiene que poder decir a que hora le TOCABA y a que hora corrio de verdad.
+$dentro = Get-VentanaDeCorrida -Momento ([datetime]'2026-09-03 05:26') -Cadencia $cad
+Test-Afirmacion -Nombre 'Una corrida dentro de su ventana se marca A TIEMPO' `
+    -Esperado $true -Obtenido $dentro.ATiempo
+Test-Afirmacion -Nombre 'Y se le atribuye la ventana que le tocaba' `
+    -Esperado '04:00-07:00' -Obtenido $dentro.Ventana
+Test-Afirmacion -Nombre 'El desfase dentro de la ventana se mide en minutos desde su inicio' `
+    -Esperado 86 -Obtenido $dentro.Desfase
+
+$justo = Get-VentanaDeCorrida -Momento ([datetime]'2026-09-03 12:00') -Cadencia $cad
+Test-Afirmacion -Nombre 'El primer minuto de una ventana ya cuenta como dentro' `
+    -Esperado $true -Obtenido $justo.ATiempo
+Test-Afirmacion -Nombre 'Y es la segunda ventana del dia' `
+    -Esperado 2 -Obtenido $justo.Indice
+
+# UNA CORRIDA RECUPERADA POR StartWhenAvailable NO ES UN ERROR, pero tampoco es
+# una corrida a tiempo. Si las dos se vieran igual, el registro no serviria para
+# lo unico que se le pide.
+$tarde = Get-VentanaDeCorrida -Momento ([datetime]'2026-09-03 10:14') -Cadencia $cad
+Test-Afirmacion -Nombre 'Una corrida fuera de ventana se marca TARDE, no a tiempo' `
+    -Esperado $false -Obtenido $tarde.ATiempo
+Test-Afirmacion -Nombre 'Y se le atribuye la ventana que quedo sin correr' `
+    -Esperado '04:00-07:00' -Obtenido $tarde.Ventana
+Test-Afirmacion -Nombre 'El retraso se cuenta desde que la ventana se cerro' `
+    -Esperado 194 -Obtenido $tarde.Desfase
+
+# LA MADRUGADA ES EL CASO QUE SE ROMPE SOLO. A las 02:00 no ha empezado ninguna
+# ventana de hoy: la que quedo colgando es la ULTIMA DE AYER, y atribuirla a la
+# primera de hoy diria que llego con siete horas de adelanto.
+$madrugada = Get-VentanaDeCorrida -Momento ([datetime]'2026-09-03 02:00') -Cadencia $cad
+Test-Afirmacion -Nombre 'Antes de la primera ventana, la que quedo colgando es la ultima de AYER' `
+    -Esperado '19:00-22:00' -Obtenido $madrugada.Ventana
+Test-Afirmacion -Nombre 'Y el retraso cruza la medianoche sin dar negativo' `
+    -Esperado 240 -Obtenido $madrugada.Desfase
+
+# --- El defecto de la tabla: verde por HORAS, no por dia de calendario -----
+# HASTA EL 2026-09-02 LA CELDA SE PINTABA VERDE SOLO SI LA COPIA ERA DE HOY, asi
+# que con la corrida unica de las 22:30 el tablero habria dicho "ayer 22:30" en
+# ambar desde medianoche hasta la noche siguiente: 22 h y media de ambar al dia
+# con el sistema sano. Nadie lo vio porque la tarea no llego a correr ni una vez.
+#
+# Se prueba con un umbral de 48 h y una copia de hace 30: la etiqueta la llama
+# "ayer" o "hace 1 dias" -o sea, OTRO DIA DE CALENDARIO- y aun asi tiene que
+# salir verde. Con la regla vieja esta prueba falla siempre; con la nueva pasa
+# siempre, corra a la hora que corra.
+$hace30h = [pscustomobject]@{
+    Destino = 'nodo'; Raiz = 'C:\dev'; Clase = 'B'; Pendientes = 0
+    Estado = 'AlDia'; Momento = (Get-Date).AddHours(-30).ToString('s')
+}
+$pintado = @(Write-CuerpoDeTabla -Filas @($hace30h) -Paleta $paletaSinColor -HorasParaAmbar 48 6>&1)
+Test-Afirmacion -Nombre 'Una copia de OTRO DIA pero dentro del hueco sale AL DIA, no ambar' `
+    -Esperado $true -Obtenido (('' + $pintado) -match 'AL DIA')
+
+$pintadoViejo = @(Write-CuerpoDeTabla -Filas @($hace30h) -Paleta $paletaSinColor -HorasParaAmbar 12 6>&1)
+Test-Afirmacion -Nombre 'Y pasado el hueco deja de ser AL DIA y ensena su edad' `
+    -Esperado $false -Obtenido (('' + $pintadoViejo) -match 'AL DIA')
+
+# --- La tarea: tantos disparadores como ventanas, y todos con sorteo -------
+# UN DISPARADOR QUE DESAPARECE ES UN TERCIO DEL RESPALDO QUE DEJA DE CORRER, y
+# ninguna otra pantalla lo diria. Se registra de verdad y se retira.
+$nombreEnsayo = 'NasRespaldo-PruebaDeCadencia'
+try {
+    & $registrar -Pieza Motor -Accion Registrar -RutaConfiguracion $caja.Config `
+        -NombreTarea $nombreEnsayo -Confirm:$false -InformationAction SilentlyContinue | Out-Null
+    $tEnsayo = Get-ScheduledTask -TaskName $nombreEnsayo -ErrorAction SilentlyContinue
+    $disparadores = @($tEnsayo.Triggers)
+    Test-Afirmacion -Nombre 'La tarea queda con un disparador por ventana' `
+        -Esperado 3 -Obtenido $disparadores.Count
+    # SE COMPARA LA DURACION, NO LA CADENA. El Programador NORMALIZA lo que se
+    # le da: se registra 'PT180M' y devuelve 'PT3H'. Una prueba que compare el
+    # texto pasa hoy y falla el dia que una ventana dure 2.5 h, sin que nada se
+    # haya roto. Medido el 2026-09-02, cuando esta misma prueba fallo asi.
+    Test-Afirmacion -Nombre 'Y cada uno lleva su sorteo: RandomDelay del largo de la ventana' `
+        -Esperado '180|180|180' `
+        -Obtenido (($disparadores | ForEach-Object { [int][System.Xml.XmlConvert]::ToTimeSpan($_.RandomDelay).TotalMinutes }) -join '|')
+    Test-Afirmacion -Nombre 'Las bases son las tres horas de la configuracion' `
+        -Esperado '04:00|12:00|19:00' `
+        -Obtenido ((($disparadores | ForEach-Object { ([datetime]$_.StartBoundary).ToString('HH:mm') }) | Sort-Object) -join '|')
+
+    # LA MEDICION QUE CORRIGIO EL DISENO, CLAVADA EN UNA PRUEBA.
+    # El 2026-09-02 se dio por hecho que `NextRunTime` devolvia el minuto YA
+    # SORTEADO y se llego a escribir en tres sitios. Es falso: el Programador
+    # sortea el retraso EN CADA CONSULTA y solo lo fija al disparar. Diez
+    # lecturas seguidas dieron diez horas distintas.
+    #
+    # Esta prueba existe para que nadie vuelva a deducir lo contrario y monte
+    # encima un "proxima corrida: 20:27" que se lee como promesa y cambia solo.
+    # Si algun dia Windows dejara de re-sortear, ESTA PRUEBA FALLA y obliga a
+    # mirar de nuevo -que es justo lo que se quiere-.
+    $lecturas = @(1..8 | ForEach-Object {
+            (Get-ScheduledTask -TaskName $nombreEnsayo | Get-ScheduledTaskInfo).NextRunTime
+        })
+    $distintas = @($lecturas | Select-Object -Unique).Count
+    Test-Afirmacion -Nombre 'NextRunTime RE-SORTEA en cada lectura: no es un minuto comprometido' `
+        -Esperado $true -Obtenido ($distintas -gt 1)
+
+    # Lo que si es cierto y es de lo que cuelga el diseno: por muy re-sorteadas
+    # que esten, TODAS caen dentro de las ventanas declaradas.
+    $fuera = @($lecturas | Where-Object {
+            $h = ([datetime]$_).Hour
+            -not (($h -ge 4 -and $h -lt 7) -or ($h -ge 12 -and $h -lt 15) -or ($h -ge 19 -and $h -lt 22))
+        })
+    Test-Afirmacion -Nombre 'Pero todas las muestras caen dentro de alguna ventana declarada' `
+        -Esperado 0 -Obtenido $fuera.Count
+}
+finally {
+    Unregister-ScheduledTask -TaskName $nombreEnsayo -Confirm:$false -ErrorAction SilentlyContinue
+}
+Test-Afirmacion -Nombre 'El ensayo de cadencia no deja tarea detras' `
+    -Esperado $false -Obtenido ($null -ne (Get-ScheduledTask -TaskName $nombreEnsayo -ErrorAction SilentlyContinue))
+
+# --- La proxima ventana: lo que SI se puede prometer ------------------------
+# Se le pasa el momento a proposito, para que la prueba no dependa de la hora a
+# la que corran las pruebas -que fue exactamente el defecto del criterio AL DIA-.
+$antes = Get-ProximaVentanaDeCorrida -Cadencia $cad -Momento ([datetime]'2026-09-03 09:30')
+Test-Afirmacion -Nombre 'Entre dos ventanas, la proxima es la siguiente que empieza' `
+    -Esperado '12:00-15:00' -Obtenido $antes.Ventana
+Test-Afirmacion -Nombre 'Y se dice que NO le toca todavia' `
+    -Esperado $false -Obtenido $antes.EnVentana
+
+$durante = Get-ProximaVentanaDeCorrida -Cadencia $cad -Momento ([datetime]'2026-09-03 13:10')
+Test-Afirmacion -Nombre 'Dentro de una ventana se dice que le toca AHORA' `
+    -Esperado $true -Obtenido $durante.EnVentana
+
+# A LAS 23:00 NO QUEDA NINGUNA VENTANA HOY, y sin este caso el tablero se
+# quedaria mudo justo en la franja en la que mas se mira.
+$noche = Get-ProximaVentanaDeCorrida -Cadencia $cad -Momento ([datetime]'2026-09-03 23:00')
+Test-Afirmacion -Nombre 'Pasada la ultima ventana, la proxima es la primera de MANANA' `
+    -Esperado '04:00-07:00' -Obtenido $noche.Ventana
+Test-Afirmacion -Nombre 'Y su fecha es la del dia siguiente, no la de hoy' `
+    -Esperado '2026-09-04' -Obtenido $noche.Inicio.ToString('yyyy-MM-dd')
 
 # ===========================================================================
 

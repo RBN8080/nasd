@@ -46,6 +46,11 @@
 
     .PARAMETER HorasSinCorrerParaAvisar
         A partir de cuantas horas sin una corrida buena el icono pasa a Atencion.
+        CERO -lo normal- significa "la que diga la cadencia de 3-Config", que es
+        el unico sitio donde ese numero puede estar bien: sale del reparto de
+        ventanas y tiene que cambiar con el. Un valor fijo aqui se quedaria atras
+        el dia que se muevan las ventanas, y el icono avisaria de corridas que
+        todavia no tocaban.
 
     .PARAMETER UnaSolaLectura
         No abre icono: lee el estado, lo devuelve y sale. Es como lo prueban las
@@ -59,7 +64,7 @@
 [OutputType([psobject])]
 param(
     [ValidateRange(1, 3600)][int] $SegundosEntreLecturas = 10,
-    [ValidateRange(1, 720)][int]  $HorasSinCorrerParaAvisar = 30,
+    [ValidateRange(0, 720)][int]  $HorasSinCorrerParaAvisar = 0,
 
     # Parametrizado y no fijo: una prueba que dependa de si la tarea REAL existe
     # en esta maquina es una prueba que pasa o falla segun el dia. Medido el
@@ -82,6 +87,26 @@ $ErrorActionPreference = 'Stop'
 $script:NombreTarea = $NombreTarea
 $script:CarpetaEstado = $CarpetaEstado
 
+# EL UMBRAL SE RESUELVE UNA VEZ, AL ARRANCAR, Y NO EN CADA LATIDO. El icono
+# relee ESTADO.txt cada 10 s; leer y validar tambien el .jsonc a ese ritmo seria
+# abrir un archivo 8 640 veces al dia para obtener siempre lo mismo.
+#
+# Que un cambio de cadencia exija reiniciar el icono no es una limitacion suelta:
+# cambiar las ventanas ya obliga a re-registrar la tarea, y Registrar-Tarea mata
+# y relanza el indicador cuando lo reemplaza. Los dos se enteran a la vez.
+#
+# SI LA CONFIGURACION NO SE PUEDE LEER, 22 h y adelante. Un icono que se niega a
+# arrancar porque el .jsonc tiene una coma de mas es un icono ausente, y un icono
+# ausente se parece a "todo bien" -el punto ciego de la seccion 10.2-.
+$script:HorasParaAvisar = 22
+if ($HorasSinCorrerParaAvisar -gt 0) {
+    $script:HorasParaAvisar = $HorasSinCorrerParaAvisar
+}
+else {
+    try { $script:HorasParaAvisar = (Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo)).HorasParaAvisar }
+    catch { Write-Verbose "No se pudo leer la cadencia; el umbral se queda en $script:HorasParaAvisar h: $($_.Exception.Message)" }
+}
+
 function Get-EstadoParaElIcono {
     <#
         .SYNOPSIS
@@ -92,13 +117,28 @@ function Get-EstadoParaElIcono {
             que descubre normalidad. Un motor caido con la tarea deshabilitada
             tiene que salir rojo, no ambar.
         .PARAMETER HorasParaAvisar
-            Cuantas horas sin corrida buena antes de pasar a Atencion.
+            Cuantas horas sin corrida buena antes de pasar a Atencion. CERO
+            significa "preguntaselo a la cadencia".
+
+            ESTE NUMERO ERA 30 Y ESTABA MAL DESDE QUE SE ESCRIBIO. Asumia una
+            corrida al dia -24 h mas 6 de margen-, pero con la corrida unica de
+            las 22:30 el peor hueco medido entre corridas buenas era de 33.0 h:
+            el umbral YA producia un ambar falso sin que nadie lo hubiera visto,
+            porque la tarea no habia llegado a correr ni una vez. Con las tres
+            ventanas del pendiente 26 el peor hueco medido baja a 18.4 h y el
+            umbral que sale de la cadencia es 22 h.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
     param(
-        [ValidateRange(1, 720)][int] $HorasParaAvisar = 30
+        [ValidateRange(0, 720)][int] $HorasParaAvisar = 0
     )
+
+    # CERO NO PUEDE LLEGAR VIVO HASTA LA COMPARACION. Con 0, "hace mas de 0 h sin
+    # corrida" es cierto SIEMPRE y el icono se quedaria en ambar permanente: el
+    # peor fallo posible aqui, porque un ambar que nunca se apaga se deja de
+    # mirar igual que un rojo que parpadea todos los dias (ISA-18.2).
+    if ($HorasParaAvisar -le 0) { $HorasParaAvisar = $script:HorasParaAvisar }
 
     try {
         $marca  = Get-MarcaDeCorrida -Carpeta $script:CarpetaEstado
@@ -276,7 +316,7 @@ function New-IconoDeEstado {
 }
 
 if ($UnaSolaLectura) {
-    return (Get-EstadoParaElIcono -HorasParaAvisar $HorasSinCorrerParaAvisar)
+    return (Get-EstadoParaElIcono -HorasParaAvisar $script:HorasParaAvisar)
 }
 
 # --- El icono de verdad -----------------------------------------------------
@@ -353,7 +393,7 @@ $script:asaActual       = [System.IntPtr]::Zero
 $refrescar = {
     # 1. El estado se relee a su ritmo, no al de la animacion.
     if ($null -eq $script:v -or ($script:tick % $script:ticksPorLectura) -eq 0) {
-        $script:v = Get-EstadoParaElIcono -HorasParaAvisar $HorasSinCorrerParaAvisar
+        $script:v = Get-EstadoParaElIcono -HorasParaAvisar $script:HorasParaAvisar
         $texto = '{0} - {1}' -f $script:v.Estado, $script:v.Detalle
         if ($texto.Length -gt 63) { $texto = $texto.Substring(0, 60) + '...' }
         $icono.Text = $texto
