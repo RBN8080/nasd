@@ -77,6 +77,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\..\2-Nucleo\comun.ps1"
+. "$PSScriptRoot\estilo.ps1"   # Get-OpacidadDelPulso: el ritmo vive con la forma y el color
 
 $script:NombreTarea = $NombreTarea
 $script:CarpetaEstado = $CarpetaEstado
@@ -165,19 +166,27 @@ function New-IconoDeEstado {
             Dibuja el icono: cuadro oscuro y nucleo con COLOR Y FORMA.
         .PARAMETER Estado
             Uno de los cinco.
-        .PARAMETER Apagado
-            Para el parpadeo: dibuja el nucleo tenue.
+        .PARAMETER Opacidad
+            0 a 255. NO es un interruptor sino un valor continuo, y esa es la
+            diferencia entre un parpadeo y un pulso: el rojo salta entre dos
+            extremos, el verde de "copiando" recorre los intermedios.
+        .OUTPUTS
+            Un objeto con el icono Y SU ASA. El asa hace falta: Icon::FromHandle
+            NO se queda con la propiedad del HICON que devuelve GetHicon, asi que
+            Dispose() del icono no la libera. Con un temporizador de 200 ms eso
+            son cinco asas de GDI perdidas por segundo -mas de 400 000 al dia- y
+            el escritorio acaba sin recursos. Quien la libera es DestroyIcon.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
         'PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Construye un objeto Icon en memoria y lo devuelve. No toca disco, registro ni ningun estado del sistema: el verbo New- se usa aqui como en New-Object o New-TimeSpan. Anadir ShouldProcess a algo que se llama en cada tick del temporizador solo anadiria ruido.')]
     [CmdletBinding()]
-    [OutputType([System.Drawing.Icon])]
+    [OutputType([psobject])]
     param(
         [Parameter(Mandatory)]
         [ValidateSet('Protegido', 'Copiando', 'Atencion', 'Falla', 'SinDatos')]
         [string] $Estado,
-        [switch] $Apagado
+        [ValidateRange(0, 255)][int] $Opacidad = 255
     )
 
     $lado = 16
@@ -196,7 +205,7 @@ function New-IconoDeEstado {
             'Falla'     { [System.Drawing.Color]::FromArgb(255, 225,  70,  70) }
             default     { [System.Drawing.Color]::FromArgb(255, 140, 145, 155) }
         }
-        if ($Apagado) { $color = [System.Drawing.Color]::FromArgb(70, $color.R, $color.G, $color.B) }
+        if ($Opacidad -lt 255) { $color = [System.Drawing.Color]::FromArgb($Opacidad, $color.R, $color.G, $color.B) }
         $pincel = New-Object System.Drawing.SolidBrush $color
         try {
             switch ($Estado) {
@@ -225,8 +234,11 @@ function New-IconoDeEstado {
         }
         finally { $pincel.Dispose() }
 
-        $manejador = $mapa.GetHicon()
-        return [System.Drawing.Icon]::FromHandle($manejador)
+        $asa = $mapa.GetHicon()
+        return [pscustomobject]@{
+            Icono = [System.Drawing.Icon]::FromHandle($asa)
+            Asa   = $asa
+        }
     }
     finally {
         $g.Dispose()
@@ -239,6 +251,40 @@ if ($UnaSolaLectura) {
 }
 
 # --- El icono de verdad -----------------------------------------------------
+# UNO Y NADA MAS QUE UNO. Dos indicadores ponen DOS iconos en la barra, y esa
+# es una forma barata de perder la confianza en el que importa: si hay dos y
+# dicen cosas distintas -porque uno se quedo con un estado viejo-, ninguno
+# sirve.
+#
+# ES PRECAUCION, NO LA CURA DE UN FALLO OBSERVADO, y conviene que quede escrito:
+# el 2026-09-02 se creyo ver dos y era un error de medicion -la consulta que los
+# contaba llevaba "indicador.ps1" en su propia linea de comando y se contaba a
+# si misma-. El cerrojo se queda porque relanzar la tarea a mano es facil y el
+# coste de esta linea es cero, pero NO se apunta un fallo que no existio.
+#
+# El cerrojo es un mutex con nombre, que el sistema suelta solo cuando el
+# proceso muere: si el indicador se cae, el siguiente arranca sin tener que
+# limpiar nada. Un archivo de bloqueo no daria esa garantia.
+$script:cerrojo = New-Object System.Threading.Mutex($false, 'Local\NasRespaldo-Indicador')
+if (-not $script:cerrojo.WaitOne(0)) {
+    Write-Verbose 'Ya hay un indicador corriendo en esta sesion. Este se retira.'
+    return
+}
+
+# La ventana negra, escondida si es nuestra: un icono de bandeja que arrastra
+# una consola abierta todo el dia acaba cerrado por quien lo ve, y cerrarlo
+# deja el escritorio sin indicador. La molestia no es estetica: se come la
+# seccion 10.2.
+Hide-VentanaDeConsola | Out-Null
+
+# DestroyIcon: la unica forma de devolver el asa que entrega Bitmap.GetHicon.
+if (-not ('NasRespaldo.Iconos' -as [type])) {
+    Add-Type -Namespace 'NasRespaldo' -Name 'Iconos' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+public static extern bool DestroyIcon(System.IntPtr hIcon);
+'@
+}
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -255,23 +301,56 @@ $abrirTablero.Add_Click({
 [void]$menu.Items.Add('-')
 $salir = $menu.Items.Add('Cerrar el indicador (no detiene el respaldo)')
 
+# DOS RELOJES, Y CONFUNDIRLOS ERA EL DEFECTO. Hasta el 2026-09-02 el
+# temporizador latia UNA VEZ CADA DIEZ SEGUNDOS, porque el mismo intervalo servia
+# para releer el estado y para animar. Un cambio cada diez segundos no es un
+# parpadeo: es un icono distinto de vez en cuando, y nadie lo lee como movimiento.
+# Ademas el "pulso suave" de "copiando" que promete la seccion 10.2 estaba
+# ESCRITO EN EL COMENTARIO Y NO EN EL CODIGO -solo el rojo alternaba-. Lo noto el
+# responsable mirando la barra durante una copia.
+#
+# Ahora el temporizador late rapido y es el CONTADOR quien decide cuando toca
+# releer el estado. Leer sigue costando lo mismo; animar es gratis.
+$script:MsAnimacion = 200
 $temporizador = New-Object System.Windows.Forms.Timer
-$temporizador.Interval = $SegundosEntreLecturas * 1000
-$script:fase = $false
-$script:ultimo = ''
+$temporizador.Interval = $script:MsAnimacion
+
+$script:tick            = 0
+$script:ticksPorLectura = [Math]::Max(1, [int](($SegundosEntreLecturas * 1000) / $script:MsAnimacion))
+$script:v               = $null
+$script:ultimoDibujo    = ''
+$script:asaActual       = [System.IntPtr]::Zero
 
 $refrescar = {
-    $v = Get-EstadoParaElIcono -HorasParaAvisar $HorasSinCorrerParaAvisar
-    # SOLO EL ROJO PARPADEA, y el verde de "copiando" hace un pulso suave.
-    $alterna = ($v.Estado -eq 'Falla')
-    $script:fase = if ($alterna) { -not $script:fase } else { $false }
-    $anterior = $icono.Icon
-    $icono.Icon = New-IconoDeEstado -Estado $v.Estado -Apagado:$script:fase
-    if ($anterior) { $anterior.Dispose() }
-    $texto = '{0} - {1}' -f $v.Estado, $v.Detalle
-    if ($texto.Length -gt 63) { $texto = $texto.Substring(0, 60) + '...' }
-    $icono.Text = $texto
-    $script:ultimo = $v.Estado
+    # 1. El estado se relee a su ritmo, no al de la animacion.
+    if ($null -eq $script:v -or ($script:tick % $script:ticksPorLectura) -eq 0) {
+        $script:v = Get-EstadoParaElIcono -HorasParaAvisar $HorasSinCorrerParaAvisar
+        $texto = '{0} - {1}' -f $script:v.Estado, $script:v.Detalle
+        if ($texto.Length -gt 63) { $texto = $texto.Substring(0, 60) + '...' }
+        $icono.Text = $texto
+    }
+
+    # 2. La animacion va en cada tick, pero SOLO SE REDIBUJA SI CAMBIA ALGO: los
+    #    tres estados fijos no gastan ni un dibujo por mucho que lata el reloj.
+    $opacidad = Get-OpacidadDelPulso -Estado $script:v.Estado -Tick $script:tick
+    $firma = '{0}|{1}' -f $script:v.Estado, $opacidad
+    if ($firma -ne $script:ultimoDibujo) {
+        $nuevo = New-IconoDeEstado -Estado $script:v.Estado -Opacidad $opacidad
+        $iconoAnterior = $icono.Icon
+        $asaAnterior   = $script:asaActual
+
+        $icono.Icon       = $nuevo.Icono
+        $script:asaActual = $nuevo.Asa
+
+        # El orden importa: primero se pone el nuevo, despues se suelta el
+        # viejo. Al reves, la bandeja se quedaria un instante sin icono.
+        if ($iconoAnterior) { $iconoAnterior.Dispose() }
+        if ($asaAnterior -ne [System.IntPtr]::Zero) {
+            [void][NasRespaldo.Iconos]::DestroyIcon($asaAnterior)
+        }
+        $script:ultimoDibujo = $firma
+    }
+    $script:tick++
 }
 
 $temporizador.Add_Tick($refrescar)
@@ -279,6 +358,10 @@ $salir.Add_Click({
         $temporizador.Stop()
         $icono.Visible = $false
         $icono.Dispose()
+        if ($script:asaActual -ne [System.IntPtr]::Zero) {
+            [void][NasRespaldo.Iconos]::DestroyIcon($script:asaActual)
+        }
+        if ($script:cerrojo) { $script:cerrojo.ReleaseMutex(); $script:cerrojo.Dispose() }
         [System.Windows.Forms.Application]::Exit()
     })
 

@@ -76,7 +76,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-. "$PSScriptRoot\comun.ps1"
+. "$PSScriptRoot\comun.ps1"   # Test-Centinela y New-Centinela viven ahi
 . "$PSScriptRoot\clasificar.ps1"
 . "$PSScriptRoot\notificar.ps1"
 . "$PSScriptRoot\testigo.ps1"
@@ -148,93 +148,6 @@ function Test-DeudaPrimeraCorrida {
         RaicesResueltas  = $resueltas.Count
         Deriva           = $deriva.ToArray()
     }
-}
-
-# ---------------------------------------------------------------------------
-#  Etapa 2 - capa 3, los centinelas
-# ---------------------------------------------------------------------------
-
-function Test-Centinela {
-    <#
-        .SYNOPSIS
-            Capa 3. Si un centinela no cuadra, se aborta antes de escribir nada.
-        .DESCRIPTION
-            Un punado de archivos senuelo con huella conocida repartidos entre
-            las raices. Nadie los usa, asi que si cambian es que algo los esta
-            tocando. Se revisan AL ARRANCAR.
-
-            Un centinela que FALTA cuenta como fallo igual que uno alterado:
-            borrarlo es la forma mas barata de desarmar esta capa.
-        .PARAMETER Centinelas
-            Lista de la configuracion, con ruta y huella esperada.
-    #>
-    [CmdletBinding()]
-    [OutputType([psobject])]
-    param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Centinelas
-    )
-
-    $fallos = New-Object System.Collections.Generic.List[psobject]
-    foreach ($c in $Centinelas) {
-        if (-not (Test-Path -LiteralPath $c.ruta -PathType Leaf)) {
-            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'FALTA' })
-            continue
-        }
-        $actual = Get-HuellaDeArchivo -Ruta $c.ruta
-        if ($actual -ne $c.huella.ToLowerInvariant()) {
-            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'HUELLA DISTINTA' })
-        }
-    }
-    return [pscustomobject]@{
-        Revisados = @($Centinelas).Count
-        Fallos    = $fallos.ToArray()
-        Correcto  = ($fallos.Count -eq 0)
-    }
-}
-
-function New-Centinela {
-    <#
-        .SYNOPSIS
-            Crea un centinela y devuelve la entrada lista para la configuracion.
-        .DESCRIPTION
-            Lo crea EL MOTOR, no una persona. Nombre con guion bajo delante para
-            que no se auto-inscriba, y contenido fechado para que se distinga de
-            un archivo real.
-        .PARAMETER Carpeta
-            Donde ponerlo.
-    #>
-    [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([psobject])]
-    param(
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Carpeta
-    )
-
-    $ruta = Join-Path $Carpeta '_centinela_respaldo.txt'
-    if (-not $PSCmdlet.ShouldProcess($ruta, 'Crear centinela')) { return $null }
-
-    # CADA CENTINELA LLEVA UN VALOR UNICO E IMPREDECIBLE, y no es adorno.
-    # Con un contenido identico en todas las raices, los ocho comparten huella:
-    # quien conozca uno los conoce todos y puede REPONER cualquiera despues de
-    # tocarlo, que es exactamente lo que esta capa existe para impedir. El valor
-    # sale del generador criptografico del sistema, no de Get-Random.
-    $bytes = New-Object byte[] 32
-    $generador = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $generador.GetBytes($bytes) } finally { $generador.Dispose() }
-    $semilla = [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
-
-    $texto = @"
-Centinela del cliente de respaldo del NAS. NO lo edite ni lo borre.
-
-Este archivo no lo usa nadie. Si su contenido cambia, algo lo esta tocando, y el
-motor ABORTA antes de escribir en el respaldo (seccion 7, capa 3). Borrarlo
-cuenta igual que alterarlo: es la forma mas barata de desarmar esta capa.
-
-Creado: $(Get-Date -Format 's')
-Equipo: $env:COMPUTERNAME
-Valor : $semilla
-"@
-    Set-ContenidoAtomico -Ruta $ruta -Contenido $texto -Confirm:$false
-    return [pscustomobject]@{ ruta = $ruta; huella = (Get-HuellaDeArchivo -Ruta $ruta) }
 }
 
 # ---------------------------------------------------------------------------
@@ -556,10 +469,7 @@ function Invoke-CorridaConEstado {
     # produccion y el indicador acababa pintando el resultado de una prueba
     # -medido el 2026-09-02-. Ademas es lo que el criterio 12 pide: clonar el
     # proyecto en otra maquina debe funcionar cambiando SOLO 3-Config.
-    $carpetaEstado = Get-CarpetaDeEstado
-    if ($Configuracion.PSObject.Properties.Name -contains 'carpetaEstado' -and $Configuracion.carpetaEstado) {
-        $carpetaEstado = $Configuracion.carpetaEstado
-    }
+    $carpetaEstado = Get-CarpetaDeEstado -Configuracion $Configuracion
 
     $rutaSistema = $null
     try {
@@ -647,6 +557,12 @@ if ($MyInvocation.InvocationName -eq '.') {
     Write-Verbose 'respaldo.ps1 cargado con punto: se exponen las funciones y no se ejecuta ninguna corrida.'
     return
 }
+
+# LA VENTANA NEGRA, ESCONDIDA SI ES NUESTRA. Lanzado por la tarea o por un
+# lanzador externo, este proceso creo su propia consola y aparecia una
+# ventana en el escritorio en cada corrida. Lanzado desde una terminal
+# abierta no se toca nada: ahi la ventana es de quien la abrio.
+Hide-VentanaDeConsola | Out-Null
 
 $parametrosConfig = @{}
 if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }

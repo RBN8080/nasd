@@ -332,3 +332,69 @@ function Find-SecretoEnRaiz {
     }
     return $hallazgos.ToArray()
 }
+
+# VIVE AQUI Y NO EN disco.ps1, Y LA RAZON ES ESTRUCTURAL: disco.ps1 tiene
+# bloque param(), y cargar con punto un guion con param() reinicia esas
+# variables en quien lo carga -asi se convirtio una simulacion en una copia
+# real el 2026-09-02, seccion 12.undecies-. verificar.ps1 necesita resolver
+# las mismas raices para comprobar el disco, asi que la funcion baja a la
+# capa que los dos ya cargan. Es el mismo movimiento que hicieron
+# Test-Centinela y New-Centinela, y por el mismo motivo.
+function Get-RaizDelNodoParaDisco {
+    <#
+        .SYNOPSIS
+            Resuelve las raices del NODO que se traen al disco (pendiente 5).
+        .DESCRIPTION
+            Del nodo sale a la copia fria SOLO LO QUE NACE EN EL NODO.
+            `01_BACKUP/EQUIPO-01` NO entra: es lo que el equipo ya manda al
+            disco por su propia pasada, y traerlo por aqui pondria los mismos
+            66 GB dos veces en el mismo disco bajo dos nombres distintos.
+
+            Los contenedores por usuario se expanden aqui: NO se declara usuario
+            por usuario, se declara `homeUsers` y manda el numero, asi que una
+            cuenta nueva queda cubierta el dia que alguien cree ahi una carpeta
+            numerada, sin tocar configuracion.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    $unc = $Configuracion.destinos.nodo.unc.TrimEnd('\')
+    $resueltas = New-Object System.Collections.Generic.List[psobject]
+
+    foreach ($r in $Configuracion.raicesDelNodo) {
+        $ruta = '{0}\{1}' -f $unc, ($r.ruta -replace '/', '\')
+
+        if ($r.tipo -eq 'contenedor') {
+            # Manda el numero, igual que en el equipo (ADR-0077). Se baja un
+            # nivel por usuario y se recogen sus carpetas NN_*.
+            if (-not (Test-Path -LiteralPath $ruta -PathType Container)) {
+                Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' -Mensaje "Contenedor del nodo que no responde: $ruta"
+                continue
+            }
+            foreach ($usuario in @(Get-ChildItem -LiteralPath $ruta -Directory -ErrorAction SilentlyContinue)) {
+                foreach ($carpeta in @(Get-ChildItem -LiteralPath $usuario.FullName -Directory -ErrorAction SilentlyContinue)) {
+                    if (-not (Test-CarpetaNumerada -Nombre $carpeta.Name)) { continue }
+                    $resueltas.Add([pscustomobject]@{
+                        Ruta  = $carpeta.FullName
+                        Clase = $r.clase
+                        Tipo  = 'contenedorDelNodo'
+                    })
+                }
+            }
+            continue
+        }
+
+        if (-not (Test-Path -LiteralPath $ruta -PathType Container)) {
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' -Mensaje "Raiz del nodo que no responde: $ruta"
+            continue
+        }
+        $resueltas.Add([pscustomobject]@{ Ruta = $ruta; Clase = $r.clase; Tipo = 'raizDelNodo' })
+    }
+
+    return $resueltas.ToArray()
+}

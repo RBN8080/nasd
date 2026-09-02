@@ -54,7 +54,10 @@ param(
     [string] $RutaConfiguracion,
 
     [ValidateRange(0, 10000)]
-    [int] $TamanoMuestra = 10
+    [int] $TamanoMuestra = 10,
+
+    # Cuesta un recorrido del disco entero, asi que no va por omision: se pide.
+    [switch] $RevisarDisco
 )
 
 Set-StrictMode -Version Latest
@@ -164,6 +167,99 @@ function Test-HuellaPorMuestreo {
     }
 }
 
+function Test-DiscoFrioEnVuelo {
+    <#
+        .SYNOPSIS
+            Busca en el disco frio lo que una copia cortada dejo roto.
+
+        .DESCRIPTION
+            LA SECCION 9 DICE "CUBRE NODO Y DISCO EXTERNO EN LA MISMA VISTA", Y
+            HASTA EL 2026-09-02 EL DISCO NO SE COMPROBABA. La verificacion solo
+            miraba equipo -> nodo; del disco se decia si estaba conectado y nada
+            mas. El hueco salio a la luz con un apagon a media copia: ocho
+            archivos quedaron con el tamano correcto y el contenido distinto, y
+            /XO los habria saltado en todas las corridas siguientes mientras el
+            motor los daba por buenos.
+
+            SE MIRAN LOS DOS ORIGENES DEL DISCO (seccion 6.2), porque el disco
+            recibe de dos sitios y una copia cortada puede haber sido de
+            cualquiera de los dos: las raices del equipo y las del nodo.
+
+            NO REPARA. Detecta y devuelve. La reparacion pisa archivos y eso no
+            se hace sin que una persona lo pida.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+        .PARAMETER Disco
+            Lo que devuelve Get-DiscoFrio.
+        .PARAMETER Desde
+            Solo se miran archivos del disco tocados a partir de ese momento.
+            Por omision, nada se filtra.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [Parameter(Mandatory)][psobject] $Disco,
+        [datetime] $Desde = [datetime]::MinValue
+    )
+
+    $enVuelo   = New-Object System.Collections.Generic.List[psobject]
+    $revisadas = New-Object System.Collections.Generic.List[psobject]
+    $saltadas  = New-Object System.Collections.Generic.List[psobject]
+
+    $pares = New-Object System.Collections.Generic.List[psobject]
+
+    # Origen 1: las raices del equipo.
+    $raizEquipo = '{0}{1}' -f $Disco.Raiz, $Configuracion.destinos.discoFrio.prefijoEquipo
+    foreach ($r in @(Get-RaicesDeRespaldo -Configuracion $Configuracion)) {
+        $pares.Add([pscustomobject]@{
+            Origen  = $r.Ruta
+            Destino = (Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $raizEquipo `
+                        -Traducciones @($Configuracion.destinos.discoFrio.traduccionDeRutas))
+            Lado    = 'equipo'
+        })
+    }
+
+    # Origen 2: las raices del nodo. Si el nodo no responde NO se inventa nada:
+    # se anota como no revisada, que es distinto de revisada y limpia.
+    $raizNodo = '{0}{1}' -f $Disco.Raiz, $Configuracion.destinos.discoFrio.prefijoNodo
+    if (Test-Path -LiteralPath $Configuracion.destinos.nodo.unc) {
+        foreach ($r in @(Get-RaizDelNodoParaDisco -Configuracion $Configuracion)) {
+            $pares.Add([pscustomobject]@{
+                Origen  = $r.Ruta
+                Destino = (Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $raizNodo `
+                            -Traducciones @($Configuracion.destinos.discoFrio.traduccionDelNodo))
+                Lado    = 'nodo'
+            })
+        }
+    }
+    else {
+        $saltadas.Add([pscustomobject]@{ Lado = 'nodo'; Motivo = 'El nodo no responde: sus raices no se pudieron revisar' })
+    }
+
+    foreach ($par in $pares) {
+        try {
+            $hallado = @(Get-ArchivosEnVuelo -Origen $par.Origen -Destino $par.Destino -Desde $Desde)
+            foreach ($h in $hallado) { $enVuelo.Add($h) }
+            $revisadas.Add([pscustomobject]@{ Lado = $par.Lado; Origen = $par.Origen; Hallazgos = $hallado.Count })
+        }
+        catch {
+            # Un origen que no responde NO es cero hallazgos (comun.ps1).
+            $saltadas.Add([pscustomobject]@{ Lado = $par.Lado; Motivo = $_.Exception.Message })
+        }
+    }
+
+    return [pscustomobject]@{
+        Revisadas = $revisadas.ToArray()
+        Saltadas  = $saltadas.ToArray()
+        EnVuelo   = $enVuelo.ToArray()
+        # LIMPIO EXIGE LAS DOS COSAS: cero hallazgos Y cero saltadas. Declararlo
+        # limpio sin haber podido mirar la mitad es el fallo que persigue todo
+        # este archivo.
+        Limpio    = ($enVuelo.Count -eq 0 -and $saltadas.Count -eq 0)
+    }
+}
+
 function Get-EstadoDeRespaldo {
     <#
         .SYNOPSIS
@@ -177,7 +273,8 @@ function Get-EstadoDeRespaldo {
     [OutputType([psobject])]
     param(
         [Parameter(Mandatory)][psobject] $Configuracion,
-        [ValidateRange(0, 10000)][int] $Muestra = 10
+        [ValidateRange(0, 10000)][int] $Muestra = 10,
+        [switch] $RevisarDisco
     )
 
     $unc = $Configuracion.destinos.nodo.unc
@@ -203,10 +300,18 @@ function Get-EstadoDeRespaldo {
 
     $disco = Get-DiscoFrio -Configuracion $Configuracion
 
+    # $null, no un objeto vacio, y la distincion es la de siempre: "no se
+    # reviso" tiene que poder distinguirse de "se reviso y esta limpio".
+    $discoEnVuelo = $null
+    if ($RevisarDisco -and $disco) {
+        $discoEnVuelo = Test-DiscoFrioEnVuelo -Configuracion $Configuracion -Disco $disco
+    }
+
     return [pscustomobject]@{
         Momento       = Get-Date
         NodoVivo      = $nodoVivo
         DiscoFrio     = $disco
+        DiscoEnVuelo  = $discoEnVuelo
         Raices        = $raices
         Huerfanos     = $huerfanos
         Bandeja       = $bandeja
@@ -225,4 +330,4 @@ $parametrosConfig = @{}
 if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
-Get-EstadoDeRespaldo -Configuracion $configuracion -Muestra $TamanoMuestra
+Get-EstadoDeRespaldo -Configuracion $configuracion -Muestra $TamanoMuestra -RevisarDisco:$RevisarDisco

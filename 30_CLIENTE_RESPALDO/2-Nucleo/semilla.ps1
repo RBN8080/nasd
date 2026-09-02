@@ -85,6 +85,205 @@ function Get-PiezaDeSemilla {
     }
 }
 
+function Get-GuionDeRestauracion {
+    <#
+        .SYNOPSIS
+            Devuelve el texto de RESTAURAR.ps1, que viaja DENTRO de la semilla.
+        .DESCRIPTION
+            Nivel 3 de la seccion 5.1. Tiene que ser AUTOSUFICIENTE: se ejecuta
+            en una maquina limpia que no tiene este repositorio, ni el motor, ni
+            nada. Por eso es un texto literal y no una referencia.
+
+            Se cronometra contra el objetivo de ~1 h del nivel 3, que es el
+            criterio 11 de la seccion 15.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    # Comilla simple: NADA de aqui se expande al generarlo. El guion se escribe
+    # tal cual y resuelve sus variables cuando se EJECUTA, en la maquina nueva.
+    return @'
+#Requires -Version 5.1
+<#
+    .SYNOPSIS
+        Restaura el entorno de trabajo desde esta semilla. Nivel 3.
+
+    .DESCRIPTION
+        Este archivo viaja DENTRO de la semilla y es autosuficiente: no necesita
+        el repositorio, ni el motor de respaldo, ni nada mas que Windows.
+
+        LO QUE HACE Y LO QUE NO. Restaura el ENTORNO -programas, editor, tareas,
+        identidad de git-, no los DATOS. Los datos estan en el nodo y en el
+        disco frio, y se traen copiandolos: no hace falta un guion para eso, y
+        un guion que moviera datos el dia peor seria una pieza mas que puede
+        fallar.
+
+        SE CRONOMETRA. El objetivo del nivel 3 es ~1 hora contra las ~3 horas
+        del nivel 2 y los ~3 dias de no tener nada. Este guion mide cada paso y
+        escribe el total, porque la seccion 5.1 pide tiempo MEDIDO, no estimado.
+
+    .PARAMETER Semilla
+        Carpeta de la semilla. Por omision, la de este archivo.
+
+    .PARAMETER SoloSimular
+        Ensena lo que haria y no instala nada.
+
+    .EXAMPLE
+        .\RESTAURAR.ps1 -SoloSimular
+        .\RESTAURAR.ps1
+#>
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [string] $Semilla = $PSScriptRoot,
+    [switch] $SoloSimular
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$pasos = New-Object System.Collections.Generic.List[psobject]
+$relojTotal = [System.Diagnostics.Stopwatch]::StartNew()
+
+function Invoke-Paso {
+    param(
+        [Parameter(Mandatory)][string] $Nombre,
+        [Parameter(Mandatory)][string] $Archivo,
+        [Parameter(Mandatory)][scriptblock] $Bloque
+    )
+    $ruta = Join-Path $Semilla $Archivo
+    if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) {
+        Write-Warning "$Nombre : falta '$Archivo' en la semilla. Se salta."
+        $script:pasos.Add([pscustomobject]@{ Paso = $Nombre; Segundos = 0; Estado = 'FALTA EN LA SEMILLA' })
+        return
+    }
+    if ($SoloSimular) {
+        Write-Host "[simulacion] $Nombre  <- $Archivo"
+        $script:pasos.Add([pscustomobject]@{ Paso = $Nombre; Segundos = 0; Estado = 'simulado' })
+        return
+    }
+    $reloj = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        & $Bloque $ruta
+        $reloj.Stop()
+        $script:pasos.Add([pscustomobject]@{ Paso = $Nombre; Segundos = [math]::Round($reloj.Elapsed.TotalSeconds, 1); Estado = 'OK' })
+        Write-Host ("OK  {0}  ({1:N1} s)" -f $Nombre, $reloj.Elapsed.TotalSeconds)
+    }
+    catch {
+        $reloj.Stop()
+        # Un paso que falla NO detiene la restauracion: el dia que esto se use
+        # de verdad, quedarse a medias por una pieza es el peor resultado.
+        $script:pasos.Add([pscustomobject]@{ Paso = $Nombre; Segundos = [math]::Round($reloj.Elapsed.TotalSeconds, 1); Estado = "FALLO: $($_.Exception.Message)" })
+        Write-Warning "$Nombre fallo: $($_.Exception.Message)"
+    }
+}
+
+Write-Host ''
+Write-Host '== RESTAURACION DESDE LA SEMILLA - nivel 3 =='
+Write-Host "   semilla: $Semilla"
+Write-Host ''
+
+Invoke-Paso -Nombre 'Programas (winget import)' -Archivo 'programas-winget.json' -Bloque {
+    param($ruta)
+    & winget.exe import --import-file $ruta --accept-package-agreements --accept-source-agreements --ignore-versions --disable-interactivity
+    # winget devuelve distinto de cero si algun paquete ya estaba o no se
+    # encontro. Eso no es un fallo de la restauracion: se anota y se sigue.
+    if ($LASTEXITCODE -ne 0) { Write-Warning "winget import devolvio $LASTEXITCODE (normal si algo ya estaba instalado)" }
+}
+
+Invoke-Paso -Nombre 'Extensiones de VS Code' -Archivo 'vscode-extensiones.txt' -Bloque {
+    param($ruta)
+    $code = @(Get-Command code -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
+    if (-not $code) { throw 'VS Code todavia no esta en el PATH. Reabra la consola y repita solo este paso.' }
+    $n = 0
+    foreach ($ext in (Get-Content -LiteralPath $ruta -Encoding UTF8)) {
+        if ([string]::IsNullOrWhiteSpace($ext)) { continue }
+        & $code.Source --install-extension $ext.Trim() --force | Out-Null
+        $n++
+    }
+    Write-Host "    $n extensiones"
+}
+
+Invoke-Paso -Nombre 'Ajustes de VS Code' -Archivo 'vscode-settings.json' -Bloque {
+    param($ruta)
+    $destino = Join-Path $env:APPDATA 'Code\User'
+    if (-not (Test-Path -LiteralPath $destino)) { New-Item -ItemType Directory -Path $destino -Force | Out-Null }
+    Copy-Item -LiteralPath $ruta -Destination (Join-Path $destino 'settings.json') -Force
+}
+
+Invoke-Paso -Nombre 'Atajos de VS Code' -Archivo 'vscode-keybindings.json' -Bloque {
+    param($ruta)
+    $destino = Join-Path $env:APPDATA 'Code\User'
+    if (-not (Test-Path -LiteralPath $destino)) { New-Item -ItemType Directory -Path $destino -Force | Out-Null }
+    Copy-Item -LiteralPath $ruta -Destination (Join-Path $destino 'keybindings.json') -Force
+}
+
+Invoke-Paso -Nombre 'Identidad de git' -Archivo 'gitconfig.txt' -Bloque {
+    param($ruta)
+    Copy-Item -LiteralPath $ruta -Destination (Join-Path $env:USERPROFILE '.gitconfig') -Force
+}
+
+# LAS TAREAS PROGRAMADAS NO SE REARMAN SOLAS, Y ES DELIBERADO. El CSV dice
+# CUALES habia; volver a crearlas exige saber que ejecuta cada una, y ese dato
+# no cabe en un inventario. Re-registrar a ciegas tareas que apuntan a rutas que
+# quiza ya no existen es peor que no hacerlo.
+$csvTareas = Join-Path $Semilla 'tareas-programadas.csv'
+if (Test-Path -LiteralPath $csvTareas) {
+    Write-Host ''
+    Write-Host 'TAREAS PROGRAMADAS QUE HABIA -- se rearman a mano, ver RECREAR.md:'
+    Import-Csv -LiteralPath $csvTareas | ForEach-Object { Write-Host ("    {0}{1}" -f $_.TaskPath, $_.TaskName) }
+}
+
+$relojTotal.Stop()
+Write-Host ''
+Write-Host '== RESUMEN =='
+$pasos | Format-Table Paso, Segundos, Estado -AutoSize
+Write-Host ("TIEMPO TOTAL MEDIDO: {0:N1} min" -f $relojTotal.Elapsed.TotalMinutes)
+Write-Host 'Objetivo del nivel 3 (seccion 5.1): ~1 hora hasta volver a trabajar.'
+Write-Host ''
+Write-Host 'LO QUE FALTA Y NO LO HACE ESTE GUION:'
+Write-Host '  - Traer los DATOS del nodo o del disco frio (son copias, no instalacion)'
+Write-Host '  - Las llaves SSH: viajan aparte, cifradas (ADR-0080)'
+Write-Host '  - Rearmar las tareas programadas listadas arriba'
+Write-Host '  - Lo de clase C: ver RECREAR.md'
+'@
+}
+
+function Get-TextoRecrear {
+    <#
+        .SYNOPSIS
+            Devuelve RECREAR.md, leyendo su plantilla de 3-Config.
+        .DESCRIPTION
+            La seccion 8 lo declara dentro de `_SISTEMA/`. Aqui viaja con la
+            semilla, que es donde de verdad hace falta el dia de la restauracion.
+
+            EL TEXTO VIVE EN UNA PLANTILLA .md Y NO AQUI DENTRO, y no es un
+            capricho: los .ps1 de este cliente se escriben SIN ACENTOS porque
+            PowerShell 5.1 lee un .ps1 sin BOM como ANSI y los rompe (ADR-0078).
+            Un documento que se lee el peor dia del ano no puede estar escrito
+            sin acentos por una limitacion del interprete, asi que se separa:
+            el guion queda ASCII y el documento conserva su ortografia.
+        .PARAMETER Plantilla
+            Ruta de la plantilla. Por omision la de 3-Config.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $Plantilla = (Join-Path (Split-Path $PSScriptRoot -Parent) '3-Config\RECREAR.plantilla.md')
+    )
+
+    if (-not (Test-Path -LiteralPath $Plantilla -PathType Leaf)) {
+        return "# RECREAR`
+`
+No se encontro la plantilla en $Plantilla. La semilla se genero sin este documento."
+    }
+    $texto = Get-Content -LiteralPath $Plantilla -Raw -Encoding UTF8
+    $texto = $texto.Replace('{{FECHA}}', (Get-Date -Format 's'))
+    $texto = $texto.Replace('{{EQUIPO}}', $env:COMPUTERNAME)
+    return $texto
+}
+
 function New-SemillaNivel1 {
     <#
         .SYNOPSIS
@@ -197,6 +396,14 @@ function New-SemillaNivel1 {
     [void]$m.AppendLine('contenedor cifrado.')
 
     Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'MANIFIESTO.txt') -Contenido $m.ToString() -Confirm:$false
+
+    # NIVEL 3: la lista deja de leerse y empieza a ejecutarse (seccion 5.1).
+    # Entre el nivel 2 y el 3 NO se guarda ni un dato nuevo. La diferencia es
+    # que una lista ahorra RECORDAR y un ejecutable ahorra TECLEAR, que es donde
+    # se van las horas. Por eso RESTAURAR.ps1 viaja DENTRO de la semilla: tiene
+    # que funcionar en una maquina limpia que no ha visto este repositorio.
+    Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'RESTAURAR.ps1') -Contenido (Get-GuionDeRestauracion) -Confirm:$false
+    Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'RECREAR.md') -Contenido (Get-TextoRecrear) -Confirm:$false
 
     Write-RegistroRespaldo -Etapa 'semilla' `
         -Mensaje ('Semilla regenerada: {0} piezas, {1:N0} bytes, {2} fallidas.' -f $escritas.Count, $bytes, $fallidas.Count)
