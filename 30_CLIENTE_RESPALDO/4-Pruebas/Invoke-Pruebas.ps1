@@ -1412,6 +1412,39 @@ finally {
 Test-Afirmacion -Nombre 'El ensayo de cadencia no deja tarea detras' `
     -Esperado $false -Obtenido ($null -ne (Get-ScheduledTask -TaskName $nombreEnsayo -ErrorAction SilentlyContinue))
 
+# --- Una corrida A MANO no pertenece a ninguna ventana ----------------------
+# LO ENCONTRO EL RESPONSABLE MIRANDO LA PANTALLA, no una prueba. Pulso [2]
+# simular a las 17:30 y el registro la acuso de "TARDE, 2 h 30 min despues de
+# cerrarse la ventana": el sistema afirmando algo falso sobre si mismo, en un
+# proyecto cuyo unico trabajo es no mentir. Una corrida que lanza una persona no
+# iba a la cita de las 12:00-15:00, asi que no puede llegar tarde a ella.
+#
+# La tarea pasa -DesdeTarea; el tablero y la consola no. Se comprueba en los dos
+# sitios: que el ARGUMENTO viaje en la tarea, y que sin el no se acuse a nadie.
+$argsTarea = ''
+try {
+    & $registrar -Pieza Motor -Accion Registrar -RutaConfiguracion $caja.Config `
+        -NombreTarea $nombreEnsayo -Confirm:$false -InformationAction SilentlyContinue | Out-Null
+    $argsTarea = '' + (@((Get-ScheduledTask -TaskName $nombreEnsayo).Actions)[0].Arguments)
+}
+finally {
+    Unregister-ScheduledTask -TaskName $nombreEnsayo -Confirm:$false -ErrorAction SilentlyContinue
+}
+Test-Afirmacion -Nombre 'La tarea programada pasa -DesdeTarea: sus corridas SI cuentan contra la ventana' `
+    -Esperado $true -Obtenido ($argsTarea -like '*-DesdeTarea*')
+
+# Y la contraria, que es la que fallaba: una corrida a mano deja "a mano" en
+# ESTADO.txt y NINGUNA acusacion de retraso en el registro.
+$carpetaCaja = Join-Path $caja.Raiz 'estado-motor'
+Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
+'algo' | Set-Content -LiteralPath "$($caja.Origen)\proyecto\src\mod1.txt" -Encoding UTF8
+Invoke-Motor -Caja $caja -Autorizar | Out-Null
+$estadoManual = Read-EstadoRespaldo -Carpeta $carpetaCaja
+Test-Afirmacion -Nombre 'Una corrida a mano se anota como "a mano", no como una ventana' `
+    -Esperado 'a mano' -Obtenido ('' + $estadoManual['ventana'])
+Test-Afirmacion -Nombre 'Y no se le cuelga un veredicto de puntualidad que no le corresponde' `
+    -Esperado $false -Obtenido $estadoManual.ContainsKey('ventana_atiempo')
+
 # --- La proxima ventana: lo que SI se puede prometer ------------------------
 # Se le pasa el momento a proposito, para que la prueba no dependa de la hora a
 # la que corran las pruebas -que fue exactamente el defecto del criterio AL DIA-.

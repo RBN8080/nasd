@@ -49,6 +49,16 @@
         cuando la deuda ya se declaro saldada. En una corrida real sobre el nodo
         es exactamente lo que no hay que hacer.
 
+    .PARAMETER DesdeTarea
+        La lanzo el Programador de tareas, no una persona. LO PASA SOLO LA TAREA
+        (ver Registrar-Tarea.ps1) y cambia UNA cosa: si esta corrida pertenece a
+        una ventana de la cadencia.
+
+        SIN ESTO LA CADENCIA MIENTE. Una corrida que alguien lanza a mano a las
+        17:30 no "llego tarde" a la ventana de las 12:00-15:00: no iba a esa
+        cita. El 2026-09-02 el responsable simulo desde el tablero y el registro
+        la acuso de TARDE, que es el sistema afirmando algo falso sobre si mismo.
+
     .EXAMPLE
         .\respaldo.ps1 -SoloSimular -Verbose
         Ensena que haria, sin tocar el destino.
@@ -70,7 +80,9 @@ param(
 
     [switch] $AutorizarFreno,
 
-    [switch] $OmitirDeuda
+    [switch] $OmitirDeuda,
+
+    [switch] $DesdeTarea
 )
 
 Set-StrictMode -Version Latest
@@ -462,6 +474,10 @@ function Invoke-CorridaConEstado {
             El operador autoriza continuar aunque el freno haya saltado.
         .PARAMETER SaltarDeuda
             Omite la etapa 0.
+        .PARAMETER Programada
+            La disparo el Programador de tareas, no una persona. Decide si esta
+            corrida cuenta contra una ventana de la cadencia o no pertenece a
+            ninguna -y por tanto si el registro puede llamarla TARDE-.
     #>
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
     [OutputType([psobject])]
@@ -469,7 +485,8 @@ function Invoke-CorridaConEstado {
         [Parameter(Mandatory)][psobject] $Configuracion,
         [switch] $Simular,
         [switch] $Autorizado,
-        [switch] $SaltarDeuda
+        [switch] $SaltarDeuda,
+        [switch] $Programada
     )
 
     if (-not $PSCmdlet.ShouldProcess('la corrida completa', 'Ejecutar respaldo')) { $Simular = $true }
@@ -497,6 +514,12 @@ function Invoke-CorridaConEstado {
     # recuperada por StartWhenAvailable despues de un apagon-. Sin esa linea, el
     # registro no distingue "todavia no le tocaba" de "no corrio".
     #
+    # PERO SOLO SI LA DISPARO EL PROGRAMADOR. Una corrida a mano no pertenece a
+    # ninguna ventana, y decir que "llego tarde" a una cita que no tenia es una
+    # afirmacion falsa del sistema sobre si mismo. Se vio el 2026-09-02 en la
+    # pantalla del responsable: pulso [2] simular a las 17:30 y el registro la
+    # acuso de TARDE contra la ventana de las 12:00-15:00.
+    #
     # UN PROBLEMA DE CADENCIA NO TUMBA LA CORRIDA. Copiar es lo importante y
     # anotar es lo secundario, que es el mismo orden que ya sigue el testigo.
     # Las dos declaradas ANTES del try: con StrictMode, leer una variable que el
@@ -505,9 +528,15 @@ function Invoke-CorridaConEstado {
     $cadencia = $null
     try {
         $cadencia = Get-CadenciaDeCorrida -Configuracion $Configuracion
-        $ventana  = Get-VentanaDeCorrida -Momento (Get-Date) -Cadencia $cadencia
-        $nivelVentana = if ($ventana.ATiempo) { 'OK' } else { 'ATENCION' }
-        Write-RegistroRespaldo -Nivel $nivelVentana -Etapa 'cadencia' -Mensaje $ventana.Descripcion
+        if ($Programada) {
+            $ventana = Get-VentanaDeCorrida -Momento (Get-Date) -Cadencia $cadencia
+            $nivelVentana = if ($ventana.ATiempo) { 'OK' } else { 'ATENCION' }
+            Write-RegistroRespaldo -Nivel $nivelVentana -Etapa 'cadencia' -Mensaje $ventana.Descripcion
+        }
+        else {
+            Write-RegistroRespaldo -Nivel 'OK' -Etapa 'cadencia' `
+                -Mensaje ('corrida A MANO a las {0:HH:mm} - no pertenece a ninguna ventana y no cuenta contra la cadencia' -f (Get-Date))
+        }
     }
     catch {
         Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'cadencia' `
@@ -579,6 +608,12 @@ function Invoke-CorridaConEstado {
         $datos['ventana']         = $ventana.Ventana
         $datos['ventana_indice']  = '{0}/{1}' -f $ventana.Indice, $ventana.Total
         $datos['ventana_atiempo'] = $ventana.ATiempo
+    }
+    else {
+        # "a mano" y no una ventana inventada. Que la ultima corrida la lanzara
+        # una persona es un dato distinto de que llegara tarde a una cita, y el
+        # tablero tiene que poder decirlo sin adornar.
+        $datos['ventana'] = 'a mano'
     }
     if ($cadencia) {
         $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia
@@ -658,4 +693,5 @@ $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 # traduce a simulacion, asi que no hay dos caminos que mantener sincronizados.
 Invoke-CorridaConEstado -Configuracion $configuracion `
     -Simular:$SoloSimular -Autorizado:$AutorizarFreno -SaltarDeuda:$OmitirDeuda `
+    -Programada:$DesdeTarea `
     -WhatIf:$WhatIfPreference -Confirm:$false
