@@ -201,6 +201,33 @@ switch ($Accion) {
         }
         $accionTarea = New-ScheduledTaskAction -Execute $anfitrion -Argument $argumentos
 
+        # SE MATA EL ICONO VIEJO ANTES DE REGISTRAR, Y HAY QUE HACERLO AQUI.
+        # Register-ScheduledTask -Force reemplaza la tarea pero NO se lleva por
+        # delante la instancia que ya estaba corriendo: queda huerfana. Y como
+        # el indicador tiene cerrojo de instancia unica, la nueva arranca, ve el
+        # cerrojo tomado por el huerfano y se retira educadamente. Resultado: la
+        # tarea dice "Ready", todo parece bien, y en la barra sigue el icono con
+        # el codigo VIEJO. Medido el 2026-09-02 tras actualizar el indicador.
+        # SOLO SI YA HABIA UNA TAREA CON ESE NOMBRE, o sea cuando de verdad se
+        # esta REEMPLAZANDO una instalacion viva. Registrar una tarea nueva no
+        # tiene ningun indicador anterior que retirar, y matar procesos "por si
+        # acaso" tuvo consecuencias: la suite registra una tarea de usar y tirar
+        # para comprobar el arranque sin ventana, y con la version anterior de
+        # esta guarda CORRER LAS PRUEBAS MATABA EL ICONO DEL ESCRITORIO.
+        $yaExistia = $null -ne (Get-TareaDeRespaldo -Nombre $NombreTarea)
+        if ($Pieza -eq 'Indicador' -and $yaExistia) {
+            Stop-ScheduledTask -TaskName $NombreTarea -ErrorAction SilentlyContinue
+            # El patron se arma por trozos a proposito: si el literal apareciera
+            # entero, esta misma consulta se encontraria a si misma en su linea
+            # de comando y contaria un proceso de mas.
+            $patron = '*indi' + 'cador.ps1*'
+            foreach ($viejo in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+                                 Where-Object { $_.CommandLine -like $patron -and $_.ProcessId -ne $PID })) {
+                Write-Information ("Se retira un indicador anterior (pid {0})." -f $viejo.ProcessId) -InformationAction Continue
+                Stop-Process -Id $viejo.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         if ($PSCmdlet.ShouldProcess($NombreTarea, $queHace)) {
             Register-ScheduledTask -TaskName $NombreTarea `
                 -Action $accionTarea -Trigger $disparador -Principal $principal -Settings $ajustes `

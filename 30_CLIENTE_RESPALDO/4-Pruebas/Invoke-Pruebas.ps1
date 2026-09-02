@@ -855,6 +855,16 @@ finally {
 Test-Afirmacion -Nombre 'La tarea de prueba se retiro: no queda basura en el Programador' `
     -Esperado $null -Obtenido (Get-ScheduledTask -TaskName $tareaPrueba -ErrorAction SilentlyContinue)
 
+# Y LA PRUEBA NO PUEDE MATAR EL ICONO DE VERDAD. Registrar una tarea retira el
+# indicador anterior -si no, al actualizar el codigo queda un huerfano vivo con
+# el cerrojo tomado y el nuevo se retira solo-, pero eso vale unicamente cuando
+# se REEMPLAZA una tarea existente. La primera version de esa guarda mataba el
+# icono del escritorio cada vez que alguien corria la suite.
+$iconoSigueVivo = @(Get-ScheduledTask -TaskName 'NasRespaldo-Indicador' -ErrorAction SilentlyContinue).Count
+Test-Afirmacion -Nombre 'Registrar una tarea NUEVA no toca el indicador ya instalado' `
+    -Esperado $iconoSigueVivo `
+    -Obtenido @(Get-ScheduledTask -TaskName 'NasRespaldo-Indicador' -ErrorAction SilentlyContinue).Count
+
 # ===========================================================================
 # DOS DESTINOS, DOS SALUDES
 # ===========================================================================
