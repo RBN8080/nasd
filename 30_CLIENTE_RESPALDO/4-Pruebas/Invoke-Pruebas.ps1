@@ -195,6 +195,7 @@ function Write-ConfiguracionDeCaja {
         raicesDeclaradas = @(
             @{ ruta = "$($Caja.Origen)\proyecto"; clase = 'B'; nota = 'raiz declarada entera' }
         )
+        carpetaEstado = (Join-Path $Caja.Raiz 'estado-motor')
         raicesDelNodo = @()
         exclusiones   = @('AppData', '.cache', 'Juegos', '*.vmdk')
         secretos      = [ordered]@{
@@ -429,6 +430,123 @@ $secretos = Find-SecretoEnRaiz -Raices $raicesS -Configuracion $cfgS
 Test-Afirmacion -Nombre 'Detecta el .env y la .key' -Esperado 2 -Obtenido $secretos.Count
 Test-Afirmacion -Nombre 'Y NO los excluye: siguen en la raiz que se copia' `
     -Esperado $true -Obtenido (Test-Path -LiteralPath "$($caja.Origen)\Documents\01_DOCS\.env")
+
+# ===========================================================================
+#  FASE 3 - estado, avisos, testigo e indicador
+# ===========================================================================
+
+Write-Titulo 'Fase 3: la capa de estado'
+
+$cajaEstado = Join-Path $CarpetaCaja 'estado'
+New-Item -ItemType Directory -Path $cajaEstado -Force | Out-Null
+
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'prueba' -Datos @{ raices = 3 } -Carpeta $cajaEstado -Confirm:$false
+$e = Read-EstadoRespaldo -Carpeta $cajaEstado
+Test-Afirmacion -Nombre 'ESTADO.txt se escribe y se relee' -Esperado 'Protegido' -Obtenido ('' + $e['estado'])
+Test-Afirmacion -Nombre 'ESTADO.txt conserva los datos extra' -Esperado '3' -Obtenido ('' + $e['raices']).Trim()
+
+# Un ESTADO.txt corrupto NO puede tumbar al indicador: un icono ausente se
+# parece a "todo bien", que es el punto ciego declarado de la seccion 10.2.
+'basura sin formato' | Set-Content -LiteralPath (Join-Path $cajaEstado 'ESTADO.txt') -Encoding UTF8
+Test-Afirmacion -Nombre 'Un ESTADO.txt corrupto devuelve SinDatos, no una excepcion' `
+    -Esperado 'SinDatos' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaEstado)['estado'])
+
+Remove-Item -LiteralPath (Join-Path $cajaEstado 'ESTADO.txt') -Force
+Test-Afirmacion -Nombre 'Sin ESTADO.txt tambien devuelve SinDatos' `
+    -Esperado 'SinDatos' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaEstado)['estado'])
+
+Write-Titulo 'Criterio 9: matar el motor a media corrida'
+
+$sinMarca = Get-MarcaDeCorrida -Carpeta $cajaEstado
+Test-Afirmacion -Nombre 'Sin marca, no hay corrida en curso' -Esperado $false -Obtenido $sinMarca.Existe
+
+Enter-MarcaDeCorrida -Carpeta $cajaEstado -Confirm:$false | Out-Null
+$viva = Get-MarcaDeCorrida -Carpeta $cajaEstado
+Test-Afirmacion -Nombre 'Marca recien puesta: viva, no vieja' -Esperado $true -Obtenido ($viva.Existe -and -not $viva.Vieja)
+
+# El motor muere: la marca queda y su PID ya no existe. Es FALLA, no "copiando".
+$pidMuerto = (Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','exit' -PassThru -WindowStyle Hidden).Id
+Start-Sleep -Milliseconds 400
+"pid=$pidMuerto`ninicio=$((Get-Date).ToString('s'))`nequipo=CAJA`n" |
+    Set-Content -LiteralPath (Join-Path $cajaEstado 'EN_CURSO.lock') -Encoding UTF8
+$muerta = Get-MarcaDeCorrida -Carpeta $cajaEstado
+Test-Afirmacion -Criterio '9' -Nombre 'Marca reciente con el proceso MUERTO cuenta como vieja (arranco y no termino)' `
+    -Esperado $true -Obtenido ($muerta.Existe -and $muerta.Vieja -and -not $muerta.ProcesoVivo)
+
+Exit-MarcaDeCorrida -Carpeta $cajaEstado -Confirm:$false
+Test-Afirmacion -Criterio '9' -Nombre 'La marca se retira al terminar' `
+    -Esperado $false -Obtenido (Get-MarcaDeCorrida -Carpeta $cajaEstado).Existe
+
+Write-Titulo 'La costura de avisos (seccion 11)'
+
+Test-Afirmacion -Nombre 'OK traduce a verde'          -Esperado 'verde'    -Obtenido (ConvertTo-SeveridadDelNodo -Nivel 'OK')
+Test-Afirmacion -Nombre 'ATENCION traduce a amarillo' -Esperado 'amarillo' -Obtenido (ConvertTo-SeveridadDelNodo -Nivel 'ATENCION')
+Test-Afirmacion -Nombre 'FRENO traduce a rojo'        -Esperado 'rojo'     -Obtenido (ConvertTo-SeveridadDelNodo -Nivel 'FRENO')
+Test-Afirmacion -Nombre 'ERROR traduce a rojo'        -Esperado 'rojo'     -Obtenido (ConvertTo-SeveridadDelNodo -Nivel 'ERROR')
+
+$cajaSistema = Join-Path $CarpetaCaja '_SISTEMA'
+$verde = Send-EventoAlNodo -Nivel 'OK' -Situacion 'p.ok' -Mensaje 'todo bien' -RutaSistema $cajaSistema -Confirm:$false
+Test-Afirmacion -Nombre 'El exito diario NO notifica (regla de ruido)' -Esperado $false -Obtenido $verde.Emitido
+
+$rojo = Send-EventoAlNodo -Nivel 'ERROR' -Situacion 'p.error' -Mensaje 'algo fallo' -Hechos @{ n = 1 } -RutaSistema $cajaSistema -Confirm:$false
+Test-Afirmacion -Nombre 'Un ERROR si se emite' -Esperado $true -Obtenido $rojo.Emitido
+$jsonl = Join-Path $cajaSistema 'eventos-cliente.jsonl'
+Test-Afirmacion -Nombre 'El evento aterriza como una linea JSON' -Esperado 1 -Obtenido @(Get-Content -LiteralPath $jsonl).Count
+$leido = Get-Content -LiteralPath $jsonl -Raw | ConvertFrom-Json
+Test-Afirmacion -Nombre 'Y lleva la severidad del NODO, no la del cliente' -Esperado 'rojo' -Obtenido $leido.severidad
+
+# Que el canal falle NO puede tumbar la corrida.
+$sinDestino = Send-EventoAlNodo -Nivel 'ERROR' -Situacion 'p.x' -Mensaje 'y' -RutaSistema 'Z:\no\existe\nunca' -Confirm:$false
+Test-Afirmacion -Nombre 'Si el nodo no responde, el aviso no lanza: se anota y se sigue' `
+    -Esperado $false -Obtenido $sinDestino.Emitido
+
+Write-Titulo 'El testigo (ADR-0079): el verde no se puede fingir'
+
+$falso = Send-LatidoDelCliente -Senal 'Bien' -Url 'https://ejemplo.invalido/x' -Confirm:$false -WhatIf
+Test-Afirmacion -Nombre 'Pedir "Bien" SIN corrida ni verificacion se degrada a Mal' `
+    -Esperado 'Mal' -Obtenido $falso.Senal
+$soloCopia = Send-LatidoDelCliente -Senal 'Bien' -CorridaTermino -Url 'https://ejemplo.invalido/x' -Confirm:$false -WhatIf
+Test-Afirmacion -Nombre 'Copiar sin verificar TAMPOCO da verde' `
+    -Esperado 'Mal' -Obtenido $soloCopia.Senal
+$ambas = Send-LatidoDelCliente -Senal 'Bien' -CorridaTermino -VerificacionPaso -Url 'https://ejemplo.invalido/x' -Confirm:$false -WhatIf
+Test-Afirmacion -Nombre 'Solo con las DOS condiciones el latido sale verde' `
+    -Esperado 'Bien' -Obtenido $ambas.Senal
+$sinUrl = Send-LatidoDelCliente -Senal 'Mal' -Url '' -Confirm:$false
+Test-Afirmacion -Nombre 'Sin credencial configurada no falla: lo dice y sigue' `
+    -Esperado $false -Obtenido $sinUrl.Enviado
+
+Write-Titulo 'Criterios 8 y 10: la tarea programada'
+
+$indicador = Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\indicador.ps1'
+# Se le pasa un nombre de tarea que NO existe a proposito: la prueba mide que
+# el indicador detecta su AUSENCIA, no si la tarea real esta registrada hoy.
+$vista = & $indicador -UnaSolaLectura -NombreTarea 'NasRespaldo-QueNoExiste' -CarpetaEstado $cajaEstado
+Test-Afirmacion -Criterio '10' -Nombre 'Sin tarea programada, el indicador lo detecta y pinta FALLA' `
+    -Esperado 'Falla' -Obtenido $vista.Estado
+Test-Afirmacion -Criterio '10' -Nombre 'Y dice que la causa es la tarea, no otra cosa' `
+    -Esperado 'tarea' -Obtenido $vista.Fuente
+
+$registrar = Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\Registrar-Tarea.ps1'
+(& $registrar -Accion Registrar -Hora '23:45' -NombreTarea 'NasRespaldo-Pruebas' -Confirm:$false -WhatIf) 2>$null
+Test-Afirmacion -Criterio '8' -Nombre 'Registrar-Tarea con -WhatIf no crea nada' `
+    -Esperado $false -Obtenido ($null -ne (Get-ScheduledTask -TaskName 'NasRespaldo-Pruebas' -ErrorAction SilentlyContinue))
+
+# El motor tiene que poder correr SIN menu y SIN indicador: se comprueba
+# invocandolo como lo hara la tarea, en un proceso aparte y no interactivo.
+# Se repuebla `proyecto` antes: la prueba de la guarda de origen lo dejo vacio a
+# proposito, y aqui lo que se mide es OTRA cosa.
+'codigo repuesto' | Set-Content -LiteralPath "$($caja.Origen)\proyecto\src\mod1.txt" -Encoding UTF8
+Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
+
+$motorRuta = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\respaldo.ps1'
+$codigoTarea = & {
+    $ErrorActionPreference = 'Continue'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -Command "& '$motorRuta' -RutaConfiguracion '$($caja.Config)' -SoloSimular -Confirm:`$false | Out-Null; exit 0" 2>&1 | Out-Null
+    $LASTEXITCODE
+}
+Test-Afirmacion -Criterio '8' -Nombre 'El motor corre en un proceso NO interactivo, sin menu ni indicador' `
+    -Esperado 0 -Obtenido $codigoTarea
 
 # ===========================================================================
 #  Resumen

@@ -78,6 +78,8 @@ $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\comun.ps1"
 . "$PSScriptRoot\clasificar.ps1"
+. "$PSScriptRoot\notificar.ps1"
+. "$PSScriptRoot\testigo.ps1"
 
 # ---------------------------------------------------------------------------
 #  Etapa 0 - la deuda de la seccion 8
@@ -208,8 +210,29 @@ function New-Centinela {
     )
 
     $ruta = Join-Path $Carpeta '_centinela_respaldo.txt'
-    $texto = "Centinela del cliente de respaldo. No lo edite ni lo borre.`nCreado: {0}`n" -f (Get-Date -Format 's')
     if (-not $PSCmdlet.ShouldProcess($ruta, 'Crear centinela')) { return $null }
+
+    # CADA CENTINELA LLEVA UN VALOR UNICO E IMPREDECIBLE, y no es adorno.
+    # Con un contenido identico en todas las raices, los ocho comparten huella:
+    # quien conozca uno los conoce todos y puede REPONER cualquiera despues de
+    # tocarlo, que es exactamente lo que esta capa existe para impedir. El valor
+    # sale del generador criptografico del sistema, no de Get-Random.
+    $bytes = New-Object byte[] 32
+    $generador = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $generador.GetBytes($bytes) } finally { $generador.Dispose() }
+    $semilla = [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+
+    $texto = @"
+Centinela del cliente de respaldo del NAS. NO lo edite ni lo borre.
+
+Este archivo no lo usa nadie. Si su contenido cambia, algo lo esta tocando, y el
+motor ABORTA antes de escribir en el respaldo (seccion 7, capa 3). Borrarlo
+cuenta igual que alterarlo: es la forma mas barata de desarmar esta capa.
+
+Creado: $(Get-Date -Format 's')
+Equipo: $env:COMPUTERNAME
+Valor : $semilla
+"@
     Set-ContenidoAtomico -Ruta $ruta -Contenido $texto -Confirm:$false
     return [pscustomobject]@{ ruta = $ruta; huella = (Get-HuellaDeArchivo -Ruta $ruta) }
 }
@@ -488,6 +511,131 @@ function Invoke-CorridaDeRespaldo {
 }
 
 # ---------------------------------------------------------------------------
+#  La envoltura de estado, avisos y testigo - Fase 3
+# ---------------------------------------------------------------------------
+
+function Invoke-CorridaConEstado {
+    <#
+        .SYNOPSIS
+            Corre el respaldo dejando rastro: ESTADO.txt, marca, evento y latido.
+        .DESCRIPTION
+            ENVOLTURA Y NO HILO SUELTO, a proposito. `Invoke-CorridaDeRespaldo`
+            tiene siete puntos de salida -cada guarda que aborta es uno-, y
+            escribir el estado en cada uno significa que el dia que se anada la
+            octava guarda alguien se olvidara. Aqui el `finally` no se puede
+            olvidar: pase lo que pase dentro, la marca se retira y el estado
+            queda escrito.
+
+            EL ORDEN IMPORTA. La marca se pone ANTES de empezar y se retira en el
+            `finally`; si el motor muere a mitad, la marca se queda y el indicador
+            la ve VIEJA -o con su PID muerto- y pinta FALLA. Es el criterio 9 de
+            la seccion 15: matar el motor a media corrida pone el icono ROJO, no
+            verde.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+        .PARAMETER Simular
+            No copia: informa.
+        .PARAMETER Autorizado
+            El operador autoriza continuar aunque el freno haya saltado.
+        .PARAMETER SaltarDeuda
+            Omite la etapa 0.
+    #>
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [switch] $Simular,
+        [switch] $Autorizado,
+        [switch] $SaltarDeuda
+    )
+
+    if (-not $PSCmdlet.ShouldProcess('la corrida completa', 'Ejecutar respaldo')) { $Simular = $true }
+
+    # La carpeta de estado sale de la CONFIGURACION, no de una ruta fija. Sin
+    # esto, el arenero de pruebas escribia su ESTADO.txt encima del de
+    # produccion y el indicador acababa pintando el resultado de una prueba
+    # -medido el 2026-09-02-. Ademas es lo que el criterio 12 pide: clonar el
+    # proyecto en otra maquina debe funcionar cambiando SOLO 3-Config.
+    $carpetaEstado = Get-CarpetaDeEstado
+    if ($Configuracion.PSObject.Properties.Name -contains 'carpetaEstado' -and $Configuracion.carpetaEstado) {
+        $carpetaEstado = $Configuracion.carpetaEstado
+    }
+
+    $rutaSistema = $null
+    try {
+        $rutaSistema = '{0}\{1}\{2}\_SISTEMA' -f `
+            $Configuracion.destinos.nodo.unc.TrimEnd('\'),
+            $Configuracion.destinos.nodo.raiz,
+            $Configuracion.destinos.nodo.prefijoEquipo
+    }
+    catch { $rutaSistema = $null }
+
+    $resultado = $null
+    try {
+        if (-not $Simular) {
+            Enter-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false | Out-Null
+            Write-EstadoRespaldo -Estado 'Copiando' -Detalle 'Corrida en curso' -Carpeta $carpetaEstado -Confirm:$false
+            Send-LatidoDelCliente -Senal 'Inicio' -Detalle 'corrida iniciada' -Confirm:$false | Out-Null
+        }
+
+        $resultado = Invoke-CorridaDeRespaldo -Configuracion $Configuracion `
+            -Simular:$Simular -Autorizado:$Autorizado -SaltarDeuda:$SaltarDeuda -Confirm:$false
+    }
+    finally {
+        if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
+    }
+
+    if ($Simular -or $null -eq $resultado) { return $resultado }
+
+    # --- Que estado deja esta corrida --------------------------------------
+    $fallos = @($resultado.Copias | Where-Object { -not $_.Correcto })
+    if ($resultado.Abortada) {
+        # Un centinela alterado y un freno disparado NO son lo mismo, y el
+        # indicador no debe pintarlos igual: el freno es una PARADA PRUDENTE que
+        # espera una decision; el centinela es que algo esta tocando archivos que
+        # nadie usa.
+        if ($resultado.Motivo -like 'FRENO*') {
+            $estado = 'Atencion'; $nivel = 'FRENO'; $situacion = 'respaldo.freno'
+        }
+        else {
+            $estado = 'Falla';    $nivel = 'ERROR'; $situacion = 'respaldo.abortado'
+        }
+        $detalle = $resultado.Motivo
+    }
+    elseif ($fallos.Count -gt 0) {
+        $estado = 'Falla'; $nivel = 'ERROR'; $situacion = 'respaldo.copia_fallida'
+        $detalle = "{0} de {1} raices no se copiaron bien" -f $fallos.Count, $resultado.Copias.Count
+    }
+    else {
+        $estado = 'Protegido'; $nivel = 'OK'; $situacion = 'respaldo.correcto'
+        $copiados = 0
+        foreach ($c in $resultado.Copias) { $copiados += $c.NumACopiar }
+        $detalle = "{0} raices al dia, {1} archivos copiados" -f $resultado.Copias.Count, $copiados
+    }
+
+    $datos = @{
+        raices    = @($resultado.Raices).Count
+        huerfanos = @($resultado.Huerfanos).Count
+        copias    = @($resultado.Copias).Count
+        fallos    = $fallos.Count
+    }
+    Write-EstadoRespaldo -Estado $estado -Detalle $detalle -Datos $datos -Carpeta $carpetaEstado -Confirm:$false
+
+    $emision = @{ Nivel = $nivel; Situacion = $situacion; Mensaje = $detalle; Hechos = $datos }
+    if ($rutaSistema) { $emision['RutaSistema'] = $rutaSistema }
+    Send-EventoAlNodo @emision -Confirm:$false | Out-Null
+
+    # EL LATIDO VERDE NO SE MANDA AQUI. La corrida termino, pero "termino" no es
+    # "esta bien": el verde exige ademas que la verificacion haya pasado
+    # (ADR-0079). Quien la corre es verificar.ps1, y es quien puede afirmarlo.
+    if ($estado -ne 'Protegido') {
+        Send-LatidoDelCliente -Senal 'Mal' -Detalle $detalle -Confirm:$false | Out-Null
+    }
+
+    return $resultado
+}
+
+# ---------------------------------------------------------------------------
 #  Punto de entrada
 #
 #  Si el archivo se carga CON PUNTO -como hacen las pruebas para alcanzar
@@ -504,8 +652,8 @@ $parametrosConfig = @{}
 if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
-# -WhatIf es la forma estandar de pedir "ensename que harias".
-$simular = $SoloSimular -or (-not $PSCmdlet.ShouldProcess('la corrida completa', 'Ejecutar respaldo'))
-
-Invoke-CorridaDeRespaldo -Configuracion $configuracion `
-    -Simular:$simular -Autorizado:$AutorizarFreno -SaltarDeuda:$OmitirDeuda -Confirm:$false
+# -WhatIf es la forma estandar de pedir "ensename que harias"; la envoltura lo
+# traduce a simulacion, asi que no hay dos caminos que mantener sincronizados.
+Invoke-CorridaConEstado -Configuracion $configuracion `
+    -Simular:$SoloSimular -Autorizado:$AutorizarFreno -SaltarDeuda:$OmitirDeuda `
+    -WhatIf:$WhatIfPreference -Confirm:$false
