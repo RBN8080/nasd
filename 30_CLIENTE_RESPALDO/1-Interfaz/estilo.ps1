@@ -110,22 +110,66 @@ function Get-Paleta {
 
     if (-not $Capacidades.Color) {
         return @{
-            Fin = ''; Tenue = ''; Fuerte = ''
+            Fin = ''; Tenue = ''; Fuerte = ''; Etiqueta = ''; Valor = ''; Titulo = ''
             Verde = ''; Ambar = ''; Rojo = ''; Gris = ''; Marco = ''
         }
     }
 
+    # LOS COLORES NO SE INVENTAN AQUI: SON LOS DEL PANEL DEL NODO.
+    # 10_CODIGO/internal/adaptadores/web/estatico/estilo.css declara el sistema
+    # de la casa, y el tablero es otra ventana del MISMO producto. Dos paletas
+    # distintas para el mismo NAS obligan a aprender dos idiomas de colores, y
+    # el dia que importa se lee el equivocado.
+    #
+    #   --ok    #3fb950   --av    #d29922   --fa   #f85149   --nada #6b7280
+    #   --tx    #e9ecf1   --tx2   #868d99   --tx3  #5b616b
+    #   --ac    #b9cdea   --n5    #30343c
+    #
+    # Se usa color de 24 bits -ESC[38;2;R;G;B- y no los 16 basicos: los 16 los
+    # remapea el tema de cada terminal, asi que "verde" acabaria siendo el verde
+    # de otro. Aqui el verde es EXACTAMENTE el del panel. Cualquier consola que
+    # admita VT -que es lo que Initialize-Consola acaba de encender- admite 24
+    # bits; y si no admite color no se escribe ni una secuencia.
     $e = [char] 27
     return @{
-        Fin    = "$e[0m"
-        Tenue  = "$e[90m"
-        Fuerte = "$e[1m"
-        Verde  = "$e[92m"
-        Ambar  = "$e[93m"
-        Rojo   = "$e[91m"
-        Gris   = "$e[90m"
-        Marco  = "$e[38;5;66m"
+        Fin      = "$e[0m"
+        Fuerte   = "$e[1m"
+
+        Marco    = "$e[38;2;48;52;60m"      # --n5, la linea estructural
+        Titulo   = "$e[38;2;185;205;234m"   # --ac, los rotulos de bloque
+        Etiqueta = "$e[38;2;134;141;153m"   # --tx2, el nombre del campo
+        Valor    = "$e[38;2;233;236;241m"   # --tx, el contenido
+        Tenue    = "$e[38;2;91;97;107m"     # --tx3, lo secundario de verdad
+
+        Verde    = "$e[38;2;63;185;80m"     # --ok
+        Ambar    = "$e[38;2;210;153;34m"    # --av
+        Rojo     = "$e[38;2;248;81;73m"     # --fa
+        Gris     = "$e[38;2;107;114;128m"   # --nada
     }
+}
+
+function Get-ReglaDeAviso {
+    <#
+        .SYNOPSIS
+            La barra vertical del componente `aviso` del panel.
+        .DESCRIPTION
+            PORTAR UNA MAQUETA ES PORTAR SU SISTEMA DE COMPONENTES, no copiarle
+            los colores. En el panel del nodo un estado no se pinta cambiandole
+            el color al texto: se pinta con una CAJA CON REGLA LATERAL en el
+            color semantico -`.aviso{border-left:2px solid}`, y `.mal`, `.bien`
+            y `.ojo` solo cambian ese borde-. Aqui esa regla es un bloque medio
+            a la izquierda de la linea de estado, y hace el mismo trabajo:
+            marcar el bloque entero sin tenir la letra.
+        .PARAMETER Unicode
+            Si no, se cae a una barra ASCII.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [bool] $Unicode = $true
+    )
+    if (-not $Unicode) { return '|' }
+    return [string][char] 0x258C   # medio bloque izquierdo
 }
 
 function Get-Simbolo {
@@ -269,15 +313,29 @@ function Format-LineaDeMarco {
         default    { $Trazo.UnionDer }
     }
 
+    # EL ROTULO NO ES LINEA, ES TEXTO: va en el acento (--ac) y el trazo se
+    # queda en --n5. En el panel pasa igual, un titulo de bloque nunca se pinta
+    # del color del borde.
     $cuerpo = $Trazo.Horizontal
-    if ($Titulo) { $cuerpo += ' ' + $Titulo.ToUpperInvariant() + ' ' }
+    $anchoCuerpo = 1
+    if ($Titulo) {
+        $rotulo = ' ' + $Titulo.ToUpperInvariant() + ' '
+        $cuerpo += $Paleta.Fin + $Paleta.Titulo + $rotulo + $Paleta.Fin + $Paleta.Marco
+        $anchoCuerpo += $rotulo.Length
+    }
 
     $cola = ''
-    if ($Derecha) { $cola = ' ' + $Derecha + ' ' + $Trazo.Horizontal }
+    $anchoCola = 0
+    if ($Derecha) {
+        $cola = $Paleta.Fin + $Paleta.Tenue + (' ' + $Derecha + ' ') + $Paleta.Fin + $Paleta.Marco + $Trazo.Horizontal
+        $anchoCola = $Derecha.Length + 3
+    }
 
     # Lo visible se mide SIN los codigos de color: el relleno se calcula sobre
     # caracteres que ocupan sitio, no sobre bytes de escape.
-    $relleno = $script:AnchoTablero - $cuerpo.Length - $cola.Length
+    # Se mide lo VISIBLE, nunca $cuerpo.Length: ahora esas cadenas llevan
+    # secuencias de escape dentro y contarlas torceria el marco.
+    $relleno = $script:AnchoTablero - $anchoCuerpo - $anchoCola
     if ($relleno -lt 0) { $relleno = 0 }
 
     return '{0}{1}{2}{3}{4}{5}{6}' -f `
@@ -340,7 +398,8 @@ function Format-Campo {
     [CmdletBinding()]
     [OutputType([psobject])]
     param(
-        [Parameter(Mandatory)][string] $Etiqueta,
+        # Vacia se permite: una fila de continuacion no tiene nombre propio.
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Etiqueta,
         [Parameter(Mandatory)][AllowEmptyString()][string] $Valor,
         [Parameter(Mandatory)][hashtable] $Paleta,
         [int] $VisibleValor = 0
@@ -351,7 +410,7 @@ function Format-Campo {
     $visValor = if ($VisibleValor -gt 0) { $VisibleValor } else { $Valor.Length }
 
     return [pscustomobject]@{
-        Texto   = '  {0}{1}{2}{3}' -f $Paleta.Tenue, $eti, $Paleta.Fin, $Valor
+        Texto   = '  {0}{1}{2}{3}' -f $Paleta.Etiqueta, $eti, $Paleta.Fin, $Valor
         Visible = 2 + $anchoEtiqueta + $visValor
     }
 }
@@ -405,4 +464,47 @@ function Get-OpacidadDelPulso {
     }
 
     return 255
+}
+
+
+function Limit-Texto {
+    <#
+        .SYNOPSIS
+            Recorta un texto para que quepa, con puntos suspensivos.
+        .DESCRIPTION
+            EL MARCO NO SE PUEDE ROMPER. Un valor mas largo que el ancho empuja
+            el borde derecho fuera y la ventana deja de ser una ventana: pasa
+            con un detalle largo, con una ruta profunda o con un mensaje de
+            error. Medido el 2026-09-02 con el detalle de la copia fria.
+
+            Se recorta el TEXTO PLANO, antes de colorear: contar una cadena que
+            ya lleva secuencias de escape dentro daria un ancho falso.
+        .PARAMETER Texto
+            Texto plano, sin codigos de color.
+        .PARAMETER Maximo
+            Cuantos caracteres caben.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Texto,
+        [Parameter(Mandatory)][ValidateRange(4, 500)][int] $Maximo
+    )
+    if ($Texto.Length -le $Maximo) { return $Texto }
+    return $Texto.Substring(0, $Maximo - 3) + '...'
+}
+
+function Get-AnchoDeValor {
+    <#
+        .SYNOPSIS
+            Cuanto sitio le queda a un valor dentro del marco.
+        .DESCRIPTION
+            El calculo vive aqui, con el ancho y la sangria, y no repartido por
+            el tablero: si alguien cambia el ancho del marco, esto se entera.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    # 2 de sangria + 12 de etiqueta + 1 de aire contra el borde derecho.
+    return ($script:AnchoTablero - 15)
 }

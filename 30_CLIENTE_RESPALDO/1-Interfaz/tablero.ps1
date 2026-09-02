@@ -81,6 +81,7 @@ $script:NombreIndicador = 'NasRespaldo-Indicador'
 $script:Capacidades = Initialize-Consola
 $script:Paleta      = Get-Paleta -Capacidades $script:Capacidades
 $script:Trazo       = Get-TrazoDeMarco -Unicode $script:Capacidades.Unicode
+$script:Regla       = Get-ReglaDeAviso -Unicode $script:Capacidades.Unicode
 
 function Show-Texto {
     <#
@@ -172,13 +173,18 @@ function Write-Campo {
     [CmdletBinding()]
     [OutputType([void])]
     param(
-        [Parameter(Mandatory)][string] $Etiqueta,
+        # AllowEmptyString tambien en la etiqueta: una fila de continuacion -el
+        # detalle del disco debajo de su fila- no tiene nombre propio, y sin
+        # esto el enlace del parametro tumbaba la ventana entera al pintar.
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Etiqueta,
         [Parameter(Mandatory)][AllowEmptyString()][string] $Valor,
         [string] $Color = ''
     )
 
-    $pintado = if ($Color) { '{0}{1}{2}' -f $Color, $Valor, $script:Paleta.Fin } else { $Valor }
-    $campo = Format-Campo -Etiqueta $Etiqueta -Valor $pintado -Paleta $script:Paleta -VisibleValor $Valor.Length
+    # Se recorta ANTES de colorear: con los codigos dentro, .Length miente.
+    $corto = Limit-Texto -Texto $Valor -Maximo (Get-AnchoDeValor)
+    $pintado = if ($Color) { '{0}{1}{2}' -f $Color, $corto, $script:Paleta.Fin } else { $corto }
+    $campo = Format-Campo -Etiqueta $Etiqueta -Valor $pintado -Paleta $script:Paleta -VisibleValor $corto.Length
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $script:Paleta `
             -Texto $campo.Texto -Visible $campo.Visible) -InformationAction Continue
 }
@@ -228,24 +234,33 @@ function Show-Ventana {
     Write-Separador -Titulo 'Respaldo del NAS' -Posicion 'Superior' -Derecha (Get-Date -Format 'dd/MM HH:mm')
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p) -InformationAction Continue
 
-    # EL SIMBOLO VA ANTES QUE EL COLOR, no al reves: en una terminal sin color la
-    # linea tiene que seguir diciendo lo mismo (seccion 10.2). Get-Simbolo ya
-    # trae su propio espacio a cada lado y su ancho cambia entre Unicode y ASCII,
-    # asi que no se le suman espacios aqui.
-    $titular = '  {0}{1}{2}{3}' -f $colorEstado, $simbolo, $v.Estado.ToUpperInvariant(), $p.Fin
+    # EL COMPONENTE `aviso` DEL PANEL, PORTADO. Alli un estado se marca con una
+    # caja de REGLA LATERAL en el color semantico y el texto del mismo color;
+    # aqui la regla es un bloque medio a la izquierda. Asi el bloque de estado
+    # se lee como un bloque y no como una linea mas de la lista.
+    #
+    # EL SIMBOLO SIGUE MANDANDO SOBRE EL COLOR: en una terminal sin color la
+    # linea tiene que decir lo mismo (seccion 10.2). Get-Simbolo ya trae su
+    # propio espacio a cada lado y su ancho cambia entre Unicode y ASCII, asi
+    # que no se le suman espacios aqui.
+    $titular = '  {0}{1} {2}{3}{4}{5}' -f `
+        $colorEstado, $script:Regla, $p.Fuerte, $simbolo, $v.Estado.ToUpperInvariant(), $p.Fin
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
-            -Texto $titular -Visible (2 + $simbolo.Length + $v.Estado.Length)) -InformationAction Continue
+            -Texto $titular -Visible (2 + $script:Regla.Length + 1 + $simbolo.Length + $v.Estado.Length)) -InformationAction Continue
 
-    $detalle = '      {0}' -f $v.Detalle
+    # La regla continua por el detalle: es el mismo aviso, no dos cosas.
+    $detalle = '  {0}{1}{2}   {3}{4}{5}' -f `
+        $colorEstado, $script:Regla, $p.Fin, $p.Valor, $v.Detalle, $p.Fin
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
-            -Texto $detalle -Visible $detalle.Length) -InformationAction Continue
+            -Texto $detalle -Visible (2 + $script:Regla.Length + 3 + $v.Detalle.Length)) -InformationAction Continue
 
     [datetime] $cuando = [datetime]::MinValue
     if ([datetime]::TryParse(('' + $estado['momento']), [ref] $cuando)) {
         $horas = ((Get-Date) - $cuando).TotalHours
-        $linea = '      ultima corrida al nodo  {0:dd/MM HH:mm}  (hace {1:N0} h)' -f $cuando, $horas
+        $cola = 'ultima corrida al nodo  {0:dd/MM HH:mm}  (hace {1:N0} h)' -f $cuando, $horas
+        $linea = '  {0}{1}{2}   {3}{4}{5}' -f $colorEstado, $script:Regla, $p.Fin, $p.Tenue, $cola, $p.Fin
         Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
-                -Texto ('{0}{1}{2}' -f $p.Tenue, $linea, $p.Fin) -Visible $linea.Length) -InformationAction Continue
+                -Texto $linea -Visible (2 + $script:Regla.Length + 3 + $cola.Length)) -InformationAction Continue
     }
     Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p) -InformationAction Continue
 

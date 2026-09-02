@@ -263,17 +263,17 @@ function Invoke-CorridaAlDiscoFrio {
         # UNA COPIA FRIA A LA QUE LE FALTO UNA PASADA NO SE PINTA DE VERDE.
         if ($resultado.Completa) {
             $frase = if ($copiados -eq 0) {
-                'Copia fria al dia: las dos pasadas corrieron y no habia nada nuevo que copiar'
+                'Al dia: las dos pasadas corrieron, nada nuevo que copiar'
             }
             else {
-                'Copia fria COMPLETA: las dos pasadas corrieron, {0} archivos nuevos' -f $copiados
+                'COMPLETA: las dos pasadas, {0} archivos nuevos' -f $copiados
             }
             Write-EstadoDelDisco -Estado 'Protegido' -Detalle $frase `
                 -Carpeta $carpetaEstado -Confirm:$false
         }
         else {
             Write-EstadoDelDisco -Estado 'Atencion' `
-                -Detalle 'Copia fria INCOMPLETA: lo que solo vive en el nodo NO llego al disco' `
+                -Detalle 'INCOMPLETA: lo que solo vive en el nodo NO llego al disco' `
                 -Carpeta $carpetaEstado -Confirm:$false
         }
         $resultado.ArchivosCopiados = $copiados
