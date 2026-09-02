@@ -513,6 +513,228 @@ function Get-RutaEnDestino {
     throw "No hay traduccion declarada para la ruta '$RutaOrigen'. Anadela a destinos.traduccionDeRutas antes de copiar nada."
 }
 
+function Get-CarpetaDeEstado {
+    <#
+        .SYNOPSIS
+            Donde viven ESTADO.txt y EN_CURSO.lock. LOCAL, y es una decision.
+        .DESCRIPTION
+            La seccion 8 dibuja ESTADO.txt dentro de `_SISTEMA/` en el nodo, y
+            alli se PUBLICA una copia para que una restauracion de emergencia
+            pueda leerlo. Pero el original vive en el equipo, por dos razones que
+            no son de comodidad:
+
+              1. El indicador (seccion 10.2) tiene que pintar algo cuando el nodo
+                 NO responde. Si su unica fuente estuviera en el nodo, un nodo
+                 caido dejaria el icono sin datos -y un icono ausente se parece
+                 a "todo bien", que es el punto ciego que la propia seccion 10.2
+                 declara-.
+
+              2. EN_CURSO.lock existe para detectar un motor que ARRANCO Y NUNCA
+                 TERMINO. Si el motor muere a mitad, lo que queda vivo es el
+                 equipo, no el nodo: la marca tiene que estar donde el indicador
+                 la pueda ver aunque la red se haya caido con el motor.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    return (Join-Path $env:LOCALAPPDATA 'NasRespaldo\estado')
+}
+
+function Write-EstadoRespaldo {
+    <#
+        .SYNOPSIS
+            Escribe ESTADO.txt de forma atomica. Es lo que lee el indicador.
+        .DESCRIPTION
+            Formato de clave=valor, una por linea: legible por una persona en una
+            emergencia y trivial de leer por el indicador sin analizador.
+            Se escribe con Set-ContenidoAtomico porque el indicador lo esta
+            leyendo mientras el motor lo reescribe.
+        .PARAMETER Estado
+            Protegido, Copiando, Atencion, Falla o SinDatos. Son los cinco de la
+            tabla de la seccion 10.2, ni uno mas.
+        .PARAMETER Detalle
+            Una frase para la persona.
+        .PARAMETER Datos
+            Pares adicionales que el tablero y el indicador saben leer.
+        .PARAMETER Carpeta
+            Donde escribirlo.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Protegido', 'Copiando', 'Atencion', 'Falla', 'SinDatos')]
+        [string] $Estado,
+
+        [ValidateNotNull()]
+        [string] $Detalle = '',
+
+        [hashtable] $Datos = @{},
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    if (-not $PSCmdlet.ShouldProcess((Join-Path $Carpeta 'ESTADO.txt'), 'Escribir estado')) { return }
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('# ESTADO.txt - lo que lee el indicador (seccion 10.2)')
+    [void]$sb.AppendLine('# Escrito de forma atomica: nunca se lee a medias.')
+    [void]$sb.AppendLine(('estado={0}' -f $Estado))
+    [void]$sb.AppendLine(('momento={0}' -f (Get-Date -Format 's')))
+    [void]$sb.AppendLine(('detalle={0}' -f ($Detalle -replace '[\r\n]+', ' ')))
+    foreach ($clave in ($Datos.Keys | Sort-Object)) {
+        [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $Datos[$clave]) -replace '[\r\n]+', ' ')))
+    }
+
+    Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'ESTADO.txt') -Contenido $sb.ToString() -Confirm:$false
+}
+
+function Read-EstadoRespaldo {
+    <#
+        .SYNOPSIS
+            Lee ESTADO.txt. Devuelve SinDatos si no hay o si no se puede leer.
+        .DESCRIPTION
+            No lanza nunca. El indicador lo llama en bucle y una excepcion ahi
+            mataria el icono, que es justo el punto ciego declarado: un icono
+            ausente se parece a "todo bien".
+        .PARAMETER Carpeta
+            Donde buscarlo.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $vacio = @{ estado = 'SinDatos'; momento = ''; detalle = 'No hay ESTADO.txt todavia' }
+    $ruta = Join-Path $Carpeta 'ESTADO.txt'
+    try {
+        if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return $vacio }
+        $mapa = @{}
+        foreach ($linea in (Get-Content -LiteralPath $ruta -Encoding UTF8 -ErrorAction Stop)) {
+            if ($linea -match '^\s*#' -or $linea -notmatch '=') { continue }
+            $par = $linea -split '=', 2
+            $mapa[$par[0].Trim()] = $par[1]
+        }
+        if ($mapa.Count -eq 0) { return $vacio }
+        return $mapa
+    }
+    catch {
+        return $vacio
+    }
+}
+
+function Enter-MarcaDeCorrida {
+    <#
+        .SYNOPSIS
+            Pone EN_CURSO.lock. Existe SOLO mientras el motor copia.
+        .DESCRIPTION
+            Es la mitad de la deteccion de motor caido de la seccion 10.2: una
+            marca PRESENTE PERO VIEJA significa "arranco y nunca termino", que es
+            FALLA y no "copiando". Guarda dentro el identificador del proceso y
+            la hora, para que el indicador pueda distinguir las dos cosas sin
+            adivinar.
+        .PARAMETER Carpeta
+            Donde ponerla.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([string])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+    $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
+    if (-not $PSCmdlet.ShouldProcess($ruta, 'Marcar corrida en curso')) { return $ruta }
+    $texto = "pid={0}`ninicio={1}`nequipo={2}`n" -f $PID, (Get-Date -Format 's'), $env:COMPUTERNAME
+    Set-ContenidoAtomico -Ruta $ruta -Contenido $texto -Confirm:$false
+    return $ruta
+}
+
+function Exit-MarcaDeCorrida {
+    <#
+        .SYNOPSIS
+            Retira EN_CURSO.lock. Va SIEMPRE en un finally.
+        .DESCRIPTION
+            Si no se retira, el indicador vera una marca vieja y pintara FALLA.
+            Eso es lo correcto cuando el motor murio de verdad, y una mentira si
+            solo es que alguien olvido el finally.
+        .PARAMETER Carpeta
+            Donde estaba.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+    $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
+    if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return }
+    if (-not $PSCmdlet.ShouldProcess($ruta, 'Retirar marca de corrida')) { return }
+    Remove-Item -LiteralPath $ruta -Force -ErrorAction SilentlyContinue
+}
+
+function Get-MarcaDeCorrida {
+    <#
+        .SYNOPSIS
+            Lee EN_CURSO.lock y dice si esta VIVA o VIEJA.
+        .DESCRIPTION
+            La tabla de la seccion 10.2, entera:
+              marca presente y reciente            -> Copiando
+              MARCA PRESENTE PERO VIEJA            -> arranco y nunca termino: FALLA
+              sin marca                            -> no hay corrida en curso
+        .PARAMETER Carpeta
+            Donde buscarla.
+        .PARAMETER MinutosParaVieja
+            A partir de cuantos minutos una marca deja de ser creible.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado),
+        [ValidateRange(1, 1440)][int] $MinutosParaVieja = 90
+    )
+
+    $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
+    if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) {
+        return [pscustomobject]@{ Existe = $false; Vieja = $false; Pid = 0; Inicio = $null; Minutos = 0 }
+    }
+    $mapa = @{}
+    foreach ($linea in (Get-Content -LiteralPath $ruta -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+        if ($linea -notmatch '=') { continue }
+        $par = $linea -split '=', 2
+        $mapa[$par[0].Trim()] = $par[1].Trim()
+    }
+    # TryParse exige que la variable YA tenga el tipo: con $null, PowerShell no
+    # puede resolver la sobrecarga de [ref] y lanza "no se encuentra ninguna
+    # sobrecarga". Se declaran tipadas antes de usarlas.
+    [datetime] $inicio = [datetime]::MinValue
+    $hayInicio = $false
+    if ($mapa.ContainsKey('inicio')) { $hayInicio = [datetime]::TryParse($mapa['inicio'], [ref]$inicio) }
+    $minutos = if ($hayInicio) { [int]((Get-Date) - $inicio).TotalMinutes } else { [int]::MaxValue }
+    [int] $procesoId = 0
+    if ($mapa.ContainsKey('pid')) { [void][int]::TryParse($mapa['pid'], [ref]$procesoId) }
+
+    # Dos senales, y la del proceso manda: si el PID ya no existe, la corrida
+    # murio aunque la marca sea de hace un minuto. Matar el motor a media corrida
+    # es el criterio 9 de la seccion 15, y esta es la unica forma de verlo rapido.
+    $procesoVivo = $false
+    if ($procesoId -gt 0) {
+        $procesoVivo = $null -ne (Get-Process -Id $procesoId -ErrorAction SilentlyContinue)
+    }
+
+    return [pscustomobject]@{
+        Existe      = $true
+        Vieja       = ((-not $procesoVivo) -or ($minutos -ge $MinutosParaVieja))
+        ProcesoVivo = $procesoVivo
+        Pid         = $procesoId
+        Inicio      = $(if ($hayInicio) { $inicio } else { $null })
+        Minutos     = $minutos
+    }
+}
+
 function Get-HuellaDeArchivo {
     <#
         .SYNOPSIS
