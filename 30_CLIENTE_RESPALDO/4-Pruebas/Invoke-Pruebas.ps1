@@ -1031,6 +1031,146 @@ Test-Afirmacion -Nombre 'Sin ESTADO.txt que publicar devuelve falso y no lanza' 
     -Esperado $false -Obtenido (Publish-EstadoAlNodo -RutaSistema $destinoPub -Carpeta $sinEstado -Confirm:$false)
 
 # ===========================================================================
+Write-Titulo 'La tabla por raiz: dos destinos que no se pisan'
+# ===========================================================================
+# LA TABLA ES LA PIEZA CENTRAL DE LA MAQUETA APROBADA y la unica parte del
+# tablero que responde "que exactamente". Si los dos destinos se pisan las
+# lineas, la pantalla ensena media verdad con cara de verdad entera.
+
+$cajaTabla = Join-Path $CarpetaCaja 'estado-tabla'
+New-Item -ItemType Directory -Path $cajaTabla -Force | Out-Null
+
+$copiasNodo = @(
+    [pscustomobject]@{ Origen = 'C:\dev'; Clase = 'B'; NumACopiar = 3; Correcto = $true },
+    [pscustomobject]@{ Origen = 'C:\Users\x\Documents'; Clase = 'B'; NumACopiar = 0; Correcto = $true })
+Write-EstadoPorRaiz -Destino 'nodo' -Copias $copiasNodo -Carpeta $cajaTabla -Confirm:$false
+
+$copiasDisco = @(
+    [pscustomobject]@{ Origen = 'C:\dev'; Clase = 'A'; NumACopiar = 9; Correcto = $true },
+    [pscustomobject]@{ Origen = '\\nodo\datos\01_BACKUP\_HISTORICO'; Clase = 'A'; NumACopiar = 0; Correcto = $true })
+Write-EstadoPorRaiz -Destino 'disco' -Copias $copiasDisco -Carpeta $cajaTabla `
+    -QuitarPrefijo '\\nodo\datos' -Confirm:$false
+
+$leidas = @(Read-EstadoPorRaiz -Carpeta $cajaTabla)
+
+Test-Afirmacion -Nombre 'Escribir el disco NO borra las lineas del nodo' `
+    -Esperado 2 -Obtenido @($leidas | Where-Object { $_.Destino -eq 'nodo' }).Count
+
+Test-Afirmacion -Nombre 'Y las del disco quedan escritas' `
+    -Esperado 2 -Obtenido @($leidas | Where-Object { $_.Destino -eq 'disco' }).Count
+
+# EL RECORTE DEL PREFIJO ES LO QUE HACE QUE LA TABLA CASE. La copia fria corre
+# una pasada desde el nodo, cuyas raices son rutas UNC; sin recortar, la misma
+# raiz saldria dos veces con dos nombres y ninguna fila tendria las dos
+# columnas.
+Test-Afirmacion -Nombre 'La raiz del nodo pierde el prefijo UNC y queda legible' `
+    -Esperado '01_BACKUP\_HISTORICO' `
+    -Obtenido (@($leidas | Where-Object { $_.Destino -eq 'disco' -and $_.Raiz -like '*_HISTORICO' })[0].Raiz)
+
+Test-Afirmacion -Nombre 'C:\dev sale con el MISMO nombre en los dos destinos: por eso casan' `
+    -Esperado 2 -Obtenido @($leidas | Where-Object { $_.Raiz -eq 'C:\dev' }).Count
+
+# Volver a escribir el nodo tiene que dejar el disco intacto: es el caso que
+# de verdad ocurre cada noche.
+Write-EstadoPorRaiz -Destino 'nodo' -Copias @($copiasNodo[0]) -Carpeta $cajaTabla -Confirm:$false
+$otraVez = @(Read-EstadoPorRaiz -Carpeta $cajaTabla)
+Test-Afirmacion -Nombre 'Una segunda corrida al nodo no toca las lineas del disco' `
+    -Esperado 2 -Obtenido @($otraVez | Where-Object { $_.Destino -eq 'disco' }).Count
+Test-Afirmacion -Nombre 'Y reemplaza las suyas en vez de acumularlas' `
+    -Esperado 1 -Obtenido @($otraVez | Where-Object { $_.Destino -eq 'nodo' }).Count
+
+$sinNada = Join-Path $CarpetaCaja 'estado-vacio'
+New-Item -ItemType Directory -Path $sinNada -Force | Out-Null
+Test-Afirmacion -Nombre 'Sin RAICES.tsv devuelve vacio y no lanza: el tablero se pinta igual' `
+    -Esperado 0 -Obtenido @(Read-EstadoPorRaiz -Carpeta $sinNada).Count
+
+# ===========================================================================
+Write-Titulo 'ESTADO.txt: cada quien pisa solo sus claves'
+# ===========================================================================
+# HASTA EL 2026-09-02 LA CORRIDA AL NODO BORRABA EL VEREDICTO DEL DISCO. Se vio
+# pintando el tablero: decia "ultima copia al disco: nunca" pocos minutos
+# despues de una copia fria completa. Write-EstadoDelDisco ya cuidaba el
+# camino contrario; faltaba este.
+
+$cajaEstado = Join-Path $CarpetaCaja 'estado-claves'
+New-Item -ItemType Directory -Path $cajaEstado -Force | Out-Null
+
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'primera corrida' -Carpeta $cajaEstado -Confirm:$false
+Write-EstadoDelDisco -Estado 'Protegido' -Detalle 'copia fria completa' -Carpeta $cajaEstado -Confirm:$false
+Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto $true -Detalle 'sin diferencias' `
+    -Carpeta $cajaEstado -Confirm:$false
+
+# La corrida de la noche siguiente.
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'segunda corrida' -Carpeta $cajaEstado -Confirm:$false
+$tras = Read-EstadoRespaldo -Carpeta $cajaEstado
+
+Test-Afirmacion -Nombre 'Una corrida al nodo CONSERVA el veredicto de la copia fria' `
+    -Esperado 'Protegido' -Obtenido ('' + $tras['disco_estado'])
+Test-Afirmacion -Nombre 'Y conserva la fecha de la ultima comprobacion de huellas' `
+    -Esperado $true -Obtenido ($tras.ContainsKey('huellas_momento') -and $tras['huellas_momento'])
+Test-Afirmacion -Nombre 'Pero SI actualiza lo suyo' `
+    -Esperado 'segunda corrida' -Obtenido ('' + $tras['detalle'])
+
+# Y al reves, que era lo que ya estaba bien: el disco no toca el veredicto del
+# nodo. Se comprueba aqui tambien porque las dos mitades tienen que sostenerse
+# a la vez o el archivo acaba contando dos historias.
+Write-EstadoRespaldo -Estado 'Falla' -Detalle 'el nodo no respondia' -Carpeta $cajaEstado -Confirm:$false
+Write-EstadoDelDisco -Estado 'Protegido' -Detalle 'pero el disco si' -Carpeta $cajaEstado -Confirm:$false
+$cruzado = Read-EstadoRespaldo -Carpeta $cajaEstado
+Test-Afirmacion -Nombre 'Una copia fria buena NO pone en verde un nodo que fallo' `
+    -Esperado 'Falla' -Obtenido ('' + $cruzado['estado'])
+
+# 'semilla' y 'restauracion' NO son lo mismo, y el tipo lo impide por
+# construccion: leer la semilla no es haber restaurado nada (criterio 11).
+$rechazado = $false
+try { Write-EstadoDeComprobacion -Tipo 'restauracion' -Correcto $true -Carpeta $cajaEstado -Confirm:$false }
+catch { $rechazado = $true }
+Test-Afirmacion -Nombre 'El tipo "restauracion" se rechaza: comprobar la semilla no es haber restaurado' `
+    -Esperado $true -Obtenido $rechazado
+
+# ===========================================================================
+Write-Titulo 'La presentacion: que la ventana no mienta ni se rompa'
+# ===========================================================================
+
+# Se carga el tablero entero, no solo estilo.ps1: Format-Espacio y
+# Format-EtiquetaDeRaiz viven ahi. Cargado con punto no abre ningun menu.
+. "$PSScriptRoot\..\1-Interfaz\tablero.ps1"
+$paletaSinColor = Get-Paleta -Capacidades ([pscustomobject]@{ Color = $false; Unicode = $false })
+
+Test-Afirmacion -Nombre 'Una celda mas larga que su columna no empuja a la de al lado' `
+    -Esperado 13 -Obtenido (Format-Celda -Texto ('x' * 40) -Ancho 13 -Paleta $paletaSinColor).Length
+Test-Afirmacion -Nombre 'Y una mas corta se rellena hasta el ancho: las columnas cuadran' `
+    -Esperado 13 -Obtenido (Format-Celda -Texto 'ok' -Ancho 13 -Paleta $paletaSinColor).Length
+
+# EL COLOR NO PUEDE CONTAR PARA EL ANCHO. Colorear antes de rellenar mete las
+# secuencias de escape en la cuenta y las columnas se descuadran sin que se vea
+# por que, porque los codigos son invisibles.
+$conColor = Get-Paleta -Capacidades ([pscustomobject]@{ Color = $true; Unicode = $true })
+$pintada = Format-Celda -Texto 'ok' -Ancho 13 -Paleta $conColor -Color $conColor.Verde
+$visible = $pintada -replace "$([char]27)\[[0-9;]*m", ''
+Test-Afirmacion -Nombre 'Con color, lo VISIBLE sigue midiendo lo que la columna' `
+    -Esperado 13 -Obtenido $visible.Length
+
+# NO SABER NO ES CERO. Un destino que no responde no tiene "0 GB libres".
+Test-Afirmacion -Nombre 'Sin dato de espacio no se inventa un cero' `
+    -Esperado '' -Obtenido (Format-Espacio -Bytes $null)
+
+# "hace 296 h" es exacto y no significa nada.
+Test-Afirmacion -Nombre 'Una fecha ilegible dice "nunca", no una fecha vieja' `
+    -Esperado 'nunca' -Obtenido (Format-Antiguedad -Momento '')
+Test-Afirmacion -Nombre 'Lo de hoy se dice "hoy" con su hora' `
+    -Esperado $true -Obtenido ((Format-Antiguedad -Momento (Get-Date -Format 's')) -like 'hoy *')
+Test-Afirmacion -Nombre 'Lo de hace doce dias se dice en dias, no en horas' `
+    -Esperado 'hace 12 dias' -Obtenido (Format-Antiguedad -Momento ((Get-Date).AddDays(-12).ToString('s')))
+
+# Seis raices empiezan igual: recortadas por la derecha eran la misma fila.
+$larga = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Documents\03_ADMINISTRATIVO'
+Test-Afirmacion -Nombre 'La raiz del perfil se acorta con ~ y sigue distinguiendose' `
+    -Esperado '~\Documents\03_ADMINISTRATIVO' -Obtenido (Format-EtiquetaDeRaiz -Raiz $larga)
+Test-Afirmacion -Nombre 'Una raiz fuera del perfil se deja tal cual' `
+    -Esperado 'C:\dev' -Obtenido (Format-EtiquetaDeRaiz -Raiz 'C:\dev')
+
+# ===========================================================================
 
 if (-not $Conservar) {
     Remove-Item -LiteralPath $CarpetaCaja -Recurse -Force -ErrorAction SilentlyContinue

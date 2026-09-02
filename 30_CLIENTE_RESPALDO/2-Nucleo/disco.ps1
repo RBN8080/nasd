@@ -277,6 +277,14 @@ function Invoke-CorridaAlDiscoFrio {
                 -Carpeta $carpetaEstado -Confirm:$false
         }
         $resultado.ArchivosCopiados = $copiados
+
+        # La mitad "disco" de la tabla del tablero. Las dos pasadas juntas: para
+        # quien mira la tabla, una raiz esta en el disco o no esta, y de que
+        # camino llego es cosa del motor.
+        Write-EstadoPorRaiz -Destino 'disco' `
+            -Copias @(@($resultado.PasadaEquipo) + @($resultado.PasadaNodo) | Where-Object { $_ }) `
+            -QuitarPrefijo ('' + $Configuracion.destinos.nodo.unc) `
+            -Carpeta $carpetaEstado -Confirm:$false
     }
 
     $resultado.Fin = Get-Date

@@ -73,6 +73,7 @@ $ErrorActionPreference = 'Stop'
 
 $nucleo = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo'
 . "$nucleo\comun.ps1"
+. "$nucleo\testigo.ps1"
 . "$PSScriptRoot\estilo.ps1"
 
 $script:NombreTarea     = 'NasRespaldo-Diario'
@@ -80,7 +81,6 @@ $script:NombreIndicador = 'NasRespaldo-Indicador'
 
 $script:Capacidades = Initialize-Consola
 $script:Paleta      = Get-Paleta -Capacidades $script:Capacidades
-$script:Trazo       = Get-TrazoDeMarco -Unicode $script:Capacidades.Unicode
 $script:Regla       = Get-ReglaDeAviso -Unicode $script:Capacidades.Unicode
 
 function Show-Texto {
@@ -132,7 +132,11 @@ function Write-Linea {
     [CmdletBinding()]
     [OutputType([void])]
     param([Parameter(Mandatory)][AllowEmptyString()][string] $Texto)
-    if ([string]::IsNullOrEmpty($Texto)) { return }
+    # UN ESPACIO, NO UNA CADENA VACIA. La maqueta separa bloques con lineas en
+    # blanco, pero MessageData de Write-Information es obligatorio y ademas
+    # acepta pipeline: pasarle '' falla el enlace y PowerShell se para a pedirlo
+    # por consola, que en una tarea programada es un cuelgue silencioso.
+    if ([string]::IsNullOrEmpty($Texto)) { $Texto = ' ' }
     Write-Information $Texto -InformationAction Continue
 }
 
@@ -159,62 +163,327 @@ function Get-EstadoDelIndicador {
     return [pscustomobject]@{ Estado = 'SinDatos'; Detalle = 'No se pudo leer el estado'; Fuente = 'error' }
 }
 
-function Write-Campo {
+function Format-Espacio {
     <#
         .SYNOPSIS
-            Escribe una fila etiqueta/valor dentro del marco.
-        .PARAMETER Etiqueta
-            Nombre del campo.
-        .PARAMETER Valor
-            Contenido.
-        .PARAMETER Color
-            Codigo de color para el valor. Vacio lo deja sin colorear.
+            Bytes libres en la frase corta del tablero. Vacio si no se sabe.
+        .DESCRIPTION
+            NO SABER NO ES CERO. Un destino que no responde no tiene "0 GB
+            libres": no tiene dato, y pintar un cero ahi es una alarma inventada
+            en una pantalla cuyo unico trabajo es no mentir.
+        .PARAMETER Bytes
+            Lo que devolvio Get-EspacioLibre, que puede ser $null.
     #>
     [CmdletBinding()]
-    [OutputType([void])]
+    [OutputType([string])]
     param(
-        # AllowEmptyString tambien en la etiqueta: una fila de continuacion -el
-        # detalle del disco debajo de su fila- no tiene nombre propio, y sin
-        # esto el enlace del parametro tumbaba la ventana entera al pintar.
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Etiqueta,
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Valor,
-        [string] $Color = ''
+        [AllowNull()][System.Nullable[long]] $Bytes
     )
-
-    # Se recorta ANTES de colorear: con los codigos dentro, .Length miente.
-    $corto = Limit-Texto -Texto $Valor -Maximo (Get-AnchoDeValor)
-    $pintado = if ($Color) { '{0}{1}{2}' -f $Color, $corto, $script:Paleta.Fin } else { $corto }
-    $campo = Format-Campo -Etiqueta $Etiqueta -Valor $pintado -Paleta $script:Paleta -VisibleValor $corto.Length
-    Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $script:Paleta `
-            -Texto $campo.Texto -Visible $campo.Visible) -InformationAction Continue
+    if ($null -eq $Bytes) { return '' }
+    if ($Bytes -ge 1TB) { return '{0:N1} TB libres' -f ($Bytes / 1TB) }
+    return '{0:N0} GB libres' -f ($Bytes / 1GB)
 }
 
-function Write-Separador {
+function Write-LineaDeSumario {
     <#
         .SYNOPSIS
-            Una linea del marco con su titulo incrustado.
-        .PARAMETER Titulo
-            Nombre del bloque.
-        .PARAMETER Posicion
-            Superior, Union o Inferior.
-        .PARAMETER Derecha
-            Texto pegado al extremo derecho.
+            Una linea de resumen: rotulo a la izquierda y partes separadas.
+        .PARAMETER Etiqueta
+            El rotulo del bloque.
+        .PARAMETER Partes
+            Los trozos, que se unen con un separador.
+        .PARAMETER Paleta
+            Los colores.
+        .PARAMETER Color
+            Color del contenido. Por defecto, el del valor.
     #>
     [CmdletBinding()]
     [OutputType([void])]
     param(
-        [string] $Titulo = '',
-        [ValidateSet('Superior', 'Union', 'Inferior')][string] $Posicion = 'Union',
-        [string] $Derecha = ''
+        [Parameter(Mandatory)][string] $Etiqueta,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]] $Partes,
+        [Parameter(Mandatory)][hashtable] $Paleta,
+        [AllowEmptyString()][string] $Color = '',
+
+        # LA REGLA LATERAL DEL COMPONENTE `aviso` DEL PANEL. Alli un aviso no se
+        # marca tinendole la letra: se marca con una caja de borde izquierdo
+        # -.aviso{border-left:2px solid}- y .mal, .bien y .ojo solo cambian ese
+        # borde. Aqui es un bloque medio, y la lleva la unica linea que es un
+        # aviso de verdad, no todas: una marca que esta siempre no marca nada.
+        [switch] $Avisar
     )
-    Write-Information (Format-LineaDeMarco -Trazo $script:Trazo -Paleta $script:Paleta `
-            -Titulo $Titulo -Posicion $Posicion -Derecha $Derecha) -InformationAction Continue
+    $utiles = @($Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($utiles.Count -eq 0) { return }
+    if ([string]::IsNullOrEmpty($Color)) { $Color = $Paleta.Valor }
+    $Marca = ''
+    if ($Avisar) { $Marca = '{0}{1}{2}' -f $Color, $script:Regla, $Paleta.Fin }
+
+    # SE PARTE EN VARIAS LINEAS, NO SE RECORTA. Recortar con puntos suspensivos
+    # esconde justo el ultimo aviso de la lista, y en la linea PENDIENTE el
+    # ultimo era "el testigo externo no esta configurado": el aviso mas
+    # importante de la pantalla desaparecia por caber mal.
+    $sitio = $script:AnchoTablero - 12
+    $separador = '   -   '
+    $lineas = New-Object System.Collections.Generic.List[string]
+    $actual = ''
+    foreach ($parte in $utiles) {
+        $candidata = if ($actual) { $actual + $separador + $parte } else { $parte }
+        if ($candidata.Length -le $sitio -or -not $actual) { $actual = $candidata; continue }
+        $lineas.Add($actual)
+        $actual = $parte
+    }
+    if ($actual) { $lineas.Add($actual) }
+
+    $primera = $true
+    foreach ($linea in $lineas) {
+        $rotulo = if ($primera) { $Etiqueta } else { '' }
+        Write-Linea ('  {0}{1}{2}{3}{4}' -f `
+                $Marca, `
+            (Format-Celda -Texto $rotulo -Ancho $(12 - $Marca.Length) -Paleta $Paleta -Color $Paleta.Etiqueta), `
+                $Color, (Limit-Texto -Texto $linea -Maximo $sitio), $Paleta.Fin)
+        $primera = $false
+    }
+}
+
+function Format-EtiquetaDeRaiz {
+    <#
+        .SYNOPSIS
+            El nombre corto de una raiz para la columna de la tabla.
+        .DESCRIPTION
+            SEIS RAICES EMPIEZAN IGUAL, Y RECORTADAS POR LA DERECHA SE VOLVIAN
+            LA MISMA FILA. Con la columna a 28 caracteres, cinco raices salian
+            como "C:\Users\usuario\Documents\..." y la tabla dejaba de distinguir
+            lo unico que tenia que distinguir. Medido pintandola el 2026-09-02.
+
+            El prefijo del perfil se sustituye por ~, que es como se escribe una
+            ruta de casa en cualquier sitio, y lo que sobrevive es el tramo que
+            de verdad diferencia una raiz de otra.
+        .PARAMETER Raiz
+            La ruta tal cual la guardo el motor.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Raiz
+    )
+
+    $perfil = [Environment]::GetFolderPath('UserProfile')
+    if ($perfil -and $Raiz.StartsWith($perfil, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return '~' + $Raiz.Substring($perfil.Length)
+    }
+    return $Raiz
+}
+
+function Write-CuerpoDeTabla {
+    <#
+        .SYNOPSIS
+            Las filas de la tabla por raiz, una por raiz y con las dos columnas.
+        .DESCRIPTION
+            SE UNEN LOS DOS DESTINOS POR LA ETIQUETA DE LA RAIZ. Una raiz puede
+            estar en el nodo y no en el disco -es lo normal, el disco se conecta
+            a peticion- y otra puede estar solo en el disco, porque la copia
+            fria arrastra ademas lo que solo vive en el nodo. Las dos aparecen,
+            y la columna que no tiene dato dice que no lo tiene.
+
+            UNA COLUMNA VACIA NO SE PINTA DE VERDE. Es la misma regla de
+            Write-EstadoDelDisco un piso mas abajo: "no me consta" y "esta bien"
+            no se dibujan igual.
+        .PARAMETER Filas
+            Lo que devolvio Read-EstadoPorRaiz.
+        .PARAMETER Paleta
+            Los colores.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
+        [Parameter(Mandatory)][hashtable] $Paleta
+    )
+
+    if (@($Filas).Count -eq 0) {
+        Write-Linea ('  {0}Todavia no hay tabla: la escribe el motor al copiar. Corre [1].{2}{1}' -f `
+                $Paleta.Tenue, $Paleta.Fin, '')
+        return
+    }
+
+    $porDestino = @{}
+    foreach ($f in $Filas) {
+        if (-not $porDestino.ContainsKey($f.Destino)) { $porDestino[$f.Destino] = @{} }
+        $porDestino[$f.Destino][$f.Raiz] = $f
+    }
+
+    # El orden lo manda el nodo -es la corrida diaria- y lo que solo tenga el
+    # disco se anade detras, sin perderse.
+    $orden = New-Object System.Collections.Generic.List[string]
+    foreach ($clave in @('nodo', 'disco')) {
+        if (-not $porDestino.ContainsKey($clave)) { continue }
+        foreach ($r in ($porDestino[$clave].Keys | Sort-Object)) {
+            if (-not $orden.Contains($r)) { $orden.Add($r) }
+        }
+    }
+
+    foreach ($raiz in $orden) {
+        $enNodo = $null; $enDisco = $null
+        if ($porDestino.ContainsKey('nodo'))  { $enNodo  = $porDestino['nodo'][$raiz] }
+        if ($porDestino.ContainsKey('disco')) { $enDisco = $porDestino['disco'][$raiz] }
+        $ref = if ($enNodo) { $enNodo } else { $enDisco }
+
+        # LA COLUMNA DICE LO QUE EL NUMERO ES, NO LO QUE GUSTARIA QUE FUERA.
+        # La maqueta la titulaba PENDIENTE, pero el dato que el motor puede dar
+        # sin volver a escanear es cuantos archivos MOVIO el ultimo pase. Saber
+        # lo que falta de verdad exige un robocopy en seco por raiz, que son los
+        # minutos que este tablero no puede gastar. Llamarla "pendiente"
+        # ensenaria 67 junto a AL DIA y se leeria como 67 archivos en riesgo.
+        $movidos = [int]$ref.Pendientes
+        if ($enDisco -and [int]$enDisco.Pendientes -gt $movidos) { $movidos = [int]$enDisco.Pendientes }
+
+        $celdas = @()
+        $columna = 0
+        foreach ($lado in @($enNodo, $enDisco)) {
+            $columna++
+            if ($null -eq $lado) {
+                # UNA RAIZ QUE VIVE EN EL NODO NO LE "FALTA" AL NODO. _HISTORICO
+                # y homeUsers son del nodo: la copia fria los arrastra, pero
+                # nadie los copia AL nodo porque ya estan ahi. Un guion en esa
+                # celda se lee como un hueco, y un hueco en la columna del nodo
+                # se lee como un fallo.
+                #
+                # Para lo demas, ni verde ni rojo: no consta, que es distinto
+                # de estar bien.
+                # Solo en la columna del NODO: en la del disco, que le falte a
+                # una raiz del nodo si es un hueco de verdad.
+                $texto = '--'
+                if ($columna -eq 1 -and $raiz -notmatch '^[A-Za-z]:') { $texto = 'es el origen' }
+                $celdas += (Format-Celda -Texto $texto -Ancho 13 -Paleta $Paleta -Color $Paleta.Gris)
+                continue
+            }
+            if ($lado.Estado -ne 'AlDia') {
+                $celdas += (Format-Celda -Texto 'FALLO' -Ancho 13 -Paleta $Paleta -Color $Paleta.Rojo)
+                continue
+            }
+            # AL DIA A SECAS CUANDO ES DE HOY, Y LA EDAD CUANDO NO LO ES. Poner
+            # la fecha siempre no cabia en la columna y se recortaba a "AL DIA
+            # hoy...", que es ruido; y una copia de hace doce dias que dijera
+            # solo "AL DIA" seria peor: al dia de cuando.
+            $edad = Format-Antiguedad -Momento $lado.Momento
+            if ($edad -like 'hoy *') {
+                $celdas += (Format-Celda -Texto 'AL DIA' -Ancho 13 -Paleta $Paleta -Color $Paleta.Verde)
+            }
+            else {
+                $celdas += (Format-Celda -Texto $edad -Ancho 13 -Paleta $Paleta -Color $Paleta.Ambar)
+            }
+        }
+
+        Write-Linea ('  {0}{1}{2}{3}{4}' -f `
+            (Format-Celda -Texto (Format-EtiquetaDeRaiz -Raiz $raiz) -Ancho 30 -Paleta $Paleta -Color $Paleta.Valor), `
+            (Format-Celda -Texto ('' + $ref.Clase) -Ancho 3 -Paleta $Paleta -Color $Paleta.Tenue), `
+            (Format-Celda -Texto ('{0} arch. ' -f $movidos) -Ancho 11 -Paleta $Paleta -Derecha `
+                    -Color $Paleta.Tenue), `
+                $celdas[0], $celdas[1])
+    }
+}
+
+function Get-EstadoDeTarea {
+    <#
+        .SYNOPSIS
+            Las dos tareas programadas, en trozos para una linea de resumen.
+        .DESCRIPTION
+            Que las tareas existan es la diferencia entre un respaldo y un guion
+            que alguien tiene que acordarse de ejecutar, asi que el tablero lo
+            dice en la cara aunque la maqueta no lo dibujara: la maqueta es
+            anterior a que las tareas existieran.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+
+    $partes = New-Object System.Collections.Generic.List[string]
+    foreach ($par in @(
+            @{ Eti = 'motor'; Tarea = $script:NombreTarea },
+            @{ Eti = 'icono'; Tarea = $script:NombreIndicador })) {
+        $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
+        if (-not $t) { $partes.Add(('{0} NO EXISTE' -f $par.Eti)); continue }
+        if ($t.State -eq 'Disabled') { $partes.Add(('{0} DESHABILITADO' -f $par.Eti)); continue }
+
+        $hora = ''
+        if ($par.Eti -eq 'motor') {
+            $d = @($t.Triggers) | Select-Object -First 1
+            if ($d -and $d.StartBoundary) {
+                [datetime] $h = [datetime]::MinValue
+                if ([datetime]::TryParse($d.StartBoundary, [ref] $h)) { $hora = ' {0:HH:mm}' -f $h }
+            }
+        }
+        $partes.Add(('{0}{1} {2}' -f $par.Eti, $hora, $t.State))
+    }
+    return $partes.ToArray()
+}
+
+function Get-ResumenPendiente {
+    <#
+        .SYNOPSIS
+            Lo que le falta al sistema, en frases accionables. Vacio si no falta.
+        .DESCRIPTION
+            LA LINEA SOLO APARECE SI HAY ALGO. Una linea "PENDIENTE: nada" que
+            esta siempre puesta se vuelve invisible en una semana, y entonces
+            tampoco se ve el dia que dice algo.
+        .PARAMETER Estado
+            Lo que devolvio Read-EstadoRespaldo.
+        .PARAMETER Disco
+            La ficha del disco frio, o $null si no esta conectado.
+        .PARAMETER Filas
+            Lo que devolvio Read-EstadoPorRaiz.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)][hashtable] $Estado,
+        [AllowNull()][psobject] $Disco,
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas
+    )
+
+    $partes = New-Object System.Collections.Generic.List[string]
+
+    $huerfanos = 0
+    if ($Estado.ContainsKey('huerfanos')) { [void][int]::TryParse(('' + $Estado['huerfanos']), [ref] $huerfanos) }
+    if ($huerfanos -gt 0) {
+        $partes.Add(('{0} carpetas sin clasificar' -f $huerfanos))
+    }
+
+    if (-not $Disco) { $partes.Add('conecta el disco frio') }
+
+    $conFallo = @($Filas | Where-Object { $_.Estado -ne 'AlDia' })
+    if ($conFallo.Count -gt 0) {
+        $partes.Add(('{0} raices con fallo' -f $conFallo.Count))
+    }
+
+    # EL TESTIGO ES LA UNICA PIEZA QUE AVISA CUANDO NADIE MIRA LA PANTALLA.
+    # Sin el, todo este tablero solo sirve si alguien se acuerda de abrirlo, y
+    # un respaldo que lleva tres semanas parado se ve igual que uno sano hasta
+    # que alguien lo abre. Por eso sale como pendiente y no como nota al pie.
+    if (-not (Get-UrlDelTestigo)) { $partes.Add('el testigo externo no esta configurado') }
+
+    return $partes.ToArray()
 }
 
 function Show-Ventana {
     <#
         .SYNOPSIS
             Pinta la ventana de estado y el menu.
+        .DESCRIPTION
+            ES LA MAQUETA APROBADA DEL PLAN, no una lista de campos. El plan
+            -00_PLAN_RESPALDO_EQUIPO-01_v5_FINAL_FINAL.html, seccion "Tablero
+            interactivo"- dibuja una pantalla concreta, y su pieza central es
+            UNA TABLA POR RAIZ con una columna por destino. Sin esa tabla el
+            tablero contesta "estas protegido" pero no contesta "que
+            exactamente", que es la pregunta que se hace de verdad delante de
+            un respaldo.
+
+            Se separa con REGLAS a todo lo ancho y no con un marco cerrado: es
+            lo que dibuja la maqueta y lo que hace el panel del nodo.
+
+            NO ESCANEA NADA PARA PINTARSE. La tabla sale de RAICES.tsv, que
+            escribio el motor cuando de verdad midio. Un tablero que tarda
+            minutos en abrirse no se abre nunca.
         .PARAMETER Configuracion
             El objeto de configuracion completo.
     #>
@@ -224,130 +493,115 @@ function Show-Ventana {
         [Parameter(Mandatory)][psobject] $Configuracion
     )
 
-    $v           = Get-EstadoDelIndicador
-    $estado      = Read-EstadoRespaldo
-    $simbolo     = Get-Simbolo -Estado $v.Estado -Unicode $script:Capacidades.Unicode
-    $colorEstado = Get-ColorDeEstado -Estado $v.Estado -Paleta $script:Paleta
-    $p           = $script:Paleta
+    $v       = Get-EstadoDelIndicador
+    $estado  = Read-EstadoRespaldo
+    $filas   = @(Read-EstadoPorRaiz)
+    $p       = $script:Paleta
+    $u       = $script:Capacidades.Unicode
+    $colorEs = Get-ColorDeEstado -Estado $v.Estado -Paleta $p
+    $simbolo = Get-Simbolo -Estado $v.Estado -Unicode $u
+    $ancho   = $script:AnchoTablero
 
-    Write-Linea ''
-    Write-Separador -Titulo 'Respaldo del NAS' -Posicion 'Superior' -Derecha (Get-Date -Format 'dd/MM HH:mm')
-    Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p) -InformationAction Continue
+    # --- Cabecera: quien soy, y el veredicto pegado a la derecha ------------
+    $izq = 'RESPALDO {0}' -f $Configuracion.destinos.nodo.prefijoEquipo
+    $der = 'VEREDICTO:{0}{1}' -f $simbolo, $v.Estado.ToUpperInvariant()
+    $hueco = $ancho - $izq.Length - $der.Length
+    if ($hueco -lt 1) { $hueco = 1 }
+    Write-Linea ('  {0}{1}{2}{3}{4}{5}{6}' -f `
+            ($p.Fuerte + $p.Titulo), $izq, $p.Fin, (' ' * $hueco), $colorEs, $der, $p.Fin)
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+    Write-Linea ('  {0}{1}{2}' -f $p.Tenue, (Limit-Texto -Texto $v.Detalle -Maximo $ancho), $p.Fin)
+    Write-Linea ' '
 
-    # EL COMPONENTE `aviso` DEL PANEL, PORTADO. Alli un estado se marca con una
-    # caja de REGLA LATERAL en el color semantico y el texto del mismo color;
-    # aqui la regla es un bloque medio a la izquierda. Asi el bloque de estado
-    # se lee como un bloque y no como una linea mas de la lista.
-    #
-    # EL SIMBOLO SIGUE MANDANDO SOBRE EL COLOR: en una terminal sin color la
-    # linea tiene que decir lo mismo (seccion 10.2). Get-Simbolo ya trae su
-    # propio espacio a cada lado y su ancho cambia entre Unicode y ASCII, asi
-    # que no se le suman espacios aqui.
-    $titular = '  {0}{1} {2}{3}{4}{5}' -f `
-        $colorEstado, $script:Regla, $p.Fuerte, $simbolo, $v.Estado.ToUpperInvariant(), $p.Fin
-    Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
-            -Texto $titular -Visible (2 + $script:Regla.Length + 1 + $simbolo.Length + $v.Estado.Length)) -InformationAction Continue
-
-    # La regla continua por el detalle: es el mismo aviso, no dos cosas.
-    $detalle = '  {0}{1}{2}   {3}{4}{5}' -f `
-        $colorEstado, $script:Regla, $p.Fin, $p.Valor, $v.Detalle, $p.Fin
-    Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
-            -Texto $detalle -Visible (2 + $script:Regla.Length + 3 + $v.Detalle.Length)) -InformationAction Continue
-
-    [datetime] $cuando = [datetime]::MinValue
-    if ([datetime]::TryParse(('' + $estado['momento']), [ref] $cuando)) {
-        $horas = ((Get-Date) - $cuando).TotalHours
-        $cola = 'ultima corrida al nodo  {0:dd/MM HH:mm}  (hace {1:N0} h)' -f $cuando, $horas
-        $linea = '  {0}{1}{2}   {3}{4}{5}' -f $colorEstado, $script:Regla, $p.Fin, $p.Tenue, $cola, $p.Fin
-        Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p `
-                -Texto $linea -Visible (2 + $script:Regla.Length + 3 + $cola.Length)) -InformationAction Continue
-    }
-    Write-Information (Format-LineaDeTablero -Trazo $script:Trazo -Paleta $p) -InformationAction Continue
-
-    # --- Destinos ---------------------------------------------------------
-    Write-Separador -Titulo 'Destinos'
-    $unc = $Configuracion.destinos.nodo.unc
+    # --- Los dos destinos ---------------------------------------------------
+    $unc = '' + $Configuracion.destinos.nodo.unc
     # Test-Path directo y no Test-DestinoNodo: pintar la ventana no debe escribir
-    # lineas de ERROR en el registro, ni esperar reintentos de medio minuto.
-    if (Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue) {
-        Write-Campo -Etiqueta 'Nodo' -Valor ('{0}   responde' -f $unc) -Color $p.Verde
-    }
-    else {
-        Write-Campo -Etiqueta 'Nodo' -Valor ('{0}   NO RESPONDE' -f $unc) -Color $p.Rojo
-    }
+    # lineas de ERROR en el registro ni esperar reintentos de medio minuto.
+    $nodoVivo = Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue
+    $libresNodo = $null
+    if ($nodoVivo) { $libresNodo = Get-EspacioLibre -Ruta $unc }
+    Write-Linea ('  {0}{1}{2}{3}' -f `
+        (Format-Celda -Texto 'NODO' -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto $(if ($nodoVivo) { 'responde' } else { 'NO RESPONDE' }) -Ancho 14 -Paleta $p `
+                -Color $(if ($nodoVivo) { $p.Verde } else { $p.Rojo })), `
+        (Format-Celda -Texto (Format-Espacio -Bytes $libresNodo) -Ancho 16 -Paleta $p -Color $p.Tenue), `
+        (Format-Celda -Texto ('ult. copia {0}' -f (Format-Antiguedad -Momento ('' + $estado['momento']))) `
+                -Ancho 26 -Paleta $p -Color $p.Valor))
 
+    # El disco se conecta A PETICION (seccion 6.3): no hay calendario y es
+    # deliberado. Que no este no es una falla, asi que no se pinta en rojo.
     $disco = Get-DiscoFrio -Configuracion $Configuracion 2>$null
-    if ($disco) {
-        # LA FECHA SALE DE LA ULTIMA CORRIDA, NO DEL CENTINELA. El centinela es
-        # el carnet de identidad del disco y la copia nunca lo toca, asi que
-        # medir su fecha decia "escrito hace 1 dia" justo despues de escribir.
-        $texto = '{0}   serie {1}' -f $disco.Raiz, $disco.Serie
-        $color = $p.Verde
-        [datetime] $cd = [datetime]::MinValue
-        if ($estado.ContainsKey('disco_momento') -and
-            [datetime]::TryParse(('' + $estado['disco_momento']), [ref] $cd)) {
-            $texto += '   copiado {0:dd/MM HH:mm}' -f $cd
-        }
-        else {
-            $texto += '   sin copia registrada'
-            $color = $p.Gris
-        }
-        if (('' + $estado['disco_estado']) -eq 'Atencion') { $color = $p.Ambar }
-        Write-Campo -Etiqueta 'Disco frio' -Valor $texto -Color $color
-        if ($estado.ContainsKey('disco_detalle') -and $estado['disco_detalle']) {
-            Write-Campo -Etiqueta '' -Valor ('' + $estado['disco_detalle']) -Color $p.Tenue
-        }
-    }
-    else {
-        # El disco se conecta A PETICION (seccion 6.3): no hay calendario y es
-        # deliberado. Que no este no es una falla, asi que no se pinta en rojo.
-        Write-Campo -Etiqueta 'Disco frio' -Valor 'no conectado' -Color $p.Gris
-    }
+    $libresDisco = $null
+    if ($disco) { $libresDisco = Get-EspacioLibre -Ruta $disco.Raiz }
+    $colorDisco = $p.Valor
+    if (('' + $estado['disco_estado']) -eq 'Atencion') { $colorDisco = $p.Ambar }
+    Write-Linea ('  {0}{1}{2}{3}' -f `
+        (Format-Celda -Texto 'DISCO FRIO' -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto $(if ($disco) { 'conectado' } else { 'no conectado' }) -Ancho 14 -Paleta $p `
+                -Color $(if ($disco) { $p.Verde } else { $p.Gris })), `
+        (Format-Celda -Texto (Format-Espacio -Bytes $libresDisco) -Ancho 16 -Paleta $p -Color $p.Tenue), `
+        (Format-Celda -Texto ('ult. copia {0}' -f (Format-Antiguedad -Momento ('' + $estado['disco_momento']))) `
+                -Ancho 26 -Paleta $p -Color $colorDisco))
+    Write-Linea ' '
 
-    # --- Automatismo ------------------------------------------------------
-    Write-Separador -Titulo 'Automatismo'
-    foreach ($par in @(
-            @{ Eti = 'Motor'; Tarea = $script:NombreTarea;     Falta = 'NO EXISTE - el respaldo no corre solo' },
-            @{ Eti = 'Icono'; Tarea = $script:NombreIndicador; Falta = 'NO EXISTE - el icono no arranca solo' })) {
-        $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
-        if (-not $t) {
-            Write-Campo -Etiqueta $par.Eti -Valor $par.Falta -Color $p.Rojo
-        }
-        elseif ($t.State -eq 'Disabled') {
-            Write-Campo -Etiqueta $par.Eti -Valor ('{0}   DESHABILITADA' -f $par.Tarea) -Color $p.Ambar
-        }
-        else {
-            $extra = ''
-            if ($par.Eti -eq 'Motor') {
-                $d = @($t.Triggers) | Select-Object -First 1
-                if ($d -and $d.StartBoundary) {
-                    [datetime] $h = [datetime]::MinValue
-                    if ([datetime]::TryParse($d.StartBoundary, [ref] $h)) { $extra = '   {0:HH:mm}' -f $h }
-                }
-            }
-            Write-Campo -Etiqueta $par.Eti -Valor ('{0}{1}   {2}' -f $par.Tarea, $extra, $t.State) -Color $p.Verde
-        }
+    # --- La tabla por raiz: la pieza central de la maqueta -------------------
+    Write-Linea ('  {0}{1}{2}{3}{4}' -f `
+        (Format-Celda -Texto 'RAIZ' -Ancho 30 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'CL' -Ancho 3 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'COPIADO ' -Ancho 11 -Paleta $p -Color $p.Etiqueta -Derecha), `
+        (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+    Write-CuerpoDeTabla -Filas $filas -Paleta $p
+    Write-Linea ' '
+
+    # --- Las lineas de resumen que pide la maqueta ---------------------------
+    $centinelas = '{0} declarados' -f @($Configuracion.centinelas).Count
+    if ($estado.ContainsKey('centinelas')) { $centinelas = '' + $estado['centinelas'] }
+    $cambio = '?'
+    if ($estado.ContainsKey('cambio')) { $cambio = '' + $estado['cambio'] }
+    Write-LineaDeSumario -Etiqueta 'SEGURIDAD' -Paleta $p -Partes @(
+        ('centinelas {0}' -f $centinelas),
+        ('cambio {0} % (freno: {1} %)' -f $cambio, $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian))
+
+    $huellas = 'huellas {0}' -f (Format-Antiguedad -Momento ('' + $estado['huellas_momento']))
+    if ($estado.ContainsKey('huellas_detalle')) { $huellas += ' ' + $estado['huellas_detalle'] }
+    # TRES COMPROBACIONES DISTINTAS Y NINGUNA VALE POR OTRA: las huellas dicen
+    # que lo copiado coincide, la semilla dice que el kit de arranque se lee, y
+    # la restauracion real -criterio 11- dice que de verdad se puede volver.
+    Write-LineaDeSumario -Etiqueta 'COMPROBADO' -Paleta $p -Partes @(
+        $huellas,
+        ('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))),
+        ('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
+
+    Write-LineaDeSumario -Etiqueta 'AUTOMATISMO' -Paleta $p -Partes (Get-EstadoDeTarea)
+
+    $pendiente = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas)
+    if ($pendiente.Count -gt 0) {
+        Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $p -Partes $pendiente -Color $p.Ambar -Avisar
     }
 
-    # --- Protecciones -----------------------------------------------------
-    Write-Separador -Titulo 'Protecciones' -Derecha 'se cambian en 3-Config/respaldo.jsonc'
-    $minimo = if ($Configuracion.freno.PSObject.Properties.Name -contains 'minimoArchivosParaFrenar') {
-        $Configuracion.freno.minimoArchivosParaFrenar
-    } else { 0 }
-    Write-Campo -Etiqueta 'Freno' -Valor ('{0} % y minimo de {1} archivos' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian, $minimo)
-    Write-Campo -Etiqueta 'Centinelas' -Valor ('{0} declarados' -f @($Configuracion.centinelas).Count)
-    Write-Campo -Etiqueta 'Clases' -Valor ('{0} contenedores, {1} raices declaradas' -f @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
-    Write-Campo -Etiqueta 'Borrado' -Valor 'clase A nunca borra   -   clase B espeja'
-    Write-Separador -Posicion 'Inferior'
-
-    # --- Menu -------------------------------------------------------------
-    Write-Linea ''
-    Write-Linea ('   {0}COPIAR{1}                  {0}COMPROBAR{1}                 {0}SISTEMA{1}' -f $p.Fuerte, $p.Fin)
-    Write-Linea '   [1] al nodo             [3] verificar el nodo     [5] semilla'
-    Write-Linea '   [2] simular             [4] estado completo       [6] tareas'
-    Write-Linea '   [7] al disco frio       [9] revisar el disco      [A] ajustes'
-    Write-Linea '   [8] simular el disco    [R] probar restauracion   [S] salir'
-    Write-Linea ''
+    # --- Menu ----------------------------------------------------------------
+    # Los parametros de proteccion NO estan aqui, y no es un olvido (seccion
+    # 10.1): el umbral del freno, los centinelas y las clases se cambian
+    # editando el archivo, porque subir un umbral desde una pantalla bonita
+    # desarma la defensa con dos teclas y sin dejar rastro.
+    Write-Linea ' '
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+    Write-Linea ('  {0}{1}{2}{3}{4}' -f ($p.Fuerte + $p.Titulo), `
+            'COPIAR                 ', 'COMPROBAR                ', 'SISTEMA', $p.Fin)
+    foreach ($fila in @(
+            , @('[1] al nodo', '[3] verificar el nodo', '[5] semilla')
+            , @('[2] simular', '[4] estado completo', '[6] tareas')
+            , @('[7] al disco frio', '[9] revisar el disco', '[A] ajustes')
+            , @('[8] simular el disco', '[R] probar restauracion', '[S] salir'))) {
+        Write-Linea ('  {0}{1}{2}' -f `
+            (Format-Celda -Texto $fila[0] -Ancho 23 -Paleta $p -Color $p.Valor), `
+            (Format-Celda -Texto $fila[1] -Ancho 25 -Paleta $p -Color $p.Valor), `
+            (Format-Celda -Texto $fila[2] -Ancho 20 -Paleta $p -Color $p.Valor))
+    }
+    Write-Linea ('  {0}freno, centinelas y clases: se cambian en 3-Config/respaldo.jsonc{1}' -f $p.Tenue, $p.Fin)
+    Write-Linea ' '
 }
 
 function Show-RevisionDelDisco {
@@ -425,9 +679,12 @@ function Show-PruebaDeRestauracion {
     Write-Linea ('   Semilla en: {0}' -f $raizSemilla)
     if (-not (Test-Path -LiteralPath $raizSemilla -PathType Container)) {
         Write-Warning 'LA SEMILLA NO ESTA EN EL NODO. Regenerala con la opcion [5].'
+        Write-EstadoDeComprobacion -Tipo 'semilla' -Correcto $false `
+            -Detalle 'la semilla no esta en el nodo' -Confirm:$false
         return
     }
 
+    $semillaOk = $false
     $archivos = @(Get-ChildItem -LiteralPath $raizSemilla -File -Force -ErrorAction SilentlyContinue)
     Show-Texto -Objeto ($archivos | Select-Object Name, Length, LastWriteTime) -Vacio 'La carpeta de la semilla esta VACIA.'
 
@@ -441,11 +698,18 @@ function Show-PruebaDeRestauracion {
         }
         else {
             Write-Linea ('   {0}RESTAURAR.ps1 se lee desde el nodo: {1} lineas.{2}' -f $p.Verde, @($texto -split "`n").Count, $p.Fin)
+            $semillaOk = $true
         }
     }
     else {
         Write-Warning 'Falta RESTAURAR.ps1 dentro de la semilla.'
     }
+
+    # SE GUARDA, no solo se imprime. Sin esto la comprobacion moria al cerrar la
+    # ventana y el tablero no podia decir cuando fue la ultima vez.
+    Write-EstadoDeComprobacion -Tipo 'semilla' -Correcto $semillaOk `
+        -Detalle $(if ($semillaOk) { '{0} archivos, RESTAURAR.ps1 se lee' -f $archivos.Count }
+            else { 'la semilla no esta completa' }) -Confirm:$false
 
     $estado = Read-EstadoRespaldo
     if ($estado.ContainsKey('restauracion_probada') -and $estado['restauracion_probada']) {
@@ -513,6 +777,16 @@ function Show-Reparto {
     Write-Linea ('   {0}Hora de la corrida cambiada a {1}.{2}' -f $p.Verde, $nueva, $p.Fin)
 }
 
+# CARGADO CON PUNTO SE EXPONEN LAS FUNCIONES Y NO SE ABRE NADA. Es la misma
+# puerta que ya tienen verificar.ps1 y disco.ps1, y aqui hacia falta por una
+# razon concreta: sin ella, la unica forma de comprobar como QUEDA PINTADA la
+# ventana era abrirla a mano y mirarla, que es exactamente el "declarar hecho
+# sin verlo" que este proyecto tiene prohibido.
+if ($MyInvocation.InvocationName -eq '.') {
+    Write-Verbose 'tablero.ps1 cargado con punto: se exponen las funciones y no se abre el menu.'
+    return
+}
+
 $parametros = @{}
 if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametros['Ruta'] = $RutaConfiguracion }
 $configuracion = Get-ConfiguracionRespaldo @parametros
@@ -521,7 +795,7 @@ $rutaConfig = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaCo
 $seguir = $true
 while ($seguir) {
     Show-Ventana -Configuracion $configuracion
-    $tecla = Read-Host '   Elija'
+    $tecla = Read-Host '  tecla'
     $comunes = @{}
     if ($rutaConfig) { $comunes['RutaConfiguracion'] = $rutaConfig }
 

@@ -239,182 +239,6 @@ function Get-ColorDeEstado {
     }
 }
 
-function Get-TrazoDeMarco {
-    <#
-        .SYNOPSIS
-            Los caracteres del marco, en Unicode o en ASCII.
-        .PARAMETER Unicode
-            Si no, se devuelven guiones y barras.
-    #>
-    [CmdletBinding()]
-    [OutputType([hashtable])]
-    param(
-        [bool] $Unicode = $true
-    )
-
-    if (-not $Unicode) {
-        return @{
-            Horizontal = '-'; Vertical = '|'
-            SupIzq = '+'; SupDer = '+'; InfIzq = '+'; InfDer = '+'
-            UnionIzq = '+'; UnionDer = '+'
-        }
-    }
-
-    return @{
-        Horizontal = [string][char] 0x2500
-        Vertical   = [string][char] 0x2502
-        SupIzq     = [string][char] 0x250C
-        SupDer     = [string][char] 0x2510
-        InfIzq     = [string][char] 0x2514
-        InfDer     = [string][char] 0x2518
-        UnionIzq   = [string][char] 0x251C
-        UnionDer   = [string][char] 0x2524
-    }
-}
-
-function Format-LineaDeMarco {
-    <#
-        .SYNOPSIS
-            Una linea horizontal del marco, con titulo opcional a la izquierda.
-        .DESCRIPTION
-            El titulo va DENTRO del trazo y no en una linea aparte: ahorra
-            alto de pantalla, que en una terminal es el recurso escaso, y deja
-            el bloque y su nombre pegados sin una linea en blanco entre medias.
-        .PARAMETER Trazo
-            Lo que devuelve Get-TrazoDeMarco.
-        .PARAMETER Paleta
-            Lo que devuelve Get-Paleta.
-        .PARAMETER Titulo
-            Texto a incrustar. Vacio para una linea limpia.
-        .PARAMETER Posicion
-            Superior, Union o Inferior.
-        .PARAMETER Derecha
-            Texto pegado al extremo derecho, por ejemplo la fecha.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][hashtable] $Trazo,
-        [Parameter(Mandatory)][hashtable] $Paleta,
-        [string] $Titulo = '',
-        [ValidateSet('Superior', 'Union', 'Inferior')]
-        [string] $Posicion = 'Union',
-        [string] $Derecha = ''
-    )
-
-    $izq = switch ($Posicion) {
-        'Superior' { $Trazo.SupIzq }
-        'Inferior' { $Trazo.InfIzq }
-        default    { $Trazo.UnionIzq }
-    }
-    $der = switch ($Posicion) {
-        'Superior' { $Trazo.SupDer }
-        'Inferior' { $Trazo.InfDer }
-        default    { $Trazo.UnionDer }
-    }
-
-    # EL ROTULO NO ES LINEA, ES TEXTO: va en el acento (--ac) y el trazo se
-    # queda en --n5. En el panel pasa igual, un titulo de bloque nunca se pinta
-    # del color del borde.
-    $cuerpo = $Trazo.Horizontal
-    $anchoCuerpo = 1
-    if ($Titulo) {
-        $rotulo = ' ' + $Titulo.ToUpperInvariant() + ' '
-        $cuerpo += $Paleta.Fin + $Paleta.Titulo + $rotulo + $Paleta.Fin + $Paleta.Marco
-        $anchoCuerpo += $rotulo.Length
-    }
-
-    $cola = ''
-    $anchoCola = 0
-    if ($Derecha) {
-        $cola = $Paleta.Fin + $Paleta.Tenue + (' ' + $Derecha + ' ') + $Paleta.Fin + $Paleta.Marco + $Trazo.Horizontal
-        $anchoCola = $Derecha.Length + 3
-    }
-
-    # Lo visible se mide SIN los codigos de color: el relleno se calcula sobre
-    # caracteres que ocupan sitio, no sobre bytes de escape.
-    # Se mide lo VISIBLE, nunca $cuerpo.Length: ahora esas cadenas llevan
-    # secuencias de escape dentro y contarlas torceria el marco.
-    $relleno = $script:AnchoTablero - $anchoCuerpo - $anchoCola
-    if ($relleno -lt 0) { $relleno = 0 }
-
-    return '{0}{1}{2}{3}{4}{5}{6}' -f `
-        $Paleta.Marco, $izq, $cuerpo, ($Trazo.Horizontal * $relleno), $cola, $der, $Paleta.Fin
-}
-
-function Format-LineaDeTablero {
-    <#
-        .SYNOPSIS
-            Una linea de contenido, enmarcada y con el ancho cuadrado.
-        .PARAMETER Trazo
-            Lo que devuelve Get-TrazoDeMarco.
-        .PARAMETER Paleta
-            Lo que devuelve Get-Paleta.
-        .PARAMETER Texto
-            Lo que se ve. Puede llevar codigos de color dentro.
-        .PARAMETER Visible
-            Cuantos caracteres ocupa Texto de verdad. Se da cuando Texto lleva
-            codigos de color, porque .Length los contaria y el marco saldria
-            torcido. Cero significa "usa .Length".
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][hashtable] $Trazo,
-        [Parameter(Mandatory)][hashtable] $Paleta,
-        [string] $Texto = '',
-        [int] $Visible = 0
-    )
-
-    # -1 y no -2: el ancho total de una linea de contenido tiene que ser el
-    # mismo que el de una linea de marco -esquina + Ancho + esquina-, y aqui ya
-    # se gasta un espacio de sangria despues de la barra. Con -2 el borde
-    # derecho quedaba un caracter adentro y el marco salia torcido.
-    $ancho = if ($Visible -gt 0) { $Visible } else { $Texto.Length }
-    $relleno = $script:AnchoTablero - $ancho - 1
-    if ($relleno -lt 0) { $relleno = 0 }
-
-    return '{0}{1}{2} {3}{4}{5}{1}{6}' -f `
-        $Paleta.Marco, $Trazo.Vertical, $Paleta.Fin, $Texto, (' ' * $relleno), $Paleta.Marco, $Paleta.Fin
-}
-
-function Format-Campo {
-    <#
-        .SYNOPSIS
-            Etiqueta a la izquierda, valor alineado. La rejilla del tablero.
-        .DESCRIPTION
-            Una sola funcion para todas las filas: si la sangria y el ancho de
-            etiqueta viven en un sitio, las columnas no se desalinean cuando
-            alguien anade una fila.
-        .PARAMETER Etiqueta
-            Nombre del campo.
-        .PARAMETER Valor
-            Contenido, ya con color si toca.
-        .PARAMETER Paleta
-            Lo que devuelve Get-Paleta.
-        .PARAMETER VisibleValor
-            Longitud real de Valor si lleva codigos de color. Cero usa .Length.
-    #>
-    [CmdletBinding()]
-    [OutputType([psobject])]
-    param(
-        # Vacia se permite: una fila de continuacion no tiene nombre propio.
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Etiqueta,
-        [Parameter(Mandatory)][AllowEmptyString()][string] $Valor,
-        [Parameter(Mandatory)][hashtable] $Paleta,
-        [int] $VisibleValor = 0
-    )
-
-    $anchoEtiqueta = 12
-    $eti = $Etiqueta.PadRight($anchoEtiqueta)
-    $visValor = if ($VisibleValor -gt 0) { $VisibleValor } else { $Valor.Length }
-
-    return [pscustomobject]@{
-        Texto   = '  {0}{1}{2}{3}' -f $Paleta.Etiqueta, $eti, $Paleta.Fin, $Valor
-        Visible = 2 + $anchoEtiqueta + $visValor
-    }
-}
-
 # EL RITMO DEL ICONO VIVE AQUI, con su forma y su color. Los tres son la
 # misma decision -como se ve un estado- y estaban repartidos entre dos
 # archivos. Ademas estilo.ps1 no tiene bloque param(), asi que las pruebas
@@ -494,17 +318,110 @@ function Limit-Texto {
     return $Texto.Substring(0, $Maximo - 3) + '...'
 }
 
-function Get-AnchoDeValor {
+function Format-Antiguedad {
     <#
         .SYNOPSIS
-            Cuanto sitio le queda a un valor dentro del marco.
+            Convierte un momento en la frase que usa una persona.
+
         .DESCRIPTION
-            El calculo vive aqui, con el ancho y la sangria, y no repartido por
-            el tablero: si alguien cambia el ancho del marco, esto se entera.
+            "hace 296 h" es exacto y no significa nada. La maqueta del plan pide
+            "hoy 02:04" y "hace 12 dias" porque asi es como se decide si hay que
+            preocuparse: el numero de horas obliga a dividir mentalmente entre 24
+            justo cuando se esta mirando el tablero con prisa.
+
+            Una fecha que no se puede leer devuelve 'nunca', que es distinto de
+            devolver una fecha vieja: no saber cuando fue la ultima copia no es
+            lo mismo que saber que fue hace mucho.
+        .PARAMETER Momento
+            La marca de tiempo, como texto. Vacia o ilegible da 'nunca'.
     #>
     [CmdletBinding()]
-    [OutputType([int])]
-    param()
-    # 2 de sangria + 12 de etiqueta + 1 de aire contra el borde derecho.
-    return ($script:AnchoTablero - 15)
+    [OutputType([string])]
+    param(
+        [AllowEmptyString()][AllowNull()][string] $Momento
+    )
+
+    [datetime] $t = [datetime]::MinValue
+    if ([string]::IsNullOrWhiteSpace($Momento) -or -not [datetime]::TryParse($Momento, [ref] $t)) {
+        return 'nunca'
+    }
+
+    $ahora = Get-Date
+    $dias = [int][math]::Floor(($ahora.Date - $t.Date).TotalDays)
+    if ($dias -le 0) { return 'hoy {0:HH:mm}' -f $t }
+    if ($dias -eq 1) { return 'ayer {0:HH:mm}' -f $t }
+    if ($dias -lt 30) { return 'hace {0} dias' -f $dias }
+    return '{0:dd/MM/yyyy}' -f $t
+}
+
+function Get-Regla {
+    <#
+        .SYNOPSIS
+            La linea horizontal que separa bloques, ya coloreada.
+        .DESCRIPTION
+            EL TABLERO NO LLEVA CAJA. La maqueta aprobada separa con REGLAS
+            HORIZONTALES a todo lo ancho, no con un marco cerrado; es la misma
+            decision que el panel del nodo, donde las secciones se separan con
+            un borde y nunca se encierran. Un marco ademas obliga a recortar
+            cada valor contra el borde derecho, y ese recorte fue justo lo que
+            rompio la ventana con una ruta larga.
+        .PARAMETER Paleta
+            Los colores.
+        .PARAMETER Unicode
+            Si no, guiones.
+        .PARAMETER Ancho
+            Cuanto mide. Por defecto, el ancho del tablero.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][hashtable] $Paleta,
+        [bool] $Unicode = $true,
+        [int] $Ancho = 0
+    )
+    if ($Ancho -le 0) { $Ancho = $script:AnchoTablero }
+    $trazo = if ($Unicode) { [string][char] 0x2500 } else { '-' }
+    return '  {0}{1}{2}' -f $Paleta.Marco, ($trazo * $Ancho), $Paleta.Fin
+}
+
+function Format-Celda {
+    <#
+        .SYNOPSIS
+            Una celda de la tabla: recortada, alineada y coloreada, en ese orden.
+        .DESCRIPTION
+            EL ORDEN IMPORTA. Colorear antes de rellenar mete las secuencias de
+            escape dentro de la cuenta de caracteres y las columnas dejan de
+            estar alineadas -sin que se vea por que, porque los codigos son
+            invisibles-. Aqui se recorta el texto plano, se rellena el texto
+            plano, y solo al final se envuelve en color.
+        .PARAMETER Texto
+            Texto plano.
+        .PARAMETER Ancho
+            Ancho de la columna.
+        .PARAMETER Color
+            Codigo de color, o vacio.
+        .PARAMETER Paleta
+            Para saber como cerrar el color.
+        .PARAMETER Derecha
+            Alinea a la derecha. Para numeros.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Texto,
+        [Parameter(Mandatory)][ValidateRange(1, 200)][int] $Ancho,
+        [Parameter(Mandatory)][hashtable] $Paleta,
+        [AllowEmptyString()][string] $Color = '',
+        [switch] $Derecha
+    )
+
+    $t = $Texto
+    if ($t.Length -gt $Ancho) {
+        # Limit-Texto exige 4 de margen para los puntos suspensivos; por debajo
+        # de eso se corta en seco, que en una columna de 2 es lo correcto.
+        $t = if ($Ancho -ge 4) { Limit-Texto -Texto $t -Maximo $Ancho } else { $t.Substring(0, $Ancho) }
+    }
+    $relleno = if ($Derecha) { $t.PadLeft($Ancho) } else { $t.PadRight($Ancho) }
+    if ([string]::IsNullOrEmpty($Color)) { return $relleno }
+    return '{0}{1}{2}' -f $Color, $relleno, $Paleta.Fin
 }

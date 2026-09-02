@@ -539,12 +539,32 @@ function Invoke-CorridaConEstado {
         copias    = @($resultado.Copias).Count
         fallos    = $fallos.Count
     }
+
+    # LO QUE MIDIO EL FRENO, NO LO QUE DICE LA CONFIGURACION. El tablero
+    # ensenaba "freno: 5 %" -el umbral- y eso solo repite lo que ya esta escrito
+    # en el archivo. Lo que dice algo es el porcentaje que DE VERDAD cambio en
+    # la ultima corrida: un 0.4 % frente a un umbral del 5 % es tranquilidad
+    # medida, y un 4.8 % es un aviso que ningun umbral da por si solo.
+    $medido = @($resultado.Frenos | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_.Porcentaje })
+    if ($medido.Count -gt 0) {
+        $datos['cambio'] = '{0:N1}' -f (($medido | Measure-Object -Maximum).Maximum)
+    }
+    if ($resultado.Centinelas) {
+        $revisados = [int]$resultado.Centinelas.Revisados
+        $malos = @($resultado.Centinelas.Fallos).Count
+        $datos['centinelas'] = '{0}/{1}' -f ($revisados - $malos), $revisados
+    }
     # La causa viaja a ESTADO.txt para que el indicador pueda preguntarse si el
     # motivo del fallo SIGUE VIGENTE. Sin ella solo queda una frase en prosa, y
     # adivinar el estado del sistema leyendo prosa es como se construyen los
     # semaforos que mienten.
     if ($resultado.Causa) { $datos['causa'] = $resultado.Causa }
     Write-EstadoRespaldo -Estado $estado -Detalle $detalle -Datos $datos -Carpeta $carpetaEstado -Confirm:$false
+
+    # LA TABLA POR RAIZ, QUE ES LA RESPUESTA A "QUE EXACTAMENTE". El tablero no
+    # puede recorrer ocho raices por SMB cada vez que se abre, asi que la anota
+    # quien acaba de medirla.
+    Write-EstadoPorRaiz -Destino 'nodo' -Copias @($resultado.Copias) -Carpeta $carpetaEstado -Confirm:$false
 
     # La copia en el nodo, que pide la seccion 8. Va DESPUES de escribir el
     # original y antes de emitir: si el nodo esta, queda publicado; si no, se
