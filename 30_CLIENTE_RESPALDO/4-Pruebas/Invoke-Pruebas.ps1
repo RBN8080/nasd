@@ -1170,6 +1170,40 @@ Test-Afirmacion -Nombre 'La raiz del perfil se acorta con ~ y sigue distinguiend
 Test-Afirmacion -Nombre 'Una raiz fuera del perfil se deja tal cual' `
     -Esperado 'C:\dev' -Obtenido (Format-EtiquetaDeRaiz -Raiz 'C:\dev')
 
+# LA VENTANA SE TUMBO AL ABRIRLA Y NINGUNA PRUEBA LO VIO. El ancho de la
+# sangria se calculaba restando la longitud de una cadena QUE YA LLEVABA COLOR
+# DENTRO: con color media 23 en vez de 1, la resta daba -11 y Format-Celda
+# rechazaba el ancho. Sin color media 1 y todo iba bien.
+#
+# Por eso no se vio: se comprobo con la salida redirigida, donde no hay color,
+# que es exactamente el unico sitio donde el fallo NO puede ocurrir. Estas dos
+# pruebas pintan con la paleta ENCENDIDA a proposito.
+$script:Regla = Get-ReglaDeAviso -Unicode $true
+$conColor = Get-Paleta -Capacidades ([pscustomobject]@{ Color = $true; Unicode = $true })
+
+$tumbo = $null
+try {
+    $conAviso = @(Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $conColor `
+            -Partes @('algo que avisar') -Color $conColor.Ambar -Avisar 6>&1)
+}
+catch { $tumbo = $_.Exception.Message }
+
+Test-Afirmacion -Nombre 'Con COLOR encendido, la linea de aviso no tumba la ventana' `
+    -Esperado $null -Obtenido $tumbo
+
+# Y la invariante que importa: la regla lateral NO desplaza el contenido. Con
+# marca y sin marca, el texto tiene que empezar en la misma columna, o las dos
+# lineas de un mismo bloque salen escalonadas.
+$sinAviso = @(Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $conColor `
+        -Partes @('algo que avisar') -Color $conColor.Ambar 6>&1)
+
+$verConMarca = ('' + $conAviso[0]) -replace "$([char]27)\[[0-9;]*m", ''
+$verSinMarca = ('' + $sinAviso[0]) -replace "$([char]27)\[[0-9;]*m", ''
+
+Test-Afirmacion -Nombre 'La regla lateral no desplaza el contenido ni un caracter' `
+    -Esperado $verSinMarca.IndexOf('algo que avisar') `
+    -Obtenido $verConMarca.IndexOf('algo que avisar')
+
 # ===========================================================================
 
 if (-not $Conservar) {

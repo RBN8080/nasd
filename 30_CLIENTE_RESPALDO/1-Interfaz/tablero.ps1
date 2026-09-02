@@ -215,8 +215,21 @@ function Write-LineaDeSumario {
     $utiles = @($Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($utiles.Count -eq 0) { return }
     if ([string]::IsNullOrEmpty($Color)) { $Color = $Paleta.Valor }
+    # EL ANCHO VISIBLE SE LLEVA APARTE, Y ESTA LINEA EXPLICA POR QUE. Aqui se
+    # calculaba la sangria como 12 - $Marca.Length, y $Marca lleva los codigos
+    # de color DENTRO: con color, .Length vale 23 en vez de 1, la resta daba
+    # -11 y la ventana se tumbaba entera al abrirla. Con la salida redirigida
+    # no hay color, $Marca mide 1, y el fallo no aparece -- que es justo por lo
+    # que se me paso: lo comprobe donde no podia ocurrir.
+    #
+    # Es el mismo error contra el que avisa Format-Celda dos funciones mas
+    # abajo. Contar una cadena ya pintada da un ancho falso, siempre.
     $Marca = ''
-    if ($Avisar) { $Marca = '{0}{1}{2}' -f $Color, $script:Regla, $Paleta.Fin }
+    $anchoMarca = 0
+    if ($Avisar) {
+        $Marca = '{0}{1}{2}' -f $Color, $script:Regla, $Paleta.Fin
+        $anchoMarca = $script:Regla.Length
+    }
 
     # SE PARTE EN VARIAS LINEAS, NO SE RECORTA. Recortar con puntos suspensivos
     # esconde justo el ultimo aviso de la lista, y en la linea PENDIENTE el
@@ -239,7 +252,7 @@ function Write-LineaDeSumario {
         $rotulo = if ($primera) { $Etiqueta } else { '' }
         Write-Linea ('  {0}{1}{2}{3}{4}' -f `
                 $Marca, `
-            (Format-Celda -Texto $rotulo -Ancho $(12 - $Marca.Length) -Paleta $Paleta -Color $Paleta.Etiqueta), `
+            (Format-Celda -Texto $rotulo -Ancho (12 - $anchoMarca) -Paleta $Paleta -Color $Paleta.Etiqueta), `
                 $Color, (Limit-Texto -Texto $linea -Maximo $sitio), $Paleta.Fin)
         $primera = $false
     }
@@ -407,7 +420,11 @@ function Get-EstadoDeTarea {
 
         $hora = ''
         if ($par.Eti -eq 'motor') {
-            $d = @($t.Triggers) | Select-Object -First 1
+            # Indexado y no `Select-Object -First 1`: -First corta la tuberia
+            # lanzando StopUpstreamCommandsException, y esa excepcion de control
+            # queda suelta en el flujo de errores. Aparece al capturarlo con
+            # -ErrorVariable y ensucia cualquier diagnostico posterior.
+            $d = @($t.Triggers)[0]
             if ($d -and $d.StartBoundary) {
                 [datetime] $h = [datetime]::MinValue
                 if ([datetime]::TryParse($d.StartBoundary, [ref] $h)) { $hora = ' {0:HH:mm}' -f $h }
