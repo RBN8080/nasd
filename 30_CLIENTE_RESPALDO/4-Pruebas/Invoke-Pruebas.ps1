@@ -549,7 +549,312 @@ Test-Afirmacion -Criterio '8' -Nombre 'El motor corre en un proceso NO interacti
     -Esperado 0 -Obtenido $codigoTarea
 
 # ===========================================================================
+#  FASE 4 - el disco frio y sus dos pasadas
+# ===========================================================================
+
+Write-Titulo 'Fase 4: la traduccion de rutas del disco (seccion 6.2.bis)'
+
+# La regla del disco traduce a CADENA VACIA -se quita el nivel 01_BACKUP-, que
+# es el caso que producia una barra doble antes de arreglarlo.
+$tradNodo = @(
+    [pscustomobject]@{ de = '\\192.168.1.38\datos\01_BACKUP'; a = '' },
+    [pscustomobject]@{ de = '\\192.168.1.38\datos';           a = '' }
+)
+Test-Afirmacion -Nombre 'Disco: se quita el nivel 01_BACKUP y no queda barra doble' `
+    -Esperado 'F:\NODO-01\_HISTORICO' `
+    -Obtenido (Get-RutaEnDestino -RutaOrigen '\\192.168.1.38\datos\01_BACKUP\_HISTORICO' -RaizDestino 'F:\NODO-01' -Traducciones $tradNodo)
+Test-Afirmacion -Nombre 'Disco: homeUsers cuelga del mismo nombre de maquina' `
+    -Esperado 'F:\NODO-01\homeUsers\ana\01_Fotos' `
+    -Obtenido (Get-RutaEnDestino -RutaOrigen '\\192.168.1.38\datos\homeUsers\ana\01_Fotos' -RaizDestino 'F:\NODO-01' -Traducciones $tradNodo)
+
+# LA PROPIEDAD DE SEGURIDAD DE LA SECCION 6.2.bis: las dos pasadas tienen una
+# raiz cada una y NO PUEDEN PISARSE. Se comprueba, no se enuncia.
+$destEquipo = Get-RutaEnDestino -RutaOrigen 'C:\dev' -RaizDestino 'F:\EQUIPO-01' -Traducciones $trad
+$destNodo   = Get-RutaEnDestino -RutaOrigen '\\192.168.1.38\datos\01_BACKUP\_HISTORICO' -RaizDestino 'F:\NODO-01' -Traducciones $tradNodo
+Test-Afirmacion -Nombre 'Las dos pasadas del disco no pueden pisarse: raices distintas' `
+    -Esperado $false `
+    -Obtenido ($destEquipo.StartsWith('F:\NODO-01') -or $destNodo.StartsWith('F:\EQUIPO-01'))
+
+Write-Titulo 'Criterios 7 y 7b: el disco se reconoce por SERIE y CENTINELA'
+
+. "$nucleo\disco.ps1"
+
+# 7b - "conectar otro disco USB cualquiera": sin serie coincidente, nada.
+$cfgSerieMala = [pscustomobject]@{
+    destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{
+        serie = 'ESTA-SERIE-NO-EXISTE'; centinela = '_COPIA_FRIA_ZZ000000000A1.txt' } }
+}
+Test-Afirmacion -Criterio '7b' -Nombre 'Sin serie coincidente NO se reconoce ningun disco' `
+    -Esperado $true -Obtenido ($null -eq (Get-DiscoFrio -Configuracion $cfgSerieMala))
+
+# 7b - y con la serie correcta pero SIN el centinela, tampoco se escribe.
+$cfgSinCentinela = [pscustomobject]@{
+    destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{
+        serie = 'ZZ000000000A1'; centinela = '_centinela_que_no_existe.txt' } }
+}
+Test-Afirmacion -Criterio '7b' -Nombre 'Serie correcta pero SIN centinela: tampoco se escribe' `
+    -Esperado $true -Obtenido ($null -eq (Get-DiscoFrio -Configuracion $cfgSinCentinela 2>$null))
+
+# 7 - "conectar el disco con otra letra": la letra se DERIVA, no se declara.
+$cfgReal = Get-ConfiguracionRespaldo
+$discoReal = Get-DiscoFrio -Configuracion $cfgReal
+if ($discoReal) {
+    Test-Afirmacion -Criterio '7' -Nombre 'El disco real se reconoce por serie, y la letra se DERIVA' `
+        -Esperado $true -Obtenido ($discoReal.Letra -and $discoReal.Raiz -like "$($discoReal.Letra):*")
+    Test-Afirmacion -Criterio '7' -Nombre 'La letra NO aparece en la configuracion del disco' `
+        -Esperado $false `
+        -Obtenido (($cfgReal.destinos.discoFrio.PSObject.Properties.Name) -contains 'letra')
+}
+else {
+    Test-Afirmacion -Criterio '7' -Nombre 'El disco frio NO esta conectado: los criterios 7 y 7c no se pueden comprobar hoy' `
+        -Esperado 'sin disco' -Obtenido 'sin disco'
+}
+
+Write-Titulo 'SIMULAR NO ESCRIBE -- la prueba que faltaba el 2026-09-02'
+
+# ESTA PRUEBA EXISTE POR UN FALLO REAL Y CARO. `disco.ps1` cargaba `respaldo.ps1`
+# con punto para alcanzar Test-Centinela, y cargar con punto un guion que tiene
+# param() DECLARA SUS VARIABLES CON EL VALOR POR OMISION en el ambito que lo
+# carga: eso puso $SoloSimular en $false justo antes de usarlo, y una
+# "simulacion" copio de verdad al disco frio.
+#
+# Nada en la suite lo habria detectado, porque todas las pruebas comprobaban lo
+# que el motor HACE y ninguna comprobaba lo que NO debe hacer. Se mide contando
+# archivos en el destino ANTES y DESPUES, que es la unica forma que no depende
+# de creerse lo que el propio guion informa.
+$cajaSim = Join-Path $CarpetaCaja 'simulacion'
+New-Item -ItemType Directory -Path "$cajaSim\origen\01_COSAS","$cajaSim\destino" -Force | Out-Null
+1..5 | ForEach-Object { "archivo $_" | Set-Content -LiteralPath "$cajaSim\origen\01_COSAS\a$_.txt" -Encoding UTF8 }
+
+$antesSim = @(Get-ChildItem -LiteralPath "$cajaSim\destino" -Recurse -File -Force -ErrorAction SilentlyContinue).Count
+$sec = Invoke-Robocopy -Origen "$cajaSim\origen\01_COSAS" -Destino "$cajaSim\destino\01_COSAS" -Clase 'A' -SoloListar
+$despuesSim = @(Get-ChildItem -LiteralPath "$cajaSim\destino" -Recurse -File -Force -ErrorAction SilentlyContinue).Count
+
+Test-Afirmacion -Nombre 'Simular dice que copiaria los 5' -Esperado 5 -Obtenido $sec.NumACopiar
+Test-Afirmacion -Nombre 'Y NO escribe ni un archivo: 0 antes, 0 despues' `
+    -Esperado $antesSim -Obtenido $despuesSim
+Test-Afirmacion -Nombre 'El destino sigue sin existir siquiera' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath "$cajaSim\destino\01_COSAS")
+
+# Y la causa raiz, comprobada directamente: ningun guion del nucleo carga a otro
+# guion que tenga param(). Si alguien lo reintroduce, esta prueba lo dice.
+$conParam = @('respaldo.ps1', 'disco.ps1', 'semilla.ps1', 'verificar.ps1')
+$cargasProhibidas = @()
+foreach ($archivo in (Get-ChildItem -LiteralPath $nucleo -Filter *.ps1)) {
+    $texto = Get-Content -LiteralPath $archivo.FullName -Raw
+    foreach ($otro in $conParam) {
+        if ($archivo.Name -eq $otro) { continue }
+        if ($texto -match [regex]::Escape(". `"`$PSScriptRoot\$otro`"")) {
+            $cargasProhibidas += "$($archivo.Name) carga $otro"
+        }
+    }
+}
+Test-Afirmacion -Nombre 'Ningun guion carga con punto a otro que tenga param()' `
+    -Esperado 0 -Obtenido $cargasProhibidas.Count
+
+Write-Titulo 'Criterio 7d: un archivo que no se puede copiar se REPORTA'
+
+# El techo de 4 GB de FAT32 desaparecio al pasar a NTFS, asi que este criterio
+# ya no se puede provocar con el tamano. Lo que sigue vivo de el, y es lo que
+# importa, es la regla: un archivo que no se copia NUNCA se omite en silencio.
+# Se provoca con un archivo BLOQUEADO en exclusiva, que robocopy no puede leer.
+$cajaBloqueo = Join-Path $CarpetaCaja 'bloqueo'
+New-Item -ItemType Directory -Path "$cajaBloqueo\origen","$cajaBloqueo\destino" -Force | Out-Null
+'contenido normal' | Set-Content -LiteralPath "$cajaBloqueo\origen\normal.txt" -Encoding UTF8
+'contenido bloqueado' | Set-Content -LiteralPath "$cajaBloqueo\origen\bloqueado.txt" -Encoding UTF8
+$flujo = [System.IO.File]::Open("$cajaBloqueo\origen\bloqueado.txt", 'Open', 'Read', 'None')
+try {
+    $resBloqueo = Invoke-Robocopy -Origen "$cajaBloqueo\origen" -Destino "$cajaBloqueo\destino" -Clase 'A'
+    Test-Afirmacion -Criterio '7d' -Nombre 'Un archivo ilegible NO se da por copiado en silencio' `
+        -Esperado $false -Obtenido $resBloqueo.Correcto
+    Test-Afirmacion -Criterio '7d' -Nombre 'Y queda constancia de por que: lineas sin clasificar' `
+        -Esperado $true -Obtenido ($resBloqueo.SinClasificar.Count -gt 0 -or $resBloqueo.Codigo -ge 8)
+    Test-Afirmacion -Criterio '7d' -Nombre 'El archivo que SI se podia copiar llego igualmente' `
+        -Esperado $true -Obtenido (Test-Path -LiteralPath "$cajaBloqueo\destino\normal.txt")
+}
+finally { $flujo.Close(); $flujo.Dispose() }
+
+# ===========================================================================
 #  Resumen
+# ===========================================================================
+# EL PUNTO CIEGO DE /XO - archivos que una copia cortada deja rotos
+# ===========================================================================
+# Estas pruebas existen por un apagon del 2026-09-02 a media copia al disco
+# frio. Ocho archivos quedaron con EL TAMANO CORRECTO Y EL CONTENIDO DISTINTO,
+# con la fecha del momento del corte -mas nueva que la del origen-, y /XO los
+# habria saltado en todas las corridas siguientes mientras robocopy devolvia 0
+# y el motor los daba por buenos.
+Write-Titulo 'Archivos a medias de una copia cortada'
+
+$cajaVuelo = Join-Path $CarpetaCaja 'envuelo'
+$origenV   = Join-Path $cajaVuelo 'origen'
+$destinoV  = Join-Path $cajaVuelo 'destino'
+New-Item -ItemType Directory -Path $origenV, $destinoV -Force | Out-Null
+
+# 1. Sano: mismo contenido, misma fecha. No es hallazgo.
+Set-Content -LiteralPath "$origenV\sano.txt"  -Value 'contenido bueno' -Encoding UTF8
+Copy-Item   -LiteralPath "$origenV\sano.txt"  -Destination "$destinoV\sano.txt"
+(Get-Item "$destinoV\sano.txt").LastWriteTime = (Get-Item "$origenV\sano.txt").LastWriteTime
+
+# 2. El caso real: MISMO TAMANO, contenido distinto, destino mas nuevo.
+Set-Content -LiteralPath "$origenV\roto.txt"   -Value 'AAAAAAAAAAAAAAA' -Encoding UTF8
+Set-Content -LiteralPath "$destinoV\roto.txt"  -Value 'BBBBBBBBBBBBBBB' -Encoding UTF8
+(Get-Item "$origenV\roto.txt").LastWriteTime  = (Get-Date).AddDays(-10)
+(Get-Item "$destinoV\roto.txt").LastWriteTime = (Get-Date)
+
+# 3. Truncado: tamano distinto.
+Set-Content -LiteralPath "$origenV\corto.txt"  -Value 'esto es largo de verdad' -Encoding UTF8
+Set-Content -LiteralPath "$destinoV\corto.txt" -Value 'esto' -Encoding UTF8
+
+# 4. Solo en el destino: en clase A eso es LEGITIMO y NO es hallazgo.
+Set-Content -LiteralPath "$destinoV\viejo.txt" -Value 'el origen ya lo borro' -Encoding UTF8
+
+$vuelo = @(Get-ArchivosEnVuelo -Origen $origenV -Destino $destinoV)
+$nombresVuelo = @($vuelo | ForEach-Object { $_.Relativa } | Sort-Object)
+
+Test-Afirmacion -Nombre 'Encuentra los dos rotos y solo esos' `
+    -Esperado @('corto.txt', 'roto.txt') -Obtenido $nombresVuelo
+Test-Afirmacion -Nombre 'El sano NO se reporta' `
+    -Esperado $false -Obtenido ($nombresVuelo -contains 'sano.txt')
+Test-Afirmacion -Nombre 'Lo que solo esta en el destino NO es hallazgo (clase A no borra)' `
+    -Esperado $false -Obtenido ($nombresVuelo -contains 'viejo.txt')
+
+$motivoRoto = @($vuelo | Where-Object { $_.Relativa -eq 'roto.txt' }).Motivo
+Test-Afirmacion -Nombre 'El de mismo tamano se marca por FECHA, que es lo que /XO esconde' `
+    -Esperado 'DestinoMasNuevo' -Obtenido $motivoRoto
+
+# LA HUELLA ES QUIEN DECIDE. El de mismo tamano solo se destapa aqui.
+$huellasVuelo = @(Test-HuellaEnVuelo -EnVuelo $vuelo)
+$rotoHuella = @($huellasVuelo | Where-Object { $_.Relativa -eq 'roto.txt' }).Identico
+Test-Afirmacion -Nombre 'Mismo tamano y contenido distinto: la huella lo declara ROTO' `
+    -Esperado $false -Obtenido $rotoHuella
+
+# EL FALLO QUE COSTO UNA MEDICION FALSA EL 2026-09-02: con el origen caido, la
+# primera version devolvia cero hallazgos, que se lee igual que "todo bien".
+$origenCaido = Join-Path $cajaVuelo 'no-existe-este-origen'
+$lanzo = $false
+try { Get-ArchivosEnVuelo -Origen $origenCaido -Destino $destinoV | Out-Null }
+catch { $lanzo = $true }
+Test-Afirmacion -Nombre 'Un origen que NO responde falla a gritos, no devuelve cero hallazgos' `
+    -Esperado $true -Obtenido $lanzo
+
+# Reparar SOBRESCRIBE y NUNCA BORRA: el archivo que solo vive en el destino
+# tiene que seguir ahi despues de reparar.
+$antesReparar = @(Get-ChildItem -LiteralPath $destinoV -File).Count
+Repair-ArchivosEnVuelo -EnVuelo $vuelo -Confirm:$false | Out-Null
+$despuesReparar = @(Get-ChildItem -LiteralPath $destinoV -File).Count
+
+Test-Afirmacion -Nombre 'Reparar no borra nada: el mismo numero de archivos antes y despues' `
+    -Esperado $antesReparar -Obtenido $despuesReparar
+Test-Afirmacion -Nombre 'Y lo que solo vivia en el destino sigue vivo' `
+    -Esperado $true -Obtenido (Test-Path -LiteralPath "$destinoV\viejo.txt")
+Test-Afirmacion -Nombre 'Despues de reparar no queda ni uno a medias' `
+    -Esperado 0 -Obtenido @(Get-ArchivosEnVuelo -Origen $origenV -Destino $destinoV).Count
+
+$huellaOrigen  = Get-HuellaDeArchivo -Ruta "$origenV\roto.txt"
+$huellaDestino = Get-HuellaDeArchivo -Ruta "$destinoV\roto.txt"
+Test-Afirmacion -Nombre 'Y el contenido reparado es identico por huella, no solo del mismo tamano' `
+    -Esperado $huellaOrigen -Obtenido $huellaDestino
+
+# ===========================================================================
+# EL RITMO DEL ICONO - seccion 10.2
+# ===========================================================================
+# Hasta el 2026-09-02 el temporizador latia una vez cada DIEZ SEGUNDOS y el
+# "pulso suave" de copiando estaba escrito en un comentario y no en el codigo.
+# El icono no se movia, y ninguna prueba lo decia porque ninguna miraba el
+# ritmo. Estas si.
+Write-Titulo 'El ritmo del icono'
+
+. (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\estilo.ps1')
+
+# Cinco ticks son un segundo (200 ms cada uno).
+$pulsoFalla = @(0..9 | ForEach-Object { Get-OpacidadDelPulso -Estado 'Falla' -Tick $_ })
+$pulsoCopia = @(0..9 | ForEach-Object { Get-OpacidadDelPulso -Estado 'Copiando' -Tick $_ })
+$pulsoQuieto = @(0..9 | ForEach-Object { Get-OpacidadDelPulso -Estado 'Protegido' -Tick $_ })
+$pulsoAviso = @(0..9 | ForEach-Object { Get-OpacidadDelPulso -Estado 'Atencion' -Tick $_ })
+
+Test-Afirmacion -Nombre 'El rojo PARPADEA: cambia dentro del primer segundo' `
+    -Esperado $true -Obtenido (@($pulsoFalla[0..4] | Sort-Object -Unique).Count -gt 1) -Criterio '9'
+Test-Afirmacion -Nombre 'Y el rojo SALTA entre dos extremos, no tres' `
+    -Esperado 2 -Obtenido @($pulsoFalla | Sort-Object -Unique).Count -Criterio '9'
+
+# La diferencia entre parpadear y respirar, comprobada y no supuesta.
+Test-Afirmacion -Nombre 'El verde de copiando RESPIRA: pasa por valores intermedios' `
+    -Esperado $true -Obtenido (@($pulsoCopia | Sort-Object -Unique).Count -gt 2)
+Test-Afirmacion -Nombre 'Y nunca se apaga del todo: el minimo del pulso sigue siendo visible' `
+    -Esperado $true -Obtenido ((@($pulsoCopia | Measure-Object -Minimum).Minimum) -ge 100)
+
+# SOLO EL ROJO Y EL VERDE SE MUEVEN. Si el ambar parpadeara, el movimiento
+# dejaria de significar "esto esta roto".
+Test-Afirmacion -Nombre 'Protegido es FIJO: no se mueve ni un tick' `
+    -Esperado 1 -Obtenido @($pulsoQuieto | Sort-Object -Unique).Count
+Test-Afirmacion -Nombre 'Atencion es FIJO: el ambar no parpadea (seccion 10.2)' `
+    -Esperado 1 -Obtenido @($pulsoAviso | Sort-Object -Unique).Count
+
+# ===========================================================================
+# LA MARCA DE UNA COPIA FRIA DURA HORAS, NO MINUTOS
+# ===========================================================================
+# El plazo del nodo son 90 min. Aplicado a la copia fria, una copia sana de dos
+# horas pintaba el icono de ROJO -"arranco y nunca termino"- siendo mentira.
+Write-Titulo 'La marca distingue nodo de disco'
+
+$cajaMarca = Join-Path $CarpetaCaja 'marca'
+New-Item -ItemType Directory -Path $cajaMarca -Force | Out-Null
+$hace2h = (Get-Date).AddHours(-2).ToString('s')
+
+# Con el PID de este proceso, que esta vivo: asi lo unico que se prueba es el
+# plazo, no la deteccion de proceso muerto.
+Set-Content -LiteralPath "$cajaMarca\EN_CURSO.lock" -Encoding UTF8 `
+    -Value "pid=$PID`ninicio=$hace2h`nequipo=$env:COMPUTERNAME`ntipo=disco`n"
+$marcaDisco = Get-MarcaDeCorrida -Carpeta $cajaMarca
+
+Set-Content -LiteralPath "$cajaMarca\EN_CURSO.lock" -Encoding UTF8 `
+    -Value "pid=$PID`ninicio=$hace2h`nequipo=$env:COMPUTERNAME`ntipo=nodo`n"
+$marcaNodo = Get-MarcaDeCorrida -Carpeta $cajaMarca
+
+Test-Afirmacion -Nombre 'Una copia al DISCO de 2 h sigue siendo creible' `
+    -Esperado $false -Obtenido $marcaDisco.Vieja
+Test-Afirmacion -Nombre 'Y se sabe que es del disco, no del nodo' `
+    -Esperado 'disco' -Obtenido $marcaDisco.Tipo
+Test-Afirmacion -Nombre 'Una corrida al NODO de 2 h NO es creible: arranco y no termino' `
+    -Esperado $true -Obtenido $marcaNodo.Vieja
+Test-Afirmacion -Nombre 'Una marca sin tipo se trata como del nodo, que es el plazo corto' `
+    -Esperado 'nodo' -Obtenido $marcaNodo.Tipo
+
+# ===========================================================================
+# LA VENTANA NEGRA NO VUELVE
+# ===========================================================================
+# -WindowStyle Hidden NO BASTA en Windows 11: la consola esta delegada en
+# Windows Terminal, que abre SU PROPIA ventana. La tarea tiene que pedir
+# conhost --headless. Se registra una tarea de usar y tirar, se mira como
+# quedo, y se retira.
+Write-Titulo 'Las tareas arrancan sin ventana'
+
+$tareaPrueba = 'NasRespaldo-PruebaDeVentana'
+$registrador = Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\Registrar-Tarea.ps1'
+try {
+    & $registrador -Pieza Indicador -Accion Registrar -NombreTarea $tareaPrueba -Confirm:$false | Out-Null
+    $tp = Get-ScheduledTask -TaskName $tareaPrueba -ErrorAction SilentlyContinue
+    $accion = if ($tp) { $tp.Actions | Select-Object -First 1 } else { $null }
+
+    Test-Afirmacion -Nombre 'La tarea del icono NO arranca powershell.exe directo' `
+        -Esperado $false -Obtenido ($null -ne $accion -and $accion.Execute -like '*powershell.exe')
+    Test-Afirmacion -Nombre 'Arranca por conhost, que es el host sin ventana' `
+        -Esperado $true -Obtenido ($null -ne $accion -and $accion.Execute -like '*conhost.exe')
+    Test-Afirmacion -Nombre 'Y en modo --headless, o conhost abriria ventana igual' `
+        -Esperado $true -Obtenido ($null -ne $accion -and $accion.Arguments -like '--headless *')
+    Test-Afirmacion -Nombre 'El disparador del icono es AL ENTRAR A LA SESION' `
+        -Esperado 'MSFT_TaskLogonTrigger' `
+        -Obtenido $(if ($tp) { @($tp.Triggers)[0].CimClass.CimClassName } else { 'sin tarea' })
+    Test-Afirmacion -Nombre 'Y sin limite de tiempo: el icono no termina nunca' `
+        -Esperado 'PT0S' -Obtenido $(if ($tp) { $tp.Settings.ExecutionTimeLimit } else { 'sin tarea' })
+}
+finally {
+    Unregister-ScheduledTask -TaskName $tareaPrueba -Confirm:$false -ErrorAction SilentlyContinue
+}
+Test-Afirmacion -Nombre 'La tarea de prueba se retiro: no queda basura en el Programador' `
+    -Esperado $null -Obtenido (Get-ScheduledTask -TaskName $tareaPrueba -ErrorAction SilentlyContinue)
+
 # ===========================================================================
 
 if (-not $Conservar) {

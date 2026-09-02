@@ -505,8 +505,12 @@ function Get-RutaEnDestino {
     foreach ($t in $ordenadas) {
         if ($RutaOrigen.StartsWith($t.de, [System.StringComparison]::OrdinalIgnoreCase)) {
             $resto = $RutaOrigen.Substring($t.de.Length).TrimStart('\')
-            $partes = @($RaizDestino.TrimEnd('\'), $t.a.Trim('\'))
-            if ($resto) { $partes += $resto }
+            # Los tramos vacios se descartan. La pasada nodo -> disco traduce a
+            # CADENA VACIA a proposito -en el disco se quita el nivel
+            # `01_BACKUP/`, seccion 6.2.bis-, y sin este filtro saldria una barra
+            # doble en mitad de la ruta.
+            $partes = @($RaizDestino.TrimEnd('\'), $t.a.Trim('\'), $resto) |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
             return ($partes -join '\')
         }
     }
@@ -533,10 +537,23 @@ function Get-CarpetaDeEstado {
                  TERMINO. Si el motor muere a mitad, lo que queda vivo es el
                  equipo, no el nodo: la marca tiene que estar donde el indicador
                  la pueda ver aunque la red se haya caido con el motor.
+        .PARAMETER Configuracion
+            Si se da y declara `carpetaEstado`, manda ese valor. Existe para que
+            las pruebas no escriban su ESTADO.txt encima del de produccion -paso
+            el 2026-09-02 y el indicador pinto el resultado de una caja de
+            arena-. La resolucion vive AQUI y no repetida en cada guion: dos
+            copias de esta regla es una copia que un dia se queda atras.
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param()
+    param(
+        [psobject] $Configuracion
+    )
+    if ($Configuracion -and
+        ($Configuracion.PSObject.Properties.Name -contains 'carpetaEstado') -and
+        $Configuracion.carpetaEstado) {
+        return $Configuracion.carpetaEstado
+    }
     return (Join-Path $env:LOCALAPPDATA 'NasRespaldo\estado')
 }
 
@@ -638,16 +655,26 @@ function Enter-MarcaDeCorrida {
             adivinar.
         .PARAMETER Carpeta
             Donde ponerla.
+        .PARAMETER Tipo
+            'nodo' -la corrida diaria- o 'disco' -la copia fria-. SE GUARDA
+            PORQUE LAS DOS DURAN COSAS DISTINTAS: la del nodo son minutos y la
+            del disco puede ser horas, asi que el plazo a partir del cual una
+            marca deja de ser creible no puede ser el mismo. Sin esto, una copia
+            al disco perfectamente sana pintaba el icono de ROJO al pasar de
+            hora y media.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([string])]
     param(
         [ValidateNotNullOrEmpty()]
-        [string] $Carpeta = (Get-CarpetaDeEstado)
+        [string] $Carpeta = (Get-CarpetaDeEstado),
+
+        [ValidateSet('nodo', 'disco')]
+        [string] $Tipo = 'nodo'
     )
     $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
     if (-not $PSCmdlet.ShouldProcess($ruta, 'Marcar corrida en curso')) { return $ruta }
-    $texto = "pid={0}`ninicio={1}`nequipo={2}`n" -f $PID, (Get-Date -Format 's'), $env:COMPUTERNAME
+    $texto = "pid={0}`ninicio={1}`nequipo={2}`ntipo={3}`n" -f $PID, (Get-Date -Format 's'), $env:COMPUTERNAME, $Tipo
     Set-ContenidoAtomico -Ruta $ruta -Contenido $texto -Confirm:$false
     return $ruta
 }
@@ -694,7 +721,12 @@ function Get-MarcaDeCorrida {
     param(
         [ValidateNotNullOrEmpty()]
         [string] $Carpeta = (Get-CarpetaDeEstado),
-        [ValidateRange(1, 1440)][int] $MinutosParaVieja = 90
+        [ValidateRange(1, 1440)][int] $MinutosParaVieja = 90,
+
+        # La copia fria mueve decenas de GB por un enlace que pasa por el equipo
+        # (seccion 6.2): ocho horas es holgado a proposito. Quien delata una
+        # corrida muerta de verdad es el PID, no el reloj.
+        [ValidateRange(1, 1440)][int] $MinutosParaViejaDisco = 480
     )
 
     $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
@@ -714,6 +746,8 @@ function Get-MarcaDeCorrida {
     $hayInicio = $false
     if ($mapa.ContainsKey('inicio')) { $hayInicio = [datetime]::TryParse($mapa['inicio'], [ref]$inicio) }
     $minutos = if ($hayInicio) { [int]((Get-Date) - $inicio).TotalMinutes } else { [int]::MaxValue }
+    $tipo = if ($mapa.ContainsKey('tipo')) { $mapa['tipo'] } else { 'nodo' }
+    $plazo = if ($tipo -eq 'disco') { $MinutosParaViejaDisco } else { $MinutosParaVieja }
     [int] $procesoId = 0
     if ($mapa.ContainsKey('pid')) { [void][int]::TryParse($mapa['pid'], [ref]$procesoId) }
 
@@ -727,12 +761,107 @@ function Get-MarcaDeCorrida {
 
     return [pscustomobject]@{
         Existe      = $true
-        Vieja       = ((-not $procesoVivo) -or ($minutos -ge $MinutosParaVieja))
+        Tipo        = $tipo
+        Vieja       = ((-not $procesoVivo) -or ($minutos -ge $plazo))
         ProcesoVivo = $procesoVivo
         Pid         = $procesoId
         Inicio      = $(if ($hayInicio) { $inicio } else { $null })
         Minutos     = $minutos
     }
+}
+
+# ---------------------------------------------------------------------------
+#  Capa 3 - los centinelas.
+#
+#  VIVEN AQUI Y NO EN respaldo.ps1 POR UNA RAZON MEDIDA EL 2026-09-02, y cara:
+#  disco.ps1 los necesitaba y los alcanzaba cargando respaldo.ps1 con punto.
+#  Cargar con punto un guion que tiene param() DECLARA SUS VARIABLES CON EL
+#  VALOR POR OMISION en el ambito que lo carga: eso puso a $SoloSimular en
+#  $false justo antes de usarlo, y una "simulacion" copio de verdad al disco
+#  frio. Lo compartido va en comun.ps1; ningun guion carga a otro guion.
+# ---------------------------------------------------------------------------
+
+function Test-Centinela {
+    <#
+        .SYNOPSIS
+            Capa 3. Si un centinela no cuadra, se aborta antes de escribir nada.
+        .DESCRIPTION
+            Un punado de archivos senuelo con huella conocida repartidos entre
+            las raices. Nadie los usa, asi que si cambian es que algo los esta
+            tocando. Se revisan AL ARRANCAR.
+
+            Un centinela que FALTA cuenta como fallo igual que uno alterado:
+            borrarlo es la forma mas barata de desarmar esta capa.
+        .PARAMETER Centinelas
+            Lista de la configuracion, con ruta y huella esperada.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Centinelas
+    )
+
+    $fallos = New-Object System.Collections.Generic.List[psobject]
+    foreach ($c in $Centinelas) {
+        if (-not (Test-Path -LiteralPath $c.ruta -PathType Leaf)) {
+            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'FALTA' })
+            continue
+        }
+        $actual = Get-HuellaDeArchivo -Ruta $c.ruta
+        if ($actual -ne $c.huella.ToLowerInvariant()) {
+            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'HUELLA DISTINTA' })
+        }
+    }
+    return [pscustomobject]@{
+        Revisados = @($Centinelas).Count
+        Fallos    = $fallos.ToArray()
+        Correcto  = ($fallos.Count -eq 0)
+    }
+}
+
+function New-Centinela {
+    <#
+        .SYNOPSIS
+            Crea un centinela y devuelve la entrada lista para la configuracion.
+        .DESCRIPTION
+            Lo crea EL MOTOR, no una persona. Nombre con guion bajo delante para
+            que no se auto-inscriba, y contenido fechado para que se distinga de
+            un archivo real.
+        .PARAMETER Carpeta
+            Donde ponerlo.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Carpeta
+    )
+
+    $ruta = Join-Path $Carpeta '_centinela_respaldo.txt'
+    if (-not $PSCmdlet.ShouldProcess($ruta, 'Crear centinela')) { return $null }
+
+    # CADA CENTINELA LLEVA UN VALOR UNICO E IMPREDECIBLE, y no es adorno.
+    # Con un contenido identico en todas las raices, los ocho comparten huella:
+    # quien conozca uno los conoce todos y puede REPONER cualquiera despues de
+    # tocarlo, que es exactamente lo que esta capa existe para impedir. El valor
+    # sale del generador criptografico del sistema, no de Get-Random.
+    $bytes = New-Object byte[] 32
+    $generador = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $generador.GetBytes($bytes) } finally { $generador.Dispose() }
+    $semilla = [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+
+    $texto = @"
+Centinela del cliente de respaldo del NAS. NO lo edite ni lo borre.
+
+Este archivo no lo usa nadie. Si su contenido cambia, algo lo esta tocando, y el
+motor ABORTA antes de escribir en el respaldo (seccion 7, capa 3). Borrarlo
+cuenta igual que alterarlo: es la forma mas barata de desarmar esta capa.
+
+Creado: $(Get-Date -Format 's')
+Equipo: $env:COMPUTERNAME
+Valor : $semilla
+"@
+    Set-ContenidoAtomico -Ruta $ruta -Contenido $texto -Confirm:$false
+    return [pscustomobject]@{ ruta = $ruta; huella = (Get-HuellaDeArchivo -Ruta $ruta) }
 }
 
 function Get-HuellaDeArchivo {
@@ -779,5 +908,291 @@ function Get-HuellaDeArchivo {
     )
     process {
         return (Get-FileHash -LiteralPath $Ruta -Algorithm $Algoritmo).Hash.ToLowerInvariant()
+    }
+}
+
+function Get-ArchivosEnVuelo {
+    <#
+        .SYNOPSIS
+            Los archivos que una copia interrumpida deja rotos Y ESCONDIDOS.
+
+        .DESCRIPTION
+            EL PUNTO CIEGO DE /XO, Y ES EL MOTIVO DE QUE ESTA FUNCION EXISTA.
+
+            La clase A copia con /E /XO. /XO significa "excluir cuando el ORIGEN
+            es mas viejo que el destino". Robocopy escribe primero los datos y
+            SOLO AL TERMINAR le pone al destino la fecha del origen. Si la
+            corrida se corta a medias -un apagon, un cable, un cierre de
+            sesion-, el archivo que estaba en vuelo se queda con la fecha DE ESE
+            MOMENTO, que es mas nueva que la del origen.
+
+            A partir de ahi, /XO lo salta EN TODAS LAS CORRIDAS SIGUIENTES. El
+            archivo queda incompleto para siempre, robocopy devuelve 0, y el
+            motor lo declara sano. Es exactamente el modo de fallo que este
+            contrato persigue: no el que falla a gritos, sino el que se declara
+            correcto.
+
+            EL TAMANO NO BASTA PARA DESCARTARLO. NTFS registra en su diario los
+            metadatos -incluido el tamano- antes que los datos. Tras un apagon
+            sucio un archivo puede medir lo que debe y contener ceros. Por eso
+            esta funcion solo SELECCIONA candidatos por metadatos; quien afirma
+            que el contenido es identico es la huella, y eso lo hace
+            Test-HuellaEnVuelo.
+
+            NO BORRA NADA. Detecta y reporta, el mismo trato que da la seccion
+            3.3 punto 4 al huerfano y ADR-0080 al secreto. La reparacion es un
+            gesto aparte y explicito.
+
+        .PARAMETER Origen
+            Carpeta de origen, la autoridad.
+        .PARAMETER Destino
+            Carpeta de destino a revisar.
+        .PARAMETER ToleranciaSegundos
+            Margen de fecha. Por omision 2, el mismo de /FFT: sin el, cada
+            archivo de una copia Windows -> Linux saldria sospechoso.
+        .PARAMETER Desde
+            Si se da, solo se miran archivos del destino tocados a partir de ese
+            momento. Es lo barato y lo correcto cuando se sabe cuando arranco la
+            corrida que se corto: un archivo en vuelo se escribio DURANTE ella.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Origen,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Destino,
+        [ValidateRange(0, 3600)][int] $ToleranciaSegundos = 2,
+        [datetime] $Desde = [datetime]::MinValue
+    )
+
+    # UN ORIGEN QUE NO RESPONDE NO ES "CERO HALLAZGOS", Y ESTA DISTINCION COSTO
+    # UNA MEDICION FALSA EL 2026-09-02: con el nodo caido, la primera version de
+    # esta funcion no encontraba con que comparar y devolvia una lista vacia,
+    # que se lee igual que "todo esta bien". Sin origen NO se puede afirmar
+    # nada, asi que se falla a gritos en vez de declarar salud.
+    if (-not (Test-Path -LiteralPath $Origen -PathType Container)) {
+        throw "El origen '$Origen' no responde. Sin origen no hay con que comparar, y una lista vacia se leeria como 'no hay nada roto'."
+    }
+
+    $hallazgos = New-Object System.Collections.Generic.List[psobject]
+    if (-not (Test-Path -LiteralPath $Destino -PathType Container)) { return $hallazgos.ToArray() }
+
+    $raizOrigen  = $Origen.TrimEnd('\')
+    $raizDestino = $Destino.TrimEnd('\')
+
+    foreach ($d in @(Get-ChildItem -LiteralPath $raizDestino -Recurse -File -Force -ErrorAction SilentlyContinue)) {
+        if ($d.LastWriteTime -lt $Desde) { continue }
+
+        $relativa = $d.FullName.Substring($raizDestino.Length).TrimStart('\')
+        $gemelo   = Join-Path $raizOrigen $relativa
+        $o = Get-Item -LiteralPath $gemelo -Force -ErrorAction SilentlyContinue
+
+        # Sin gemelo en el origen NO es un hallazgo de esta funcion: en clase A
+        # el destino conserva a proposito lo que el origen ya borro (seccion 4).
+        if (-not $o) { continue }
+
+        $motivo = $null
+        if ($o.Length -ne $d.Length) {
+            $motivo = 'TamanoDistinto'
+        }
+        elseif (($d.LastWriteTime - $o.LastWriteTime).TotalSeconds -gt $ToleranciaSegundos) {
+            # El destino es MAS NUEVO que el origen: /XO no lo volvera a tocar.
+            $motivo = 'DestinoMasNuevo'
+        }
+        if (-not $motivo) { continue }
+
+        $hallazgos.Add([pscustomobject]@{
+            Relativa      = $relativa
+            RutaOrigen    = $o.FullName
+            RutaDestino   = $d.FullName
+            TamanoOrigen  = $o.Length
+            TamanoDestino = $d.Length
+            FechaOrigen   = $o.LastWriteTime
+            FechaDestino  = $d.LastWriteTime
+            Motivo        = $motivo
+        })
+    }
+
+    return $hallazgos.ToArray()
+}
+
+function Test-HuellaEnVuelo {
+    <#
+        .SYNOPSIS
+            Dice si un archivo en vuelo quedo intacto o roto. Por huella.
+        .DESCRIPTION
+            Es el unico nivel de certeza que sirve aqui (seccion 9): tras un
+            apagon el tamano puede coincidir y el contenido no.
+        .PARAMETER EnVuelo
+            Lo que devuelve Get-ArchivosEnVuelo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $EnVuelo
+    )
+
+    $resultado = New-Object System.Collections.Generic.List[psobject]
+    foreach ($a in $EnVuelo) {
+        $identico = $false
+        $detalle  = ''
+        try {
+            if ($a.TamanoOrigen -eq $a.TamanoDestino) {
+                $ho = Get-HuellaDeArchivo -Ruta $a.RutaOrigen  -Algoritmo SHA256
+                $hd = Get-HuellaDeArchivo -Ruta $a.RutaDestino -Algoritmo SHA256
+                $identico = ($ho -eq $hd)
+                $detalle  = if ($identico) { 'Contenido identico: solo le falto la fecha' } else { 'CONTENIDO DISTINTO' }
+            }
+            else {
+                $detalle = 'Tamano distinto: no hace falta huella'
+            }
+        }
+        catch {
+            $detalle = "No se pudo comparar: $($_.Exception.Message)"
+        }
+        $resultado.Add([pscustomobject]@{
+            Relativa    = $a.Relativa
+            RutaOrigen  = $a.RutaOrigen
+            RutaDestino = $a.RutaDestino
+            Motivo      = $a.Motivo
+            Identico    = $identico
+            Detalle     = $detalle
+        })
+    }
+    return $resultado.ToArray()
+}
+
+
+function Repair-ArchivosEnVuelo {
+    <#
+        .SYNOPSIS
+            Rehace los archivos que una copia interrumpida dejo rotos.
+
+        .DESCRIPTION
+            SOBRESCRIBE, NUNCA BORRA. La pasada al disco es aditiva y esa
+            propiedad ya salvo una vez este proyecto (seccion 12.undecies): no
+            se rompe ni para reparar. El archivo malo se pisa con el bueno del
+            origen, que es la autoridad; nada se retira del destino.
+
+            POR QUE NO BASTA CON VOLVER A CORRER LA COPIA NORMAL: la clase A usa
+            /XO, y /XO es justo lo que salta estos archivos -su fecha en el
+            destino es MAS NUEVA que la del origen-. Repararlos exige quitar
+            /XO y anadir /IS /IT, y eso NO se hace en la corrida normal: sin
+            /XO, una corrida cualquiera empezaria a pisar en el destino cosas
+            que el origen tiene mas viejas, que es media politica de clase A
+            tirada a la basura. Por eso es una funcion aparte y explicita.
+
+            SE TRABAJA POR CARPETA, no por arbol: robocopy recibe la carpeta y
+            los NOMBRES concretos, sin /E, asi que no puede tocar un archivo que
+            no este en la lista.
+
+        .PARAMETER EnVuelo
+            Lo que devuelve Get-ArchivosEnVuelo.
+    #>
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $EnVuelo
+    )
+
+    $resultado = New-Object System.Collections.Generic.List[psobject]
+    $porCarpeta = $EnVuelo | Group-Object { Split-Path $_.RutaOrigen -Parent }
+
+    foreach ($grupo in $porCarpeta) {
+        $dirOrigen  = $grupo.Name
+        $dirDestino = Split-Path ($grupo.Group[0].RutaDestino) -Parent
+        $nombres    = @($grupo.Group | ForEach-Object { Split-Path $_.RutaDestino -Leaf })
+
+        if (-not $PSCmdlet.ShouldProcess($dirDestino, ("Rehacer {0} archivo(s) rotos" -f $nombres.Count))) { continue }
+
+        # /IS incluye los que robocopy considera iguales, /IT los retocados.
+        # Sin /E: solo esta carpeta. Sin /XO: es lo que hay que anular.
+        $argumentos = @($dirOrigen, $dirDestino) + $nombres +
+            @('/IS', '/IT', '/XJ', '/DCOPY:DAT', '/FFT', '/R:2', '/W:5', '/NP', '/FP', '/NJH', '/NJS', '/NDL', '/NS')
+
+        Write-Verbose "robocopy $($argumentos -join ' ')"
+        $salida = & robocopy.exe @argumentos 2>&1
+        $codigo = $LASTEXITCODE
+
+        $ok = ($codigo -le $script:RobocopyMaximoCorrecto)
+        if (-not $ok) {
+            Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'reparacion' `
+                -Mensaje ("La reparacion de '{0}' devolvio {1}. Primera linea: {2}" -f $dirDestino, $codigo, ($salida | Select-Object -First 1))
+        }
+
+        foreach ($n in $nombres) {
+            $resultado.Add([pscustomobject]@{
+                Carpeta  = $dirDestino
+                Archivo  = $n
+                Codigo   = $codigo
+                Correcto = $ok
+            })
+        }
+    }
+
+    return $resultado.ToArray()
+}
+
+
+function Hide-VentanaDeConsola {
+    <#
+        .SYNOPSIS
+            Esconde la ventana negra de consola, PERO SOLO SI ES NUESTRA.
+
+        .DESCRIPTION
+            -WindowStyle Hidden NO BASTA, y se midio el 2026-09-02: la tarea se
+            registro con esa bandera y la ventana aparecia igual. PowerShell CREA
+            la consola y despues intenta ocultarla, asi que segun como arranque el
+            proceso la ventana se queda en el escritorio.
+
+            LA CONDICION ES LO IMPORTANTE. GetConsoleProcessList dice cuantos
+            procesos comparten esta consola:
+
+              1 proceso   la consola la creo este proceso al arrancar -tarea
+                          programada, lanzador externo-. Es nuestra: se esconde.
+              2 o mas     alguien la tenia abierta y lanzo esto desde ahi.
+                          NO SE TOCA: esconderla le cerraria la terminal en la
+                          cara a quien esta trabajando, y ademas se perderia la
+                          salida que fue a ver.
+
+            Sin esa distincion habria que elegir entre molestar a diario o no
+            poder correr el motor a mano, y las dos son malas.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Oculta la ventana de SU PROPIO proceso y solo cuando nadie mas la comparte. No cambia nada persistente: ni disco, ni registro, ni configuracion. Pedir confirmacion para esconder una ventana al arrancar seria exactamente la ventana que se quiere evitar.')]
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+
+    try {
+        if (-not ('NasRespaldo.VentanaPropia' -as [type])) {
+            Add-Type -Namespace 'NasRespaldo' -Name 'VentanaPropia' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern System.IntPtr GetConsoleWindow();
+
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern uint GetConsoleProcessList(uint[] lpdwProcessList, uint dwProcessCount);
+
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+'@
+        }
+
+        $ventana = [NasRespaldo.VentanaPropia]::GetConsoleWindow()
+        # Sin consola no hay nada que esconder.
+        if ($ventana -eq [System.IntPtr]::Zero) { return $false }
+
+        $lista = New-Object uint32[] 8
+        $cuantos = [NasRespaldo.VentanaPropia]::GetConsoleProcessList($lista, 8)
+        if ($cuantos -ne 1) { return $false }
+
+        # 0 es SW_HIDE.
+        return [NasRespaldo.VentanaPropia]::ShowWindow($ventana, 0)
+    }
+    catch {
+        # Que no se pueda esconder NO es motivo para no respaldar ni para
+        # quedarse sin icono. Se sigue, y se deja constancia en verboso.
+        Write-Verbose "No se pudo esconder la consola: $($_.Exception.Message)"
+        return $false
     }
 }
