@@ -1466,6 +1466,39 @@ Test-Afirmacion -Nombre 'Pasada la ultima ventana, la proxima es la primera de M
 Test-Afirmacion -Nombre 'Y su fecha es la del dia siguiente, no la de hoy' `
     -Esperado '2026-09-04' -Obtenido $noche.Inicio.ToString('yyyy-MM-dd')
 
+# ---------------------------------------------------------------------------
+#  EL UMBRAL VIAJA EN ESTADO.txt  -  la costura de avisos del nodo
+#
+#  ESTADO.txt se publica tambien en el nodo, y desde el 2026-09-02 el nodo lo
+#  lee para decir si el respaldo de este equipo esta al dia (ADR-0081). El
+#  umbral que separa "al dia" de "viejo" vive en respaldo.jsonc, que es un
+#  archivo del EQUIPO: el nodo no lo puede leer.
+#
+#  Si no viajara, el nodo tendria que escribirse su propio 22 y habria DOS
+#  criterios para la misma pregunta. Estas pruebas son las que impiden que
+#  alguien lo quite sin darse cuenta de lo que se lleva por delante.
+# ---------------------------------------------------------------------------
+$carpetaCaja = Join-Path $caja.Raiz 'estado-motor'
+Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
+'algo mas' | Set-Content -LiteralPath "$($caja.Origen)\proyecto\src\mod1.txt" -Encoding UTF8
+Invoke-Motor -Caja $caja -Autorizar | Out-Null
+$estadoUmbral = Read-EstadoRespaldo -Carpeta $carpetaCaja
+
+Test-Afirmacion -Nombre 'ESTADO.txt publica el umbral de aviso, para que el nodo no se invente el suyo' `
+    -Esperado '22' -Obtenido ('' + $estadoUmbral['horas_para_avisar'])
+Test-Afirmacion -Nombre 'Y el hueco que lo justifica, porque un umbral suelto no dice nada' `
+    -Esperado '12' -Obtenido ('' + $estadoUmbral['hueco_maximo_horas'])
+Test-Afirmacion -Nombre 'Y de que equipo habla: el arbol del nodo espeja una ruta por maquina' `
+    -Esperado $true -Obtenido (-not [string]::IsNullOrWhiteSpace('' + $estadoUmbral['equipo']))
+
+# EL UMBRAL PUBLICADO ES EL DE LA CONFIGURACION, no una constante escrita al
+# lado. Sin esto, cambiar `horasParaAvisar` en el archivo dejaria al nodo
+# juzgando con el numero viejo -y las dos pantallas se contradirian sin que
+# nada fallara-.
+$cadCaja = Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo -Ruta $caja.Config)
+Test-Afirmacion -Nombre 'El umbral publicado sale de la cadencia, no de un valor fijo' `
+    -Esperado ('' + $cadCaja.HorasParaAvisar) -Obtenido ('' + $estadoUmbral['horas_para_avisar'])
+
 # ===========================================================================
 
 if (-not $Conservar) {

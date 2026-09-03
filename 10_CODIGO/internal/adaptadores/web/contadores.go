@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"nasd/internal/aviso"
+	"nasd/internal/respaldo"
 )
 
 // Indicadores del SERVICIO — la mitad de producto de lo que exige el charter
@@ -110,6 +111,17 @@ type Instantanea struct {
 	// poder distinguirlas es media respuesta cuando algo va mal.
 	Canal  aviso.SaludCanal  `json:"canal_avisos"`
 	Latido aviso.SaludLatido `json:"latido"`
+
+	// Respaldo es lo que el cliente de Windows dejó publicado en este nodo.
+	//
+	// NO ES UNA SALIDA DEL NODO como las dos de arriba: es lo ÚNICO que este
+	// servicio sabe de una máquina que no es él. Va aquí por la misma razón
+	// mecánica que aquellas —evaluar() es una función libre que solo recibe
+	// esto— y la rellena instantaneaCompleta.
+	//
+	// Vacía cuando no hay cliente configurado, y entonces su indicador no se
+	// pinta: ver evaluarRespaldo.
+	Respaldo respaldo.Lectura `json:"respaldo_cliente"`
 }
 
 func (c *contadores) instantanea() Instantanea {

@@ -94,3 +94,24 @@ resumen_horas = 24
 # ADR-0074), fuera del nodo. Es lo que permite ajustarlo sin redesplegar y lo
 # que impide que un nodo comprometido lo suba a un año.
 latido_s = 300
+
+[respaldo]
+# El cliente de respaldo de Windows — ADR-0081, 30_CLIENTE_RESPALDO §11.
+#
+# ESTA SECCIÓN ES OPCIONAL Y VIENE APAGADA. Sin ella, nasd se comporta
+# exactamente igual que antes de que existiera: no abre ningún archivo y el
+# indicador «Respaldo del equipo» no aparece en /estado. Un semáforo en gris
+# permanente enseña a ignorar el panel entero (ADR-0065).
+#
+# QUÉ ES: el ESTADO.txt que el cliente publica en este nodo después de cada
+# corrida. El nodo NO manda copiar nada ni toca al cliente; solo lee lo que ya
+# le dejaron, y puede afirmar una cosa que el equipo apagado no puede afirmar
+# de sí mismo: que lo último que llegó aquí es viejo.
+#
+# EL UMBRAL NO ESTÁ AQUÍ, y es deliberado por la misma razón que el del
+# testigo: lo publica el propio cliente dentro del archivo
+# (`horas_para_avisar`), porque vive en su configuración y este nodo no la
+# puede leer. Escribir un número aquí crearía un segundo criterio para la
+# misma pregunta, que es lo que 05_OPERACION §4.1 prohíbe.
+#
+# estado = "/srv/nas/datos/01_BACKUP/EQUIPO-01/_SISTEMA/ESTADO.txt"

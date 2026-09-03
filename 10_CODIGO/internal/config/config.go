@@ -104,6 +104,18 @@ type Config struct {
 	// nueva en el script NO llega a un nodo que ya tiene su archivo. Quien la
 	// lleva es el binario, por aquí.
 
+	// --- El cliente de respaldo (30_CLIENTE_RESPALDO §11) -----------------
+	//
+	// RutaEstadoRespaldo es el ESTADO.txt que el cliente de Windows publica
+	// dentro del volumen de datos tras cada corrida. VACIA POR OMISION, y eso
+	// importa: un nodo sin cliente de respaldo se comporta exactamente igual
+	// que antes de que esta clave existiera, porque el indicador no se pinta.
+	//
+	// No se deduce del volumen aunque hoy viva dentro: la ruta lleva el nombre
+	// del equipo, y deducirla obligaria a este servicio a saber como nombra sus
+	// carpetas un cliente que no controla.
+	RutaEstadoRespaldo string
+
 	// ModoAvisos es «normal», «silencio» u «observacion» (internal/aviso).
 	// Normal por omisión: silencio por defecto sería un sistema de avisos
 	// apagado que parece encendido.
@@ -362,6 +374,9 @@ func Cargar(ruta string) (Config, error) {
 		}
 		if s, ok := v["estado.directorio"]; ok {
 			c.DirectorioEstado = s
+		}
+		if s, ok := v["respaldo.estado"]; ok {
+			c.RutaEstadoRespaldo = s
 		}
 		if s, ok := v["avisos.modo"]; ok {
 			c.ModoAvisos = s

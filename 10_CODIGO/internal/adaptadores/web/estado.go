@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"nasd/internal/adaptadores/sistema"
+	"nasd/internal/respaldo"
 )
 
 // Extremo de estado — RF-24, charter §8 («Salud: endpoint de estado»).
@@ -141,7 +142,159 @@ type indicador struct {
 // solo de cálculo: sigue habiendo un único criterio por indicador.
 func evaluar(n sistema.Nodo, i Instantanea) []indicador {
 	out := append(evaluarVivos(n.Vivo, i), evaluarLentos(n)...)
-	return append(out, evaluarSalidas(i)...)
+	out = append(out, evaluarSalidas(i)...)
+	return append(out, evaluarRespaldo(i, time.Now())...)
+}
+
+// horasParaAvisarPorOmision es el umbral que se usa si el cliente NO publica el
+// suyo.
+//
+// 22 h, y sale de la cadencia medida del cliente (30_CLIENTE_RESPALDO
+// §12.quindecies): tres ventanas al día dejan un hueco recibol de 12 h, y el
+// peor hueco medido entre corridas buenas sobre 200 meses simulados fue de
+// 18.4 h. Es el MISMO número que el icono de la barra del equipo.
+//
+// ES UN VALOR DE REPUESTO, NO EL CRITERIO. El criterio lo publica el cliente en
+// su propio ESTADO.txt, porque el umbral vive en un archivo del equipo que este
+// nodo no puede leer. Si el cliente lo cambiara y aquí quedara este número
+// escrito a mano, las dos pantallas se contradirían sin que nada fallara — que
+// es lo que 05_OPERACION §4.1 prohíbe. Cuando se usa este valor, el indicador
+// LO DICE.
+const horasParaAvisarPorOmision = 22
+
+// evaluarRespaldo juzga el respaldo del cliente de Windows con lo que él mismo
+// publicó en este nodo.
+//
+// # QUÉ PUEDE AFIRMAR EL NODO QUE EL EQUIPO NO PUEDE AFIRMAR DE SÍ MISMO
+//
+// Que lo último que llegó aquí es viejo. El icono de la barra del equipo se
+// apaga con el equipo, y 30_CLIENTE_RESPALDO §10.2 ya declara ese punto ciego
+// con todas las letras: «un icono ausente se parece a "todo bien"». Este nodo
+// está encendido siempre y ya recibe el archivo, así que la pregunta le sale
+// gratis.
+//
+// # SE PINTA SOLO SI ESTÁ CONFIGURADO
+//
+// Mismo criterio que las dos salidas de evaluarSalidas: un nodo sin cliente de
+// respaldo no enseña un semáforo en gris para siempre (ADR-0065).
+//
+// # LA EDAD SE MIDE, PERO NO SE FÍA DEL RELOJ AJENO
+//
+// La marca la escribe el equipo con SU reloj y sin zona horaria. Si viniera del
+// futuro, la resta daría una edad negativa que se leería como recién hecha —una
+// mentira tranquilizadora, el peor tipo—. Se comprueba y se dice.
+func evaluarRespaldo(i Instantanea, ahora time.Time) []indicador {
+	if !i.Respaldo.Configurado {
+		return nil
+	}
+
+	ind := indicador{Clave: "respaldo_cliente", Nombre: "Respaldo del equipo"}
+	l := i.Respaldo
+
+	switch {
+	case l.Error != nil && !l.Presente:
+		ind.Valor = "no se puede leer el estado publicado: " + l.Error.Error()
+		ind.Veredicto = vFallo
+		ind.Accion = "Compruebe permisos y E/S en la ruta de respaldo.estado del archivo de configuración."
+
+	case !l.Presente:
+		// Configurado y sin archivo. NO es avería: es lo normal hasta que el
+		// cliente corra por primera vez contra este nodo. Mismo trato que un
+		// canal configurado que aún no ha entregado nada.
+		ind.Valor = "configurado, el cliente no ha publicado nada todavía"
+		ind.Veredicto = vDesconocido
+
+	case l.Error != nil:
+		ind.Valor = "el estado publicado no se puede usar: " + l.Error.Error()
+		ind.Veredicto = vAtencion
+		ind.Accion = "El archivo está pero no se entiende. Abra el tablero en el equipo y lance una corrida."
+
+	default:
+		ind = veredictoDeRespaldo(ind, l.Estado, ahora)
+	}
+
+	return []indicador{ind}
+}
+
+// veredictoDeRespaldo decide sobre un estado que SÍ se pudo leer.
+//
+// EL ORDEN DE LOS CASOS ES UNA DECISIÓN, no el orden en que se ocurrieron: es
+// la misma lección de aviso/evaluar.go, donde la precedencia tuvo que quedar
+// escrita para que no dependiera del cortocircuito de un «||».
+//
+//  1. LA EDAD GANA A TODO. Un «Protegido» de hace tres días sigue diciendo
+//     Protegido, porque es la foto de una corrida que salió bien —el archivo no
+//     envejece solo—. Preguntar primero por el veredicto del cliente dejaría un
+//     equipo apagado hace una semana pintado en verde, que es exactamente el
+//     punto ciego que este indicador viene a cubrir.
+//  2. Después lo que el cliente dijo de su corrida.
+func veredictoDeRespaldo(ind indicador, e respaldo.Estado, ahora time.Time) indicador {
+	umbral := e.HorasParaAvisar
+	deRepuesto := ""
+	if umbral <= 0 {
+		umbral = horasParaAvisarPorOmision
+		deRepuesto = fmt.Sprintf(" (el cliente no publicó su umbral; se usan %d h)", horasParaAvisarPorOmision)
+	}
+
+	if e.Momento.IsZero() {
+		ind.Valor = "el estado publicado no dice cuándo se escribió"
+		ind.Veredicto = vAtencion
+		ind.Accion = "Lance una corrida desde el tablero del equipo para que vuelva a publicarse."
+		return ind
+	}
+
+	edad := ahora.Sub(e.Momento)
+	if edad < 0 {
+		// El reloj del equipo va por delante del de este nodo. Se dice en vez
+		// de enseñar «hace -3 h», que se leería como recién hecho.
+		ind.Valor = fmt.Sprintf("la marca del equipo (%s) va por delante del reloj del nodo",
+			e.Momento.Format("02/01 15:04"))
+		ind.Veredicto = vAtencion
+		ind.Accion = "Compare la hora del equipo con la del nodo: mientras no cuadren, la antigüedad del respaldo no se puede medir."
+		return ind
+	}
+
+	if edad > time.Duration(umbral)*time.Hour {
+		ind.Valor = fmt.Sprintf("sin corrida desde hace %s (avisa a las %d h)%s",
+			duracionLegible(edad), umbral, deRepuesto)
+		ind.Veredicto = vAtencion
+		ind.Accion = "El equipo lleva sin respaldar más de lo que su cadencia promete. " +
+			"Compruebe que está encendido y que su tarea programada sigue registrada."
+		return ind
+	}
+
+	switch e.Veredicto {
+	case "Falla":
+		ind.Valor = fmt.Sprintf("la última corrida FALLÓ hace %s: %s", duracionLegible(edad), e.Detalle)
+		ind.Veredicto = vFallo
+		ind.Accion = "Abra el tablero en el equipo: lo copiado aquí es de antes de ese fallo."
+	case "Atencion":
+		// El freno de la capa 2 del cliente cae aquí. NO es rojo: es una parada
+		// prudente que espera una decisión de una persona, y el cliente ya lo
+		// separa así en su propio icono.
+		ind.Valor = fmt.Sprintf("requiere atención desde hace %s: %s", duracionLegible(edad), e.Detalle)
+		ind.Veredicto = vAtencion
+		ind.Accion = "Abra el tablero en el equipo. Si fue el freno por tasa de cambio, no copia nada hasta que se autorice."
+	case "Copiando":
+		ind.Valor = "copiando ahora mismo"
+		ind.Veredicto = vOK
+	case "SinDatos":
+		ind.Valor = "el cliente publicó que no tiene datos de su última corrida"
+		ind.Veredicto = vDesconocido
+	default:
+		// Protegido, y cualquier palabra futura que el cliente estrene. Se
+		// enseña la palabra tal cual en vez de traducirla a un verde silencioso:
+		// si un día publica algo que aquí no se conoce, que se vea.
+		ind.Valor = fmt.Sprintf("%s · hace %s · %s", e.Veredicto, duracionLegible(edad), e.Detalle)
+		ind.Veredicto = vOK
+		if e.Fallos > 0 {
+			ind.Valor = fmt.Sprintf("%s · hace %s · %d raíces no se copiaron bien",
+				e.Veredicto, duracionLegible(edad), e.Fallos)
+			ind.Veredicto = vAtencion
+			ind.Accion = "Abra el tablero en el equipo y mire qué raíces fallaron."
+		}
+	}
+	return ind
 }
 
 // evaluarSalidas juzga las DOS vías por las que el nodo habla hacia fuera.
@@ -766,6 +919,10 @@ func (s *Servidor) instantaneaCompleta() Instantanea {
 	if s.saludLatido != nil {
 		i.Latido = s.saludLatido()
 	}
+	// El vigía trae su propia caché: esta función la llama TAMBIÉN el flujo en
+	// vivo, una vez por segundo, y el archivo lo escribe el cliente tres veces
+	// al día. Ver el comentario de respaldo.vigencia.
+	i.Respaldo = s.vigiaRespaldo.Leer()
 	return i
 }
 
