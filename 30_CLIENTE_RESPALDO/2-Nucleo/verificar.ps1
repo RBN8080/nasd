@@ -57,7 +57,13 @@ param(
     [int] $TamanoMuestra = 10,
 
     # Cuesta un recorrido del disco entero, asi que no va por omision: se pide.
-    [switch] $RevisarDisco
+    [switch] $RevisarDisco,
+
+    # EL LATIDO VERDE DEL TESTIGO (ADR-0079). NO va por omision, y no es un
+    # descuido: quien mira una verificacion a mano ya esta delante de la
+    # pantalla y no necesita un vigilante externo. Lo que el testigo vigila es
+    # el AUTOMATISMO, asi que solo lo pide la corrida programada.
+    [switch] $EmitirLatido
 )
 
 Set-StrictMode -Version Latest
@@ -65,6 +71,7 @@ $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\comun.ps1"
 . "$PSScriptRoot\clasificar.ps1"
+. "$PSScriptRoot\testigo.ps1"
 
 function Test-CoincidenciaDeRaiz {
     <#
@@ -347,20 +354,99 @@ $parametrosConfig = @{}
 if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
-$informe = Get-EstadoDeRespaldo -Configuracion $configuracion -Muestra $TamanoMuestra -RevisarDisco:$RevisarDisco
-
-# LA COMPROBACION SE GUARDA, NO SOLO SE IMPRIME. Hasta ahora este resultado
-# salia por pantalla y moria al cerrar la ventana: el tablero no podia decir
-# cuando se comprobo por ultima vez, y "hace tres semanas que nadie comprueba
-# que lo copiado se lee" es una senal tan util como un fallo rojo.
-$detalleComprobacion = if ($informe.TodoCoincide) {
-    'sin diferencias en {0} raices' -f @($informe.Coincidencias).Count
+# EL ICONO TIENE QUE ENSENAR QUE ESTO TRABAJA, y no lo hacia. Este cotejo lee
+# archivos ENTEROS por la red y tarda minutos, pero era el unico de los tres
+# largos que no ponia la marca: respaldo.ps1 y disco.ps1 si. El icono se quedaba
+# quieto, y un icono quieto durante una operacion larga se lee como "no esta
+# pasando nada" -- que es exactamente lo que llevo a dar por colgada una corrida
+# y matarla a mano el 2026-09-02. El pulso suave de la seccion 10.2 ya estaba
+# escrito y probado; lo que faltaba era que alguien lo encendiera aqui.
+#
+# NO SE PISA UNA MARCA AJENA, y esta es la parte delicada. Cotejar mientras una
+# corrida programada copia es legitimo. Si este guion pusiera su marca encima y
+# la retirara al salir, dejaria el icono en verde fijo con la copia todavia
+# corriendo -- una mentira tranquilizadora, que es la peor clase. Solo se retira
+# la marca que se puso aqui.
+$carpetaEstado = Get-CarpetaDeEstado -Configuracion $configuracion
+$marcaPrevia = Get-MarcaDeCorrida -Carpeta $carpetaEstado
+$marcaPuesta = $false
+if (-not ($marcaPrevia.Existe -and -not $marcaPrevia.Vieja)) {
+    [void](Enter-MarcaDeCorrida -Carpeta $carpetaEstado -Tipo 'verificacion' -Confirm:$false)
+    $marcaPuesta = $true
 }
-else {
-    '{0} de {1} raices con diferencias' -f `
-        @($informe.Coincidencias | Where-Object { -not $_.Coincide }).Count, @($informe.Coincidencias).Count
-}
-Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto ([bool]$informe.TodoCoincide) `
-    -Detalle $detalleComprobacion -Carpeta (Get-CarpetaDeEstado -Configuracion $configuracion) -Confirm:$false
 
-$informe
+try {
+    $informe = Get-EstadoDeRespaldo -Configuracion $configuracion -Muestra $TamanoMuestra -RevisarDisco:$RevisarDisco
+
+    # LA COMPROBACION SE GUARDA, NO SOLO SE IMPRIME. Hasta ahora este resultado
+    # salia por pantalla y moria al cerrar la ventana: el tablero no podia decir
+    # cuando se comprobo por ultima vez, y "hace tres semanas que nadie comprueba
+    # que lo copiado se lee" es una senal tan util como un fallo rojo.
+    $detalleComprobacion = if ($informe.TodoCoincide) {
+        'sin diferencias en {0} raices' -f @($informe.Coincidencias).Count
+    }
+    else {
+        '{0} de {1} raices con diferencias' -f `
+            @($informe.Coincidencias | Where-Object { -not $_.Coincide }).Count, @($informe.Coincidencias).Count
+    }
+    Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto ([bool]$informe.TodoCoincide) `
+        -Detalle $detalleComprobacion -Carpeta $carpetaEstado -Confirm:$false
+
+    # ---------------------------------------------------------------------
+    #  EL LATIDO VERDE  -  ADR-0079, y hasta hoy no lo mandaba NADIE
+    #
+    #  respaldo.ps1 emitia /start al empezar y /fail al fallar, y el "estoy
+    #  bien" se quedo sin emisor porque exige algo que la copia no puede
+    #  afirmar: que lo copiado se LEE. Con el check ya creado, eso dejaba al
+    #  testigo en rojo permanente incluso con el sistema sano -- una alarma
+    #  que suena siempre es una alarma que se acaba desactivando.
+    #
+    #  LAS DOS CONDICIONES SE RESUELVEN AQUI Y NO SE PUEDEN SALTAR DESDE
+    #  FUERA. No hay un parametro "manda verde igualmente": si falta
+    #  cualquiera de las dos, Send-LatidoDelCliente lo degrada a /fail el
+    #  solo. Esta funcion solo puede APORTAR hechos, no conclusiones.
+    #
+    #    corrida termino    lo dice ESTADO.txt, que escribio respaldo.ps1
+    #    verificacion paso  lo dice esta corrida, que acaba de leer archivos
+    #
+    #  SE LEE ESTADO.txt EN VEZ DE FIARSE DE QUIEN LLAMA, y es deliberado: si
+    #  respaldo.ps1 pasara "yo termine bien" como parametro, el verde se
+    #  sostendria en la palabra del llamador. Asi se sostiene en lo que quedo
+    #  escrito, que es lo mismo que mira el icono.
+    if ($EmitirLatido) {
+        $ultimo = Read-EstadoRespaldo -Carpeta $carpetaEstado
+        $corridaTermino = (('' + $ultimo['estado']) -eq 'Protegido')
+
+        # La mitad "lo copiado se lee" la resuelve Test-CotejoLimpio, que vive en
+        # testigo.ps1 para poder probarse: mira el CONTENIDO y no la estructura,
+        # y exige haber leido algo. El porque, entero, esta en su cabecera.
+        $cotejo = Test-CotejoLimpio -Informe $informe
+
+        $latido = Send-LatidoDelCliente -Senal 'Bien' `
+            -CorridaTermino:$corridaTermino -VerificacionPaso:$cotejo.Limpio `
+            -Detalle ('copia: {0}; {1} archivos leidos enteros, {2} distintos' -f `
+                ('' + $ultimo['estado']), $cotejo.Leidos, $cotejo.Distintos) `
+            -Confirm:$false
+
+        # SE ANOTA SIEMPRE, mande o no. "El testigo no esta configurado" tiene
+        # que poder distinguirse de "el testigo dijo que todo va bien", y la
+        # unica forma de verlo despues es que quede escrito.
+        if ($latido.Enviado) {
+            Write-RegistroRespaldo -Nivel 'OK' -Etapa 'testigo' -SoloArchivo `
+                -Mensaje ('Latido {0} emitido al testigo externo.' -f $latido.Senal)
+        }
+        else {
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'testigo' -SoloArchivo `
+                -Mensaje ('Latido NO emitido: {0}' -f $latido.Motivo)
+        }
+    }
+
+    $informe
+}
+finally {
+    # VA EN finally Y NO AL FINAL DEL try: si el cotejo revienta a media red, la
+    # marca tiene que irse igual. Una marca abandonada envejece y el icono pinta
+    # FALLA -- cierto cuando el motor murio de verdad, y una mentira si solo es
+    # que el nodo dejo de responder a mitad de una comprobacion.
+    if ($marcaPuesta) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
+}

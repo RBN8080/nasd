@@ -498,7 +498,14 @@ function Invoke-CorridaConEstado {
         [switch] $Simular,
         [switch] $Autorizado,
         [switch] $SaltarDeuda,
-        [switch] $Programada
+        [switch] $Programada,
+
+        # Hace falta para poder invocar verificar.ps1 con la MISMA
+        # configuracion: el objeto ya resuelto no sirve, porque ese guion tiene
+        # su propio param() y no se puede cargar con punto (hay una prueba que
+        # lo impide, y el 02/09 costo una simulacion que copio de verdad).
+        [AllowEmptyString()]
+        [string] $RutaConfiguracion = ''
     )
 
     if (-not $PSCmdlet.ShouldProcess('la corrida completa', 'Ejecutar respaldo')) { $Simular = $true }
@@ -560,7 +567,20 @@ function Invoke-CorridaConEstado {
         if (-not $Simular) {
             Enter-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false | Out-Null
             Write-EstadoRespaldo -Estado 'Copiando' -Detalle 'Corrida en curso' -Carpeta $carpetaEstado -Confirm:$false
-            Send-LatidoDelCliente -Senal 'Inicio' -Detalle 'corrida iniciada' -Confirm:$false | Out-Null
+            # SOLO LA CORRIDA PROGRAMADA ABRE EL TESTIGO, y esto no estaba asi:
+            # el /start salia en TODA corrida, tambien en la que se lanza a mano
+            # desde el menu. Como el verde exige ademas una verificacion, una
+            # corrida a mano dejaba el check ABIERTO y sin cerrar nunca -- y
+            # pasado el margen, Healthchecks lo daba por caido y avisaba por
+            # Telegram de un sistema perfectamente sano.
+            #
+            # El testigo vigila el AUTOMATISMO. Quien pulsa una opcion ya esta
+            # delante de la pantalla y no necesita un vigilante externo. Es la
+            # misma distincion que -DesdeTarea ya trajo el 02/09 para que una
+            # corrida a mano no saliera acusada de llegar tarde a una ventana.
+            if ($Programada) {
+                Send-LatidoDelCliente -Senal 'Inicio' -Detalle 'corrida iniciada' -Confirm:$false | Out-Null
+            }
         }
 
         $resultado = Invoke-CorridaDeRespaldo -Configuracion $Configuracion `
@@ -688,11 +708,39 @@ function Invoke-CorridaConEstado {
     if ($rutaSistema) { $emision['RutaSistema'] = $rutaSistema }
     Send-EventoAlNodo @emision -Confirm:$false | Out-Null
 
-    # EL LATIDO VERDE NO SE MANDA AQUI. La corrida termino, pero "termino" no es
-    # "esta bien": el verde exige ademas que la verificacion haya pasado
-    # (ADR-0079). Quien la corre es verificar.ps1, y es quien puede afirmarlo.
-    if ($estado -ne 'Protegido') {
-        Send-LatidoDelCliente -Senal 'Mal' -Detalle $detalle -Confirm:$false | Out-Null
+    # EL CIERRE DEL TESTIGO. Todo latido que se abrio hay que cerrarlo, asi que
+    # esto va bajo la MISMA condicion que el /start: solo la corrida programada.
+    if ($Programada) {
+        if ($estado -ne 'Protegido') {
+            # Una corrida que no llego a buen puerto no se verifica: no hay nada
+            # nuevo que cotejar y serian minutos de leer archivos por la red
+            # para confirmar lo que ya se sabe.
+            Send-LatidoDelCliente -Senal 'Mal' -Detalle $detalle -Confirm:$false | Out-Null
+        }
+        else {
+            # EL VERDE NO SE MANDA AQUI, Y ESA ES LA REGLA (ADR-0079). La
+            # corrida termino, pero "termino" no es "esta bien": el verde exige
+            # ademas que lo copiado SE LEA. Quien puede afirmarlo es
+            # verificar.ps1, asi que se le pasa la pelota y el emite.
+            #
+            # Se invoca con & y NUNCA con punto: verificar.ps1 tiene param(), y
+            # cargarlo con punto reinicia los interruptores del llamador. Eso
+            # fue lo que el 2026-09-02 convirtio una "simulacion" en una copia
+            # de verdad al disco frio.
+            try {
+                $argsCotejo = @{ EmitirLatido = $true }
+                if ($RutaConfiguracion) { $argsCotejo['RutaConfiguracion'] = $RutaConfiguracion }
+                & "$PSScriptRoot\verificar.ps1" @argsCotejo | Out-Null
+            }
+            catch {
+                # QUE EL COTEJO FALLE NO INVALIDA LA COPIA, que ya esta hecha y
+                # escrita. Pero sin verde el testigo se pondra rojo por su
+                # cuenta al pasar el margen, que es exactamente lo correcto:
+                # nadie pudo afirmar que lo copiado se lee.
+                Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'testigo' `
+                    -Mensaje "El cotejo posterior a la corrida fallo, asi que no hay latido verde: $($_.Exception.Message)"
+            }
+        }
     }
 
     return $resultado
@@ -723,7 +771,9 @@ $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
 # -WhatIf es la forma estandar de pedir "ensename que harias"; la envoltura lo
 # traduce a simulacion, asi que no hay dos caminos que mantener sincronizados.
+$rutaCfg = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaConfiguracion } else { '' }
+
 Invoke-CorridaConEstado -Configuracion $configuracion `
     -Simular:$SoloSimular -Autorizado:$AutorizarFreno -SaltarDeuda:$OmitirDeuda `
-    -Programada:$DesdeTarea `
+    -Programada:$DesdeTarea -RutaConfiguracion $rutaCfg `
     -WhatIf:$WhatIfPreference -Confirm:$false

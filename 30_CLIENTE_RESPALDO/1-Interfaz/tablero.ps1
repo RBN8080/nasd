@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
     .SYNOPSIS
-        El menu de teclas sobre la ventana de estado.
+        El menu de opciones sobre la ventana de estado.
 
     .DESCRIPTION
         Contrato: 30_CLIENTE_RESPALDO.md seccion 10.1.
@@ -658,20 +658,34 @@ function Show-Ventana {
     # Los parametros de proteccion NO estan aqui, y no es un olvido (seccion
     # 10.1): el umbral del freno, los centinelas y las clases se cambian
     # editando el archivo, porque subir un umbral desde una pantalla bonita
-    # desarma la defensa con dos teclas y sin dejar rastro.
+    # desarma la defensa con dos pulsaciones y sin dejar rastro.
+    #
+    # EL NOMBRE DE CADA OPCION ES UNA PALABRA QUE SE ENTIENDE SOLA, y el "contra
+    # que" lo dice el ANUNCIO al abrirla, no el menu. Se pidio asi mirando la
+    # pantalla el 2026-09-03: "no quiero ahi poner todo, sino una palabra que
+    # pueda ser entendible a la primera".
+    #
+    # "vista previa" VA SANGRADA bajo la copia que previsualiza, y esa sangria
+    # responde "simular QUE" sin gastar una palabra: [2] cuelga de [1] y [8] de
+    # [7]. Antes las dos decian "simular" a secas, cada una en una fila suelta,
+    # y no se sabia de que copia hablaban.
+    #
+    # "cotejar" y no "verificar": en Mexico una copia cotejada es la que se
+    # comparo contra su original, asi que la palabra ya lleva dentro el "contra
+    # que" que faltaba. "Verificar el nodo" no decia contra que se verificaba.
     Write-Linea ' '
     Write-Linea (Get-Regla -Paleta $p -Unicode $u)
     Write-Linea ('  {0}{1}{2}{3}{4}' -f ($p.Fuerte + $p.Titulo), `
-            'COPIAR                 ', 'COMPROBAR                ', 'SISTEMA', $p.Fin)
+            'COPIAR                    ', 'COMPROBAR                   ', 'SISTEMA', $p.Fin)
     foreach ($fila in @(
-            , @('[1] al nodo', '[3] verificar el nodo', '[5] semilla')
-            , @('[2] simular', '[4] estado completo', '[6] tareas')
-            , @('[7] al disco frio', '[9] revisar el disco', '[A] ajustes')
-            , @('[8] simular el disco', '[R] probar restauracion', '[S] salir'))) {
+            , @('[1] al nodo', '[3] cotejar el nodo', '[5] semilla de arranque')
+            , @('[2]    vista previa', '[4] estado completo', '[6] automatismo')
+            , @('[7] al disco frio', '[9] cotejar el disco frio', '[A] ajustes')
+            , @('[8]    vista previa', '[R] ensayo de restauracion', '[S] salir'))) {
         Write-Linea ('  {0}{1}{2}' -f `
-            (Format-Celda -Texto $fila[0] -Ancho 23 -Paleta $p -Color $p.Valor), `
-            (Format-Celda -Texto $fila[1] -Ancho 25 -Paleta $p -Color $p.Valor), `
-            (Format-Celda -Texto $fila[2] -Ancho 20 -Paleta $p -Color $p.Valor))
+            (Format-Celda -Texto $fila[0] -Ancho 26 -Paleta $p -Color $p.Valor), `
+            (Format-Celda -Texto $fila[1] -Ancho 28 -Paleta $p -Color $p.Valor), `
+            (Format-Celda -Texto $fila[2] -Ancho 24 -Paleta $p -Color $p.Valor))
     }
     Write-Linea ('  {0}freno, centinelas y clases: se cambian en 3-Config/respaldo.jsonc{1}' -f $p.Tenue, $p.Fin)
     Write-Linea ' '
@@ -682,7 +696,7 @@ function Show-Ventana {
 #
 #  El responsable lo abrio mirando la pantalla el 2026-09-02: "las opciones
 #  deben de hacer algo concreto con inicio y fin y no existir de adorno, eso se
-#  ve vibecodeado". Tenia razon y habia evidencia: la tecla [2] hacia
+#  ve vibecodeado". Tenia razon y habia evidencia: la opcion [2] hacia
 #  Select-Object sobre una propiedad llamada Freno cuando se llama Frenos, asi
 #  que imprimia "Freno :" con nada detras. Eso NO sale vacio: SALE PEOR -- se
 #  lee como "no hubo freno", una afirmacion tranquilizadora que nadie habia
@@ -811,7 +825,17 @@ function Format-TextoAjustado {
         [ValidateRange(20, 500)][int] $Ancho = 96
     )
 
-    if ([string]::IsNullOrWhiteSpace($Texto)) { return @('') }
+    # LA COMA NO ES UN ADORNO: SIN ELLA ESTA FUNCION MIENTE SOBRE SU TIPO.
+    # PowerShell DESENVUELVE un arreglo de un solo elemento al salir de una
+    # funcion, asi que un texto que cabia en una linea volvia como cadena suelta
+    # -- y el llamador, que hace $lineas[0] esperando la primera LINEA, se
+    # quedaba con la primera LETRA. El veredicto salia literalmente "ATENCION E".
+    #
+    # Se vio pulsando la opcion [3] en una consola de verdad el 2026-09-03. Las
+    # pruebas no lo cazaban porque todas sus frases eran largas y se partian en
+    # dos o mas lineas: el arreglo sobrevivia por accidente. Afectaba a las once
+    # opciones, no solo a esa.
+    if ([string]::IsNullOrWhiteSpace($Texto)) { return , @('') }
 
     $salida = New-Object System.Collections.Generic.List[string]
     $actual = ''
@@ -826,13 +850,13 @@ function Format-TextoAjustado {
         }
     }
     if ($actual -ne '') { $salida.Add($actual) }
-    return $salida.ToArray()
+    return , $salida.ToArray()
 }
 
 function Show-VeredictoDeSimulacion {
     <#
         .SYNOPSIS
-            Lo que la tecla [2] tiene que contestar: si algo frenaria, y con que
+            Lo que la opcion [2] tiene que contestar: si algo frenaria, y con que
             numero.
         .DESCRIPTION
             ESTA ES LA OPCION MAS IMPORTANTE DEL MENU -- mirar antes de saltar --
@@ -893,14 +917,117 @@ function Show-VeredictoDeSimulacion {
             $frenos.Count, (Split-Path $peor.Raiz -Leaf), $peor.Porcentaje, $umbral, $minimo, $aCopiar, $aBorrar)
 }
 
+function Show-VeredictoDelCotejo {
+    <#
+        .SYNOPSIS
+            Lo que la opcion [3] tiene que contestar: si lo guardado en el nodo
+            dice lo mismo que el original, y con cuantos archivos leidos.
+        .DESCRIPTION
+            SE COTEJA CONTRA EL ORIGINAL DE ESTE EQUIPO. Eso era exactamente lo
+            que la pantalla no decia: la opcion se llamaba "verificar el nodo",
+            volcaba una lista cruda, y quien la miraba no sabia contra que se
+            verificaba ni si el resultado era bueno.
+
+            DOS PREGUNTAS DISTINTAS, Y NO SE MEZCLAN:
+
+              coincidencia   la ESTRUCTURA -- que archivos faltan alli o sobran
+              huella         el CONTENIDO  -- unos cuantos se leen enteros y se
+                             comparan byte a byte
+
+            UNA HUELLA DISTINTA ES MAS GRAVE QUE UN ARCHIVO QUE FALTA, y por eso
+            una manda FALLO y la otra ATENCION. Un archivo que falta se copia en
+            la siguiente corrida y el sistema se cura solo. Un contenido que no
+            coincide significa que lo guardado NO ES lo que se creia tener, y
+            ninguna corrida futura lo va a notar: robocopy compara fecha y
+            tamano, no contenido. Es el mismo agujero que abrio la opcion [9]
+            tras el apagon del 2026-09-02.
+        .PARAMETER Resultado
+            Lo que devuelve verificar.ps1.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowNull()] $Resultado
+    )
+
+    if ($null -eq $Resultado) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'El cotejo no devolvio nada.' `
+            -Accion 'Revisa el registro del dia en LOCALAPPDATA\NasRespaldo\registro.'
+        return
+    }
+
+    # "No pude mirar" NO es "mire y esta bien". Es la distincion que sostiene
+    # todo el vocabulario de la seccion 11, y con el nodo apagado es la unica
+    # respuesta honesta.
+    if (-not $Resultado.NodoVivo) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'El nodo no respondio: no se cotejo nada.' `
+            -Accion 'Comprueba que el NAS esta encendido y en la red, y vuelve a intentarlo.'
+        return
+    }
+
+    $coinc = @($Resultado.Coincidencias | Where-Object { $null -ne $_ })
+    $huel = @($Resultado.Huellas | Where-Object { $null -ne $_ })
+
+    if ($coinc.Count -eq 0) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'No se llego a cotejar ninguna raiz.' `
+            -Accion 'Comprueba que las raices declaradas existen y vuelve a intentarlo.'
+        return
+    }
+
+    # UNA FILA POR RAIZ con las dos preguntas al lado. Select-Object -First 1 y
+    # no [0]: bajo StrictMode indexar un arreglo vacio lanza, y una raiz sin
+    # huellas es un caso normal cuando la muestra es cero.
+    $filas = @(foreach ($c in $coinc) {
+            $h = $huel | Where-Object { $_.Raiz -eq $c.Raiz } | Select-Object -First 1
+            [pscustomobject]@{
+                Raiz      = (Split-Path $c.Raiz -Leaf)
+                Clase     = $c.Clase
+                Faltan    = $c.Faltan
+                Sobran    = $c.Sobran
+                Leidos    = $(if ($h) { $h.Comprobados } else { 0 })
+                Distintos = $(if ($h) { @($h.Diferencias).Count } else { 0 })
+            }
+        })
+
+    Write-Linea ''
+    Show-Texto -Objeto $filas
+    Write-Linea ''
+
+    $leidos = ($filas | Measure-Object -Property Leidos -Sum).Sum
+    $distintos = ($filas | Measure-Object -Property Distintos -Sum).Sum
+    $faltan = ($filas | Measure-Object -Property Faltan -Sum).Sum
+    $sobran = ($filas | Measure-Object -Property Sobran -Sum).Sum
+
+    if ($distintos -gt 0) {
+        Write-Veredicto -Nivel 'FALLO' -Frase (
+            '{0} de los {1} archivos leidos NO coinciden con su original. Lo guardado en el nodo no es lo que se creia tener.' -f $distintos, $leidos) `
+            -Accion 'Corre la opcion [1] y vuelve a cotejar. Si repite, el problema no es la copia sino el origen o el disco del nodo.'
+        return
+    }
+
+    if ($faltan -gt 0 -or $sobran -gt 0) {
+        Write-Veredicto -Nivel 'ATENCION' -Frase (
+            'El contenido coincide en los {0} archivos leidos, pero la estructura no: faltan {1} en el nodo y sobran {2}.' -f $leidos, $faltan, $sobran) `
+            -Accion 'Es lo esperable si hubo cambios desde la ultima corrida. La opcion [1] los pone al dia.'
+        return
+    }
+
+    # LA CIFRA QUE SOSTIENE EL VERDE ES "leidos enteros", no "raices miradas":
+    # comparar fechas no demuestra nada sobre el contenido, y es justo lo que
+    # esta opcion existe para comprobar.
+    Write-Veredicto -Nivel 'OK' -Frase (
+        'Lo guardado en el nodo coincide con el original. {0} raices cotejadas y {1} archivos leidos enteros y comparados, 0 diferencias.' -f
+        $coinc.Count, $leidos)
+}
+
 function Show-VeredictoDelAutomatismo {
     <#
         .SYNOPSIS
-            Lo que la tecla [6] tiene que contestar: si el automatismo esta vivo
+            Lo que la opcion [6] tiene que contestar: si el automatismo esta vivo
             y si algo le ha metido mano al motor.
         .DESCRIPTION
             DOS DEFECTOS QUE ESTA FUNCION CORRIGE, y los dos se vieron pulsando
-            la tecla:
+            la opcion:
 
             (1) Se volcaba NextRunTime en crudo. ESE NUMERO NO ES UNA PROMESA:
                 el Programador re-sortea el retraso en cada consulta, asi que
@@ -1207,7 +1334,11 @@ $rutaConfig = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaCo
 $seguir = $true
 while ($seguir) {
     Show-Ventana -Configuracion $configuracion
-    $tecla = Read-Host '  tecla'
+    # SE PIDE UNA "opcion", NO UNA "tecla". Lo pidio el responsable el
+    # 2026-09-03: "no quiero ver tecla, se ve vibecodeado con esos terminos".
+    # Y ademas es lo cierto -- lo que se elige es una operacion, y el teclado es
+    # solo por donde entra.
+    $opcion = Read-Host '  opcion'
     $comunes = @{}
     if ($rutaConfig) { $comunes['RutaConfiguracion'] = $rutaConfig }
 
@@ -1215,7 +1346,7 @@ while ($seguir) {
     # vuelve al menu: el dia que algo va mal es justo el dia que hace falta el
     # tablero.
     try {
-        switch ($tecla.Trim().ToUpperInvariant()) {
+        switch ($opcion.Trim().ToUpperInvariant()) {
             '1' {
                 # AUTORIZAR EL FRENO NO ES UNA OPCION DEL MENU y es deliberado:
                 # si el freno salta, quien lo autoriza tiene que verlo primero y
@@ -1234,9 +1365,9 @@ while ($seguir) {
                 Show-VeredictoDeSimulacion -Resultado $r2 -Configuracion $configuracion
             }
             '3' {
-                Write-Linea '   Verificando contra el nodo. El nivel 3 LEE LOS ARCHIVOS ENTEROS:'
-                Write-Linea '   con videos del drone en la muestra tarda MINUTOS. No esta colgado.'
-                Show-Texto -Objeto (& "$nucleo\verificar.ps1" @comunes) -Lista -Vacio 'La verificacion no devolvio nada.'
+                Write-Anuncio -Que 'Cotejar lo guardado en el NODO contra el original de este equipo' `
+                    -Detalle 'NO escribe nada. Lee archivos ENTEROS por la red: tarda MINUTOS y no esta colgado.'
+                Show-VeredictoDelCotejo -Resultado (& "$nucleo\verificar.ps1" @comunes)
             }
             '4' { Show-Texto -Objeto (Read-EstadoRespaldo) -Vacio 'No hay estado escrito todavia.' }
             '5' {
