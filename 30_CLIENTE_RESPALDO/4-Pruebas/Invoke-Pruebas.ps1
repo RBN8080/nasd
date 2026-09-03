@@ -1670,6 +1670,112 @@ Test-Afirmacion -Nombre 'Y en pantalla un veredicto corto sale ENTERO, no su ini
     -Esperado $true -Obtenido ($pantallaCorta -match 'Todo cuadra: 8 de 8 raices\.')
 
 # ---------------------------------------------------------------------------
+#  EL HORARIO SE MUEVE DESDE EL TABLERO  -  decision del responsable, 03/09
+#
+#  "Me gustaria que las corridas pudieran ser movibles en el tablero y no en el
+#  archivo, con opciones sencillas". Eso resuelve al reves la enmienda de 10.1
+#  que llevaba desde el 02/09 esperando su visto bueno.
+#
+#  LO PELIGROSO NO ES CAMBIAR EL HORARIO: es reescribir un archivo cuyos
+#  comentarios son la mitad de la documentacion del sistema. Volcarlo con
+#  ConvertTo-Json daria un archivo valido y los borraria todos.
+# ---------------------------------------------------------------------------
+
+Write-Titulo 'El horario se ajusta desde el tablero, sin destrozar el archivo'
+
+$cfgReal = Join-Path (Split-Path $PSScriptRoot -Parent) '3-Config\respaldo.jsonc'
+$cfgCaja = Join-Path $caja.Raiz 'respaldo-copia.jsonc'
+Copy-Item -LiteralPath $cfgReal -Destination $cfgCaja -Force
+
+$textoAntes = Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8
+$comentariosAntes = @($textoAntes -split "`n" | Where-Object { $_ -match '^\s*//' }).Count
+$frenoAntes = (Get-ConfiguracionRespaldo -Ruta $cfgCaja).freno.umbralPorcentajeDeArchivosQueCambian
+
+$horarioNuevo = @(
+    [pscustomobject]@{ inicio = '05:00'; duracionHoras = 2 },
+    [pscustomobject]@{ inicio = '13:00'; duracionHoras = 2 },
+    [pscustomobject]@{ inicio = '20:00'; duracionHoras = 2 }
+)
+$cambio = Set-HorarioDeRespaldo -Ventanas $horarioNuevo -Ruta $cfgCaja -Confirm:$false
+Test-Afirmacion -Nombre 'El horario nuevo se escribe y se vuelve a leer del disco' `
+    -Esperado '05:00-07:00, 13:00-15:00, 20:00-22:00' -Obtenido $cambio.Cadencia.Resumen
+Test-Afirmacion -Nombre 'Y el hueco maximo se RECALCULA solo: nadie lo teclea' `
+    -Esperado 11 -Obtenido $cambio.Cadencia.HuecoNominalMaximoHoras
+
+# LA PRUEBA QUE JUSTIFICA TODA LA MANIOBRA. Si esta falla, el ajuste desde el
+# menu se lleva por delante la documentacion del proyecto.
+$textoDespues = Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'LOS COMENTARIOS DEL ARCHIVO SOBREVIVEN al cambio de horario' `
+    -Esperado $comentariosAntes -Obtenido @($textoDespues -split "`n" | Where-Object { $_ -match '^\s*//' }).Count
+Test-Afirmacion -Nombre 'Y las cuatro protecciones de la seccion 10.1 no se tocan' `
+    -Esperado $frenoAntes -Obtenido (Get-ConfiguracionRespaldo -Ruta $cfgCaja).freno.umbralPorcentajeDeArchivosQueCambian
+
+# LOS FINALES DE LINEA SE HEREDAN DEL ARCHIVO. Con [Environment]::NewLine se
+# metieron CRLF en un archivo que el repositorio mantiene en LF, y NADA FALLO:
+# el contenido quedaba identico, git no ensenaba diferencias -- solo un aviso de
+# que iba a normalizarlo -- y el archivo se quedaba con finales MEZCLADOS. Un
+# defecto que no rompe nada hoy y ensucia cada diferencia futura.
+Test-Afirmacion -Nombre 'Un archivo en LF sigue en LF: no se le cuelan retornos de carro' `
+    -Esperado 0 -Obtenido ([regex]::Matches($textoDespues, "`r")).Count
+
+# Y al reves: si el archivo viniera en CRLF, se respeta.
+$cfgCrLf = Join-Path $caja.Raiz 'respaldo-crlf.jsonc'
+# Los dos -replace van en su propia variable: encadenados dentro de la llamada,
+# PowerShell los lee como argumentos sueltos y WriteAllText recibe cuatro.
+$soloLf = $textoAntes -replace "`r`n", "`n"
+$enCrLf = $soloLf -replace "`n", "`r`n"
+[System.IO.File]::WriteAllText($cfgCrLf, $enCrLf, (New-Object System.Text.UTF8Encoding($false)))
+Set-HorarioDeRespaldo -Ventanas $horarioNuevo -Ruta $cfgCrLf -Confirm:$false | Out-Null
+$textoCrLf = Get-Content -LiteralPath $cfgCrLf -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'Y un archivo en CRLF no se queda a medias: sigue entero en CRLF' `
+    -Esperado ([regex]::Matches($textoCrLf, "`n")).Count -Obtenido ([regex]::Matches($textoCrLf, "`r`n")).Count
+
+# LAS TRES GUARDAS. Cada una tiene que parar ANTES de escribir, no despues.
+$antesDelIntento = Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8
+
+$solapadas = @(
+    [pscustomobject]@{ inicio = '04:00'; duracionHoras = 5 },
+    [pscustomobject]@{ inicio = '08:00'; duracionHoras = 3 }
+)
+$lanzoSolape = $false
+try { Set-HorarioDeRespaldo -Ventanas $solapadas -Ruta $cfgCaja -Confirm:$false | Out-Null } catch { $lanzoSolape = $true }
+Test-Afirmacion -Nombre 'Dos ventanas solapadas se rechazan: la segunda corrida se perderia en silencio' `
+    -Esperado $true -Obtenido $lanzoSolape
+Test-Afirmacion -Nombre 'Y el archivo NO se toco' `
+    -Esperado $true -Obtenido ((Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8) -eq $antesDelIntento)
+
+$cruzaMedianoche = @([pscustomobject]@{ inicio = '22:00'; duracionHoras = 4 })
+$lanzoMedianoche = $false
+try { Set-HorarioDeRespaldo -Ventanas $cruzaMedianoche -Ruta $cfgCaja -Confirm:$false | Out-Null } catch { $lanzoMedianoche = $true }
+Test-Afirmacion -Nombre 'Una ventana que cruza la medianoche se rechaza: un disparador diario no la expresa' `
+    -Esperado $true -Obtenido $lanzoMedianoche
+
+$lanzoUmbral = $false
+try { Set-HorarioDeRespaldo -Ventanas $horarioNuevo -HorasParaAvisar 5 -Ruta $cfgCaja -Confirm:$false | Out-Null } catch { $lanzoUmbral = $true }
+Test-Afirmacion -Nombre 'Un umbral por debajo del hueco se rechaza: avisaria del sistema sano' `
+    -Esperado $true -Obtenido $lanzoUmbral
+Test-Afirmacion -Nombre 'Y tras los tres rechazos el archivo sigue intacto, byte a byte' `
+    -Esperado $true -Obtenido ((Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8) -eq $antesDelIntento)
+
+# LA VISTA PREVIA TIENE QUE CALCULAR Y NO ESCRIBIR. De ahi sale la pantalla del
+# tablero, asi que si escribiera, la vista previa SERIA el cambio.
+$vistaPrevia = Set-HorarioDeRespaldo -Ventanas @([pscustomobject]@{ inicio = '06:00'; duracionHoras = 1 }) `
+    -HorasParaAvisar 30 -Ruta $cfgCaja -SoloCalcular -Confirm:$false
+Test-Afirmacion -Nombre 'La vista previa CALCULA el horario que quedaria' `
+    -Esperado '06:00-07:00' -Obtenido $vistaPrevia.Cadencia.Resumen
+Test-Afirmacion -Nombre 'Pero NO escribe: es el mismo codigo con la escritura apagada' `
+    -Esperado $false -Obtenido $vistaPrevia.Escrito
+Test-Afirmacion -Nombre 'Y el archivo lo confirma' `
+    -Esperado $true -Obtenido ((Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8) -eq $antesDelIntento)
+
+# LA CONFIGURACION DE VERDAD NO SE TOCO EN NINGUN MOMENTO. Estas pruebas
+# escriben horarios; hacerlo sobre el archivo real cambiaria cuando corre el
+# respaldo del responsable como efecto secundario de correr las pruebas.
+Test-Afirmacion -Nombre 'El respaldo.jsonc REAL no lo tocaron las pruebas' `
+    -Esperado '04:00-07:00, 12:00-15:00, 19:00-22:00' `
+    -Obtenido (Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo -Ruta $cfgReal)).Resumen
+
+# ---------------------------------------------------------------------------
 #  EL COTEJO -- la opcion [3], y el icono que se quedaba quieto
 #
 #  Probando el menu a mano el 2026-09-02 salieron tres cosas de la MISMA opcion:

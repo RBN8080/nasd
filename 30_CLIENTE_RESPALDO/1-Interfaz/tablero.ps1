@@ -1224,96 +1224,401 @@ function Show-PruebaDeRestauracion {
     }
 }
 
-function Show-Reparto {
+function Show-HorarioActual {
     <#
         .SYNOPSIS
-            El reparto de la seccion 10.1: lo que el menu SI puede cambiar
-            y lo que no. Se llama Reparto y no Ajustes porque el analizador
-            rechaza sustantivos en plural (charter 6.1: advertencia = error), y
-            porque "reparto" es el nombre que usa el contrato.
+            Pinta el horario vigente y las tres cifras que cuelgan de el.
         .DESCRIPTION
-            El reparto de la seccion 10.1, hecho pantalla. Aqui solo aparece lo
-            que el menu tiene permitido tocar; las cuatro protecciones se
-            ENSENAN en la ventana y se cambian editando el archivo, que es
-            justamente lo que impide relajarlas con un clic.
-        .PARAMETER Configuracion
-            El objeto de configuracion completo.
+            LAS TRES CIFRAS DE ABAJO NO SON ADORNO, Y VAN JUNTAS A PROPOSITO: son
+            exactamente lo que se mueve solo cuando se mueve una ventana.
+
+              hueco maximo   se CALCULA de las ventanas; nadie lo elige
+              umbral         cuando el icono pasa a ambar; tiene que ser MAYOR
+                             que el hueco o avisaria de algo que no ha pasado
+              Healthchecks   period y grace del testigo externo
+
+            La tercera es la unica que este programa NO puede cambiar: vive en la
+            web de Healthchecks. Por eso se ensena siempre, con los numeros ya
+            calculados: mover una ventana y no tocarla alli deja al vigilante
+            externo juzgando con un horario que ya no existe, y eso no falla --
+            se queda callado, o grita sin motivo.
+        .PARAMETER Cadencia
+            Lo que devuelve Get-CadenciaDeCorrida.
     #>
     [CmdletBinding()]
     [OutputType([void])]
     param(
-        [Parameter(Mandatory)][psobject] $Configuracion
+        [Parameter(Mandatory)][psobject] $Cadencia
     )
 
     $p = $script:Paleta
+    Write-Linea ''
+    Write-Linea ('   {0}HORARIO ACTUAL{1}        {2} corridas al dia, a minuto sorteado' -f `
+        ($p.Fuerte + $p.Titulo), $p.Fin, $Cadencia.CorridasPorDia)
+    foreach ($v in $Cadencia.Ventanas) {
+        Write-Linea ('     {0}   {1} - {2}    {3} h' -f `
+                $v.Indice, $v.Inicio, $v.Fin, ([math]::Round($v.LargoMinutos / 60, 2)))
+    }
+    Write-Linea ''
+    Write-Linea ('     Peor hueco entre corridas   {0,5} h   (se calcula, no se elige)' -f $Cadencia.HuecoNominalMaximoHoras)
+    Write-Linea ('     Avisa sin corrida buena     {0,5} h   (cuando el icono pasa a ambar)' -f $Cadencia.HorasParaAvisar)
+    Write-Linea ('     {0}En Healthchecks: period {1} h, grace {2} h{3}' -f `
+            $p.Tenue, $Cadencia.HuecoNominalMaximoHoras, `
+        ([math]::Round($Cadencia.HorasParaAvisar - $Cadencia.HuecoNominalMaximoHoras, 2)), $p.Fin)
+}
 
-    # LA HORA UNICA YA NO EXISTE, Y ESO MUEVE UNA LINEA DE LA SECCION 10.1.
-    # El reparto de 10.1 ponia "hora de corrida" en la columna del menu, cuando
-    # habia UNA hora y cambiarla era elegir un momento del dia. Con el pendiente
-    # 26 lo que hay son TRES VENTANAS SACADAS DE UNA MEDICION de 30 dias, y de
-    # ellas cuelgan el umbral del indicador, el ambar de la tabla y lo que espera
-    # el testigo. Juntarlas o moverlas a ojo degrada la proteccion sin que se
-    # note, que es exactamente el riesgo que 10.1 nombra al partir el reparto en
-    # dos. Asi que las ventanas pasan a la columna del ARCHIVO, junto al umbral
-    # del freno, y aqui se ENSENAN.
-    #
-    # Queda anotado como lo que es: una enmienda a 10.1 pendiente del visto bueno
-    # del responsable, no una decision del agente. Lo que si sigue en el menu es
-    # re-registrar la tarea, que es lo que hay que hacer despues de tocar el
-    # archivo -y sortear de nuevo las horas del dia-.
-    $cadencia = $null
-    try { $cadencia = Get-CadenciaDeCorrida -Configuracion $Configuracion }
-    catch { Write-Verbose "No se pudo leer la cadencia para el reparto: $($_.Exception.Message)" }
-    $proxima = 'sin cadencia legible'
-    if ($cadencia) {
+function Set-HorarioConVistaPrevia {
+    <#
+        .SYNOPSIS
+            Ensena que pasaria con el horario nuevo, lo confirma, lo escribe y
+            vuelve a registrar la tarea.
+        .DESCRIPTION
+            SE ENSENA ANTES DE ESCRIBIR, Y LA VISTA PREVIA ES REAL: se obtiene
+            llamando a Set-HorarioDeRespaldo con -WhatIf, que valida entero -- si
+            las ventanas se solapan o el umbral queda corto, lanza ahi mismo -- y
+            no escribe ni un byte. No es una simulacion aparte que pudiera
+            separarse del original: es el mismo codigo con la escritura apagada.
+
+            Y DESPUES DE ESCRIBIR SE VUELVE A REGISTRAR LA TAREA, siempre. Sin
+            eso, el archivo diria una cosa y el Programador de Windows seguiria
+            disparando a las horas viejas: el tablero ensenaria un horario que no
+            es el que corre. Es el peor resultado posible de esta pantalla, asi
+            que no se ofrece como paso aparte ni se pregunta.
+        .PARAMETER Ventanas
+            Las ventanas nuevas.
+        .PARAMETER HorasParaAvisar
+            Umbral nuevo. CERO conserva el actual.
+        .PARAMETER RutaConfiguracion
+            El .jsonc, si no es el de por omision.
+    #>
+    # ConfirmImpact Low Y NO High, y la razon no es cosmetica: la confirmacion
+    # que ve una persona ya la hace la vista previa de mas abajo, con el horario
+    # nuevo pintado delante. Un segundo aviso nativo encima seria ruido, y el
+    # ruido es lo que ensena a decir "si" sin leer. Lo que ShouldProcess aporta
+    # aqui es que -WhatIf recorra el flujo entero sin escribir.
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Low')]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject[]] $Ventanas,
+        [ValidateRange(0, 720)][int] $HorasParaAvisar = 0,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta
+    $parametros = @{ Ventanas = $Ventanas }
+    if ($HorasParaAvisar -gt 0) { $parametros['HorasParaAvisar'] = $HorasParaAvisar }
+    if ($RutaConfiguracion) { $parametros['Ruta'] = $RutaConfiguracion }
+
+    $ensayo = $null
+    try {
+        $ensayo = Set-HorarioDeRespaldo @parametros -SoloCalcular -Confirm:$false
+    }
+    catch {
+        Write-Veredicto -Nivel 'FALLO' -Frase ('Ese horario no se puede aplicar. {0}' -f $_.Exception.Message) `
+            -Accion 'No se escribio nada y el horario sigue como estaba.'
+        return $null
+    }
+
+    Write-Linea ''
+    Write-Linea ('   {0}QUEDARIA ASI{1}' -f ($p.Fuerte + $p.Titulo), $p.Fin)
+    Show-HorarioActual -Cadencia $ensayo.Cadencia
+    Write-Linea ''
+
+    $respuesta = Read-Host '   Aplicar este horario? (s/N)'
+    if (('' + $respuesta) -notmatch '^[sS]') {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'Cancelado. El horario sigue exactamente como estaba.'
+        return $null
+    }
+
+    if (-not $PSCmdlet.ShouldProcess('el horario de respaldo', ('Aplicar: {0}' -f $ensayo.Cadencia.Resumen))) {
+        return $null
+    }
+
+    $hecho = $null
+    try {
+        $hecho = Set-HorarioDeRespaldo @parametros -Confirm:$false
+    }
+    catch {
+        Write-Veredicto -Nivel 'FALLO' -Frase ('No se pudo guardar el horario. {0}' -f $_.Exception.Message) `
+            -Accion 'El archivo anterior se restauro solo. Comprueba 3-Config/respaldo.jsonc.'
+        return $null
+    }
+
+    # LA RUTA VIAJA, y no viajaba. Registrar-Tarea lee la cadencia POR SU CUENTA
+    # para sacar un disparador por ventana: sin pasarle la misma ruta, leeria la
+    # configuracion por omision y registraria las ventanas de OTRO archivo --
+    # justo el que se acaba de no cambiar. El tablero diria un horario y el
+    # Programador dispararia otro.
+    # `6>$null` Y NO -InformationAction: Registrar-Tarea fija Continue en su
+    # propia llamada, asi que la preferencia del llamador no la puede callar. Su
+    # linea de confirmacion es correcta cuando se ejecuta suelto y aqui sobra --
+    # rompe la forma de la pantalla y repite lo que el veredicto de abajo ya dice
+    # con su cifra. Solo se silencia ESTA llamada; el resto del tablero escribe
+    # por el mismo flujo y no se toca.
+    $registro = @{ Pieza = 'Motor'; Accion = 'Registrar' }
+    if ($RutaConfiguracion) { $registro['RutaConfiguracion'] = $RutaConfiguracion }
+    & "$PSScriptRoot\Registrar-Tarea.ps1" @registro -Confirm:$false 6> $null | Out-Null
+    $tarea = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
+    $disparadores = 0
+    if ($tarea) { $disparadores = @($tarea.Triggers).Count }
+
+    $c = $hecho.Cadencia
+    if ($disparadores -ne $c.CorridasPorDia) {
+        Write-Veredicto -Nivel 'ATENCION' -Frase (
+            'El horario se guardo ({0}), pero la tarea quedo con {1} disparadores y deberian ser {2}.' -f `
+                $c.Resumen, $disparadores, $c.CorridasPorDia) `
+            -Accion 'Vuelve a entrar a ajustes y pulsa [T] para re-registrar la tarea.'
+        return $hecho
+    }
+
+    Write-Veredicto -Nivel 'OK' -Frase (
+        'Horario aplicado: {0} corridas al dia, {1}. Peor hueco {2} h y aviso a las {3} h. La tarea quedo con {4} disparadores, uno por ventana.' -f `
+            $c.CorridasPorDia, $c.Resumen, $c.HuecoNominalMaximoHoras, $c.HorasParaAvisar, $disparadores) `
+        -Accion ('En Healthchecks pon period {0} h y grace {1} h, o el testigo externo seguira juzgando con el horario viejo.' -f `
+            $c.HuecoNominalMaximoHoras, [math]::Round($c.HorasParaAvisar - $c.HuecoNominalMaximoHoras, 2))
+    return $hecho
+}
+
+function Read-VentanaElegida {
+    <#
+        .SYNOPSIS
+            Pregunta cual de las ventanas, y devuelve su indice base cero o -1.
+        .PARAMETER Cadencia
+            La cadencia vigente.
+        .PARAMETER Para
+            Que se va a hacer con ella, para poder decirlo en la pregunta.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory)][psobject] $Cadencia,
+        [Parameter(Mandatory)][string] $Para
+    )
+
+    $total = @($Cadencia.Ventanas).Count
+    $cual = Read-Host ('   Cual ventana quieres {0}? (1-{1}, o Enter para dejarlo)' -f $Para, $total)
+    if ([string]::IsNullOrWhiteSpace($cual)) { return -1 }
+    [int] $n = 0
+    if (-not [int]::TryParse(('' + $cual).Trim(), [ref]$n) -or $n -lt 1 -or $n -gt $total) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no es una de las {1} ventanas. No se cambia nada.' -f $cual, $total)
+        return -1
+    }
+    return ($n - 1)
+}
+
+function ConvertTo-ListaDeVentana {
+    <#
+        .SYNOPSIS
+            Pasa la cadencia vigente a la forma sencilla que espera
+            Set-HorarioDeRespaldo, para poder modificarla y devolverla.
+        .PARAMETER Cadencia
+            La cadencia vigente.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][psobject] $Cadencia
+    )
+    return , @($Cadencia.Ventanas | ForEach-Object {
+            [pscustomobject]@{ inicio = $_.Inicio; duracionHoras = [math]::Round($_.LargoMinutos / 60, 2) }
+        })
+}
+
+function Show-Reparto {
+    <#
+        .SYNOPSIS
+            La pantalla de ajustes: el horario se cambia AQUI, y las cuatro
+            protecciones siguen pidiendo abrir el archivo.
+        .DESCRIPTION
+            Se llama Reparto y no Ajustes porque el analizador rechaza sustantivos
+            en plural (charter 6.1: advertencia = error), y porque "reparto" es el
+            nombre que usa el contrato para el corte de la seccion 10.1.
+
+            EL HORARIO VUELVE AL MENU, POR DECISION DEL RESPONSABLE (2026-09-03):
+            "me gustaria que las corridas pudieran ser movibles en el tablero y no
+            en el archivo, con opciones sencillas". Eso resuelve la enmienda que
+            estaba pendiente de su visto bueno desde el 02/09, y la resuelve al
+            reves de como la habia dejado el agente.
+
+            Y EL CORTE DE 10.1 NO SE ROMPE, PORQUE EL CORTE NUNCA FUE "TODO O
+            NADA". Lo que 10.1 protege es lo que decide CUANTO se puede destruir
+            antes de que el sistema se plante -- umbral del freno, centinelas,
+            clases y exclusiones --, y eso sigue exigiendo abrir el archivo a
+            mano. Un horario decide CUANDO se copia: moverlo mal hace que se copie
+            con menos frecuencia, y de eso avisan el icono y el testigo. Aflojar
+            el freno, en cambio, no lo nota nadie.
+
+            LO QUE SI HACIA FALTA ERA QUE NO SE PUDIERA MOVER A OJO, y de eso se
+            encargan las tres guardas de Set-HorarioDeRespaldo mas la vista previa
+            de esta pantalla. Ninguna cifra derivada se teclea: el hueco se
+            calcula y el umbral se compara contra el.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+        .PARAMETER RutaConfiguracion
+            El .jsonc, si no es el de por omision.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta
+    $vigente = $Configuracion
+    $seguirAqui = $true
+
+    while ($seguirAqui) {
+        $cadencia = $null
+        try { $cadencia = Get-CadenciaDeCorrida -Configuracion $vigente }
+        catch {
+            Write-Veredicto -Nivel 'FALLO' -Frase ('No se puede leer el horario: {0}' -f $_.Exception.Message) `
+                -Accion 'Hay que arreglar 3-Config/respaldo.jsonc a mano antes de poder ajustarlo desde aqui.'
+            return $vigente
+        }
+
+        Write-Anuncio -Que 'Ajustes del horario' `
+            -Detalle 'Cambia CUANDO corre el respaldo. Escribe en 3-Config/respaldo.jsonc y vuelve a registrar la tarea.'
+        Show-HorarioActual -Cadencia $cadencia
+
         $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia -NombreTarea $script:NombreTarea
         $proxima = $siguiente.Descripcion
         if (-not $siguiente.Existe) { $proxima = 'LA TAREA NO EXISTE: no corre solo' }
         elseif (-not $siguiente.Habilitada) { $proxima = 'TAREA DESHABILITADA' }
+        Write-Linea ''
+        Write-Linea ('     {0}Proxima corrida: {1}{2}' -f $p.Valor, $proxima, $p.Fin)
+        Write-Linea '     El minuto lo sortea Windows dentro de la ventana; no se sabe hasta que dispara.'
+
+        # LAS CUATRO PROTECCIONES SE ENSENAN Y NO SE TOCAN. Ver la cabecera.
+        Write-Linea ''
+        Write-Linea ('   {0}SOLO EDITANDO EL ARCHIVO{1}   (seccion 10.1, y sigue asi a proposito)' -f $p.Fuerte, $p.Fin)
+        Write-Linea ('     Umbral del freno      {0,5} %' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian)
+        Write-Linea ('     Centinelas            {0,5} declarados' -f @($Configuracion.centinelas).Count)
+        Write-Linea ('     Clases                {0,5} contenedores, {1} raices' -f `
+            @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
+        Write-Linea '     Politica de borrado         clase A nunca borra, clase B espeja'
+        Write-Linea '     Cada uno lleva encima, en el archivo, un comentario que dice que pasa si se cambia.'
+
+        Write-Linea ''
+        Write-Linea ('   {0}[M]{1} mover una ventana      {0}[D]{1} cambiar su duracion    {0}[U]{1} umbral de aviso' -f $p.Valor, $p.Fin)
+        Write-Linea ('   {0}[+]{1} anadir una corrida     {0}[-]{1} quitar una corrida     {0}[T]{1} re-registrar la tarea' -f $p.Valor, $p.Fin)
+        Write-Linea ('   {0}[V]{1} volver al menu' -f $p.Valor, $p.Fin)
+        Write-Linea ''
+
+        $eleccion = ('' + (Read-Host '   ajuste')).Trim().ToUpperInvariant()
+        $resultado = $null
+
+        switch ($eleccion) {
+            'M' {
+                $i = Read-VentanaElegida -Cadencia $cadencia -Para 'mover'
+                if ($i -lt 0) { break }
+                $hora = Read-Host '   Nueva hora de inicio, en formato HH:mm (por ejemplo 05:30)'
+                if (('' + $hora).Trim() -notmatch '^([01][0-9]|2[0-3]):([0-5][0-9])$') {
+                    Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no es una hora valida. Se espera HH:mm, de 00:00 a 23:59.' -f $hora)
+                    break
+                }
+                $lista = ConvertTo-ListaDeVentana -Cadencia $cadencia
+                $lista[$i].inicio = ('' + $hora).Trim()
+                $resultado = Set-HorarioConVistaPrevia -Ventanas $lista -RutaConfiguracion $RutaConfiguracion
+            }
+            'D' {
+                $i = Read-VentanaElegida -Cadencia $cadencia -Para 'alargar o acortar'
+                if ($i -lt 0) { break }
+                $horas = Read-Host '   Cuantas horas debe durar? (de 0.5 a 12)'
+                [double] $h = 0
+                if (-not [double]::TryParse(('' + $horas).Trim(), [ref]$h) -or $h -le 0 -or $h -gt 12) {
+                    Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no sirve como duracion. Tiene que estar entre 0.5 y 12 horas.' -f $horas)
+                    break
+                }
+                $lista = ConvertTo-ListaDeVentana -Cadencia $cadencia
+                $lista[$i].duracionHoras = $h
+                $resultado = Set-HorarioConVistaPrevia -Ventanas $lista -RutaConfiguracion $RutaConfiguracion
+            }
+            '+' {
+                $hora = Read-Host '   A que hora empieza la corrida nueva? HH:mm'
+                if (('' + $hora).Trim() -notmatch '^([01][0-9]|2[0-3]):([0-5][0-9])$') {
+                    Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no es una hora valida. Se espera HH:mm.' -f $hora)
+                    break
+                }
+                $horas = Read-Host '   Cuantas horas dura? (Enter para 3)'
+                [double] $h = 3
+                if (-not [string]::IsNullOrWhiteSpace($horas)) {
+                    if (-not [double]::TryParse(('' + $horas).Trim(), [ref]$h) -or $h -le 0 -or $h -gt 12) {
+                        Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no sirve como duracion.' -f $horas)
+                        break
+                    }
+                }
+                $lista = @(ConvertTo-ListaDeVentana -Cadencia $cadencia)
+                $lista += [pscustomobject]@{ inicio = ('' + $hora).Trim(); duracionHoras = $h }
+                $resultado = Set-HorarioConVistaPrevia -Ventanas $lista -RutaConfiguracion $RutaConfiguracion
+            }
+            '-' {
+                if (@($cadencia.Ventanas).Count -le 1) {
+                    Write-Veredicto -Nivel 'ATENCION' -Frase 'Queda una sola corrida al dia: quitarla dejaria el respaldo sin horario.' `
+                        -Accion 'Si de verdad quieres que no corra solo, deshabilita la tarea en vez de vaciar el horario.'
+                    break
+                }
+                $i = Read-VentanaElegida -Cadencia $cadencia -Para 'quitar'
+                if ($i -lt 0) { break }
+                # Se quita POR POSICION y no por comparacion de objetos: dos
+                # ventanas pueden tener la misma hora escrita de dos formas, y
+                # -ne sobre psobject compara referencias.
+                $todas = @(ConvertTo-ListaDeVentana -Cadencia $cadencia)
+                $lista = @($todas | Select-Object -Index (0..($todas.Count - 1) | Where-Object { $_ -ne $i }))
+                $resultado = Set-HorarioConVistaPrevia -Ventanas $lista -RutaConfiguracion $RutaConfiguracion
+            }
+            'U' {
+                Write-Linea ('     Tiene que ser MAYOR que el hueco maximo, que hoy son {0} h.' -f $cadencia.HuecoNominalMaximoHoras)
+                $u = Read-Host '   A cuantas horas sin corrida buena debe avisar?'
+                [int] $n = 0
+                if (-not [int]::TryParse(('' + $u).Trim(), [ref]$n) -or $n -lt 1 -or $n -gt 720) {
+                    Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no sirve como umbral.' -f $u)
+                    break
+                }
+                $lista = ConvertTo-ListaDeVentana -Cadencia $cadencia
+                $resultado = Set-HorarioConVistaPrevia -Ventanas $lista -HorasParaAvisar $n -RutaConfiguracion $RutaConfiguracion
+            }
+            'T' {
+                Write-Anuncio -Que 'Re-registrar la tarea programada' `
+                    -Detalle 'Vuelve a sortear las horas del dia dentro de las ventanas de arriba.'
+                $reg = @{ Pieza = 'Motor'; Accion = 'Registrar' }
+                if ($RutaConfiguracion) { $reg['RutaConfiguracion'] = $RutaConfiguracion }
+                & "$PSScriptRoot\Registrar-Tarea.ps1" @reg -Confirm:$false 6> $null | Out-Null
+                $t = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
+                $cuantos = 0
+                if ($t) { $cuantos = @($t.Triggers).Count }
+                if ($cuantos -eq $cadencia.CorridasPorDia) {
+                    Write-Veredicto -Nivel 'OK' -Frase ('Tarea re-registrada con {0} disparadores, uno por ventana.' -f $cuantos)
+                }
+                else {
+                    Write-Veredicto -Nivel 'FALLO' -Frase ('La tarea quedo con {0} disparadores y deberian ser {1}.' -f $cuantos, $cadencia.CorridasPorDia) `
+                        -Accion 'Mira el Programador de tareas de Windows: algo impidio registrarla entera.'
+                }
+            }
+            # SALEN TRES COSAS, Y NO SOBRA NINGUNA. 'V' es la que anuncia la
+            # pantalla; 'S' porque es lo que se teclea por costumbre -- el menu
+            # de arriba sale con S y la mano va sola--; y Enter porque una
+            # pantalla de la que no se sabe salir se abandona cerrando la
+            # ventana, y cerrar la ventana a media edicion es como se pierden
+            # los cambios.
+            'V' { $seguirAqui = $false }
+            'S' { $seguirAqui = $false }
+            '' { $seguirAqui = $false }
+            default { Write-Veredicto -Nivel 'SIN DATOS' -Frase ('"{0}" no es una de las opciones de esta pantalla.' -f $eleccion) }
+        }
+
+        # SI SE ESCRIBIO, SE RELEE. El objeto que trajo el tablero se quedo con el
+        # horario viejo, y seguir pintandolo diria una cosa mientras el archivo
+        # dice otra -- que es justo lo que esta pantalla existe para evitar.
+        if ($resultado -and $resultado.Escrito) {
+            $recarga = @{}
+            if ($RutaConfiguracion) { $recarga['Ruta'] = $RutaConfiguracion }
+            try { $vigente = Get-ConfiguracionRespaldo @recarga }
+            catch { Write-Verbose "No se pudo releer la configuracion: $($_.Exception.Message)" }
+        }
     }
 
-    Write-Linea ''
-    Write-Linea ('   {0}SE CAMBIAN DESDE AQUI{1}' -f $p.Fuerte, $p.Fin)
-    Write-Linea ('   Re-registrar la tarea     : vuelve a sortear las horas del dia'    )
-    Write-Linea ''
-    Write-Linea ('   {0}SOLO EDITANDO 3-Config/respaldo.jsonc{1}   (seccion 10.1)' -f $p.Fuerte, $p.Fin)
-    if ($cadencia) {
-        # PARTIDA EN DOS LINEAS a proposito: las tres ventanas juntas se pasan
-        # del ancho del tablero, y una linea que se sale rompe la unica pantalla
-        # que tiene que poder leerse de un vistazo.
-        Write-Linea ('   Corridas al dia           : {0}, a minuto sorteado' -f $cadencia.CorridasPorDia)
-        Write-Linea ('   Ventanas                  : {0}' -f $cadencia.Resumen)
-        Write-Linea ('   Hueco recibol maximo      : {0} h  -> ambar de la tabla' -f $cadencia.HuecoNominalMaximoHoras)
-        Write-Linea ('   Avisa sin corrida buena   : {0} h  -> ambar del icono' -f $cadencia.HorasParaAvisar)
-    }
-    else {
-        Write-Linea ('   Ventanas de corrida       : {0}NO SE PUDO LEER LA CADENCIA{1}' -f $p.Rojo, $p.Fin)
-    }
-    Write-Linea ('   Umbral del freno          : {0} %' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian)
-    Write-Linea ('   Centinelas                : {0} declarados' -f @($Configuracion.centinelas).Count)
-    Write-Linea  '   Politica de borrado       : clase A nunca borra, clase B espeja'
-    Write-Linea ('   Clases                    : {0} contenedores, {1} raices' -f @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
-    Write-Linea ''
-    Write-Linea ('   {0}Proxima corrida: {1}{2}' -f $p.Valor, $proxima, $p.Fin)
-    # SE ENSENA LA VENTANA Y NO UN MINUTO, Y LA LINEA LO DICE. El Programador
-    # sortea el retraso en CADA consulta: pedirle la hora diez veces da diez
-    # respuestas distintas. Poner una de ellas aqui seria ensenar como promesa un
-    # numero que cambia solo, en la unica pantalla que no puede mentir.
-    Write-Linea '   El minuto lo sortea Windows dentro de la ventana; no se sabe hasta que dispara.'
-    Write-Linea ''
-    Write-Linea '   Cada uno lleva encima, en el archivo, un comentario que dice que pasa si se cambia.'
-    Write-Linea ''
-
-    $respuesta = Read-Host '   Re-registrar la tarea y volver a sortear? (s/N)'
-    if ('' + $respuesta -notmatch '^[sS]') {
-        Write-Linea '   Sin cambios.'
-        return
-    }
-    & "$PSScriptRoot\Registrar-Tarea.ps1" -Pieza Motor -Accion Registrar -Confirm:$false -InformationAction Continue | Out-Null
-    $t = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
-    $cuantos = 0
-    if ($t) { $cuantos = @($t.Triggers).Count }
-    Write-Linea ('   {0}Tarea re-registrada con {1} disparadores, uno por ventana.{2}' -f $p.Verde, $cuantos, $p.Fin)
+    return $vigente
 }
 
 # CARGADO CON PUNTO SE EXPONEN LAS FUNCIONES Y NO SE ABRE NADA. Es la misma
@@ -1409,7 +1714,13 @@ while ($seguir) {
                 Show-RevisionDelDisco -Revision $r9.DiscoEnVuelo
             }
             'R' { Show-PruebaDeRestauracion -Configuracion $configuracion }
-            'A' { Show-Reparto -Configuracion $configuracion }
+            'A' {
+                # SE RECOGE LO QUE DEVUELVE, y no es un detalle: si ahi dentro se
+                # cambio el horario, el objeto que traiamos se quedo con el viejo
+                # y la ventana seguiria pintando un horario que ya no corre.
+                $rutaParaAjustes = if ($rutaConfig) { $rutaConfig } else { '' }
+                $configuracion = Show-Reparto -Configuracion $configuracion -RutaConfiguracion $rutaParaAjustes
+            }
             'S' { $seguir = $false }
             default { Write-Warning 'Opcion no reconocida.' }
         }
