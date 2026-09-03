@@ -170,7 +170,24 @@ function Write-RegistroRespaldo {
         [string] $Etapa = 'general',
 
         [ValidateNotNullOrEmpty()]
-        [string] $CarpetaRegistro = (Join-Path $env:LOCALAPPDATA 'NasRespaldo\registro')
+        [string] $CarpetaRegistro = (Join-Path $env:LOCALAPPDATA 'NasRespaldo\registro'),
+
+        # SE ESCRIBE AL ARCHIVO Y NO SE ECOA A LA CONSOLA.
+        #
+        # Existe por un caso medido y no por gusto: las carpetas sin numerar son
+        # CATORCE en este equipo, y cada corrida escupia catorce ADVERTENCIA
+        # identicas en forma que tapaban el veredicto de la opcion que se acababa
+        # de pulsar. El tablero YA pinta "14 carpetas sin clasificar" tres
+        # renglones mas arriba, asi que el muro repetia en catorce lineas lo que
+        # ya estaba en una.
+        #
+        # LO QUE NO SE PIERDE, y es la mitad importante: la linea sigue yendo al
+        # archivo del dia con su nivel ATENCION intacto. La seccion 3.4 exige que
+        # lo que no lleva numero SE REPORTE y no se ignore en silencio; eso se
+        # cumple en el registro, que es donde se va a mirar. Lo que se retira es
+        # el eco, que es fatiga de alarmas de ISA-18.2 -- la misma norma que este
+        # proyecto ya cita para que solo el rojo parpadee.
+        [switch] $SoloArchivo
     )
 
     if (-not (Test-Path -LiteralPath $CarpetaRegistro)) {
@@ -179,6 +196,11 @@ function Write-RegistroRespaldo {
     $archivo = Join-Path $CarpetaRegistro ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))
     $linea = '{0} {1,-8} {2,-12} {3}' -f (Get-Date -Format 's'), $Nivel, $Etapa, $Mensaje
     Add-Content -LiteralPath $archivo -Value $linea -Encoding UTF8
+
+    if ($SoloArchivo) {
+        Write-Verbose -Message $Mensaje
+        return
+    }
 
     switch ($Nivel) {
         'ERROR'    { Write-Error   -Message $Mensaje -ErrorAction Continue }
@@ -562,6 +584,106 @@ function Get-RutaEnDestino {
         }
     }
     throw "No hay traduccion declarada para la ruta '$RutaOrigen'. Anadela a destinos.traduccionDeRutas antes de copiar nada."
+}
+
+function Test-MotorIntacto {
+    <#
+        .SYNOPSIS
+            Comprueba que las piezas del motor siguen ahi y que la ultima
+            corrida programada no fallo.
+
+        .DESCRIPTION
+            POR QUE EXISTE, y no es una comprobacion generica.
+
+            Este equipo tiene el antivirus con su modulo de cortafuegos activo, y desde
+            que se empezo a construir el motor ha estado emitiendo alertas. El
+            responsable las acoto el 2026-09-02: son de CONEXION A SERVIDORES
+            -puertos que ya no son los que el antivirus espera-, no de deteccion
+            sobre el codigo. O sea que hoy no hay nada que temer del contenido.
+
+            LO QUE SI PUEDE PASAR, Y ES EL MOTIVO DE ESTA FUNCION: un antivirus
+            que decide actuar no avisa al programa que se lleva por delante. Si
+            pusiera en cuarentena respaldo.ps1, la tarea programada seguiria
+            existiendo y el tablero seguiria diciendo "motor 3 ventanas Ready" --
+            todo verde, y ni una copia mas. El fallo se veria semanas despues,
+            que es la forma mas cara de enterarse.
+
+            SE COMPRUEBA PRESENCIA, NO HUELLA, y es deliberado. Los archivos del
+            motor cambian legitimamente cada vez que se trabaja en el, asi que un
+            manifiesto de huellas sonaria en cada sesion de desarrollo -- un
+            aviso que suena siempre es un aviso que se desactiva (ISA-18.2, la
+            misma norma que este proyecto cita para el semaforo). Lo que un
+            antivirus produce es DESAPARICION o TRUNCADO, y eso si es inequivoco.
+
+            LA SEGUNDA MITAD ES LastTaskResult. Una tarea puede existir, aparecer
+            "Ready" y haber terminado su ultima corrida con un codigo de error.
+            Sin mirarlo, "la tarea existe" se lee como "la tarea funciona", que
+            son dos afirmaciones distintas.
+
+        .PARAMETER RaizProyecto
+            Carpeta del cliente. Por omision, la que contiene a 2-Nucleo.
+
+        .PARAMETER Tareas
+            Nombres de las tareas programadas a comprobar.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $RaizProyecto = (Split-Path $PSScriptRoot -Parent),
+
+        [string[]] $Tareas = @('NasRespaldo-Diario', 'NasRespaldo-Indicador')
+    )
+
+    # LAS PIEZAS SIN LAS QUE NO HAY RESPALDO. Se nombran una a una en vez de
+    # recorrer la carpeta: recorrer no puede detectar una AUSENCIA, que es
+    # justamente lo que hay que detectar.
+    $piezas = @(
+        '2-Nucleo\respaldo.ps1', '2-Nucleo\comun.ps1', '2-Nucleo\clasificar.ps1',
+        '2-Nucleo\verificar.ps1', '2-Nucleo\disco.ps1', '2-Nucleo\semilla.ps1',
+        '2-Nucleo\notificar.ps1', '2-Nucleo\testigo.ps1',
+        '1-Interfaz\tablero.ps1', '1-Interfaz\indicador.ps1',
+        '1-Interfaz\Registrar-Tarea.ps1', '1-Interfaz\estilo.ps1',
+        '3-Config\respaldo.jsonc'
+    )
+
+    $faltan = New-Object System.Collections.Generic.List[string]
+    foreach ($p in $piezas) {
+        $ruta = Join-Path $RaizProyecto $p
+        if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) {
+            $faltan.Add("$p -- NO ESTA")
+            continue
+        }
+        # Un archivo de cero bytes existe igual de bien que uno bueno, y no
+        # sirve para nada. Es la misma comprobacion que ya hace la prueba de
+        # restauracion sobre RESTAURAR.ps1.
+        if ((Get-Item -LiteralPath $ruta).Length -eq 0) {
+            $faltan.Add("$p -- VACIO")
+        }
+    }
+
+    $tareasMal = New-Object System.Collections.Generic.List[string]
+    foreach ($nombre in $Tareas) {
+        $t = Get-ScheduledTask -TaskName $nombre -ErrorAction SilentlyContinue
+        if (-not $t) { $tareasMal.Add("$nombre -- NO EXISTE"); continue }
+        if ($t.State -eq 'Disabled') { $tareasMal.Add("$nombre -- DESHABILITADA"); continue }
+
+        $info = $t | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
+        if (-not $info) { continue }
+        # 0 es correcto y 267009 es "corriendo ahora mismo", que tambien lo es.
+        # Cualquier otro codigo es una corrida que termino mal.
+        if ($info.LastTaskResult -ne 0 -and $info.LastTaskResult -ne 267009) {
+            $tareasMal.Add(('{0} -- su ultima corrida termino con codigo {1}' -f $nombre, $info.LastTaskResult))
+        }
+    }
+
+    return [pscustomobject]@{
+        Intacto      = ($faltan.Count -eq 0 -and $tareasMal.Count -eq 0)
+        PiezasTotal  = $piezas.Count
+        PiezasFallan = $faltan.ToArray()
+        TareasTotal  = @($Tareas).Count
+        TareasFallan = $tareasMal.ToArray()
+    }
 }
 
 function Get-CarpetaDeEstado {

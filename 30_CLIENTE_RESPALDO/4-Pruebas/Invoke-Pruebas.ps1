@@ -1499,6 +1499,89 @@ $cadCaja = Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo -Ruta
 Test-Afirmacion -Nombre 'El umbral publicado sale de la cadencia, no de un valor fijo' `
     -Esperado ('' + $cadCaja.HorasParaAvisar) -Obtenido ('' + $estadoUmbral['horas_para_avisar'])
 
+# ---------------------------------------------------------------------------
+#  PENDIENTE 27  -  la forma comun, y el antivirus
+# ---------------------------------------------------------------------------
+Write-Titulo 'El pendiente 27: la forma comun y el motor intacto'
+
+# LA PROPIEDAD SE LLAMA `Frenos`, EN PLURAL, y esta prueba existe porque pedir
+# `Freno` fue el defecto que abrio el pendiente 27: Select-Object devolvia una
+# columna vacia que se leia como "no hubo freno" -- una afirmacion
+# tranquilizadora que nadie habia comprobado.
+Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
+$sim27 = Invoke-Motor -Caja $caja -Simular
+$nombres27 = @($sim27.PSObject.Properties.Name)
+Test-Afirmacion -Nombre 'El resultado del motor trae `Frenos`, en plural' `
+    -Esperado $true -Obtenido ($nombres27 -contains 'Frenos')
+Test-Afirmacion -Nombre 'Y NO trae `Freno`: pedirla daba una columna vacia que mentia' `
+    -Esperado $false -Obtenido ($nombres27 -contains 'Freno')
+Test-Afirmacion -Nombre 'Hay una medida de freno por raiz, que es lo que la tecla [2] tiene que ensenar' `
+    -Esperado $true -Obtenido (@($sim27.Frenos).Count -gt 0)
+
+# EL MOTOR INTACTO. Lo pidio el responsable el 2026-09-02 por las alertas de
+# el antivirus: un antivirus que pone un guion en cuarentena no avisa a nadie, y la
+# tarea seguiria diciendo "Ready" con el respaldo muerto.
+$intacto = Test-MotorIntacto -RaizProyecto (Split-Path $PSScriptRoot -Parent) -Tareas @()
+Test-Afirmacion -Nombre 'Con el proyecto entero, el motor se declara INTACTO' `
+    -Esperado $true -Obtenido $intacto.Intacto
+Test-Afirmacion -Nombre 'Y son 13 piezas, no una cuenta al vuelo de la carpeta' `
+    -Esperado 13 -Obtenido $intacto.PiezasTotal
+
+# UNA PIEZA QUE FALTA SE TIENE QUE VER. Se comprueba contra una carpeta vacia,
+# que es lo que deja un antivirus que se lleva los archivos.
+$cajaVacia = Join-Path $caja.Raiz 'motor-sin-piezas'
+New-Item -ItemType Directory -Path $cajaVacia -Force | Out-Null
+$roto = Test-MotorIntacto -RaizProyecto $cajaVacia -Tareas @()
+Test-Afirmacion -Nombre 'Si faltan las piezas, NO se declara intacto' `
+    -Esperado $false -Obtenido $roto.Intacto
+Test-Afirmacion -Nombre 'Y se nombran las 13 que faltan, no un "algo falla"' `
+    -Esperado 13 -Obtenido @($roto.PiezasFallan).Count
+
+# UN ARCHIVO DE CERO BYTES EXISTE IGUAL DE BIEN QUE UNO BUENO Y NO SIRVE PARA
+# NADA. Es la misma comprobacion que ya hace la prueba de restauracion.
+$cajaVacia2 = Join-Path $caja.Raiz 'motor-truncado'
+foreach ($sub in @('1-Interfaz', '2-Nucleo', '3-Config')) {
+    New-Item -ItemType Directory -Path (Join-Path $cajaVacia2 $sub) -Force | Out-Null
+}
+foreach ($p in @('2-Nucleo\respaldo.ps1', '2-Nucleo\comun.ps1', '2-Nucleo\clasificar.ps1',
+        '2-Nucleo\verificar.ps1', '2-Nucleo\disco.ps1', '2-Nucleo\semilla.ps1',
+        '2-Nucleo\notificar.ps1', '2-Nucleo\testigo.ps1', '1-Interfaz\tablero.ps1',
+        '1-Interfaz\indicador.ps1', '1-Interfaz\Registrar-Tarea.ps1', '1-Interfaz\estilo.ps1',
+        '3-Config\respaldo.jsonc')) {
+    'contenido' | Set-Content -LiteralPath (Join-Path $cajaVacia2 $p) -Encoding ASCII
+}
+Set-Content -LiteralPath (Join-Path $cajaVacia2 '2-Nucleo\respaldo.ps1') -Value '' -NoNewline -Encoding ASCII
+$truncado = Test-MotorIntacto -RaizProyecto $cajaVacia2 -Tareas @()
+Test-Afirmacion -Nombre 'Un guion del motor VACIO cuenta como pieza rota, no como presente' `
+    -Esperado 1 -Obtenido @($truncado.PiezasFallan).Count
+
+# EL MURO DE ADVERTENCIAS: al archivo entero, a la consola una linea.
+$cajaReg = Join-Path $caja.Raiz 'registro-eco'
+Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'huerfano' -SoloArchivo `
+    -Mensaje 'una carpeta cualquiera' -CarpetaRegistro $cajaReg -WarningVariable ecoSilencioso -WarningAction SilentlyContinue
+Test-Afirmacion -Nombre 'Con -SoloArchivo la linea NO se ecoa a la consola' `
+    -Esperado 0 -Obtenido @($ecoSilencioso).Count
+$archivoReg = Join-Path $cajaReg ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))
+Test-Afirmacion -Nombre 'Pero SI queda escrita en el registro del dia, con su nivel' `
+    -Esperado $true -Obtenido ((Get-Content -LiteralPath $archivoReg -Raw) -match 'ATENCION\s+huerfano\s+una carpeta cualquiera')
+
+# EL VEREDICTO NO SE SALE DEL ANCHO. Lo destapo mirar el buffer de una consola
+# real: la frase de la tecla [2] se cortaba a mitad de una cifra --
+# "...Copiaria" / "67 y borraria 3."-- y una cifra partida deja de ser una cifra.
+. "$PSScriptRoot\..\1-Interfaz\tablero.ps1"
+$largo = 'Nada frenaria. 8 raices miradas; la mas movida es dev con 0.26 % (umbral 5 %, minimo 10 archivos). Copiaria 67 y borraria 3.'
+$partido = Format-TextoAjustado -Texto $largo -Ancho 60
+Test-Afirmacion -Nombre 'Un veredicto largo se parte en varias lineas' `
+    -Esperado $true -Obtenido (@($partido).Count -gt 1)
+Test-Afirmacion -Nombre 'Y ninguna linea rebasa el ancho pedido' `
+    -Esperado $true -Obtenido (@($partido | Where-Object { $_.Length -gt 60 }).Count -eq 0)
+Test-Afirmacion -Nombre 'No se pierde ni se duplica una palabra al partir' `
+    -Esperado ($largo -split '\s+').Count -Obtenido (($partido -join ' ') -split '\s+').Count
+Test-Afirmacion -Nombre 'Y NUNCA se parte una cifra por la mitad' `
+    -Esperado $true -Obtenido (@($partido | Where-Object { $_ -match '0\.26 %' }).Count -eq 1)
+Test-Afirmacion -Nombre 'Un texto vacio devuelve una linea vacia, no revienta' `
+    -Esperado 1 -Obtenido @(Format-TextoAjustado -Texto '' -Ancho 60).Count
+
 # ===========================================================================
 
 if (-not $Conservar) {

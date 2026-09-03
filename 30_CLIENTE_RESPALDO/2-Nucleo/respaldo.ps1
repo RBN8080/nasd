@@ -322,9 +322,21 @@ $resultado.Causa = 'sinRaices'
     }
     Write-RegistroRespaldo -Etapa 'clasificar' -Mensaje "Resueltas $($raices.Count) raices."
 
+    # LOS HUERFANOS VAN ENTEROS AL ARCHIVO Y RESUMIDOS A LA PANTALLA.
+    #
+    # Uno por linea a la consola eran CATORCE ADVERTENCIA en cada corrida, y
+    # tapaban el veredicto de la opcion que se acababa de pulsar -- ademas de
+    # repetir lo que el tablero ya pinta en una sola linea. El detalle no se
+    # pierde: sigue en el registro del dia, con su nivel, que es donde se mira
+    # cuando hace falta la lista.
     $resultado.Huerfanos = Get-HuerfanosDeRespaldo -Configuracion $Configuracion
     foreach ($h in $resultado.Huerfanos) {
-        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'huerfano' -Mensaje "$($h.Ruta) -- $($h.Motivo)"
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'huerfano' -SoloArchivo `
+            -Mensaje "$($h.Ruta) -- $($h.Motivo)"
+    }
+    if (@($resultado.Huerfanos).Count -gt 0) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'huerfano' -Mensaje (
+            '{0} carpetas sin numerar, no se copian. La lista, en el registro de hoy.' -f @($resultado.Huerfanos).Count)
     }
 
     # --- Etapa 0: la deuda de la seccion 8 ---------------------------------
