@@ -1125,6 +1125,168 @@ function Get-CadenciaDeCorrida {
     }
 }
 
+function Set-HorarioDeRespaldo {
+    <#
+        .SYNOPSIS
+            Reescribe SOLO las ventanas de corrida y el umbral de aviso dentro de
+            respaldo.jsonc. El resto del archivo queda igual, byte a byte.
+        .DESCRIPTION
+            SE EDITA EL TEXTO, NO EL OBJETO, Y ESA ES LA DECISION QUE MANDA AQUI.
+            Volcar la configuracion con ConvertTo-Json produciria un archivo
+            valido y DESTRUIRIA TODOS LOS COMENTARIOS -- que en este archivo no
+            son adorno: son la mitad de la documentacion del sistema y explican
+            por que cada numero vale lo que vale. Mover una ventana desde el menu
+            no puede costar eso.
+
+            Asi que se sustituyen exactamente dos trozos de texto -- el arreglo
+            "ventanas" y el valor "horasParaAvisar" --, ambos claves unicas en el
+            archivo. Y se sustituyen por posicion y longitud del hallazgo, no con
+            Regex::Replace, porque en el texto de reemplazo el simbolo del dolar
+            tiene significado y una llave con nombre raro podria colarse como
+            referencia a un grupo.
+
+            TRES GUARDAS, Y NINGUNA SOBRA:
+
+              ANTES     la cadencia candidata pasa entera por
+                        Get-CadenciaDeCorrida. Si dos ventanas se solapan, si
+                        alguna cruza la medianoche, o si el umbral queda por
+                        debajo del hueco recibol, NO SE ESCRIBE NADA. Las reglas
+                        no se duplican aqui: se reutiliza el unico juez.
+              DURANTE   Set-ContenidoAtomico, que escribe a un temporal y deja
+                        copia del archivo anterior.
+              DESPUES   se RELEE el archivo del disco y se comprueba que la
+                        cadencia que sale de el es la que se pidio. Si no
+                        coincide, se restaura el texto original y se lanza.
+
+            LA TERCERA ES LA QUE IMPORTA de verdad. Una sustitucion por texto que
+            saliera mal dejaria el archivo sin cadencia legible, y el motor SE
+            NIEGA A CORRER sin ella: el respaldo se habria detenido por un ajuste
+            de horario. Releer es la unica forma de enterarse en el momento y no
+            tres corridas mas tarde.
+
+            LO QUE ESTA FUNCION NO PUEDE TOCAR, y es deliberado (seccion 10.1):
+            el umbral del freno, los centinelas, las clases y las exclusiones. Un
+            horario es CUANDO se copia; esas cuatro son CUANTO se puede destruir
+            antes de que el sistema se plante. Subir un umbral desde una pantalla
+            desarma la defensa con dos pulsaciones y sin dejar rastro, y por eso
+            siguen pidiendo abrir el archivo a mano.
+        .PARAMETER Ventanas
+            Las ventanas nuevas: objetos con `inicio` (HH:mm) y `duracionHoras`.
+        .PARAMETER HorasParaAvisar
+            El umbral nuevo. CERO significa "conserva el que ya hay".
+        .PARAMETER Ruta
+            El .jsonc. Por omision, el de 3-Config junto a este guion.
+    #>
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateCount(1, 8)]
+        [psobject[]] $Ventanas,
+
+        [ValidateRange(0, 720)]
+        [int] $HorasParaAvisar = 0,
+
+        # CALCULA Y NO ESCRIBE, EN SILENCIO. Existe en vez de reusar -WhatIf
+        # porque -WhatIf pinta su propia linea en la consola -- "Se esta
+        # realizando la operacion..." -- y la vista previa del tablero es una
+        # pantalla cuidada donde esa linea ensena las tripas y encima repite en
+        # otro idioma lo que la pantalla ya dice mejor.
+        #
+        # Recorre exactamente el mismo camino: valida la cadencia entera y
+        # comprueba que los dos trozos de texto existen en el archivo. Lo unico
+        # que no hace es escribir.
+        [switch] $SoloCalcular,
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Ruta = (Join-Path (Split-Path $PSScriptRoot -Parent) '3-Config\respaldo.jsonc')
+    )
+
+    $actual = Get-ConfiguracionRespaldo -Ruta $Ruta
+    $avisar = if ($HorasParaAvisar -gt 0) { $HorasParaAvisar } else { [int]$actual.cadencia.horasParaAvisar }
+
+    # LA GUARDA DE ANTES. Se arma una configuracion de mentira con solo lo que va
+    # a cambiar y se le pide su veredicto al mismo juez que usa el motor.
+    $candidato = [pscustomobject]@{
+        cadencia = [pscustomobject]@{
+            ventanas        = @($Ventanas | ForEach-Object {
+                    [pscustomobject]@{ inicio = ('' + $_.inicio); duracionHoras = [double]$_.duracionHoras }
+                })
+            horasParaAvisar = $avisar
+        }
+    }
+    $nueva = Get-CadenciaDeCorrida -Configuracion $candidato
+
+    $texto = Get-Content -LiteralPath $Ruta -Raw -Encoding UTF8
+
+    $patronVentanas = '"ventanas"\s*:\s*\[[^\]]*\]'
+    $hallado = [regex]::Match($texto, $patronVentanas)
+    if (-not $hallado.Success) {
+        throw "No se encontro el arreglo `"ventanas`" en $Ruta. No se toca un archivo que no se reconoce."
+    }
+
+    # Se respeta la forma que ya tenia el archivo: una ventana por linea, con la
+    # misma sangria. Un ajuste desde el menu no puede dejar el archivo con un
+    # aspecto distinto al que tenia, o la proxima diferencia de git seria ilegible.
+    # EL FINAL DE LINEA SE HEREDA DEL ARCHIVO, NO DEL SISTEMA OPERATIVO, y esto
+    # costo un defecto real: con [Environment]::NewLine se metieron CRLF en un
+    # archivo que el repositorio mantiene en LF por .gitattributes. El contenido
+    # quedaba identico y git no ensenaba ninguna diferencia -- solo un aviso de
+    # que iba a normalizarlo --, asi que el archivo se quedaba con finales de
+    # linea MEZCLADOS sin que nada fallara. Se elige el que ya manda en el
+    # archivo, contando, y asi vale igual si algun dia se decide lo contrario.
+    $conRetorno = ([regex]::Matches($texto, "`r`n")).Count
+    $sinRetorno = ([regex]::Matches($texto, "(?<!`r)`n")).Count
+    $finDeLinea = if ($conRetorno -gt $sinRetorno) { "`r`n" } else { "`n" }
+
+    $filas = @($nueva.Ventanas | ForEach-Object {
+            '      {{ "inicio": "{0}", "duracionHoras": {1} }}' -f $_.Inicio, ([math]::Round($_.LargoMinutos / 60, 2))
+        })
+    $bloque = '"ventanas": [' + $finDeLinea + ($filas -join (',' + $finDeLinea)) + $finDeLinea + '    ]'
+
+    $nuevoTexto = $texto.Remove($hallado.Index, $hallado.Length).Insert($hallado.Index, $bloque)
+
+    $patronAvisar = '"horasParaAvisar"\s*:\s*\d+'
+    $halladoAvisar = [regex]::Match($nuevoTexto, $patronAvisar)
+    if (-not $halladoAvisar.Success) {
+        throw "No se encontro `"horasParaAvisar`" en $Ruta."
+    }
+    $nuevoTexto = $nuevoTexto.Remove($halladoAvisar.Index, $halladoAvisar.Length).
+    Insert($halladoAvisar.Index, ('"horasParaAvisar": {0}' -f $avisar))
+
+    if ($SoloCalcular) {
+        return [pscustomobject]@{ Escrito = $false; Cadencia = $nueva; Motivo = 'SoloCalcular' }
+    }
+
+    $queCambia = 'Horario: {0} corridas, {1}' -f $nueva.CorridasPorDia, $nueva.Resumen
+    if (-not $PSCmdlet.ShouldProcess($Ruta, $queCambia)) {
+        return [pscustomobject]@{ Escrito = $false; Cadencia = $nueva; Motivo = 'WhatIf' }
+    }
+
+    Set-ContenidoAtomico -Ruta $Ruta -Contenido $nuevoTexto -Confirm:$false
+
+    # LA GUARDA DE DESPUES. Se relee del disco, no de la variable.
+    try {
+        $releida = Get-ConfiguracionRespaldo -Ruta $Ruta
+        $comprobada = Get-CadenciaDeCorrida -Configuracion $releida
+    }
+    catch {
+        Set-ContenidoAtomico -Ruta $Ruta -Contenido $texto -Confirm:$false
+        throw "El archivo quedo ilegible tras el cambio y SE RESTAURO el anterior: $($_.Exception.Message)"
+    }
+    if ($comprobada.Resumen -ne $nueva.Resumen -or $comprobada.HorasParaAvisar -ne $nueva.HorasParaAvisar) {
+        Set-ContenidoAtomico -Ruta $Ruta -Contenido $texto -Confirm:$false
+        throw ("Lo escrito no es lo pedido y SE RESTAURO el anterior. Pedido: '{0}' / {1} h. Leido: '{2}' / {3} h." -f `
+                $nueva.Resumen, $nueva.HorasParaAvisar, $comprobada.Resumen, $comprobada.HorasParaAvisar)
+    }
+
+    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'cadencia' -SoloArchivo `
+        -Mensaje ('HORARIO CAMBIADO desde el tablero: {0} corridas al dia, {1}. Umbral de aviso {2} h, hueco maximo {3} h.' -f `
+            $comprobada.CorridasPorDia, $comprobada.Resumen, $comprobada.HorasParaAvisar, $comprobada.HuecoNominalMaximoHoras)
+
+    return [pscustomobject]@{ Escrito = $true; Cadencia = $comprobada; Motivo = $null }
+}
+
 function Get-VentanaDeCorrida {
     <#
         .SYNOPSIS
