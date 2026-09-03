@@ -1,6 +1,10 @@
 package web
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -202,3 +206,71 @@ func TestLasTresFormasDeNoTenerEstado(t *testing.T) {
 type errorDePermisos struct{}
 
 func (errorDePermisos) Error() string { return "permiso denegado" }
+
+// LA FILA TIENE QUE APARECER EN LA PANTALLA, y esto se comprueba pasando por el
+// manejador HTTP de verdad.
+//
+// # POR QUÉ NO BASTA CON PROBAR evaluarRespaldo
+//
+// Porque entre la función y la pantalla hay tres costuras que se pueden romper
+// por separado y ninguna falla a gritos: que el vigía se construya con la ruta
+// de la configuración, que instantaneaCompleta lo pregunte, y que evaluar() lo
+// incluya en la lista. Un indicador correcto que nadie llama es exactamente el
+// defecto que este proyecto acaba de encontrar en el cliente —código construido
+// que no arrancaba nunca— y no se repite aquí sin vigilancia.
+func TestLaFilaDelRespaldoLlegaALaPantallaYAlJSON(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "ESTADO.txt")
+	contenido := "estado=Protegido\n" +
+		"momento=" + time.Now().Add(-2*time.Hour).Format("2006-01-02T15:04:05") + "\n" +
+		"detalle=8 raices al dia, 72 archivos copiados\n" +
+		"horas_para_avisar=22\n"
+	if err := os.WriteFile(ruta, []byte(contenido), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := servidorConAuth(t)
+	// Se enchufa el vigía por donde lo enchufa la raíz de composición.
+	s.vigiaRespaldo = respaldo.NuevoVigia(ruta)
+	h := s.Rutas()
+	cookie := abrirSesionDePrueba(t, h)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/estado", nil)
+	r.AddCookie(cookie)
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /estado -> %d", w.Code)
+	}
+	cuerpo := w.Body.String()
+	if !strings.Contains(cuerpo, "Respaldo del equipo") {
+		t.Errorf("la fila del respaldo NO aparece en /estado")
+	}
+	if !strings.Contains(cuerpo, "72 archivos copiados") {
+		t.Errorf("la fila aparece sin el detalle que la sostiene")
+	}
+
+	// Y en el JSON, que es contrato aparte.
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest("GET", "/estado?formato=json", nil)
+	r2.AddCookie(cookie)
+	h.ServeHTTP(w2, r2)
+	if !strings.Contains(w2.Body.String(), "respaldo_cliente") {
+		t.Errorf("la clave del respaldo NO aparece en /estado?formato=json")
+	}
+}
+
+// SIN CONFIGURAR, LA PANTALLA QUEDA COMO ESTABA. Es la garantía de que este
+// cambio no toca nada en un nodo que no tenga cliente de respaldo.
+func TestSinClienteConfiguradoLaPantallaNoCambia(t *testing.T) {
+	s := servidorConAuth(t)
+	h := s.Rutas()
+	cookie := abrirSesionDePrueba(t, h)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/estado", nil)
+	r.AddCookie(cookie)
+	h.ServeHTTP(w, r)
+	if strings.Contains(w.Body.String(), "Respaldo del equipo") {
+		t.Errorf("sin configurar, la fila no debe existir")
+	}
+}

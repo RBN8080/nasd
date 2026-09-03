@@ -806,8 +806,17 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
 	lentos := conVeredictoPintado(comoFilas(evaluarLentos(n)))
 	salidas := conVeredictoPintado(comoFilas(evaluarSalidas(inst)))
+	// SE VUELVE A LLAMAR AQUÍ, y no se reaprovecha `indicadores`, por la misma
+	// razón que las dos líneas de arriba: esta página arma la tabla por GRUPOS
+	// y cada grupo tiene su propio evaluador. Reaprovechar la lista plana
+	// obligaría a repartirla por clave, que es una segunda fuente de verdad
+	// sobre a qué grupo pertenece cada fila.
+	//
+	// EL VIGÍA TIENE CACHÉ, así que las dos llamadas del mismo render no leen
+	// el disco dos veces (ver respaldo.vigencia).
+	respaldos := conVeredictoPintado(comoFilas(evaluarRespaldo(inst, time.Now())))
 
-	// LOS CUATRO GRUPOS DE LA TABLA. Los dos últimos solo aparecen si tienen
+	// LOS CINCO GRUPOS DE LA TABLA. Los tres últimos solo aparecen si tienen
 	// algo: un nodo sin la capa de avisos instalada no enseña dos semáforos
 	// en gris permanente, que es lo que ADR-0065 vino a retirar.
 	v := vistaEstado{
@@ -823,6 +832,7 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 		{"Servicio", filasServicio},
 		{"Almacenamiento y hardware", lentos},
 		{"Salidas hacia fuera", salidas},
+		{"Respaldo del equipo", respaldos},
 	} {
 		if len(g.Filas) > 0 {
 			v.Grupos = append(v.Grupos, g)
