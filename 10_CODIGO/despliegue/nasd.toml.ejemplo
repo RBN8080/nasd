@@ -45,14 +45,16 @@ clave = "/etc/nas/tls/privkey.pem"
 # Valor de referencia [R].
 duracion_horas = 168
 
-# Cuánto puede estar una sesión SIN ACTIVIDAD antes de caducar — ADR-0059.
-# Deslizante: se renueva con cada petición y con cada bloque de una
-# descarga o subida en curso. NO CONFUNDIR con plazos.inactividad_s de
-# abajo, que es el plazo de E/S de ADR-0026 dentro de una sola petición.
-# Valor de referencia [R]; el responsable lo fijó en 5 min frente al minuto
-# que pidió al principio, tras conocer el coste de reingresar (3.2-3.6 s de
-# PBKDF2 medidos en el nodo).
-inactividad_s = 300
+# Cuánto puede estar una sesión SIN ACTIVIDAD antes de caducar — ADR-0059,
+# con el valor de ADR-0082. Deslizante: se renueva con cada petición y con
+# cada bloque de una descarga o subida en curso. NO CONFUNDIR con
+# plazos.inactividad_s de abajo, que es el plazo de E/S de ADR-0026 dentro
+# de una sola petición.
+# Valor de referencia [R]: 12 h. Los 5 min originales echaban fuera a quien
+# MIRA el panel en vivo sin tocar nada —un flujo SSE no cuenta como
+# actividad, y es deliberado (vivo.go)—. Con 12 h el uso diario lo renueva
+# solo y una pestaña olvidada muere esa misma noche.
+inactividad_s = 43200
 
 [plazos]
 # ADR-0026. Plazo POR ACTIVIDAD, en segundos: se renueva con cada avance de

@@ -72,12 +72,16 @@ type Config struct {
 	// exposición para un uso doméstico. [R]
 	DuracionSesion time.Duration
 
-	// InactividadSesion — RF-15, ADR-0059. Tope DESLIZANTE: sin actividad
-	// este tiempo, la sesión deja de ser válida aunque DuracionSesion siga
-	// lejos. Los dos relojes se aplican a la vez (internal/autenticacion).
-	// Cinco minutos, decidido por el responsable frente a un minuto: cada
-	// verificación de contraseña cuesta 3.2-3.6 s de PBKDF2 en el nodo
-	// (web.IteracionesPBKDF2), y un minuto castigaba la lectura normal.
+	// InactividadSesion — RF-15, ADR-0059, valor vigente por ADR-0082. Tope
+	// DESLIZANTE: sin actividad este tiempo, la sesión deja de ser válida
+	// aunque DuracionSesion siga lejos. Los dos relojes se aplican a la vez
+	// (internal/autenticacion).
+	//
+	// DOCE HORAS, y el número lo eligió el responsable tras un año de uso
+	// diario: los cinco minutos de ADR-0059 echaban fuera a quien MIRA el
+	// panel en vivo, porque un flujo SSE abierto no cuenta como actividad a
+	// propósito (vivo.go). Con este valor el reloj se renueva solo con el uso
+	// normal y una pestaña olvidada muere esa misma noche, no a los 7 días.
 	InactividadSesion time.Duration
 
 	// DirectorioEstado es donde vive el registro de usuarios (ADR-0055).
@@ -301,7 +305,7 @@ func porDefecto() Config {
 		// nodo lo instala 05_instalar_servicio.sh solo la PRIMERA vez
 		// (if [ ! -f "$CONFIG" ]), así que una clave nueva en el script no
 		// llega a un nodo que ya tiene su archivo — solo el binario la trae.
-		InactividadSesion: 5 * time.Minute,
+		InactividadSesion: 12 * time.Hour,
 		DirectorioEstado:  "/var/lib/nasd",
 		ModoAvisos:        "normal",
 		PeriodoResumen:    24 * time.Hour,
