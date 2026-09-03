@@ -619,6 +619,26 @@ function Invoke-CorridaConEstado {
         $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia
         $datos['proxima_ventana'] = $siguiente.Ventana
         $datos['proxima_inicio']  = $siguiente.Inicio.ToString('s')
+
+        # EL UMBRAL VIAJA CON EL ESTADO, Y NO ES UN DATO DE ADORNO.
+        #
+        # ESTADO.txt se publica tambien en el nodo (Publish-EstadoAlNodo), y
+        # desde el 2026-09-02 el nodo lo lee para decir si el respaldo de este
+        # equipo esta al dia. El umbral que separa "al dia" de "viejo" vive en
+        # `cadencia.horasParaAvisar` de respaldo.jsonc, que es un archivo del
+        # EQUIPO: el nodo no lo puede leer.
+        #
+        # Si el nodo se escribiera su propio 22, habria DOS criterios para la
+        # misma pregunta y el dia que alguien separase las ventanas aqui, el
+        # nodo seguiria juzgando con el numero viejo -y las dos pantallas se
+        # contradirian sin que nada fallara-. Es exactamente lo que
+        # 05_OPERACION seccion 4.1 prohibe y lo que la 13.3 exigio del testigo.
+        #
+        # Asi que lo publica quien lo posee. El nodo lo usa si esta; si falta,
+        # se queda con su valor por omision y LO DICE.
+        $datos['horas_para_avisar'] = $cadencia.HorasParaAvisar
+        $datos['hueco_maximo_horas'] = $cadencia.HuecoNominalMaximoHoras
+        $datos['equipo'] = $Configuracion.equipo
     }
 
     # LO QUE MIDIO EL FRENO, NO LO QUE DICE LA CONFIGURACION. El tablero

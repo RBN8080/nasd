@@ -323,6 +323,9 @@ func ejecutar() error {
 		PeriodoResumen: cfg.PeriodoResumen,
 		SaludCanal:     cola.Salud,
 		SaludLatido:    func() aviso.SaludLatido { return latido.Salud() },
+		// El cliente de respaldo publica su estado dentro del volumen. Vacío
+		// mientras nadie lo configure, y entonces el indicador no existe.
+		RutaEstadoRespaldo: cfg.RutaEstadoRespaldo,
 	})
 	if err != nil {
 		return err

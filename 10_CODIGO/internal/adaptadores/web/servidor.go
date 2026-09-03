@@ -26,6 +26,7 @@ import (
 	"nasd/internal/aviso"
 	"nasd/internal/geoip"
 	"nasd/internal/metricas"
+	"nasd/internal/respaldo"
 	"nasd/internal/seguridad"
 )
 
@@ -202,6 +203,10 @@ type Servidor struct {
 	// está roto es justamente lo que el encargo pedía conservar (ADR-0074).
 	saludCanal  func() aviso.SaludCanal
 	saludLatido func() aviso.SaludLatido
+	// vigiaRespaldo lee lo que el cliente de Windows publica en este nodo.
+	// Nulo o sin ruta significa que ese indicador no se pinta, igual que las
+	// dos salidas de arriba.
+	vigiaRespaldo *respaldo.Vigia
 	// arranque es cuándo se construyó este servidor.
 	//
 	// Existe para el CUERPO DEL LATIDO, y ahí sí dice algo que no se puede
@@ -333,6 +338,11 @@ type Opciones struct {
 	// ignorar el panel.
 	SaludCanal  func() aviso.SaludCanal
 	SaludLatido func() aviso.SaludLatido
+	// RutaEstadoRespaldo es el ESTADO.txt que el cliente de respaldo publica
+	// dentro del volumen de datos. Vacia es lo normal en un nodo sin cliente,
+	// y entonces su indicador no existe: no se pinta un semaforo en gris para
+	// siempre (ADR-0065).
+	RutaEstadoRespaldo string
 }
 
 func Nuevo(o Opciones) (*Servidor, error) {
@@ -443,6 +453,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		periodoResumen:    o.PeriodoResumen,
 		saludCanal:        o.SaludCanal,
 		saludLatido:       o.SaludLatido,
+		vigiaRespaldo:     respaldo.NuevoVigia(o.RutaEstadoRespaldo),
 	}
 	s.muestreador = nuevoMuestreador(s.abrirLectorVivo)
 	s.cuentas = nuevoMuestreador(s.abrirLectorCuentas)
