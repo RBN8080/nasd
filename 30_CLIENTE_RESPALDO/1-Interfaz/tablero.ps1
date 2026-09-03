@@ -677,6 +677,309 @@ function Show-Ventana {
     Write-Linea ' '
 }
 
+# ---------------------------------------------------------------------------
+#  LA FORMA COMUN DE LAS OPCIONES  -  pendiente 27
+#
+#  El responsable lo abrio mirando la pantalla el 2026-09-02: "las opciones
+#  deben de hacer algo concreto con inicio y fin y no existir de adorno, eso se
+#  ve vibecodeado". Tenia razon y habia evidencia: la tecla [2] hacia
+#  Select-Object sobre una propiedad llamada Freno cuando se llama Frenos, asi
+#  que imprimia "Freno :" con nada detras. Eso NO sale vacio: SALE PEOR -- se
+#  lee como "no hubo freno", una afirmacion tranquilizadora que nadie habia
+#  comprobado, en la unica pantalla que no puede mentir.
+#
+#  LA FORMA, y no se estrena vocabulario. Cada opcion se comporta como un
+#  mini-aviso del nodo, con las tres piezas que internal/aviso ya declara
+#  obligatorias -- titulo, hechos, recomendacion:
+#
+#    ANUNCIO    una linea al empezar. Dice SI ESCRIBE O NO, DONDE y cuanto tarda.
+#    HECHOS     lo del medio. Nunca un objeto crudo; como mucho una tabla.
+#    VEREDICTO  una linea al terminar, que empieza por una de cuatro palabras
+#               que YA existen en este proyecto -- OK, ATENCION, FALLO,
+#               SIN DATOS -- y LLEVA SIEMPRE LA CIFRA QUE LA SOSTIENE.
+#    ACCION     solo si no es OK. Que hacer ahora.
+#
+#  SIN CIFRA NO HAY VEREDICTO. Y SIN DATOS es la pieza que faltaba: "no pude
+#  mirar" tiene que ser distinguible de "mire y esta bien", o una comprobacion
+#  que no pudo hacerse acaba pareciendose a un verde.
+# ---------------------------------------------------------------------------
+
+function Write-Anuncio {
+    <#
+        .SYNOPSIS
+            La linea de apertura de una opcion: que va a hacer y con que riesgo.
+        .PARAMETER Que
+            La accion, en tres o cuatro palabras.
+        .PARAMETER Detalle
+            Si escribe o no, donde, y cuanto puede tardar.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Que,
+        [ValidateNotNull()][string] $Detalle = ''
+    )
+    $p = $script:Paleta
+    Write-Linea ('   {0}> {1}{2}' -f ($p.Fuerte + $p.Titulo), $Que, $p.Fin)
+    if ($Detalle) { Write-Linea ('     {0}{1}{2}' -f $p.Tenue, $Detalle, $p.Fin) }
+}
+
+function Write-Veredicto {
+    <#
+        .SYNOPSIS
+            La linea de cierre de una opcion. Afirma algo, con su cifra.
+        .DESCRIPTION
+            CUATRO PALABRAS Y NO MAS, y son las que este proyecto ya usa: OK,
+            ATENCION y FALLO son el vocabulario de severidad de la seccion 11, y
+            SIN DATOS es el quinto estado del indicador de la seccion 10.2.
+            Estrenar una quinta seria tener dos escalas para lo mismo.
+        .PARAMETER Nivel
+            OK, ATENCION, FALLO o SIN DATOS.
+        .PARAMETER Frase
+            Que se afirma. Con su numero.
+        .PARAMETER Accion
+            Que hacer ahora. De hecho obligatorio en todo lo que no sea OK: el
+            charter dice que toda alerta tiene que ser accionable.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('OK', 'ATENCION', 'FALLO', 'SIN DATOS')]
+        [string] $Nivel,
+
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Frase,
+        [ValidateNotNull()][string] $Accion = ''
+    )
+    $p = $script:Paleta
+    $color = switch ($Nivel) {
+        'OK'       { $p.Verde }
+        'ATENCION' { $p.Ambar }
+        'FALLO'    { $p.Rojo }
+        default    { $p.Gris }
+    }
+
+    # SE PARTE POR PALABRAS, CON SANGRIA COLGANTE, Y ESTO NO ES ESTETICA.
+    #
+    # La primera version se salia del ancho de la consola y la terminal la
+    # cortaba a mitad de una cifra: "...Copiaria" / " 67 y borraria 3.". Un
+    # veredicto partido en el peor sitio se lee mal justo el dia malo, y ademas
+    # el corte lo hace la ventana, asi que cambia de tamano con ella.
+    #
+    # Se descubrio MIRANDO EL BUFFER de una consola real -- no leyendo el
+    # codigo, donde la frase parece caber-. Es el mismo metodo con el que la
+    # ventana destapo dos defectos el 2026-09-02.
+    $ancho = 96
+    try {
+        $w = $Host.UI.RawUI.BufferSize.Width
+        # Menos el margen y la columna del nivel; y con suelo, porque una
+        # consola estrecha no puede dejar el texto en dos caracteres.
+        if ($w -gt 40) { $ancho = [Math]::Max(40, $w - 16) }
+    }
+    catch { Write-Verbose 'Sin consola medible: se usa el ancho por omision.' }
+
+    $lineas = Format-TextoAjustado -Texto $Frase -Ancho $ancho
+    Write-Linea ('   {0}{1,-9}{2} {3}' -f $color, $Nivel, $p.Fin, $lineas[0])
+    foreach ($resto in $lineas | Select-Object -Skip 1) {
+        Write-Linea ('                {0}' -f $resto)
+    }
+
+    if ($Accion) {
+        foreach ($l in (Format-TextoAjustado -Texto $Accion -Ancho $ancho)) {
+            Write-Linea ('             {0}{1}{2}' -f $p.Tenue, $l, $p.Fin)
+        }
+    }
+}
+
+function Format-TextoAjustado {
+    <#
+        .SYNOPSIS
+            Parte un texto por palabras a un ancho dado. Nunca corta una palabra.
+        .DESCRIPTION
+            Existe porque las cifras son lo que sostiene un veredicto, y una
+            cifra partida por la mitad deja de ser una cifra. Cortar por palabras
+            garantiza que "0.26 %" o "26927" lleguen enteros a la misma linea.
+        .PARAMETER Texto
+            Lo que hay que partir.
+        .PARAMETER Ancho
+            Caracteres por linea.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Texto,
+        [ValidateRange(20, 500)][int] $Ancho = 96
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Texto)) { return @('') }
+
+    $salida = New-Object System.Collections.Generic.List[string]
+    $actual = ''
+    foreach ($palabra in ($Texto -split '\s+')) {
+        if ($actual -eq '') { $actual = $palabra; continue }
+        if (($actual.Length + 1 + $palabra.Length) -le $Ancho) {
+            $actual = '{0} {1}' -f $actual, $palabra
+        }
+        else {
+            $salida.Add($actual)
+            $actual = $palabra
+        }
+    }
+    if ($actual -ne '') { $salida.Add($actual) }
+    return $salida.ToArray()
+}
+
+function Show-VeredictoDeSimulacion {
+    <#
+        .SYNOPSIS
+            Lo que la tecla [2] tiene que contestar: si algo frenaria, y con que
+            numero.
+        .DESCRIPTION
+            ESTA ES LA OPCION MAS IMPORTANTE DEL MENU -- mirar antes de saltar --
+            y era la unica que no reportaba ningun veredicto.
+
+            LO QUE SE ENSENA ES LO QUE EL FRENO MIDIO, no lo que dice la
+            configuracion. Un "umbral 5 %" solo repite lo que ya esta escrito en
+            el archivo; lo que dice algo es el porcentaje que DE VERDAD
+            cambiaria: un 0.3 % frente a un umbral del 5 % es tranquilidad
+            medida, y un 4.8 % es un aviso que ningun umbral da por si solo.
+        .PARAMETER Resultado
+            Lo que devuelve respaldo.ps1 en simulacion.
+        .PARAMETER Configuracion
+            Para poder decir contra que umbral se comparo.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowNull()] $Resultado,
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    if ($null -eq $Resultado) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La simulacion no devolvio nada.' `
+            -Accion 'Revisa el registro del dia en LOCALAPPDATA\NasRespaldo\registro.'
+        return
+    }
+
+    if ($Resultado.Abortada) {
+        $nivel = if (('' + $Resultado.Motivo) -like 'FRENO*') { 'ATENCION' } else { 'FALLO' }
+        Write-Veredicto -Nivel $nivel -Frase ('' + $Resultado.Motivo) `
+            -Accion 'No se copiaria nada. Con el freno, hay que autorizarlo a mano desde la consola con -AutorizarFreno.'
+        return
+    }
+
+    # LA PROPIEDAD SE LLAMA Frenos, EN PLURAL: es una por raiz. El defecto que
+    # abrio el pendiente 27 fue pedir Freno, que no existe.
+    $frenos = @($Resultado.Frenos | Where-Object { $null -ne $_ })
+    $umbral = $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian
+    $minimo = $Configuracion.freno.minimoArchivosParaFrenar
+
+    if ($frenos.Count -eq 0) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La simulacion no llego a medir ninguna raiz.' `
+            -Accion 'Comprueba que el nodo responde y vuelve a intentarlo.'
+        return
+    }
+
+    $ordenados = $frenos | Sort-Object { [double]$_.Porcentaje } -Descending
+    $peor      = @($ordenados)[0]
+    $aCopiar   = ($frenos | Measure-Object -Property ACopiar -Sum).Sum
+    $aBorrar   = ($frenos | Measure-Object -Property ABorrar -Sum).Sum
+
+    Write-Linea ''
+    Show-Texto -Objeto ($ordenados | Select-Object Raiz, Clase, Porcentaje, ACopiar, ABorrar, TotalOrigen)
+    Write-Linea ''
+    Write-Veredicto -Nivel 'OK' -Frase (
+        'Nada frenaria. {0} raices miradas; la mas movida es {1} con {2} % (umbral {3} %, minimo {4} archivos). Copiaria {5} y borraria {6}.' -f
+            $frenos.Count, (Split-Path $peor.Raiz -Leaf), $peor.Porcentaje, $umbral, $minimo, $aCopiar, $aBorrar)
+}
+
+function Show-VeredictoDelAutomatismo {
+    <#
+        .SYNOPSIS
+            Lo que la tecla [6] tiene que contestar: si el automatismo esta vivo
+            y si algo le ha metido mano al motor.
+        .DESCRIPTION
+            DOS DEFECTOS QUE ESTA FUNCION CORRIGE, y los dos se vieron pulsando
+            la tecla:
+
+            (1) Se volcaba NextRunTime en crudo. ESE NUMERO NO ES UNA PROMESA:
+                el Programador re-sortea el retraso en cada consulta, asi que
+                leerlo diez veces da diez horas distintas. Ensenarlo es publicar
+                como compromiso un numero que cambia solo -- el mismo error que
+                ya se corrigio en la linea de resumen del tablero.
+
+            (2) Se volcaba LastTaskResult sin traducir. "267009" no le dice nada
+                a nadie; significa "esta corriendo ahora".
+
+            Y ANADE LA COMPROBACION QUE PIDIO EL RESPONSABLE el 2026-09-02, por
+            el antivirus: que las piezas del motor sigan estando. Ver
+            Test-MotorIntacto.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param()
+
+    $filas = New-Object System.Collections.Generic.List[psobject]
+    foreach ($par in @(
+            @{ Eti = 'motor'; Tarea = $script:NombreTarea },
+            @{ Eti = 'icono'; Tarea = $script:NombreIndicador })) {
+        $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
+        if (-not $t) {
+            $filas.Add([pscustomobject]@{ Pieza = $par.Eti; Estado = 'NO EXISTE'; Ventanas = ''; Ultima = ''; Resultado = '' })
+            continue
+        }
+        $info = $t | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
+        $ultima = ''
+        $codigo = ''
+        if ($info) {
+            # 11/30/1999 es el "nunca" del Programador de tareas.
+            if ($info.LastRunTime -and $info.LastRunTime.Year -gt 2000) {
+                $ultima = '{0:dd/MM HH:mm}' -f $info.LastRunTime
+            }
+            else { $ultima = 'nunca' }
+            $codigo = switch ($info.LastTaskResult) {
+                0       { 'correcta' }
+                267009  { 'corriendo ahora' }
+                267011  { 'nunca ha corrido' }
+                default { ('codigo {0}' -f $info.LastTaskResult) }
+            }
+        }
+        $ventanas = if ($par.Eti -eq 'motor') { '' + @($t.Triggers).Count } else { '-' }
+        $filas.Add([pscustomobject]@{
+                Pieza     = $par.Eti
+                Estado    = '' + $t.State
+                Ventanas  = $ventanas
+                Ultima    = $ultima
+                Resultado = $codigo
+            })
+    }
+
+    $p = $script:Paleta
+    Write-Linea ''
+    Show-Texto -Objeto $filas.ToArray()
+    # NO SE ENSENA LA PROXIMA HORA, Y SE DICE POR QUE. Ver la cabecera.
+    Write-Linea ('   {0}La hora exacta de la proxima corrida no se puede saber: Windows la sortea{1}' -f $p.Tenue, $p.Fin)
+    Write-Linea ('   {0}dentro de la ventana y solo la fija al disparar.{1}' -f $p.Tenue, $p.Fin)
+    Write-Linea ''
+
+    $motor = Test-MotorIntacto
+    foreach ($f in @($motor.PiezasFallan)) { Write-Warning ('PIEZA DEL MOTOR: {0}' -f $f) }
+    foreach ($f in @($motor.TareasFallan)) { Write-Warning ('TAREA: {0}' -f $f) }
+
+    if ($motor.Intacto) {
+        Write-Veredicto -Nivel 'OK' -Frase (
+            'El automatismo esta vivo: {0} tareas en pie y las {1} piezas del motor intactas.' -f
+                $motor.TareasTotal, $motor.PiezasTotal)
+        return
+    }
+
+    $rotas = @($motor.PiezasFallan).Count + @($motor.TareasFallan).Count
+    Write-Veredicto -Nivel 'FALLO' -Frase (
+        '{0} de {1} comprobaciones fallan: el respaldo automatico NO esta garantizado.' -f
+            $rotas, ($motor.PiezasTotal + $motor.TareasTotal)) `
+        -Accion 'Si falta un archivo, mira la cuarentena de el antivirus: un antivirus que actua no avisa al programa que se lleva. Si falta una tarea, re-registrala con [A].'
+}
+
 function Show-RevisionDelDisco {
     <#
         .SYNOPSIS
@@ -925,9 +1228,10 @@ while ($seguir) {
                 else { Write-Linea '   Corrida terminada.' }
             }
             '2' {
-                Write-Linea '   Simulando (no se escribe nada)...'
+                Write-Anuncio -Que 'Simulacion de la copia al NODO' `
+                    -Detalle 'NO escribe nada. Mide que cambiaria en las 8 raices. ~1 min.'
                 $r2 = & "$nucleo\respaldo.ps1" @comunes -SoloSimular -Confirm:$false
-                Show-Texto -Objeto ($r2 | Select-Object Abortada, Motivo, Freno) -Lista -Vacio 'La simulacion no devolvio nada.'
+                Show-VeredictoDeSimulacion -Resultado $r2 -Configuracion $configuracion
             }
             '3' {
                 Write-Linea '   Verificando contra el nodo. El nivel 3 LEE LOS ARCHIVOS ENTEROS:'
@@ -943,11 +1247,9 @@ while ($seguir) {
                 Show-Texto -Objeto (& "$nucleo\semilla.ps1" -Destino $destino -Confirm:$false) -Lista -Vacio 'La semilla no devolvio nada.'
             }
             '6' {
-                foreach ($n in @($script:NombreTarea, $script:NombreIndicador)) {
-                    $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
-                    if ($t) { Show-Texto -Objeto ($t | Get-ScheduledTaskInfo) -Lista }
-                    else { Write-Warning "La tarea '$n' NO existe." }
-                }
+                Write-Anuncio -Que 'Estado del automatismo' `
+                    -Detalle 'Solo lee. Comprueba las dos tareas y que las piezas del motor sigan ahi.'
+                Show-VeredictoDelAutomatismo
             }
             '7' {
                 # Las DOS pasadas. Si el nodo no responde corre solo la del
