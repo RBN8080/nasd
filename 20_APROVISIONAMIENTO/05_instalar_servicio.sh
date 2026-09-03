@@ -95,10 +95,12 @@ direccion = "$IP"
 puerto = $PUERTO
 
 [sesion]
-# Tope deslizante de inactividad — ADR-0059. NO es plazos.inactividad_s de
-# abajo: aquel es el plazo de E/S de ADR-0026 dentro de UNA petición; este
-# es cuánto puede estar la sesión entera sin actividad antes de caducar.
-inactividad_s = 300
+# Tope deslizante de inactividad — ADR-0059, con el valor de ADR-0082. NO es
+# plazos.inactividad_s de abajo: aquel es el plazo de E/S de ADR-0026 dentro
+# de UNA petición; este es cuánto puede estar la sesión entera sin actividad
+# antes de caducar. 12 h: los 5 min originales echaban fuera a quien mira el
+# panel en vivo, porque un flujo SSE no cuenta como actividad.
+inactividad_s = 43200
 
 [plazos]
 inactividad_s = 60

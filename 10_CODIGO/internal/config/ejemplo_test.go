@@ -18,12 +18,17 @@ func TestElEjemploDelRepositorioSeLeeEntero(t *testing.T) {
 		t.Fatalf("el ejemplo del repositorio no se puede leer: %v", err)
 	}
 
-	// Se comprueban las claves de la capa de avisos porque son las últimas en
-	// llegar (ADR-0073) y las únicas cuyo valor por omisión gobierna en
-	// producción: 05_instalar_servicio.sh escribe el TOML del nodo solo la
-	// primera vez, así que a un nodo que ya existe estas claves llegan por el
-	// binario y no por el archivo. Que el ejemplo diga lo mismo que porDefecto()
-	// es lo que evita que el documento y el producto se contradigan.
+	// Se comprueban las claves cuyo valor por omisión GOBIERNA EN PRODUCCIÓN:
+	// 05_instalar_servicio.sh escribe el TOML del nodo solo la primera vez, así
+	// que a un nodo que ya existe estas claves llegan por el binario y no por el
+	// archivo. Que el ejemplo diga lo mismo que porDefecto() es lo que evita que
+	// el documento y el producto se contradigan.
+	//
+	// Las de avisos, por ser las últimas en llegar (ADR-0073). Las de sesión,
+	// porque el TOML del nodo NO declara sección [sesion] —comprobado el
+	// 2026-09-03— y ADR-0082 acaba de cambiar el plazo de inactividad en tres
+	// sitios a la vez: el binario, el ejemplo y el script de instalación. Si
+	// alguno se queda atrás, el ejemplo prometería un plazo que el nodo no tiene.
 	porOmision := porDefecto()
 	for _, caso := range []struct {
 		clave         string
@@ -32,6 +37,8 @@ func TestElEjemploDelRepositorioSeLeeEntero(t *testing.T) {
 		{"avisos.modo", c.ModoAvisos, porOmision.ModoAvisos},
 		{"avisos.resumen_horas", c.PeriodoResumen, porOmision.PeriodoResumen},
 		{"avisos.latido_s", c.IntervaloLatido, porOmision.IntervaloLatido},
+		{"sesion.duracion_horas", c.DuracionSesion, porOmision.DuracionSesion},
+		{"sesion.inactividad_s", c.InactividadSesion, porOmision.InactividadSesion},
 	} {
 		if caso.leido != caso.espera {
 			t.Errorf("%s = %v; el ejemplo debe coincidir con el valor por omisión (%v)",
