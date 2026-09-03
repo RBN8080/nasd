@@ -846,12 +846,16 @@ function Enter-MarcaDeCorrida {
         .PARAMETER Carpeta
             Donde ponerla.
         .PARAMETER Tipo
-            'nodo' -la que corre sola- o 'disco' -la copia fria-. SE GUARDA
-            PORQUE LAS DOS DURAN COSAS DISTINTAS: la del nodo son minutos y la
-            del disco puede ser horas, asi que el plazo a partir del cual una
-            marca deja de ser creible no puede ser el mismo. Sin esto, una copia
-            al disco perfectamente sana pintaba el icono de ROJO al pasar de
-            hora y media.
+            'nodo' -la que corre sola-, 'disco' -la copia fria- o 'verificacion'
+            -el cotejo de la opcion [3]-. SE GUARDA PORQUE DURAN COSAS DISTINTAS:
+            la del nodo son minutos y la del disco puede ser horas, asi que el
+            plazo a partir del cual una marca deja de ser creible no puede ser el
+            mismo. Sin esto, una copia al disco perfectamente sana pintaba el
+            icono de ROJO al pasar de hora y media.
+
+            'verificacion' comparte el plazo del nodo -son minutos- y NO escribe
+            estado: solo enciende el pulso del icono mientras lee. Igual que la
+            copia fria, que tampoco pisa el veredicto del nodo.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([string])]
@@ -859,7 +863,7 @@ function Enter-MarcaDeCorrida {
         [ValidateNotNullOrEmpty()]
         [string] $Carpeta = (Get-CarpetaDeEstado),
 
-        [ValidateSet('nodo', 'disco')]
+        [ValidateSet('nodo', 'disco', 'verificacion')]
         [string] $Tipo = 'nodo'
     )
     $ruta = Join-Path $Carpeta 'EN_CURSO.lock'

@@ -115,6 +115,60 @@ public class NasRespaldoCred {
     }
 }
 
+function Test-CotejoLimpio {
+    <#
+        .SYNOPSIS
+            Traduce un informe de verificacion a la mitad del verde que le toca:
+            "lo que se copio SE LEE".
+        .DESCRIPTION
+            EXISTE COMO FUNCION, Y NO SUELTA DENTRO DE verificar.ps1, PARA QUE SE
+            PUEDA PROBAR. Es la logica mas delicada del testigo: si se equivoca
+            hacia el verde, el vigilante externo deja de vigilar; si se equivoca
+            hacia el rojo, suena todos los dias y acaba desactivado.
+
+            SE MIRA EL CONTENIDO, NO LA ESTRUCTURA, y esa distincion es todo.
+            `TodoCoincide` del informe significa "no queda NADA pendiente de
+            copiar", y entre una corrida y la siguiente SIEMPRE queda algo -- se
+            guarda un documento, se escribe un archivo --. Apoyar el verde ahi lo
+            dejaria en rojo con el sistema sano, todos los dias.
+
+            Lo que el latido afirma es "hubo una corrida buena Y lo que copio se
+            lee". Un archivo creado DESPUES de la copia no formaba parte de esa
+            copia, asi que no puede desmentirla. Lo que SI la desmiente es una
+            huella distinta: significa que lo guardado no es lo que se creia
+            tener. Es la misma linea que separa ATENCION de FALLO en el veredicto
+            de la opcion [3] del tablero.
+
+            Y "NO PUDE MIRAR" NUNCA VALE COMO "MIRE Y ESTA BIEN": si no se leyo
+            ni un archivo -- el nodo no respondio, o la muestra era cero -- hay
+            cero diferencias por definicion, y sin la condicion de que se haya
+            leido algo, un nodo caido daria VERDE. Es la mentira mas cara que
+            este testigo puede contar.
+        .PARAMETER Informe
+            Lo que devuelve verificar.ps1.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][AllowNull()] $Informe
+    )
+
+    $leidos = 0
+    $distintos = 0
+    if ($null -ne $Informe) {
+        foreach ($h in @($Informe.Huellas | Where-Object { $null -ne $_ })) {
+            $leidos += [int]$h.Comprobados
+            $distintos += @($h.Diferencias).Count
+        }
+    }
+
+    return [pscustomobject]@{
+        Leidos    = $leidos
+        Distintos = $distintos
+        Limpio    = ($leidos -gt 0 -and $distintos -eq 0)
+    }
+}
+
 function Send-LatidoDelCliente {
     <#
         .SYNOPSIS
@@ -154,17 +208,30 @@ function Send-LatidoDelCliente {
         [ValidateNotNull()]
         [string] $Detalle = '',
 
-        [string] $Url
+        [string] $Url,
+
+        # DE QUE CREDENCIAL SE LEE LA URL. Existe por una razon concreta y cara:
+        # las pruebas necesitan ejercitar el camino "el testigo no esta
+        # configurado", y hasta el 2026-09-03 lo hacian pasando -Url '' -- que
+        # NO significa "sin URL", significa "cae al Administrador de
+        # credenciales". Mientras la credencial no existia daba lo mismo. El dia
+        # que se guardo la de verdad, LA SUITE DE PRUEBAS MANDO UN /fail AL
+        # CHECK REAL y lo puso en rojo.
+        #
+        # Ahora ese camino se pide nombrando una credencial que no existe, que es
+        # la condicion real y no un sustituto.
+        [ValidateNotNullOrEmpty()]
+        [string] $NombreEnElAlmacen = $script:NombreCredencialTestigo
     )
 
     if (-not $PSBoundParameters.ContainsKey('Url') -or [string]::IsNullOrWhiteSpace($Url)) {
-        $Url = Get-UrlDelTestigo
+        $Url = Get-UrlDelTestigo -Nombre $NombreEnElAlmacen
     }
     if ([string]::IsNullOrWhiteSpace($Url)) {
         return [pscustomobject]@{
             Enviado = $false
             Senal   = $Senal
-            Motivo  = "El testigo no esta configurado: falta la credencial '$script:NombreCredencialTestigo'. Es trabajo del responsable, no del agente."
+            Motivo  = "El testigo no esta configurado: falta la credencial '$NombreEnElAlmacen'. Es trabajo del responsable, no del agente."
         }
     }
 

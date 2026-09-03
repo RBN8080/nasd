@@ -525,9 +525,77 @@ Test-Afirmacion -Nombre 'Copiar sin verificar TAMPOCO da verde' `
 $ambas = Send-LatidoDelCliente -Senal 'Bien' -CorridaTermino -VerificacionPaso -Url 'https://ejemplo.invalido/x' -Confirm:$false -WhatIf
 Test-Afirmacion -Nombre 'Solo con las DOS condiciones el latido sale verde' `
     -Esperado 'Bien' -Obtenido $ambas.Senal
-$sinUrl = Send-LatidoDelCliente -Senal 'Mal' -Url '' -Confirm:$false
+# CUIDADO CON ESTA PRUEBA: `-Url ''` NO significa "sin URL". Significa "cae al
+# Administrador de credenciales". Mientras la credencial no existia daba igual, y
+# el 2026-09-03, en cuanto se guardo la de verdad, ESTA LINEA MANDO UN /fail AL
+# CHECK REAL y lo puso en rojo. La condicion honesta es nombrar una entrada que
+# no existe, no pasar una cadena vacia y confiar en que nadie configure nada.
+$sinUrl = Send-LatidoDelCliente -Senal 'Mal' -NombreEnElAlmacen 'NasRespaldo:EntradaQueNoExiste' -Confirm:$false
 Test-Afirmacion -Nombre 'Sin credencial configurada no falla: lo dice y sigue' `
     -Esperado $false -Obtenido $sinUrl.Enviado
+Test-Afirmacion -Nombre 'Y NO se envio nada: el camino sin credencial vuelve antes de la red' `
+    -Esperado $true -Obtenido ($sinUrl.Motivo -like '*no esta configurado*')
+
+# GUARDA: NINGUNA PRUEBA PUEDE ALCANZAR EL TESTIGO REAL. Se comprueba sobre el
+# texto de este mismo archivo, porque el dano no lo hace una funcion mal escrita
+# sino una llamada distraida -- que es exactamente como ocurrio.
+#
+# EL NOMBRE SE ARMA EN DOS TROZOS A PROPOSITO: escrito entero, esta linea se
+# encontraria a si misma y la guarda fallaria siempre. Se vio a la primera
+# corrida, que es justo lo que se le pide a una guarda.
+$queBuscar = 'Send-Latido' + 'DelCliente'
+$llamadasLatido = @(Get-Content -LiteralPath $PSCommandPath -Encoding UTF8 |
+        Where-Object { $_ -match $queBuscar -and $_ -notmatch '^\s*#' })
+$sinAtar = @($llamadasLatido | Where-Object { $_ -notmatch '-Url ' -and $_ -notmatch '-NombreEnElAlmacen ' })
+Test-Afirmacion -Nombre 'Ninguna llamada al latido queda suelta: todas fijan Url o entrada del almacen' `
+    -Esperado 0 -Obtenido $sinAtar.Count
+
+# LA CONDICION DEL VERDE, QUE HASTA HOY NO EMITIA NADIE. respaldo.ps1 mandaba
+# /start y /fail, y el "estoy bien" se habia quedado sin emisor porque exige algo
+# que la copia no puede afirmar: que lo copiado SE LEE.
+#
+# ESTRUCTURA Y CONTENIDO NO SON LO MISMO, y confundirlos rompe el testigo en una
+# direccion o en la otra.
+$cotejoConPendientes = [pscustomobject]@{
+    TodoCoincide = $false
+    Coincidencias = @([pscustomobject]@{ Raiz = 'C:\dev'; Faltan = 10; Sobran = 0; Coincide = $false })
+    Huellas = @([pscustomobject]@{ Raiz = 'C:\dev'; Comprobados = 10; Diferencias = @(); Correcto = $true })
+}
+$limpio = Test-CotejoLimpio -Informe $cotejoConPendientes
+Test-Afirmacion -Nombre 'Archivos PENDIENTES de copiar NO tumban el verde: no son un fallo de la copia' `
+    -Esperado $true -Obtenido $limpio.Limpio
+Test-Afirmacion -Nombre 'Y se sabe con cuantos archivos leidos se afirma' `
+    -Esperado 10 -Obtenido $limpio.Leidos
+
+$cotejoPodridoT = [pscustomobject]@{
+    TodoCoincide = $true
+    Coincidencias = @([pscustomobject]@{ Raiz = 'C:\dev'; Faltan = 0; Sobran = 0; Coincide = $true })
+    Huellas = @([pscustomobject]@{ Raiz = 'C:\dev'; Comprobados = 10
+            Diferencias = @([pscustomobject]@{ Ruta = 'a.txt'; Motivo = 'HUELLA DISTINTA' })
+            Correcto = $false
+        })
+}
+Test-Afirmacion -Nombre 'Una HUELLA distinta si lo tumba: lo guardado no es lo que se creia tener' `
+    -Esperado $false -Obtenido (Test-CotejoLimpio -Informe $cotejoPodridoT).Limpio
+
+# "NO PUDE MIRAR" NO ES "MIRE Y ESTA BIEN". Con el nodo caido no se lee ni un
+# archivo, asi que hay cero diferencias POR DEFINICION. Sin la condicion de haber
+# leido algo, un nodo muerto daria VERDE -- la mentira mas cara del testigo.
+$cotejoCiegoT = [pscustomobject]@{ TodoCoincide = $false; Coincidencias = @(); Huellas = @() }
+Test-Afirmacion -Nombre 'Sin haber leido NI UN archivo no hay verde: cero diferencias no es cero riesgo' `
+    -Esperado $false -Obtenido (Test-CotejoLimpio -Informe $cotejoCiegoT).Limpio
+Test-Afirmacion -Nombre 'Un informe nulo tampoco da verde, y no revienta' `
+    -Esperado $false -Obtenido (Test-CotejoLimpio -Informe $null).Limpio
+
+# EL TESTIGO VIGILA EL AUTOMATISMO, NO A LA PERSONA. El /start salia en TODA
+# corrida, tambien en la lanzada a mano desde el menu; y como el verde exige una
+# verificacion que la corrida a mano no hace, el check quedaba ABIERTO y sin
+# cerrar -- pasado el margen, Telegram avisaria de un sistema sano.
+$fuenteMotor = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\respaldo.ps1') -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'El /start del testigo solo sale en la corrida PROGRAMADA' `
+    -Esperado $true -Obtenido ($fuenteMotor -match "if \(\`$Programada\) \{[^}]*Senal 'Inicio'")
+Test-Afirmacion -Nombre 'Y verificar.ps1 se invoca con & y NUNCA con punto (tiene param)' `
+    -Esperado $true -Obtenido ($fuenteMotor -match '& "\$PSScriptRoot\\verificar\.ps1" @argsCotejo')
 
 Write-Titulo 'Criterios 8 y 10: la tarea programada'
 
@@ -1515,7 +1583,7 @@ Test-Afirmacion -Nombre 'El resultado del motor trae `Frenos`, en plural' `
     -Esperado $true -Obtenido ($nombres27 -contains 'Frenos')
 Test-Afirmacion -Nombre 'Y NO trae `Freno`: pedirla daba una columna vacia que mentia' `
     -Esperado $false -Obtenido ($nombres27 -contains 'Freno')
-Test-Afirmacion -Nombre 'Hay una medida de freno por raiz, que es lo que la tecla [2] tiene que ensenar' `
+Test-Afirmacion -Nombre 'Hay una medida de freno por raiz, que es lo que la opcion [2] tiene que ensenar' `
     -Esperado $true -Obtenido (@($sim27.Frenos).Count -gt 0)
 
 # EL MOTOR INTACTO. Lo pidio el responsable el 2026-09-02 por las alertas de
@@ -1566,7 +1634,7 @@ Test-Afirmacion -Nombre 'Pero SI queda escrita en el registro del dia, con su ni
     -Esperado $true -Obtenido ((Get-Content -LiteralPath $archivoReg -Raw) -match 'ATENCION\s+huerfano\s+una carpeta cualquiera')
 
 # EL VEREDICTO NO SE SALE DEL ANCHO. Lo destapo mirar el buffer de una consola
-# real: la frase de la tecla [2] se cortaba a mitad de una cifra --
+# real: la frase de la opcion [2] se cortaba a mitad de una cifra --
 # "...Copiaria" / "67 y borraria 3."-- y una cifra partida deja de ser una cifra.
 . "$PSScriptRoot\..\1-Interfaz\tablero.ps1"
 $largo = 'Nada frenaria. 8 raices miradas; la mas movida es dev con 0.26 % (umbral 5 %, minimo 10 archivos). Copiaria 67 y borraria 3.'
@@ -1581,6 +1649,140 @@ Test-Afirmacion -Nombre 'Y NUNCA se parte una cifra por la mitad' `
     -Esperado $true -Obtenido (@($partido | Where-Object { $_ -match '0\.26 %' }).Count -eq 1)
 Test-Afirmacion -Nombre 'Un texto vacio devuelve una linea vacia, no revienta' `
     -Esperado 1 -Obtenido @(Format-TextoAjustado -Texto '' -Ancho 60).Count
+
+# UNA FRASE QUE CABE EN UNA LINEA TIENE QUE SEGUIR SIENDO UN ARREGLO, y este es
+# el hueco por el que se colo un defecto que afectaba a las ONCE opciones.
+# PowerShell desenvuelve un arreglo de un solo elemento al salir de la funcion,
+# asi que el llamador -- que pide $lineas[0] esperando la primera LINEA -- se
+# quedaba con la primera LETRA. En pantalla se leia "ATENCION  E".
+#
+# LAS CUATRO PRUEBAS DE ARRIBA NO LO CAZARON, Y POR UNA RAZON QUE VALE LA PENA
+# DEJAR ESCRITA: todas usan frases largas que se parten en dos o mas lineas, asi
+# que el arreglo sobrevivia por accidente. Hizo falta PULSAR la opcion en una
+# consola real para verlo.
+$corta = Format-TextoAjustado -Texto 'Cabe entera en una linea.' -Ancho 60
+Test-Afirmacion -Nombre 'Una frase de una sola linea vuelve como ARREGLO, no como cadena suelta' `
+    -Esperado $true -Obtenido ($corta -is [array])
+Test-Afirmacion -Nombre 'Y su primer elemento es la LINEA entera, no la primera letra' `
+    -Esperado 'Cabe entera en una linea.' -Obtenido $corta[0]
+$pantallaCorta = (Write-Veredicto -Nivel 'OK' -Frase 'Todo cuadra: 8 de 8 raices.' 6>&1 | Out-String)
+Test-Afirmacion -Nombre 'Y en pantalla un veredicto corto sale ENTERO, no su inicial' `
+    -Esperado $true -Obtenido ($pantallaCorta -match 'Todo cuadra: 8 de 8 raices\.')
+
+# ---------------------------------------------------------------------------
+#  EL COTEJO -- la opcion [3], y el icono que se quedaba quieto
+#
+#  Probando el menu a mano el 2026-09-02 salieron tres cosas de la MISMA opcion:
+#  no decia contra QUE cotejaba, volcaba una lista cruda sin veredicto, y el
+#  icono no se movia durante varios minutos de trabajo real.
+#
+#  Lo tercero era un defecto de verdad y no una impresion: verificar.ps1 era el
+#  UNICO de los tres guiones largos que no ponia la marca de corrida. El pulso
+#  suave de la seccion 10.2 llevaba meses escrito y probado, y no habia nadie
+#  que lo encendiera.
+# ---------------------------------------------------------------------------
+
+$cajaCotejo = Join-Path $caja.Raiz 'cotejo'
+New-Item -ItemType Directory -Path $cajaCotejo -Force | Out-Null
+
+[void](Enter-MarcaDeCorrida -Carpeta $cajaCotejo -Tipo 'verificacion' -Confirm:$false)
+$marcaVerif = Get-MarcaDeCorrida -Carpeta $cajaCotejo
+Test-Afirmacion -Nombre 'La marca del cotejo se distingue de la del nodo y de la del disco' `
+    -Esperado 'verificacion' -Obtenido $marcaVerif.Tipo
+Test-Afirmacion -Nombre 'Y viva NO cuenta como vieja: el icono la pinta como trabajo en curso' `
+    -Esperado $false -Obtenido $marcaVerif.Vieja
+Exit-MarcaDeCorrida -Carpeta $cajaCotejo -Confirm:$false
+Test-Afirmacion -Nombre 'Al terminar el cotejo, la marca se retira' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $cajaCotejo 'EN_CURSO.lock'))
+
+# UN COTEJO DE DOS HORAS NO ES CREIBLE. Comparte el plazo CORTO del nodo y no
+# las ocho horas holgadas de la copia fria: un cotejo que lleva dos horas es un
+# proceso colgado, no un disco lento moviendo decenas de GB.
+$hace2hCotejo = (Get-Date).AddHours(-2).ToString('s')
+Set-Content -LiteralPath (Join-Path $cajaCotejo 'EN_CURSO.lock') -Encoding UTF8 `
+    -Value "pid=$PID`ninicio=$hace2hCotejo`nequipo=$env:COMPUTERNAME`ntipo=verificacion`n"
+Test-Afirmacion -Nombre 'Un cotejo de 2 h NO es creible: usa el plazo corto, no el del disco' `
+    -Esperado $true -Obtenido (Get-MarcaDeCorrida -Carpeta $cajaCotejo).Vieja
+Remove-Item -LiteralPath (Join-Path $cajaCotejo 'EN_CURSO.lock') -Force
+
+# EL ICONO DICE QUE COTEJA, NO QUE COPIA. El estado sigue siendo uno de los
+# cinco -el nodo lee esa palabra del ESTADO.txt, y renombrarla obligaria a
+# redesplegar el nodo por un matiz-, y lo que cambia es el DETALLE, que es lo
+# unico que una persona llega a leer.
+[void](Enter-MarcaDeCorrida -Carpeta $cajaCotejo -Tipo 'verificacion' -Confirm:$false)
+$vistaCotejo = & $indicador -UnaSolaLectura -CarpetaEstado $cajaCotejo
+Test-Afirmacion -Nombre 'Cotejando, el icono reusa el estado que ya existia (el del pulso suave)' `
+    -Esperado 'Copiando' -Obtenido $vistaCotejo.Estado
+Test-Afirmacion -Nombre 'Pero el detalle dice COTEJANDO y no "copiando": el icono no miente' `
+    -Esperado $true -Obtenido ($vistaCotejo.Detalle -like 'Cotejando*')
+Exit-MarcaDeCorrida -Carpeta $cajaCotejo -Confirm:$false
+
+# SIN MARCA NO PUEDE REVENTAR, y estuvo a punto de hacerlo. Get-MarcaDeCorrida
+# NO devuelve la propiedad Tipo cuando no hay marca, asi que leerla fuera del
+# if habria tumbado el icono bajo StrictMode SIEMPRE QUE TODO IBA BIEN -- el
+# peor momento imaginable para quedarse sin icono, porque el silencio se
+# confunde con normalidad.
+$vistaSinMarca = & $indicador -UnaSolaLectura -CarpetaEstado $cajaCotejo
+Test-Afirmacion -Nombre 'Sin marca el icono resuelve igual: un Tipo que no existe no lo tumba' `
+    -Esperado $true `
+    -Obtenido ($null -ne $vistaSinMarca -and -not [string]::IsNullOrWhiteSpace('' + $vistaSinMarca.Estado))
+
+# EL VEREDICTO DEL COTEJO. Write-Linea sale por Write-Information, asi que la
+# pantalla se captura con 6>&1: se comprueba lo que SE LEE, no lo que se calcula.
+$cotejoLimpio = [pscustomobject]@{
+    NodoVivo      = $true
+    Coincidencias = @([pscustomobject]@{ Raiz = 'C:\dev'; Clase = 'B'; Faltan = 0; Sobran = 0; Coincide = $true })
+    Huellas       = @([pscustomobject]@{ Raiz = 'C:\dev'; Comprobados = 7; Ausentes = 0; Diferencias = @(); Correcto = $true })
+}
+$pantallaLimpia = (Show-VeredictoDelCotejo -Resultado $cotejoLimpio 6>&1 | Out-String)
+Test-Afirmacion -Nombre 'Un cotejo sin diferencias da OK' `
+    -Esperado $true -Obtenido ($pantallaLimpia -match 'OK\s')
+Test-Afirmacion -Nombre 'Y el verde lo sostiene la cifra de archivos LEIDOS ENTEROS, no de raices' `
+    -Esperado $true -Obtenido ($pantallaLimpia -match '7 archivos leidos enteros')
+
+# ESTRUCTURA DISTINTA ES ATENCION: lo que falta se copia solo en la siguiente
+# corrida, asi que no es un fallo.
+$cotejoDesfasado = [pscustomobject]@{
+    NodoVivo      = $true
+    Coincidencias = @([pscustomobject]@{ Raiz = 'C:\dev'; Clase = 'B'; Faltan = 12; Sobran = 0; Coincide = $false })
+    Huellas       = @([pscustomobject]@{ Raiz = 'C:\dev'; Comprobados = 7; Ausentes = 0; Diferencias = @(); Correcto = $true })
+}
+$pantallaDesfasada = (Show-VeredictoDelCotejo -Resultado $cotejoDesfasado 6>&1 | Out-String)
+Test-Afirmacion -Nombre 'Faltar archivos en el nodo es ATENCION, no FALLO: la proxima corrida los pone' `
+    -Esperado $true -Obtenido ($pantallaDesfasada -match 'ATENCION')
+
+# CONTENIDO DISTINTO ES FALLO, Y ES LA DISTINCION QUE JUSTIFICA LA OPCION. Una
+# huella que no casa significa que lo guardado NO ES lo que se creia tener, y
+# ninguna corrida futura va a notarlo: robocopy compara fecha y tamano.
+$cotejoPodrido = [pscustomobject]@{
+    NodoVivo      = $true
+    Coincidencias = @([pscustomobject]@{ Raiz = 'C:\dev'; Clase = 'B'; Faltan = 0; Sobran = 0; Coincide = $true })
+    Huellas       = @([pscustomobject]@{ Raiz = 'C:\dev'; Comprobados = 7
+            Ausentes = 0
+            Diferencias = @([pscustomobject]@{ Ruta = 'a.txt'; Motivo = 'HUELLA DISTINTA' })
+            Correcto = $false
+        })
+}
+$pantallaPodrida = (Show-VeredictoDelCotejo -Resultado $cotejoPodrido 6>&1 | Out-String)
+Test-Afirmacion -Nombre 'Una huella distinta es FALLO, y gana sobre una estructura que si cuadra' `
+    -Esperado $true -Obtenido ($pantallaPodrida -match 'FALLO')
+
+# "NO PUDE MIRAR" NO ES "MIRE Y ESTA BIEN". Con el nodo apagado, un OK seria la
+# mentira mas cara del tablero.
+$cotejoCiego = [pscustomobject]@{ NodoVivo = $false; Coincidencias = @(); Huellas = @() }
+$pantallaCiega = (Show-VeredictoDelCotejo -Resultado $cotejoCiego 6>&1 | Out-String)
+Test-Afirmacion -Nombre 'Con el nodo caido el cotejo dice SIN DATOS, nunca OK' `
+    -Esperado $true -Obtenido ($pantallaCiega -match 'SIN DATOS')
+
+# EL VOCABULARIO DEL MENU QUEDA FIJADO. Se pidio mirando la pantalla, y sin una
+# prueba vuelve solo en el proximo cambio.
+$fuenteMenu = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\tablero.ps1') -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'El menu pide una "opcion", no una "tecla"' `
+    -Esperado $true -Obtenido ($fuenteMenu -match "Read-Host\s+'\s*opcion'")
+Test-Afirmacion -Nombre 'Ninguna opcion se sigue llamando "simular": no decia simular QUE' `
+    -Esperado $true -Obtenido ($fuenteMenu -notmatch "\[\d\]\s+simular")
+Test-Afirmacion -Nombre 'La vista previa va SANGRADA bajo la copia que previsualiza' `
+    -Esperado $true -Obtenido ($fuenteMenu -match "\[2\]\s\s+vista previa" -and $fuenteMenu -match "\[8\]\s\s+vista previa")
 
 # ===========================================================================
 

@@ -160,9 +160,31 @@ function Get-EstadoParaElIcono {
             return [pscustomobject]@{ Estado = 'Falla'; Detalle = "Una corrida arranco y nunca termino ($porque)"; Fuente = 'marca' }
         }
 
-        # 3. Marca presente y viva -> copiando ahora.
+        # 3. Marca presente y viva -> el motor trabaja ahora.
+        #
+        # EL ESTADO SIGUE SIENDO 'Copiando' Y EL DETALLE DICE LA VERDAD. Son las
+        # dos mitades de la misma decision: 'Copiando' es una de las CINCO
+        # palabras del vocabulario de la seccion 11, y el nodo la lee del
+        # ESTADO.txt en internal/respaldo. Renombrarla para que cupiera el cotejo
+        # obligaria a tocar el nodo, redesplegarlo y estrenar vocabulario en los
+        # dos lados -- todo para un matiz que cabe entero en el globo del icono.
+        # Lo que el usuario LEE es el detalle; el estado solo elige forma y color.
+        #
+        # EL switch VA DENTRO DEL if, y no fuera. Get-MarcaDeCorrida NO devuelve
+        # la propiedad Tipo cuando no hay marca -- que es el caso normal-, y bajo
+        # StrictMode leer una propiedad que no existe lanza. Fuera del if, el
+        # icono se caia siempre que todo iba bien.
         if ($marca.Existe) {
-            return [pscustomobject]@{ Estado = 'Copiando'; Detalle = "Copiando desde hace $($marca.Minutos) min"; Fuente = 'marca' }
+            $queHace = switch ('' + $marca.Tipo) {
+                'disco' { 'Copiando al disco frio' }
+                'verificacion' { 'Cotejando contra el nodo' }
+                default { 'Copiando al nodo' }
+            }
+            return [pscustomobject]@{
+                Estado  = 'Copiando'
+                Detalle = "$queHace desde hace $($marca.Minutos) min"
+                Fuente  = 'marca'
+            }
         }
 
         # 4. Sin marca: manda lo que dejo escrito la ultima corrida.
