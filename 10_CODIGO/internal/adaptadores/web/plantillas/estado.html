@@ -5,6 +5,13 @@
 </head>
 <body>
 {{template "marco-abre" .}}
+{{/* El rótulo de conexión, en la misma línea del título. Lo enciende
+     estado.js al conectar el flujo y nace oculto A PROPÓSITO: sin
+     JavaScript la página no se actualiza sola, y un cartel que dijera
+     «en línea» sobre una foto congelada sería justo la clase de
+     indicador que miente que 00_RECTOR.md §12.5 lleva años corrigiendo. */}}
+<span id="latido" class="p p-na" hidden></span>
+{{template "marco-cabeza" .}}
 {{/* Estado NO tiene barra de órdenes, y no es un olvido: medir es
      automático, aquí no hay nada que crear, subir ni filtrar. Un módulo sin
      nada que hacer no simula tener una barra vacía. */}}
@@ -14,13 +21,6 @@
   <p class="nota">Sin JavaScript esta página no se refresca sola: las cifras son
   las del momento en que se abrió. Recárguela para verlas de nuevo.</p>
 </noscript>
-
-<!-- El rótulo de conexión lo enciende estado.js al conectar el flujo. Nace
-     oculto A PROPÓSITO: sin JavaScript la página no se actualiza sola, y un
-     cartel que dijera «en línea» sobre una foto congelada sería justo la
-     clase de indicador que miente que 00_RECTOR.md §12.5 lleva años
-     corrigiendo. -->
-<span id="latido" class="p p-na" hidden></span>
 
 <!-- LA ESCALERA SE FUE, Y LA TABLA EMPIEZA JUSTO BAJO EL RÓTULO DE CONEXIÓN.
      Eran tres cifras —SoC, disco, en marcha— que Resumen ya enseña, así que

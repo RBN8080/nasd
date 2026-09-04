@@ -9,6 +9,7 @@
      una línea de JavaScript (ADR-0027). */}}
 <input class="ctl" type="checkbox" id="f-abre"{{if .FiltroAbierto}} checked{{end}}>
 {{template "marco-abre" .}}
+{{template "marco-cabeza" .}}
 
 <!-- «Estado», «Cuentas» y «Salir» ya no viven aquí (ADR-0075): son navegación
      y su sitio es el rail. El filtro SÍ es propio de este módulo, y por eso se
