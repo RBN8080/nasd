@@ -104,6 +104,43 @@ func ipDe(r *http.Request) netip.Addr {
 	return ip
 }
 
+// anotarOperadorConocido deja constancia de que desde este operador entró
+// alguien con contraseña. Lo llama SOLO el acceso correcto de sesion.go.
+//
+// # POR QUÉ VIVE AQUÍ Y NO EN internal/seguridad
+//
+// Porque hace falta resolver la dirección a un operador, y quien tiene la base
+// de 577 871 rangos es este adaptador: el dominio no la conoce a propósito
+// (ADR-0014). El dominio guarda el dato; este archivo lo averigua.
+//
+// # NO FALLA NUNCA HACIA FUERA
+//
+// Ninguna de sus tres salidas anticipadas puede impedir un acceso que ya se
+// concedió: sin la pieza, sin dirección legible o sin base de operadores,
+// simplemente no consta nadie. Lo que se pierde es que la cuarentena aparte de
+// más, y eso se ve en el panel y se suelta con un clic; lo que NUNCA puede
+// pasar es que una contraseña correcta se quede fuera por esto.
+func (s *Servidor) anotarOperadorConocido(r *http.Request, ahora time.Time) {
+	if s.operadores == nil {
+		return
+	}
+	ip := ipDe(r)
+	if !ip.IsValid() {
+		return
+	}
+	asn, ok := s.geo.ASN(ip)
+	if !ok {
+		return
+	}
+	if s.operadores.Anotar(asn, ahora) {
+		// Se anota UNA vez por operador, la primera. No es ruido: es la línea
+		// que explica por qué a partir de ahora el guardia deja tranquila a esa
+		// red, y sin ella habría que deducirlo del archivo.
+		s.reg.Info("operador nuevo con sesión iniciada; la cuarentena ya no lo apartará sola",
+			"asn", asn, "operadores_conocidos", s.operadores.Cuantos())
+	}
+}
+
 // anotarConexion registra toda conexión entrante de Internet, hable HTTP o no.
 // Es el http.Server.ConnState de los dos servidores (servidor.go).
 //

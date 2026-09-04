@@ -220,5 +220,88 @@ comprobar "texto plano" "$DIR/texto" 4
 comprobar "texto plano, como IPv6" "$DIR/texto" 6
 
 echo
+echo "== El historial que el sensor relee al arrancar =="
+# ESTA SECCION EXISTE POR UN DEFECTO MEDIDO, no por completitud: el anillo del
+# sensor vivia SOLO en memoria, asi que el primer volcado tras arrancar pisaba
+# el archivo con uno vacio -- en cada reinicio del nodo Y en cada despliegue.
+# Al releerlo, estas lineas pasan a ser bytes que hay que analizar con la misma
+# desconfianza que un paquete: un corte de luz pudo dejar el archivo a medias.
+#
+# LOS INSTANTES ESPERADOS SE CALCULARON CON date(1), NO con este codigo. Si
+# salieran de la propia implementacion, la prueba solo diria que hace lo que
+# hace.   date -u -d 2026-09-04T03:36:51Z +%s   ->   1788493011
+
+printf '%s\n' \
+  '# Historial de toques -- anillo de 2000, del mas antiguo al mas reciente.' \
+  '# Un toque por linea: instante origen puerto tipo.' \
+  '# total-visto: 62' \
+  '2026-09-04T03:36:51Z 192.168.1.18 80 syn' \
+  '2026-08-31T22:26:07Z 2a06:4884:1000::5 443 syn' > "$DIR/hist_ok"
+esperar "historial completo" "--historial" "$DIR/hist_ok" \
+"toque momento=1788493011 origen=192.168.1.18 puerto=80 tipo=syn
+toque momento=1788215167 origen=2a06:4884:1000::5 puerto=443 tipo=syn
+total=62 leidos=2"
+
+# LA EPOCA, que es donde se rompe una cuenta de dias mal escrita: 1970-01-01
+# tiene que dar exactamente 0. Sin este caso, un desfase constante de un dia
+# pasaria desapercibido en todos los demas, que solo se comparan consigo mismos.
+printf '%s\n' '1970-01-01T00:00:00Z 10.0.0.1 22 ping' > "$DIR/hist_epoca"
+esperar "la epoca da cero" "--historial" "$DIR/hist_epoca" \
+"toque momento=0 origen=10.0.0.1 puerto=22 tipo=ping
+total=0 leidos=1"
+
+printf '%s\n' '# total-visto: 62' > "$DIR/hist_solo_cab"
+esperar "solo cabeceras" "--historial" "$DIR/hist_solo_cab" "total=62 leidos=0"
+
+# UN CORTE DE LUZ A MEDIA LINEA. Lo de arriba se conserva y lo cortado se tira:
+# es la diferencia entre perder una linea y perder el archivo entero, que es lo
+# que veniamos haciendo en cada arranque.
+printf '%s\n%s' '2026-09-04T03:36:51Z 192.168.1.18 80 syn' \
+  '2026-09-04T03:37:0' > "$DIR/hist_cortado"
+esperar "cortado a media linea" "--historial" "$DIR/hist_cortado" \
+"toque momento=1788493011 origen=192.168.1.18 puerto=80 tipo=syn
+total=0 leidos=1"
+
+# UNA FECHA IMPOSIBLE SE RECHAZA, no se convierte. Febrero no tiene 31 dias, y
+# un instante inventado se pintaria en el panel como si fuera cierto.
+printf '%s\n' '2026-02-31T10:00:00Z 10.0.0.1 80 syn' > "$DIR/hist_feb31"
+esperar "31 de febrero" "--historial" "$DIR/hist_feb31" "total=0 leidos=0"
+
+printf '%s\n' '2026-09-04T03:36:51Z 10.0.0.1 70000 syn' > "$DIR/hist_puerto"
+esperar "puerto fuera de rango" "--historial" "$DIR/hist_puerto" "total=0 leidos=0"
+
+# Una direccion mas larga de lo que cabe NO se recorta: media direccion es un
+# dato falso. Se descarta la linea entera.
+printf '%s\n' "2026-09-04T03:36:51Z $(printf 'a%.0s' $(seq 1 50)) 80 syn" > "$DIR/hist_largo"
+esperar "origen mas largo que el campo" "--historial" "$DIR/hist_largo" "total=0 leidos=0"
+
+# La T y la Z son separadores, no adorno: si se dejaran de mirar, cualquier
+# linea con numeros en los sitios correctos entraria como un toque.
+printf '%s\n' '2026-09-04 03:36:51Z 10.0.0.1 80 syn' > "$DIR/hist_sinT"
+esperar "instante sin la T" "--historial" "$DIR/hist_sinT" "total=0 leidos=0"
+
+# Una cabecera ilegible no puede inventar una cuenta: mejor perder el total que
+# publicar uno falso. Las lineas de debajo se siguen leyendo igual.
+printf '%s\n' '# total-visto: 99999999999999999999999999' \
+  '2026-09-04T03:36:51Z 10.0.0.1 80 syn' > "$DIR/hist_total_roto"
+esperar "total-visto que no cabe" "--historial" "$DIR/hist_total_roto" \
+"toque momento=1788493011 origen=10.0.0.1 puerto=80 tipo=syn
+total=0 leidos=1"
+
+echo
+echo "== Historial malformado: aqui solo se exige NO REVENTAR =="
+comprobar "historial que no existe" "--historial" "$DIR/no_existe_ninguno"
+: > "$DIR/hist_vacio"
+comprobar "historial vacio" "--historial" "$DIR/hist_vacio"
+printf 'esto no es un historial, es texto plano y encima largo\n' > "$DIR/hist_texto"
+comprobar "historial de texto plano" "--historial" "$DIR/hist_texto"
+printf '2026-09-04T03:36:51Z\n' > "$DIR/hist_solo_fecha"
+comprobar "solo el instante, sin nada mas" "--historial" "$DIR/hist_solo_fecha"
+printf '2026-12-31T23:59:60Z 10.0.0.1 80 syn\n' > "$DIR/hist_intercalar"
+comprobar "segundo intercalar" "--historial" "$DIR/hist_intercalar"
+printf '\x00\x01\x02 binario crudo\n' > "$DIR/hist_binario"
+comprobar "bytes binarios" "--historial" "$DIR/hist_binario"
+
+echo
 echo "RESULTADO: $ok correctas, $mal fallidas"
 exit "$mal"

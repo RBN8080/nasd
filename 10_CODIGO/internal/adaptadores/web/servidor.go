@@ -93,6 +93,10 @@ type Servidor struct {
 	// lista son los bloqueos manuales. Se consulta en el mismo sitio que la
 	// cuarentena y por la misma puerta.
 	lista *seguridad.Lista
+	// operadores recuerda desde donde ha entrado alguien con contrasena. Se
+	// ESCRIBE en un solo sitio -- el acceso correcto de sesion.go -- y quien lo
+	// lee es la cuarentena, no este paquete.
+	operadores *seguridad.Operadores
 	// novedades cuenta lo que ha pasado desde la última visita al panel.
 	novedades *seguridad.Novedades
 	// hallazgos guarda las rutas que este NAS no publica y aun así atendió con
@@ -310,6 +314,15 @@ type Opciones struct {
 	// y por eso Nuevo NO la exige, al revés que Usuarios, Metricas o
 	// Seguridad, cuya ausencia sí rompería algo en silencio.
 	GeoIP *geoip.BaseDatos
+	// Operadores anota de qué operador entró alguien CON CONTRASEÑA, que es la
+	// barandilla que impide que la cuarentena aparte sola a la familia.
+	//
+	// OPCIONAL, como GeoIP y por la misma clase de motivo, aunque el efecto de
+	// su ausencia sea el contrario: sin GeoIP el panel dice menos; sin esto el
+	// guardia aparta MÁS, porque nunca consta nadie. No rompe nada en silencio
+	// —un apartado se ve y se suelta desde el panel—, así que no se exige y las
+	// pruebas de este paquete siguen construyendo servidores sin ella.
+	Operadores *seguridad.Operadores
 
 	// --- Capa de avisos externos (ADR-0073) ------------------------------
 	//
@@ -442,6 +455,7 @@ func Nuevo(o Opciones) (*Servidor, error) {
 		hallazgos:         o.Hallazgos,
 		rutaToques:        o.RutaToques,
 		geo:               o.GeoIP,
+		operadores:        o.Operadores,
 		dirMiniaturas:     o.DirMiniaturas,
 		miniaturaSem:      make(chan struct{}, 1),
 		miniaturaFallidas: nuevoFallosMiniatura(),

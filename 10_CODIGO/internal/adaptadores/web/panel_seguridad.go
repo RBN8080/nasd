@@ -179,26 +179,47 @@ type vistaSeguridad struct {
 	// mismo número con otra etiqueta era ruido, y es lo que había.
 	//
 	// Sobrevive a un reinicio desde el arreglo del 18/08 (totalDeCabecera).
-	// EL DE PAQUETES NO SE PINTA, y no por simetría mal entendida: nas-sensor
-	// no relee su archivo, así que su «desde siempre» volvía a cero en cada
-	// arranque suyo. Un número falso no se enseña con una etiqueta más
-	// prudente; se quita, y en su lugar va PaquetesDesde, que sí es verdad.
+	// EL DE PAQUETES TAMPOCO SE PINTABA, y por un motivo que ya no se sostiene:
+	// nas-sensor no releía su archivo, así que su «desde siempre» volvía a cero
+	// en cada arranque suyo y un número falso no se enseña con una etiqueta más
+	// prudente. Desde que el sensor relee (nas-sensor/analisis.c, leer_toque y
+	// leer_total) la cifra es verdad, y se enseña en TotalToques — pero solo en
+	// el estado vacío, que es donde contesta una pregunta.
 	TotalConexiones  int64
 	HayMasConexiones bool
 	// HayToques dice si el sensor está instalado. La plantilla lo usa para NO
 	// pintar una columna de ceros, que se leería como «nadie me toca» cuando
 	// significa «no lo estoy mirando» — mismo criterio que HayGeo.
 	HayToques bool
+	// TotalToques son los paquetes que el sensor ha capturado DESDE SIEMPRE,
+	// tal como publica en su cabecera.
+	//
+	// Se enseña justo cuando la tabla sale vacía, porque es la única cifra que
+	// distingue «no ha tocado nadie» de «el sensor está muerto»: sube con un
+	// SYN de la LAN aunque el panel después no lo enseñe. Es lo que el propio
+	// sensor.c dice que existe para eso.
+	//
+	// SOLO ES CREÍBLE DESDE QUE nas-sensor RELEE SU ARCHIVO. Hasta entonces se
+	// ponía a cero en cada arranque —y en cada despliegue, que reinicia la
+	// unidad—, así que un cero podía significar «recién arrancado» y no «no ha
+	// visto nada». Esa es la razón de que esta cifra no se pintara aquí.
+	TotalToques int64
 
 	// PaquetesDesde y HuecoDePaquetes existen porque LAS TRES COLUMNAS NO
 	// TIENEN LA MISMA MEMORIA, y callarlo convierte la tabla en una
 	// contradicción.
 	//
-	// nas-sensor no relee su archivo al arrancar: cada reinicio suyo vacía la
-	// capa de paquetes, mientras los dos anillos de Go recuperan la suya. Con
-	// 15 arranques en 14 días medidos en este nodo, ese desajuste es el estado
-	// NORMAL, no un caso raro. El efecto visible es una fila con «0 paquetes ·
-	// 1 conexiones», que niega la escalera que la propia tabla enseña.
+	// SIGUEN SIN TENERLA, aunque por mucho menos que antes. Hasta que el sensor
+	// aprendió a releer su archivo, cada arranque suyo vaciaba la capa de
+	// paquetes mientras los dos anillos de Go recuperaban la suya, y con 15
+	// arranques en 14 días medidos ese desajuste era el estado NORMAL: el
+	// efecto visible era una fila con «0 paquetes · 1 conexiones», que niega la
+	// escalera que la propia tabla enseña.
+	//
+	// Ahora las tres releen, así que el hueco solo aparece por lo que siempre
+	// debió ser: que el anillo del sensor tiene 2000 líneas y se llena antes
+	// que los otros dos. Se sigue diciendo desde cuándo alcanza, porque la
+	// pregunta que contesta no ha cambiado.
 	//
 	// La respuesta NO es esconder el desajuste ni pintar un cero: es decir
 	// desde cuándo alcanza la capa de abajo. Es el mismo criterio que HayGeo y
@@ -206,6 +227,31 @@ type vistaSeguridad struct {
 	// afirmación sin respaldo.
 	PaquetesDesde   time.Time
 	HuecoDePaquetes bool
+	// UltimoRechazo y UltimoFrenado son lo que se sabe cuando NO hay nada que
+	// pintar, y existen porque un hueco en blanco no es una respuesta.
+	//
+	// # EL DEFECTO QUE ESTO CORRIGE, Y COSTÓ UNA NOCHE
+	//
+	// El 03/09 el responsable creyó que le habían vulnerado el NAS: el módulo de
+	// seguridad llevaba tres días sin enseñar nada. No pasaba nada — el panel
+	// abre filtrado a Internet, y desde Internet no había llamado nadie desde el
+	// 31/08. Pero «no ha pasado nada» y «dejó de grabarse» se pintaban EXACTAMENTE
+	// IGUAL: «Ningún rechazo en esta ventana con estos filtros», y ni una fecha.
+	//
+	// Una ausencia no se puede comprobar; una fecha sí. Con ella, además, la
+	// prueba desde el móvil en datos móviles pasa a ser legible: si esa fecha
+	// salta a hoy, la puerta del router y el registro están vivos los dos.
+	//
+	// # POR QUÉ EL FRENADO VA AL LADO
+	//
+	// Porque es la otra mitad de la explicación, y la que el responsable no tenía
+	// forma de ver. A un origen bloqueado se le cuelga ANTES de que hable HTTP,
+	// así que deja de aparecer en esta tabla aunque siga llamando: es
+	// exactamente lo que le pasó con DRIFTNET. La plantilla ya lo advertía, pero
+	// dentro del desplegable de la FILA de ese origen — que desaparece con él.
+	// El aviso se esfumaba justo cuando hacía falta.
+	UltimoRechazo ultimoHecho
+	UltimoFrenado ultimoHecho
 	// FiltroActivo es el rótulo que acompaña al título: «Internet · 24 horas».
 	//
 	// Sustituye a la frase que explicaba en prosa que la página abre filtrada
@@ -633,8 +679,11 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		HayMasConexiones: s.conexiones.Total() > int64(len(conexiones)),
 		Toques:           len(hist.Toques),
 		HayToques:        hist.Hay,
+		TotalToques:      hist.Total,
 		PaquetesDesde:    hist.Desde,
 		HuecoDePaquetes:  hist.Hay && !hist.Desde.IsZero() && hist.Desde.After(f.Desde),
+		UltimoRechazo:    ultimoRechazoDe(s.seguridad, f.Red),
+		UltimoFrenado:    ultimoFrenadoDe(bloqueos, apartados),
 		HayGeo:           s.geo != nil,
 		FechaGeo:         s.geo.Fecha(),
 		Eventos:          cronologia,
@@ -726,6 +775,51 @@ func elegida(opciones []opcionFiltro) opcionFiltro {
 		}
 	}
 	return opcionFiltro{}
+}
+
+// ultimoHecho es lo último que se sabe de una capa: cuándo fue y qué fue.
+//
+// Es lo que convierte «aquí no hay nada» en una afirmación comprobable. Hay
+// deliberadamente separado de Cuando: un instante cero se pintaría como el año
+// 1, y decir una fecha falsa es peor que no decir ninguna.
+type ultimoHecho struct {
+	Hay    bool
+	Cuando time.Time
+	Que    string
+}
+
+// ultimoRechazoDe busca el rechazo más reciente de esta red en TODO lo
+// guardado, no solo en la ventana que se está mirando.
+func ultimoRechazoDe(a *seguridad.Anillo, red *seguridad.Red) ultimoHecho {
+	e, hay := a.Ultimo(red)
+	if !hay {
+		return ultimoHecho{}
+	}
+	return ultimoHecho{Hay: true, Cuando: e.Momento, Que: e.Origen.String()}
+}
+
+// ultimoFrenadoDe busca el cierre de puerta más reciente entre los dos
+// controles, para que un vacío pueda decir «no aparece porque se le cuelga».
+//
+// SE MIRAN LOS DOS Y GANA EL MÁS RECIENTE, no la lista por ser la lista: aquí
+// no se está atribuyendo un mérito —eso es cosa de puerta.go— sino contestando
+// «¿cuándo llamó alguien por última vez y se le colgó?». La respuesta es un
+// instante, y el instante es el mayor de los dos.
+func ultimoFrenadoDe(bloqueos []seguridad.Entrada, apartados []seguridad.Apartado) ultimoHecho {
+	var out ultimoHecho
+	considerar := func(cuando time.Time, que string) {
+		if cuando.IsZero() || (out.Hay && !cuando.After(out.Cuando)) {
+			return
+		}
+		out = ultimoHecho{Hay: true, Cuando: cuando, Que: que}
+	}
+	for _, b := range bloqueos {
+		considerar(b.UltimoFrenado, b.Etiqueta)
+	}
+	for _, a := range apartados {
+		considerar(a.UltimoFrenado, a.IP.String())
+	}
+	return out
 }
 
 // rotuloDeFiltro compone el «Internet · 24 horas» que acompaña al título.

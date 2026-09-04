@@ -259,6 +259,41 @@ func (a *Anillo) Total() int64 {
 //
 // Devuelve copias: quien mire no puede alterar el historial, y el mutex se
 // suelta antes de que nadie lo recorra.
+// Ultimo devuelve el rechazo más reciente que viene de esta red, mirando TODO
+// lo guardado y no solo una ventana. El booleano dice si había alguno.
+//
+// # PARA QUÉ, Y ES UNA SOLA COSA
+//
+// Para que una tabla vacía pueda decir DESDE CUÁNDO está vacía. «Ningún rechazo
+// en esta ventana» se lee igual si no ha pasado nada que si dejó de grabarse, y
+// esa ambigüedad le costó una noche al responsable el 03/09: el panel llevaba
+// tres días en blanco —filtrado a Internet, que es como abre— porque desde el
+// 31/08 no había llamado nadie, y desde dentro eso es indistinguible de una
+// avería. Una fecha sí se puede comprobar.
+//
+// # POR QUÉ NO OBEDECE A LA VENTANA
+//
+// Porque la pregunta es justamente la contraria: se llama cuando la ventana no
+// ha dado nada, y lo que hace falta es lo primero que hay ANTES de ella.
+//
+// Recorre desde lo más reciente hacia atrás y para en cuanto encuentra. En el
+// caso normal para en el primero; solo recorre el anillo entero cuando no hay
+// NADA de esa red, que es exactamente cuando esto se usa y cuando 2000
+// comparaciones de un entero no le importan a nadie.
+func (a *Anillo) Ultimo(red *Red) (Evento, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	cuantos := int(min(a.total, int64(Capacidad)))
+	for i := range cuantos {
+		e := a.buf[(a.siguiente-1-i+Capacidad)%Capacidad]
+		if red == nil || e.Red == *red {
+			return e, true
+		}
+	}
+	return Evento{}, false
+}
+
 func (a *Anillo) Desde(t time.Time) []Evento {
 	a.mu.Lock()
 	defer a.mu.Unlock()
