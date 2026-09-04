@@ -56,20 +56,6 @@ type vistaListado struct {
 	// arma construirMarco a partir de las MISMAS EsSuperusuario/
 	// PuedeAdministrar/Novedades de arriba, así que las dos no pueden discrepar.
 	Marco marco
-	// Busqueda es lo que se tecleó en el buscador de la barra superior, ya
-	// recortado. El listado se acota a las entradas cuyo nombre lo contengan,
-	// sin distinguir mayúsculas.
-	//
-	// SE FILTRA AQUÍ Y NO EN EL NAVEGADOR a propósito: una carpeta puede
-	// traer hasta maxEntradasPorPagina entradas, y filtrar en el cliente
-	// obligaría a mandarlas todas para esconder casi todas. Además así el
-	// filtro viaja en la URL —misma regla R1 de ADR-0015 que el orden— y un
-	// enlace copiado lo conserva.
-	Busqueda string
-	// Encontradas es cuántas entradas pasaron el filtro y Descartadas cuántas
-	// no. La segunda se dice: un listado recortado que no avisa de que
-	// recorta es el defecto que este panel lleva corrigiendo desde ADR-0065.
-	Descartadas int
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -99,7 +85,6 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
 	}
-	v.Busqueda = strings.TrimSpace(r.URL.Query().Get("q"))
 	v.Marco = s.construirMarco(r, "archivos", tituloDeListado(ruta), "")
 
 	n := 0
@@ -136,15 +121,6 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		// NO se ocultan en silencio: se cuentan y la vista lo dice.
 		if strings.HasPrefix(e.Nombre, ".") {
 			v.Ocultas++
-			continue
-		}
-		// EL BUSCADOR DE LA BARRA SUPERIOR. Se cuenta lo descartado en vez de
-		// esconderlo sin más: «esta carpeta está vacía» y «tu búsqueda no
-		// encontró nada» son dos cosas distintas, y la pantalla las
-		// distingue.
-		if v.Busqueda != "" && !strings.Contains(
-			strings.ToLower(e.Nombre), strings.ToLower(v.Busqueda)) {
-			v.Descartadas++
 			continue
 		}
 		v.Entradas = append(v.Entradas, e)

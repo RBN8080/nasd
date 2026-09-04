@@ -93,7 +93,6 @@
 {{template "marco-cuerpo" .}}
 
 {{if .Mensaje}}<p class="msg {{if .EsError}}mal{{end}}">{{.Mensaje}}</p>{{end}}
-{{if .Busqueda}}<p class="nota">Filtrando por <b>{{.Busqueda}}</b> — {{len .Entradas}} de {{add (len .Entradas) .Descartadas}} entradas. <a href="{{listadoCon .Ruta .Orden}}">Quitar el filtro</a></p>{{end}}
 
 <div class="t-arc">
   <!-- LOS ENCABEZADOS ORDENAN, Y CADA UNO TIENE UNA SOLA DIRECCIÓN (P-3).
@@ -197,7 +196,7 @@
       </div>
     </div>
     {{else}}
-    <div class="vacio">{{if .Busqueda}}Ningún nombre contiene «{{.Busqueda}}» en esta carpeta.{{else}}Carpeta vacía.{{end}}</div>
+    <div class="vacio">Carpeta vacía.</div>
     {{end}}
   </div>
 </div>
