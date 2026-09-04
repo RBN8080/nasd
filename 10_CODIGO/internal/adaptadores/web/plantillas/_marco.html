@@ -2,7 +2,7 @@
      iconos y medidor de disco, barra superior con la inicial de la sesión,
      tira de estado al pie y pestañas en el teléfono.
 
-     # POR QUÉ SON CUATRO BLOQUES Y NO UNO
+     # POR QUÉ SON CINCO BLOQUES Y NO UNO
 
      Porque el marco es una REJILLA CON ÁREAS y cada página tiene que poder
      meter dos piezas propias en medio: su barra de órdenes —que va dentro de
@@ -11,9 +11,11 @@
      mismo conjunto (eso es «multiple definition»), así que la costura se
      hace por llamada explícita:
 
-       {{"{{template \"marco-abre\" .}}"}}      rail + barra superior, «.top» abierto
+       {{"{{template \"marco-abre\" .}}"}}      rail + barra superior con el título
+       …lo que el módulo cuelgue de la línea del título, o nada…
+       {{"{{template \"marco-cabeza\" .}}"}}    cierra el título y pone la inicial
        …la barra de órdenes del módulo, o nada…
-       {{"{{template \"marco-cuerpo\" .}}"}}    cierra «.top», abre el cuerpo y el título
+       {{"{{template \"marco-cuerpo\" .}}"}}    cierra «.top» y abre el cuerpo
        …el contenido del módulo…
        {{"{{template \"marco-fin\" .}}"}}       cierra el cuerpo
        …la columna de detalle, o nada…
@@ -79,7 +81,7 @@
         {{/* En el teléfono había aquí una copia del mismo cuadrado «19», y se
              va por lo mismo. Quien abre esta página sabe a qué NAS entró; lo
              que necesita saber al llegar es en qué módulo está, y eso lo dice
-             el título del cuerpo. */}}
+             el título que hay justo debajo. */}}
         {{/* AQUÍ VIVÍA EL BUSCADOR, Y SE RETIRA ENTERO — decisión del
              responsable el 2026-09-04: «no quiero la barra en ningún lado».
 
@@ -119,6 +121,32 @@
              REVERSIBLE: vuelve entero con un revert de este commit, y lo que
              habría que reconstruir es poco — el manejador YA sabía filtrar
              cualquier carpeta; lo que nunca supo la barra fue pedírselo. */}}
+        {{/* EL TÍTULO DEL MÓDULO VIVE AQUÍ, Y NO EN EL CUERPO.
+             Decisión del responsable el 2026-09-04, sobre capturas anotadas
+             de los cinco módulos: «aquí va, no muevas nada más».
+
+             Al retirar el buscador, «.f1» se quedó con la inicial de la
+             sesión y nada más, o sea una franja entera de barra vacía
+             mientras el nombre del módulo se repetía tres renglones más
+             abajo, dentro del cuerpo. Subirlo cierra las dos cosas de una
+             vez: la barra dice en qué módulo estás —que es lo que hace falta
+             saber al llegar— y el contenido gana el alto que gastaba el
+             título.
+
+             «.tv» SE DEJA ABIERTO A PROPÓSITO. Estado necesita colgar su
+             rótulo de conexión de la MISMA línea del título, y cerrarlo aquí
+             lo habría empujado a una segunda fila de la barra. Lo cierra
+             «marco-cabeza», que además pone la inicial al final: así lo que
+             el módulo inyecte cae entre el título y la inicial, que es donde
+             tiene que caer. */}}
+        <div class="tv"><h1>{{.Marco.Titulo}}</h1>{{if .Marco.Sub}}<span class="sb">{{.Marco.Sub}}</span>{{end}}
+{{end}}
+
+{{/* Cierra el título, pone la inicial de la sesión y cierra la fila. Va
+     SIEMPRE, y justo después de «marco-abre» o de lo que el módulo quiera
+     poner en la línea del título. */}}
+{{define "marco-cabeza"}}
+        </div>
         <div class="usr">{{.Marco.Inicial}}</div>
       </div>
 {{end}}
@@ -128,7 +156,6 @@
 
     <main class="cuerpo">
       <div class="vw">
-        <div class="tv"><h1>{{.Marco.Titulo}}</h1>{{if .Marco.Sub}}<span class="sb">{{.Marco.Sub}}</span>{{end}}</div>
 {{end}}
 
 {{define "marco-fin"}}

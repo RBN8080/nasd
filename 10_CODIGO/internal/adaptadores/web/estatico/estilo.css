@@ -226,10 +226,17 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .ni-activo .ct{color:var(--ac2);}
 .tb-activo{color:var(--ac2);}
 
-.tv{display:flex;align-items:baseline;gap:var(--e2);flex-wrap:wrap;}
-.tv h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;}
+/* EL TÍTULO VIVE EN LA BARRA DESDE EL 2026-09-04, no en el cuerpo.
+   «min-width:0» y «nowrap» son lo que impide que un nombre largo empuje la
+   inicial de la sesión fuera de su sitio: en la barra el título comparte
+   renglón, y ahí envolver no es una opción — se recorta con puntos. Dentro
+   del cuerpo podía envolver porque tenía el ancho entero para él solo. */
+.tv{display:flex;align-items:baseline;gap:var(--e2);min-width:0;}
+.tv h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 @container (min-width:880px){.tv h1{font-size:1.45rem;}}
-.tv .sb{font-size:.73rem;color:var(--tx3);font-family:"DM Mono",monospace;}
+.tv .sb{font-size:.73rem;color:var(--tx3);font-family:"DM Mono",monospace;
+  white-space:nowrap;}
 
 .sc{display:flex;flex-direction:column;gap:var(--e2);}
 .sch{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);flex-wrap:wrap;}
@@ -608,9 +615,18 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .grl .ga{fill:var(--n4);}
 /* El día del pico se marca con su FRANJA y no con un punto de color: un punto
    distinto sobre la línea se confunde con un vértice cualquiera, y la franja
-   además alinea el realce con el número del eje que hay debajo. Sigue siendo
-   la única señal de color de la gráfica. */
-.grl .gpk{fill:var(--av);opacity:.14;}
+   además alinea el realce con el número del eje que hay debajo.
+
+   Y LA FRANJA ES NEUTRA, NO ÁMBAR. Nació en ámbar el 2026-08-31, pero ese
+   binario no llegó al nodo hasta el 2026-09-04 y el responsable la vio por
+   primera vez ese día: «un cambio de tonalidad a ámbar ligerísimo que no fue
+   solicitado». Tenía razón en lo que importa — el ámbar de esta consola es un
+   ESTADO (--av, el mismo del icono de la barra y del semáforo), y gastarlo en
+   «este es el día más alto» le quita significado al día que de verdad avise.
+   El realce se queda, porque alinea el pico con su número del eje; lo que se
+   va es el color prestado. Mismo peso visual con el gris de la propia
+   gráfica. */
+.grl .gpk{fill:var(--tx2);opacity:.14;}
 /* La zona sensible del día. «transparent» y no «none»: con fill:none el <rect>
    deja de recibir el puntero y el <title> no llega a salir nunca. */
 .grl .gz{fill:transparent;}
