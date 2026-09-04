@@ -3,8 +3,8 @@
 | Campo | Valor |
 |---|---|
 | **Qué es** | El código del cliente de respaldo de Windows hacia el nodo |
-| **Contrato** | `../30_CLIENTE_RESPALDO.md` v1.18.0. **Ahí está todo el diseño**; aquí solo vive la implementación |
-| **Estado** | **Esqueleto de la Fase 0, creado el 2026-09-02.** Cero líneas de lógica. Ningún archivo de aquí hace nada todavía |
+| **Contrato** | `../30_CLIENTE_RESPALDO.md` v1.32.0. **Ahí está todo el diseño**; aquí solo vive la implementación |
+| **Estado** | **En producción.** Fases 0 a 4 cerradas. Desde el **2026-09-03** el respaldo lo lanza el Programador de tareas y termina solo — antes de esa fecha ninguna corrida programada había llegado a ejecutarse (§12.vicies) |
 | **Lenguaje** | PowerShell (Windows) y bash (nodo) — §16.bis |
 
 > **Este directorio no se diseña, se implementa.** El contrato se cerró tras
@@ -74,7 +74,7 @@ Los `.cmd` son el caso contrario y llevan su excepción en `.gitattributes`:
 
 ## Trampas ya pagadas — no volver a pisarlas
 
-Salen de §12.septies y §12.quinquies, y cada una costó tiempo real.
+Salen de §12.septies, §12.quinquies y §12.vicies, y cada una costó tiempo real.
 
 | Trampa | La lección |
 |---|---|
@@ -84,3 +84,5 @@ Salen de §12.septies y §12.quinquies, y cada una costó tiempo real.
 | Un cotejo de huellas dio «27 508 diferencias» que eran cero: PowerShell escribe MD5 en mayúsculas, `md5sum` en minúsculas | **Normalizar los dos lados antes de comparar.** Un cotejo 100 % distinto casi nunca es un desastre: casi siempre es formato |
 | Un proceso `md5sum` por archivo proyectaba **49 min** en el Pi; por lotes de 500 fueron minutos | Sobre un Pi **domina el coste de arrancar procesos** cuando los archivos son pequeños |
 | Se leyó en línea recta contra un sector muerto: **26 minutos para avanzar 1 MB**, sin saber que detrás había 1.85 GiB legibles | Ante un archivo que no se copia, **sondear antes de insistir** |
+| La tarea llevaba `-Confirm:$false` **detrás de `-File`**. Con `-File`, PowerShell 5.1 pasa lo que va detrás **como texto literal**: llega la cadena `"$false"`, no se puede enlazar al `[switch]`, y el guion muere **antes de su primera línea**. Las tres ventanas del 2026-09-03 dispararon y **no hubo ni una copia en todo el día** | Una línea de mando **no se comprueba mirándola, se comprueba ejecutándola**. El mismo argumento funciona con el operador `&` —ahí `$false` sí se evalúa— y por eso pasaba en las pruebas, que invocaban el motor en proceso |
+| `conhost --headless` **devuelve 0 pase lo que pase con el hijo**. El Programador anotó `LastTaskResult 0`, `State Ready` y `NumberOfMissedRuns 0` mientras el motor moría tres veces seguidas | **El código de salida de esa tarea no es prueba de nada.** Lo que no se puede falsear es el rastro: si el Programador dice que arrancó a una hora y `ESTADO.txt` no tiene nada de esa hora en adelante, el motor no corrió |
