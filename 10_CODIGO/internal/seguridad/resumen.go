@@ -36,6 +36,22 @@ const (
 	// SenalSoftwareAjeno — se pidieron rutas de programas que este NAS no
 	// ejecuta NI HA EJECUTADO NUNCA. Ver RutaDeSoftwareAjeno.
 	SenalSoftwareAjeno
+	// SenalOperadorDesconocido — se le negó algo a un origen cuyo OPERADOR no
+	// ha visto jamás una sesión iniciada en este NAS.
+	//
+	// ES LA UNICA QUE NO SE DERIVA DE LA CONDUCTA, y por eso PorOrigen no la
+	// emite nunca: las otras tres salen de contar lo que hizo el origen, y esta
+	// sale de algo que el origen no controla —de quién es su dirección— cruzado
+	// con quién ha entrado alguna vez. Se decide al apartar (cuarentena.go), no
+	// al mirar, y por eso solo aparece en un Apartado.
+	//
+	// EXISTE PORQUE LOS UMBRALES DE CONDUCTA NO VEIAN A NADIE. Medido sobre el
+	// historial entero del nodo: los diez orígenes hostiles pidieron «/» UNA vez
+	// y se fueron, muy por debajo de las ocho rutas de SenalExploracion, así que
+	// la cuarentena no apartó a nadie en toda la vida del nodo y el responsable
+	// tuvo que bloquear a mano. Lo que separaba a los hostiles de las personas
+	// no era cuántas veces insistían: era el operador.
+	SenalOperadorDesconocido
 )
 
 // String es la clave estable de una señal, separada de Etiqueta por el mismo
@@ -50,6 +66,8 @@ func (s Senal) String() string {
 		return "fuerza_bruta"
 	case SenalSoftwareAjeno:
 		return "software_ajeno"
+	case SenalOperadorDesconocido:
+		return "operador_desconocido"
 	}
 	return "desconocida"
 }
@@ -59,7 +77,7 @@ func (s Senal) String() string {
 // versión futura con señales nuevas se leería como si todas fueran la
 // primera del enum, en silencio.
 func SenalDesde(s string) (Senal, bool) {
-	for x := SenalExploracion; x <= SenalSoftwareAjeno; x++ {
+	for x := SenalExploracion; x <= SenalOperadorDesconocido; x++ {
 		if x.String() == s {
 			return x, true
 		}
@@ -75,6 +93,8 @@ func (s Senal) Etiqueta() string {
 		return "Intentos repetidos de contraseña"
 	case SenalSoftwareAjeno:
 		return "Sondeo de software que aquí no existe"
+	case SenalOperadorDesconocido:
+		return "Operador desde el que nadie ha entrado nunca"
 	}
 	return "Señal desconocida"
 }
@@ -97,6 +117,10 @@ func (s Senal) Explicacion() string {
 		return "Se pidieron rutas de programas que este NAS no ejecuta (PHP, paneles de administración ajenos, archivos de configuración). " +
 			"Aquí no hay ninguno, así que no hay nada que comprometer por esa vía; " +
 			"es el rastreo indiscriminado que recibe cualquier dirección pública, no algo dirigido a este nodo."
+	case SenalOperadorDesconocido:
+		return "Este origen pidió algo, se le negó, y viene de un operador desde el que NADIE ha iniciado sesión jamás en este NAS. " +
+			"Los escáneres que ha recibido este nodo venían todos de empresas de alojamiento; las personas que lo usan desde fuera vienen de operadores móviles desde los que ya han entrado. " +
+			"También lo produce alguien de la familia estrenando una red nueva: la primera vez, su operador todavía no consta, y basta con soltarlo desde este panel."
 	}
 	return ""
 }

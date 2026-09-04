@@ -106,13 +106,19 @@ type Historial struct {
 	// Total son los toques CAPTURADOS desde siempre, tal como el sensor los
 	// publica en su cabecera.
 	//
-	// «DESDE SIEMPRE» ES DESDE QUE ARRANCÓ EL SENSOR, NO DESDE QUE EXISTE EL
-	// REGISTRO, y la diferencia es real: nas-sensor abre su archivo en modo
-	// escritura y NUNCA lo relee, así que un reinicio devuelve esta cifra a
-	// cero. Los dos anillos de Go sí releen (ver totalDeCabecera), de modo que
-	// las tres columnas del panel NO tienen la misma memoria. Quien pinta debe
-	// contarlo en vez de dejar que el lector suponga que son comparables; para
-	// eso está Desde.
+	// «DESDE SIEMPRE» ES DE VERDAD DESDE SIEMPRE DESDE QUE EL SENSOR RELEE.
+	//
+	// Hasta entonces era «desde que arrancó el sensor», y la diferencia no era
+	// teórica: nas-sensor abría su archivo en modo escritura y nunca lo releía,
+	// así que cada arranque suyo —y cada despliegue, que reinicia la unidad—
+	// devolvía esta cifra a cero. Medido el 18/08: reinicio a las 22:59:49 y
+	// total-visto de 22 a 8. Las tres columnas del panel no tenían la misma
+	// memoria y había que decirlo para que nadie las restara.
+	//
+	// Ahora las tres releen (nas-sensor/analisis.c: leer_toque y leer_total),
+	// así que esta cifra sí es acumulada y sí se puede enseñar. Desde SIGUE
+	// haciendo falta por otro motivo, que es el de siempre: el anillo del
+	// sensor son 2000 líneas y se llena antes que los otros dos.
 	Total int64
 	// Desde es el instante de la línea MÁS ANTIGUA del archivo, contada antes
 	// de descartar lo de casa.

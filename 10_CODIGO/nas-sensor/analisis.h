@@ -47,4 +47,29 @@ struct toque {
 int analizar_paquete(const uint8_t *b, size_t n, uint16_t familia,
                      struct toque *t);
 
+// leer_toque analiza UNA linea del historial y devuelve 1 si describe un toque.
+//
+// POR QUE ESTA AQUI Y NO EN sensor.c, que es quien abre el archivo: por el
+// mismo motivo que analizar_paquete. El anillo del sensor vivia SOLO en
+// memoria, asi que cada arranque -- y cada «make desplegar», que reinicia el
+// servicio -- empezaba en blanco y a los 60 s pisaba el archivo. Releerlo
+// obliga a analizar bytes de un archivo que un corte de luz pudo dejar a
+// medias, y eso es exactamente lo que esta mitad existe para poder probar con
+// desinfectantes. Las cinco reglas de analisis.c se aplican igual.
+//
+// Devuelve 0 para una cabecera, una linea vacia, truncada, con un campo fuera
+// de rango o con una fecha imposible. Una linea ilegible NO es un error: se
+// salta, y el resto del historial se conserva.
+int leer_toque(const char *linea, struct toque *t);
+
+// leer_total saca la cuenta de la cabecera «# total-visto: N».
+//
+// Se relee aparte de las lineas porque cuenta algo distinto: los toques
+// CAPTURADOS desde siempre, que son mas de los que caben en el anillo. Es la
+// unica forma de comprobar que la captura funciona sin trafico de Internet, y
+// se ponia a cero en cada arranque junto con todo lo demas.
+//
+// Devuelve 1 si la linea era esa cabecera y el numero cabe; 0 en lo demas.
+int leer_total(const char *linea, unsigned long long *total);
+
 #endif

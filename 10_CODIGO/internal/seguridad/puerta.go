@@ -94,8 +94,14 @@ type Cierre struct {
 	solapada   Politica
 	cuarentena *Cuarentena
 	lista      *Lista
-	ip         netip.Addr
-	idEntrada  string
+	// claveApartado es la CLAVE del apartado que cubrió, no la dirección que
+	// llamó. Se llamaba «ip» y era lo mismo mientras un apartado solo alcanzaba
+	// a una dirección; desde que puede alcanzar a un operador entero, la
+	// dirección que llama puede no tener apartado propio y apuntarle el frenado
+	// a ella lo perdería en silencio. Es el papel que idEntrada ya cumplía para
+	// la lista.
+	claveApartado netip.Addr
+	idEntrada     string
 }
 
 // Cierra dice si hay que colgarle a esta conexión.
@@ -128,7 +134,7 @@ func (c Cierre) Ejecutado(ahora time.Time) {
 	case PoliticaLista:
 		c.lista.AnotarCierre(c.idEntrada, ahora)
 	case PoliticaCuarentena:
-		c.cuarentena.AnotarCierre(c.ip, ahora)
+		c.cuarentena.AnotarCierre(c.claveApartado, ahora)
 	}
 }
 
@@ -162,18 +168,18 @@ func (c Cierre) Ejecutado(ahora time.Time) {
 // evaluaban las dos.
 func Decidir(c *Cuarentena, l *Lista, ip netip.Addr, ahora time.Time) Cierre {
 	id, porLista := l.Cubre(ip, ahora)
-	porCuarentena := c.Cubre(ip, ahora)
+	clave, porCuarentena := c.Cubre(ip, ahora)
 
 	switch {
 	case porLista:
 		cierre := Cierre{responsable: PoliticaLista, lista: l, idEntrada: id}
 		if porCuarentena {
 			cierre.solapada = PoliticaCuarentena
-			cierre.cuarentena, cierre.ip = c, ip
+			cierre.cuarentena, cierre.claveApartado = c, clave
 		}
 		return cierre
 	case porCuarentena:
-		return Cierre{responsable: PoliticaCuarentena, cuarentena: c, ip: ip}
+		return Cierre{responsable: PoliticaCuarentena, cuarentena: c, claveApartado: clave}
 	}
 	return Cierre{}
 }

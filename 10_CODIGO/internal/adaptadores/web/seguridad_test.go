@@ -805,13 +805,20 @@ func TestUnEscaneoAPuertosCerradosApareceAunqueNoHablara(t *testing.T) {
 	if !strings.Contains(panel, "puertos: 23 2323") {
 		t.Error("no se enseñan los puertos distintos que se tocaron")
 	}
-	// EL «913» YA NO SE PINTA, Y ESTA PRUEBA AFIRMABA LO CONTRARIO DE LO QUE
-	// PASA. Decía que el total de paquetes «sobrevive al reinicio porque viaja
-	// en el archivo»: nas-sensor abre su historial en modo escritura y NUNCA lo
-	// relee, así que su cabecera vuelve a cero en cada arranque suyo. Se
-	// comprobó en el nodo el 18/08 — un despliegue lo bajó de 38 a 10.
+	// EL «913» NO SE PINTA JUNTO A LA TABLA, y el motivo ha cambiado dos veces.
+	//
+	// Primero se quitó porque era FALSO: nas-sensor abría su historial en modo
+	// escritura y nunca lo releía, así que su cabecera volvía a cero en cada
+	// arranque suyo —medido en el nodo el 18/08, un despliegue lo bajó de 38 a
+	// 10—. Desde que el sensor relee, la cifra ya es verdad.
+	//
+	// Sigue sin pintarse AQUÍ por un motivo distinto y más simple: al lado de
+	// una tabla con datos no contesta ninguna pregunta, y repetir números es lo
+	// que el responsable llamó «esto solo tú lo entiendes». Donde sí aparece es
+	// en el estado VACÍO, que es donde distingue «no ha tocado nadie» de «el
+	// sensor está muerto». Esa mitad la cubre TestElVacioDeToquesDiceQueElSensorSigueVivo.
 	if strings.Contains(panel, "913") {
-		t.Error("se sigue pintando el total de paquetes, que vuelve a cero en cada arranque del sensor")
+		t.Error("se pinta el total de paquetes junto a la tabla, donde no contesta nada")
 	}
 }
 
@@ -842,7 +849,10 @@ func TestSeDeclaraDesdeCuandoAlcanzaElRegistroDePaquetes(t *testing.T) {
 	// pero ESTE dato se quedó y esta prueba con él: no era una explicación,
 	// era un hecho —desde cuándo alcanza la capa de abajo— y sin él una fila
 	// con conexiones y cero paquetes se lee como una contradicción.
-	if !strings.Contains(panel, "Paquetes registrados desde el") {
+	// La frase se volvió a redactar cuando el sensor aprendió a releer: ya no
+	// dice que «reinicia su historial al arrancar», porque dejó de ser verdad.
+	// Lo que se comprueba sigue siendo lo mismo, que es el HECHO y no el texto.
+	if !strings.Contains(panel, "solo alcanza desde el") {
 		t.Fatal("el panel no dice desde cuándo alcanza la capa de paquetes: " +
 			"una fila con conexiones y cero paquetes se lee como una contradicción")
 	}
@@ -1175,5 +1185,112 @@ func TestElPanelDiceQueUnOrigenEstaFrenado(t *testing.T) {
 	cuerpo := panelSeguridad(t, s, "")
 	if !strings.Contains(cuerpo, "Se le está cerrando la puerta") {
 		t.Error("la fila no dice que a ese origen se le esté cerrando la puerta")
+	}
+}
+
+// EL VACÍO CON FECHA — el defecto que costó una noche entera.
+//
+// El 03/09 el responsable creyó que le habían vulnerado el NAS porque el módulo
+// de seguridad llevaba tres días en blanco. No pasaba nada: el panel abre
+// filtrado a Internet y desde Internet no había llamado nadie desde el 31/08.
+// Pero «no ha pasado nada» y «dejó de grabarse» se pintaban EXACTAMENTE IGUAL,
+// y una ausencia no se puede comprobar. Una fecha sí.
+
+// rechazoViejo mete en el anillo un rechazo FUERA de la ventana por omisión, que
+// es la única forma de dejar la tabla vacía teniendo historia detrás.
+func rechazoViejo(s *Servidor, ip string, cuando time.Time, ruta string, m seguridad.Motivo) seguridad.Evento {
+	dir := netip.MustParseAddr(ip)
+	e := seguridad.Evento{
+		Momento: cuando, Origen: dir, Red: seguridad.ClasificarRed(dir),
+		Metodo: "GET", Ruta: ruta, Estado: 404, Motivo: m,
+	}
+	s.seguridad.Anotar(e)
+	return e
+}
+
+func TestElVacioDeRechazosDiceLaFechaDeLoUltimo(t *testing.T) {
+	s := servidorConAuth(t)
+	// Tres días atrás: la ventana por omisión son 24 horas, así que la tabla
+	// sale vacía y el historial sigue ahí. Es exactamente lo que él tenía.
+	viejo := time.Now().Add(-72 * time.Hour)
+	rechazoViejo(s, "2a06:4883:5000::65", viejo, "/", seguridad.SinSesion)
+
+	panel := panelSeguridad(t, s, "")
+	if !strings.Contains(panel, "Lo último que se registró aquí fue el") {
+		t.Fatal("la tabla vacía no dice desde cuándo lo está: se lee igual que si hubiera dejado de grabar")
+	}
+	if !strings.Contains(panel, viejo.Local().Format("2006-01-02 15:04")) {
+		t.Error("no se pinta la fecha del último rechazo, que es lo único comprobable")
+	}
+	if !strings.Contains(panel, "2a06:4883:5000::65") {
+		t.Error("no se dice de quién fue lo último: la fecha sola no permite reconocerlo")
+	}
+}
+
+// SIN NADA GUARDADO NO SE INVENTA UNA FECHA. Un instante cero se pintaría como
+// el año 1, y decir una fecha falsa es peor que no decir ninguna.
+func TestElVacioSinHistorialNoInventaFecha(t *testing.T) {
+	s := servidorConAuth(t)
+	panel := panelSeguridad(t, s, "")
+	if !strings.Contains(panel, "tampoco fuera de esta ventana") {
+		t.Fatal("sin historial, el panel debe decir que no hay NADA guardado")
+	}
+	if strings.Contains(panel, "0001-01-01") {
+		t.Error("se pinta el instante cero como si fuera una fecha")
+	}
+}
+
+// LA MITAD QUE NO SE PODÍA VER. A un origen bloqueado se le cuelga ANTES de que
+// hable HTTP, así que desaparece de esta tabla aunque siga llamando — que es lo
+// que le pasó con DRIFTNET y lo que le hizo sospechar. El aviso existía, pero
+// dentro del desplegable de la FILA de ese origen, que desaparece con él.
+func TestElVacioDiceQueAUnBloqueadoSeLeCuelga(t *testing.T) {
+	s := servidorConAuth(t)
+	ip := "203.0.113.7"
+	viejo := time.Now().Add(-72 * time.Hour)
+
+	var evs []seguridad.Evento
+	for i := range 8 {
+		evs = append(evs, rechazoViejo(s, ip, viejo, "/inventada-"+strconv.Itoa(i), seguridad.RutaInexistente))
+	}
+	// El apartado se crea AHORA para que esté vigente; el frenado se fecha
+	// atrás, que es lo que el panel tiene que saber decir.
+	s.cuarentena.Evaluar(seguridad.PorOrigen(evs), time.Now())
+	s.cuarentena.AnotarCierre(netip.MustParseAddr(ip), time.Now().Add(-2*time.Hour))
+
+	panel := panelSeguridad(t, s, "")
+	if !strings.Contains(panel, "se le colgó la llamada a") {
+		t.Fatal("el vacío no explica que a un bloqueado se le cuelga antes de hablar HTTP")
+	}
+	if !strings.Contains(panel, "no volverá a salir en esta tabla aunque regrese") {
+		t.Error("no se advierte de que seguir sin verlo NO significa que se haya ido")
+	}
+}
+
+// EL SENSOR TIENE QUE PODER DECIR QUE SIGUE DESPIERTO. Su cifra de paquetes
+// vistos desde siempre sube con un SYN de la LAN aunque el panel luego no lo
+// enseñe, así que distingue «no ha tocado nadie» de «esto está muerto».
+//
+// Solo se puede afirmar desde que nas-sensor relee su archivo al arrancar: antes
+// volvía a cero en cada arranque suyo y en cada despliegue, así que un cero no
+// significaba nada.
+func TestElVacioDeToquesDiceQueElSensorSigueVivo(t *testing.T) {
+	s := servidorConAuth(t)
+	s.rutaToques = filepath.Join(t.TempDir(), "toques")
+	// Solo toques de CASA: el sensor está vivo y ha visto 42 paquetes, pero la
+	// tabla —que solo enseña Internet— sale vacía.
+	arranque := time.Now().UTC().Add(-time.Hour)
+	cuerpo := "# total-visto: 42\n" +
+		arranque.Format(time.RFC3339) + " 192.168.1.23 445 syn\n"
+	if err := os.WriteFile(s.rutaToques, []byte(cuerpo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	panel := panelSeguridad(t, s, "")
+	if !strings.Contains(panel, "El sensor sigue mirando") {
+		t.Fatal("la tabla de toques vacía no dice que el sensor siga vivo")
+	}
+	if !strings.Contains(panel, "42") {
+		t.Error("no se pinta la cifra de paquetes vistos, que es la prueba de vida")
 	}
 }

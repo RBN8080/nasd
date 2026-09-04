@@ -192,6 +192,19 @@ func (c Config) RutaCuarentena() string {
 	return filepath.Join(c.DirectorioEstado, "cuarentena")
 }
 
+// RutaOperadores son los operadores desde los que alguien ha entrado con
+// contraseña, que es la barandilla de la cuarentena automática.
+//
+// ARCHIVO PROPIO Y NO UN CAMPO DE LA CUARENTENA, aunque solo lo lea ella: los
+// dos tienen dueños y ritmos opuestos. La cuarentena la escribe el guardia al
+// apartar y se puede perder sin más consecuencia que volver a apartar; esto lo
+// escribe una SESIÓN VÁLIDA, y perderlo tiene el efecto contrario y peor —
+// dejaría de constar quién ha entrado, y el guardia empezaría a apartar a la
+// familia. Mezclarlos ataría la vida del uno a la del otro.
+func (c Config) RutaOperadores() string {
+	return filepath.Join(c.DirectorioEstado, "operadores-conocidos")
+}
+
 // RutaLista son los bloqueos puestos a mano desde el panel.
 //
 // APARTE DE LA CUARENTENA, y no por simetría: son dos cosas con dueño

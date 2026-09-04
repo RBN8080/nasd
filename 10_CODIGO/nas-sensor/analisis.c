@@ -216,3 +216,163 @@ int analizar_paquete(const uint8_t *b, size_t n, uint16_t familia,
 
   return 0;
 }
+
+// ---------------------------------------------------------------------------
+// LECTURA DEL HISTORIAL -- ver analisis.h para por que vive en este archivo.
+//
+// Esto analiza el archivo que ESTE MISMO programa escribio, y aun asi se trata
+// como hostil. ADR-0024 garantiza que un volcado a medias no deja el archivo
+// corrupto -- se escribe un temporal y se renombra --, pero no puede garantizar
+// nada de un sistema de archivos al que le quitaron la luz, que en este nodo
+// pasa casi a diario. Las cinco reglas de arriba se aplican sin excepcion.
+//
+// LA SEGURIDAD DE LOS INDICES ES POSICIONAL, y conviene leerla una vez: el
+// instante es de ancho fijo, asi que cada comprobacion se encadena con && y
+// solo se llega a mirar linea[k] cuando linea[k-1] ya resulto ser el caracter
+// esperado. Una linea mas corta termina en el nulo, que no es digito ni
+// separador, asi que la cadena se corta ahi sola. No hace falta medir la
+// longitud por adelantado y no se mide: seria una segunda verdad que mantener.
+// ---------------------------------------------------------------------------
+
+#include <limits.h>
+
+// LARGO_INSTANTE es lo que ocupa «2026-09-04T03:36:51Z», que es lo que escribe
+// strftime con «%Y-%m-%dT%H:%M:%SZ» en volcar().
+#define LARGO_INSTANTE 20u
+
+// digitos lee EXACTAMENTE cuantos digitos decimales y los deja en *out.
+//
+// No puede pasarse del final de la cadena: el nulo no esta entre '0' y '9', asi
+// que corta el bucle igual que cualquier otro caracter que no toque.
+static int digitos(const char *s, size_t cuantos, unsigned *out) {
+  unsigned v = 0;
+  for (size_t i = 0; i < cuantos; i++) {
+    char c = s[i];
+    if (c < '0' || c > '9') {
+      return 0;
+    }
+    v = v * 10u + (unsigned)(c - '0');
+  }
+  *out = v;
+  return 1;
+}
+
+static unsigned dias_del_mes(unsigned a, unsigned m) {
+  static const unsigned tabla[12] = {31u, 28u, 31u, 30u, 31u, 30u,
+                                     31u, 31u, 30u, 31u, 30u, 31u};
+  if (m == 2u && ((a % 4u == 0u && a % 100u != 0u) || a % 400u == 0u)) {
+    return 29u;
+  }
+  return tabla[m - 1u];
+}
+
+// dias_desde_epoca convierte una fecha de calendario a dias desde 1970-01-01.
+//
+// SE HACE LA CUENTA A MANO Y NO CON timegm(), que seria una linea: timegm no es
+// ISO C -- es una extension -- y traerla obligaria a este archivo a depender del
+// sistema, que es justo lo que le quitaria la propiedad de compilar y correr
+// con desinfectantes en el PC del responsable. El algoritmo es el de
+// dias-desde-la-era: sin tablas, sin bucles y sin bibliotecas.
+static int64_t dias_desde_epoca(unsigned a, unsigned m, unsigned d) {
+  int64_t y = (int64_t)a - (m <= 2u ? 1 : 0);
+  int64_t era = (y >= 0 ? y : y - 399) / 400;
+  int64_t yoe = y - era * 400;                        // [0, 399]
+  int64_t mp = (int64_t)((m + 9u) % 12u);             // marzo = 0
+  int64_t doy = (153 * mp + 2) / 5 + (int64_t)d - 1;  // [0, 365]
+  int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097 + doe - 719468;
+}
+
+// fin_de_campo acepta el nulo y el salto de linea en sus dos formas: el archivo
+// lo escribe este programa con «\n», pero puede haber pasado por un editor.
+static int fin_de_campo(char c) { return c == '\0' || c == '\n' || c == '\r'; }
+
+int leer_toque(const char *linea, struct toque *t) {
+  if (linea == NULL || t == NULL || linea[0] == '#') {
+    return 0;
+  }
+
+  unsigned a, m, d, hh, mm, ss;
+  if (!digitos(linea, 4u, &a) || linea[4] != '-' ||
+      !digitos(linea + 5u, 2u, &m) || linea[7] != '-' ||
+      !digitos(linea + 8u, 2u, &d) || linea[10] != 'T' ||
+      !digitos(linea + 11u, 2u, &hh) || linea[13] != ':' ||
+      !digitos(linea + 14u, 2u, &mm) || linea[16] != ':' ||
+      !digitos(linea + 17u, 2u, &ss) || linea[19] != 'Z' ||
+      linea[LARGO_INSTANTE] != ' ') {
+    return 0;
+  }
+  // Se rechaza una fecha imposible en vez de convertirla: «2026-02-31» daria un
+  // instante que no corresponde a ningun dia, y el panel lo pintaria como si
+  // fuera cierto. El segundo 60 SI se acepta -- existe, es el intercalar.
+  if (a < 1970u || m < 1u || m > 12u || d < 1u || d > dias_del_mes(a, m) ||
+      hh > 23u || mm > 59u || ss > 60u) {
+    return 0;
+  }
+
+  // El origen: hasta el siguiente espacio, y nunca mas de lo que cabe en el
+  // campo. Una direccion mas larga que DIR_MAX no se recorta -- se descarta la
+  // linea entera: media direccion es un dato falso, y eso no se hace.
+  const char *p = linea + LARGO_INSTANTE + 1u;
+  size_t i = 0;
+  while (p[i] != '\0' && p[i] != ' ' && i < DIR_MAX - 1u) {
+    i++;
+  }
+  if (i == 0u || p[i] != ' ') {
+    return 0;
+  }
+  memcpy(t->origen, p, i);
+  t->origen[i] = '\0';
+
+  p += i + 1u;
+  unsigned puerto = 0;
+  i = 0;
+  while (p[i] >= '0' && p[i] <= '9' && i < 5u) {
+    puerto = puerto * 10u + (unsigned)(p[i] - '0');
+    i++;
+  }
+  if (i == 0u || p[i] != ' ' || puerto > 65535u) {
+    return 0;
+  }
+
+  p += i + 1u;
+  if (strncmp(p, "syn", 3u) == 0 && fin_de_campo(p[3])) {
+    t->tipo = TIPO_SYN;
+  } else if (strncmp(p, "ping", 4u) == 0 && fin_de_campo(p[4])) {
+    t->tipo = TIPO_PING;
+  } else {
+    return 0;
+  }
+
+  t->momento = dias_desde_epoca(a, m, d) * 86400 + (int64_t)hh * 3600 +
+               (int64_t)mm * 60 + (int64_t)ss;
+  t->puerto = (uint16_t)puerto;
+  return 1;
+}
+
+int leer_total(const char *linea, unsigned long long *total) {
+  static const char marca[] = "# total-visto: ";
+  const size_t largo = sizeof(marca) - 1u;
+  if (linea == NULL || total == NULL || strncmp(linea, marca, largo) != 0) {
+    return 0;
+  }
+  const char *p = linea + largo;
+  unsigned long long v = 0;
+  size_t i = 0;
+  while (p[i] >= '0' && p[i] <= '9') {
+    unsigned d = (unsigned)(p[i] - '0');
+    // Se comprueba ANTES de multiplicar. Un desbordamiento de unsigned long
+    // long no es comportamiento indefinido, pero daria una cuenta falsa, y una
+    // cifra que dice ser «todo lo visto» tiene que ser cierta o no estar.
+    if (v > (ULLONG_MAX - d) / 10ULL) {
+      return 0;
+    }
+    v = v * 10ULL + d;
+    i++;
+  }
+  if (i == 0u) {
+    return 0;
+  }
+  *total = v;
+  return 1;
+}

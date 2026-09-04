@@ -62,7 +62,7 @@
 </div>
 
 {{if .HuecoDePaquetes}}
-<p class="nota">Las tres no se restan entre sí: <b>nas-sensor</b> reinicia su historial al arrancar. Paquetes registrados desde el {{fecha .PaquetesDesde}}.</p>
+<p class="nota">Las tres no se restan entre sí: el registro de paquetes es más corto que los otros dos y solo alcanza desde el {{fecha .PaquetesDesde}}.</p>
 {{end}}
 
 <!-- ACTIVIDAD POR DÍA — UNA LÍNEA, no barras. Sin eje de valores una barra
@@ -153,7 +153,26 @@
           <div class="cl"><span class="et">Cliente</span><span class="op">{{if .Agente}}{{.Agente}}{{else}}<i>sin identificar</i>{{end}}</span></div>
         </div>
         {{else}}
-        <div class="vacio">Ningún rechazo en esta ventana con estos filtros.</div>
+        <!-- UN VACÍO CON FECHA. Antes aquí solo ponía «Ningún rechazo en esta
+             ventana con estos filtros.», y esa frase se lee IGUAL si no ha
+             pasado nada que si dejó de grabarse. El 03/09 el responsable pasó
+             una noche creyendo que le habían vulnerado el NAS por culpa de este
+             hueco: llevaba tres días en blanco —el panel abre filtrado a
+             Internet— porque desde el 31/08 no había llamado nadie. -->
+        <div class="vacio">
+          <p>Ningún rechazo en esta ventana con estos filtros.</p>
+          {{if .UltimoRechazo.Hay}}
+          <p class="nota">Lo último que se registró aquí fue el <b>{{fecha .UltimoRechazo.Cuando}}</b>, desde {{.UltimoRechazo.Que}}. El registro sigue funcionando: lo que no ha habido es actividad.</p>
+          {{else}}
+          <p class="nota">No hay ningún rechazo guardado con estos filtros, tampoco fuera de esta ventana.</p>
+          {{end}}
+          {{if .UltimoFrenado.Hay}}
+          <!-- LA OTRA MITAD, Y LA QUE NO SE PODÍA VER. El aviso equivalente ya
+               existía, pero dentro del desplegable de la FILA del origen — que
+               desaparece con él. Se esfumaba justo cuando hacía falta. -->
+          <p class="nota">Y el <b>{{fecha .UltimoFrenado.Cuando}}</b> se le colgó la llamada a {{.UltimoFrenado.Que}}. <b>Mientras siga cerrado no volverá a salir en esta tabla aunque regrese</b>: se le cierra la conexión antes de que llegue a hablar HTTP.</p>
+          {{end}}
+        </div>
         {{end}}
       </div>
     </div>
@@ -355,7 +374,17 @@
         </div>
       </div>
       {{else}}
-      <div class="vacio">Nadie ha tocado el nodo en esta ventana con estos filtros.</div>
+      <!-- Mismo criterio que el vacío de arriba: la cifra de paquetes vistos
+           desde siempre es lo único que distingue «no ha tocado nadie» de «el
+           sensor está muerto», porque sube con un SYN de la LAN aunque el panel
+           luego no lo enseñe. Solo se puede afirmar desde que nas-sensor relee
+           su archivo al arrancar: antes se ponía a cero en cada reinicio. -->
+      <div class="vacio">
+        <p>Nadie ha tocado el nodo en esta ventana con estos filtros.</p>
+        {{if .HayToques}}
+        <p class="nota">El sensor sigue mirando: lleva <b>{{.TotalToques}}</b> paquetes capturados{{if not .PaquetesDesde.IsZero}}, y conserva los recibidos desde el {{fecha .PaquetesDesde}}{{end}}.</p>
+        {{end}}
+      </div>
       {{end}}
     </div>
   </div>

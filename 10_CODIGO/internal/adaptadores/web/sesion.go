@@ -621,6 +621,12 @@ func (s *Servidor) procesarAcceso(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.limitador.acierto(origen)
+	// EL ÚNICO SITIO DONDE SE ESCRIBE QUE UN OPERADOR ES CONOCIDO, y tiene que
+	// ser exactamente este: aquí y solo aquí consta que alguien pasó la
+	// contraseña. Ponerlo antes —al recibir el formulario, o al validar el
+	// nombre— convertiría la barandilla en una puerta, porque cualquiera podría
+	// hacerse constar sin saber la clave.
+	s.anotarOperadorConocido(r, time.Now())
 	s.reg.Info("sesión iniciada", "origen", origen, "usuario", usuario,
 		"sesiones_abiertas", s.sesiones.Abiertas())
 

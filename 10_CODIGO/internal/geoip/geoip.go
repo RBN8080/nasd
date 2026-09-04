@@ -193,6 +193,29 @@ func (b *BaseDatos) Cerrar() error {
 	return b.c.Close()
 }
 
+// ASN dice de qué operador es una dirección, y nada más.
+//
+// # POR QUÉ EXISTE HABIENDO Buscar
+//
+// Para que internal/seguridad pueda razonar por operador SIN conocer este
+// paquete. Aquel declara la interfaz que necesita —DeQuienEs, una sola función—
+// y este la satisface por tener el método: el dominio sigue sin importar un
+// adaptador, que es lo que ADR-0014 protege.
+//
+// Devolver Info entera valdría igual y sería peor: obligaría a la interfaz del
+// dominio a hablar de países y de nombres de operador que allí no pintan nada.
+//
+// Un ASN 0 se devuelve como «no se sabe», no como el operador cero: la base
+// usa ese valor para los rangos que no tienen dueño asignado, y confundirlo con
+// un operador metería en el mismo saco a todo lo desconocido.
+func (b *BaseDatos) ASN(ip netip.Addr) (uint32, bool) {
+	info, ok := b.Buscar(ip)
+	if !ok || info.ASN == 0 {
+		return 0, false
+	}
+	return info.ASN, true
+}
+
 // Buscar resuelve una dirección.
 //
 // EL RECEPTOR NULO ES VÁLIDO Y DEVUELVE «no se sabe». Es lo que permite que

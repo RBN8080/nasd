@@ -128,10 +128,43 @@ type Apartado struct {
 	// motivo que en Entrada (lista.go): sin él, «esto acaba de frenar algo» no
 	// se distingue de «esto frenó algo alguna vez».
 	UltimoFrenado time.Time `json:"ultimo_frenado,omitzero"`
+	// ASN es el operador al que alcanza este apartado, o 0 si solo alcanza a
+	// la dirección.
+	//
+	// # POR QUÉ EL APARTADO CRECIÓ HASTA EL OPERADOR
+	//
+	// Porque por dirección no servía. DRIFTNET barrió este nodo desde ::65 y
+	// ::63 —dos direcciones del mismo AS, con tres días entre medias—, así que
+	// apartar la primera no habría impedido la segunda: rotar es gratis y el
+	// apartado caducaba antes de volver a verla. Es también lo que el
+	// responsable ya hacía A MANO, y por eso sus bloqueos son de alcance
+	// «operador» y no de dirección (lista.go).
+	//
+	// # Y ES LO QUE HACE SOSTENIBLE QUE NO CADUQUE
+	//
+	// topeCuarentena son 256, y lleno DEJA DE APARTAR. Con apartados eternos
+	// por dirección, un operador que rota llenaría la lista de fantasmas y el
+	// guardia se quedaría sordo justo por haberlo hecho para siempre. Un
+	// apartado por operador cubre miles de direcciones con una entrada, así que
+	// el tope deja de estar en juego.
+	ASN uint32 `json:"asn,omitzero"`
 }
 
 // Vigente dice si el apartado sigue en pie.
-func (a Apartado) Vigente(ahora time.Time) bool { return ahora.Before(a.Hasta) }
+//
+// UN «Hasta» EN CERO ES PARA SIEMPRE, y solo lo llevan los apartados por
+// operador. La ausencia de fecha se lee como «esto no caduca» y no como «esto
+// caducó en el año 1»: es la misma convención que Entrada.Caduca en lista.go,
+// donde un bloqueo sin fecha es un bloqueo sin caducidad.
+//
+// Los apartados por DIRECCIÓN conservan sus 24 h, y el motivo de ADR-0070 sigue
+// intacto: una dirección de un operador rotatorio deja de ser la misma persona
+// en un día, así que seguir cerrándole la puerta sería castigar a un
+// desconocido distinto. Ese argumento vale para una dirección y NO para un
+// operador, que sigue siendo el mismo dentro de un año.
+func (a Apartado) Vigente(ahora time.Time) bool {
+	return a.Hasta.IsZero() || ahora.Before(a.Hasta)
+}
 
 // Cuarentena guarda los apartados vigentes, en memoria y respaldados por un
 // archivo en /var/lib/nasd/ — el mismo StateDirectory y la misma escritura
@@ -151,6 +184,74 @@ type Cuarentena struct {
 	ruta      string
 	apartados map[netip.Addr]*Apartado
 	sucio     bool
+	// dequien y conocidos son la capa de OPERADOR, y van juntas o no van: sin
+	// saber de quién es una dirección no se puede preguntar si su operador
+	// consta. Las dos pueden ser nil, y entonces el guardia se comporta como
+	// antes de ADR-0083 —por dirección, con caducidad y con los umbrales de
+	// conducta—, que es lo que mantiene válidas las pruebas que existían y deja
+	// el cambio reversible quitando una línea de main.go.
+	dequien   DeQuienEs
+	conocidos *Operadores
+}
+
+// ConOperadores le da a la cuarentena con qué razonar por operador.
+//
+// Se pone aparte del constructor y no dentro porque CargarCuarentena se usa en
+// pruebas que no tienen ni base de operadores ni ganas de fabricar una, y
+// porque así queda a la vista en main.go que esta capa es opcional.
+func (c *Cuarentena) ConOperadores(quien DeQuienEs, conocidos *Operadores) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dequien, c.conocidos = quien, conocidos
+}
+
+// operadorDe resuelve el operador de una dirección con el candado YA TOMADO.
+//
+// Devuelve 0 cuando no hay capa de operador o la base no cubre la dirección, y
+// quien llama trata ese 0 como «no se sabe» — nunca como un operador más.
+func (c *Cuarentena) operadorDe(ip netip.Addr) uint32 {
+	if c.dequien == nil {
+		return 0
+	}
+	asn, ok := c.dequien.ASN(ip)
+	if !ok {
+		return 0
+	}
+	return asn
+}
+
+// operadorAjeno dice si desde este operador no ha entrado nunca nadie. Con el
+// candado YA TOMADO.
+//
+// Un ASN 0 nunca es ajeno, y esa asimetría es deliberada: «no se sabe de quién
+// es» no puede convertirse en «apártalo», porque entonces un hueco de la base
+// de operadores —que no cubre todas las direcciones— apartaría a gente por un
+// dato que falta. Ante la duda, decide la conducta, que es lo que ya había.
+func (c *Cuarentena) operadorAjeno(asn uint32) bool {
+	return asn != 0 && c.conocidos != nil && !c.conocidos.Conocido(asn)
+}
+
+// apartadoQueCubre busca el apartado que ya alcanza a esta dirección, por
+// dirección o por operador. Con el candado YA TOMADO; nil si no hay ninguno.
+//
+// El recorrido lineal no se cambia por un segundo índice ASN→apartado: son como
+// mucho topeCuarentena entradas —256— y esto corre una vez por conexión de
+// Internet, de las que este nodo recibe unas pocas al día. Un índice paralelo
+// sería una segunda verdad que puede discrepar de la primera, que es justo la
+// clase de defecto que puerta.go existe para haber quitado.
+func (c *Cuarentena) apartadoQueCubre(ip netip.Addr, asn uint32) *Apartado {
+	if a, ya := c.apartados[ip]; ya {
+		return a
+	}
+	if asn == 0 {
+		return nil
+	}
+	for _, a := range c.apartados {
+		if a.ASN == asn {
+			return a
+		}
+	}
+	return nil
 }
 
 // CargarCuarentena lee lo apartado que hubiera. Devuelve una cuarentena
@@ -222,13 +323,27 @@ func (c *Cuarentena) Evaluar(origenes []Origen, ahora time.Time) []Apartado {
 		if !o.Red.DeFuera() {
 			continue
 		}
-		senal, hay := senalQueAparta(o)
+		asn := c.operadorDe(o.IP)
+		// LA REGLA DEL OPERADOR VA PRIMERO, y es la que por fin ve a los
+		// visitantes reales de este nodo: los diez orígenes hostiles del
+		// historial pidieron «/» UNA vez, así que ninguno llegaba a las ocho
+		// rutas de senalQueAparta y la cuarentena no apartó a nadie NUNCA. Un
+		// rechazo basta cuando viene de un operador desde el que jamás ha
+		// entrado nadie; la barandilla que impide que esto eche a una persona
+		// es Operadores, no un umbral.
+		senal, hay := SenalOperadorDesconocido, c.operadorAjeno(asn)
+		if !hay {
+			senal, hay = senalQueAparta(o)
+		}
 		if !hay {
 			continue
 		}
-		if a, ya := c.apartados[o.IP]; ya {
-			// Renovar, no volver a avisar: mientras siga, sigue apartado.
-			a.Hasta = ahora.Add(DuracionCuarentena)
+		if a := c.apartadoQueCubre(o.IP, asn); a != nil {
+			// Renovar, no volver a avisar: mientras siga, sigue apartado. A un
+			// apartado sin caducidad no se le toca la fecha — no la tiene.
+			if !a.Hasta.IsZero() {
+				a.Hasta = ahora.Add(DuracionCuarentena)
+			}
 			a.Senal = senal
 			c.sucio = true
 			continue
@@ -240,7 +355,14 @@ func (c *Cuarentena) Evaluar(origenes []Origen, ahora time.Time) []Apartado {
 			IP:    o.IP,
 			Senal: senal,
 			Desde: ahora,
-			Hasta: ahora.Add(DuracionCuarentena),
+			ASN:   asn,
+		}
+		// SIN OPERADOR, LA CADUCIDAD DE SIEMPRE. Un apartado eterno que solo
+		// alcanza a una dirección es el que llena el tope de fantasmas y deja
+		// sordo al guardia; y encima castigaría dentro de un mes a quien herede
+		// esa dirección. Con operador no pasa ninguna de las dos cosas.
+		if asn == 0 {
+			a.Hasta = ahora.Add(DuracionCuarentena)
 		}
 		c.apartados[o.IP] = a
 		c.sucio = true
@@ -301,11 +423,19 @@ func senalQueAparta(o Origen) (Senal, bool) {
 // Ahora son tres actos separados, y el orden lo impone el tipo Cierre
 // (puerta.go): decidir, ejecutar, contar. Contar es AnotarCierre, y solo se
 // llega a ella pasando por un Close() que devolvió nil.
-func (c *Cuarentena) Cubre(ip netip.Addr, ahora time.Time) bool {
+// DEVUELVE LA CLAVE DEL APARTADO, no la dirección que llamó, y desde que un
+// apartado puede alcanzar a un operador entero eso ya no es lo mismo: quien
+// cierra tiene que apuntarle el frenado a la entrada que existe, no a la
+// dirección concreta —que puede no tener ninguna—. Es el mismo contrato que
+// Lista.Cubre, que devuelve el id de la entrada por esta misma razón.
+func (c *Cuarentena) Cubre(ip netip.Addr, ahora time.Time) (netip.Addr, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	a, hay := c.apartados[ip]
-	return hay && a.Vigente(ahora)
+	a := c.apartadoQueCubre(ip, c.operadorDe(ip))
+	if a == nil || !a.Vigente(ahora) {
+		return netip.Addr{}, false
+	}
+	return a.IP, true
 }
 
 // AnotarCierre cuenta UNA conexión que ya se cerró de verdad.

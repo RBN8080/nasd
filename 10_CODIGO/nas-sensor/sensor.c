@@ -85,6 +85,19 @@
 static struct toque anillo[CAPACIDAD];
 static unsigned siguiente;
 
+// poblados son las entradas del anillo que de verdad tienen algo escrito.
+//
+// EXISTE PORQUE «total» DEJO DE PODER DEDUCIRLO. Mientras el anillo empezaba
+// siempre vacio, las entradas ocupadas eran min(total, CAPACIDAD) y volcar lo
+// calculaba asi. Al releer el archivo eso deja de valer: un historial truncado
+// -- o con lineas ilegibles que se saltan -- trae MENOS lineas de las que su
+// cabecera dice haber visto, y con la cuenta vieja volcar habria escrito
+// entradas del anillo en las que no se ha escrito nada.
+//
+// Separarlos es ademas lo que el propio archivo ya distinguia: cuantos toques
+// se conservan y cuantos se han visto desde siempre son dos cifras distintas.
+static unsigned poblados;
+
 // total son los toques CAPTURADOS desde siempre, antes de que nadie clasifique
 // nada. Se publica en la cabecera del archivo por dos motivos: un anillo lleno
 // no debe leerse como «esto es todo lo que ha pasado», y es la unica forma de
@@ -102,6 +115,9 @@ static void al_recibir_senal(int s) {
 static void anotar(const struct toque *t) {
   anillo[siguiente] = *t;
   siguiente = (siguiente + 1u) % CAPACIDAD;
+  if (poblados < CAPACIDAD) {
+    poblados++;
+  }
   total++;
 }
 
@@ -132,8 +148,7 @@ static int volcar(const char *ruta) {
   fprintf(f, "# Un toque por linea: instante origen puerto tipo.\n");
   fprintf(f, "# total-visto: %llu\n", total);
 
-  unsigned cuantos =
-      (total < (unsigned long long)CAPACIDAD) ? (unsigned)total : CAPACIDAD;
+  unsigned cuantos = poblados;
   for (unsigned i = 0; i < cuantos; i++) {
     // «siguiente» apunta al hueco que viene, asi que el mas antiguo esta
     // justo ahi en cuanto el anillo ha dado la vuelta.
@@ -158,6 +173,57 @@ static int volcar(const char *ruta) {
     return -1;
   }
   return rename(temporal, ruta);
+}
+
+// releer restaura el anillo y la cuenta desde el archivo, si lo hay.
+//
+// POR QUE ESTO NO EXISTIA, que es el defecto que arregla: el anillo es estatico
+// y arrancaba a cero, asi que el primer volcado -- 60 s despues de arrancar --
+// pisaba el historial entero con uno vacio. Pasaba en cada reinicio del nodo Y
+// en cada «make desplegar», que reinicia esta unidad: 31 arranques contados en
+// el diario son 31 borrones. Era la UNICA capa del sistema sin su lector; las
+// nueve de nasd -- usuarios, anillo, conexiones, cuarentena, lista, novedades,
+// hallazgos, avisos y uso de disco -- llevan su Cargar* desde siempre.
+//
+// El sintoma que lo delato: el panel enseñaba «Nadie ha tocado el nodo en esta
+// ventana» tras cada arranque, y esa frase se lee igual que «no ha pasado
+// nada». La plantilla incluso lo avisaba -- «nas-sensor reinicia su historial
+// al arrancar» --, pero solo cuando habia datos que enseñar, es decir nunca
+// cuando hacia falta.
+//
+// QUE EL ARCHIVO NO EXISTA NO ES UN ERROR, igual que en CargarAnillo: un nodo
+// que arranca por primera vez no tiene historial, y eso es normal. Una linea
+// ilegible tampoco aborta nada -- se salta y el resto se conserva.
+static void releer(const char *ruta) {
+  FILE *f = fopen(ruta, "r");
+  if (f == NULL) {
+    return;
+  }
+  // Una linea legitima no pasa de 79 caracteres: 20 del instante, 45 de la
+  // direccion mas larga posible, 5 del puerto, 4 del tipo y sus separadores.
+  // Con este bufer una mas larga se parte en dos, y los dos trozos fallan al
+  // analizarse -- que es lo correcto, porque no la escribimos nosotros.
+  char linea[128];
+  unsigned long long visto = 0;
+  while (fgets(linea, sizeof(linea), f) != NULL) {
+    if (linea[0] == '#') {
+      leer_total(linea, &visto);
+      continue;
+    }
+    struct toque t;
+    if (leer_toque(linea, &t)) {
+      anotar(&t);
+    }
+  }
+  fclose(f);
+
+  // anotar dejo «total» en las lineas que se pudieron leer; la cabecera sabe
+  // cuantas se han visto DESDE SIEMPRE, que es mas en cuanto el anillo da la
+  // vuelta. Se toma la mayor: una cabecera que dijera menos que las lineas de
+  // debajo estaria mintiendo, y entonces mandan las lineas, que son el hecho.
+  if (visto > total) {
+    total = visto;
+  }
 }
 
 // EL FILTRO DEL NUCLEO ES UNA OPTIMIZACION, NO UN CONTROL. Su unico trabajo es
@@ -201,6 +267,10 @@ static int abrir_captura(void) {
 }
 
 static int capturar(const char *ruta) {
+  // LO PRIMERO, ANTES DE ABRIR NADA: si el primer volcado llegara antes que
+  // esto, habria pisado el historial que venimos a recuperar.
+  releer(ruta);
+
   int s = abrir_captura();
   if (s < 0) {
     fprintf(stderr, "nas-sensor: no se pudo abrir la captura: %s\n",

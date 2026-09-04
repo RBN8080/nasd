@@ -201,6 +201,34 @@ func ejecutar() error {
 			"ruta", cfg.RutaLista(), "error", err)
 	}
 
+	// LOS OPERADORES CONOCIDOS — la barandilla de la cuarentena automática.
+	//
+	// Va DESPUÉS de la lista y ANTES de enchufarle nada a la cuarentena, porque
+	// el orden es el de las dependencias: sembrarlo necesita el historial ya
+	// cargado, y la cuarentena necesita esto para poder decidir.
+	//
+	// Si falla, se sigue: el coste de quedarse sin este archivo NO es quedarse
+	// sin defensa, es lo contrario —el guardia apartaría de más—, y por eso el
+	// mensaje lo dice con esas palabras en vez de con las de la cuarentena.
+	operadores, primeraVez, err := seguridad.CargarOperadores(cfg.RutaOperadores())
+	if err != nil {
+		reg.Error("los operadores conocidos no se pudieron leer; el guardia podría apartar de más",
+			"ruta", cfg.RutaOperadores(), "error", err)
+	}
+	// LA SIEMBRA, UNA SOLA VEZ Y SOLO SI EL ARCHIVO NO EXISTÍA. Sin esto, el
+	// día que se estrena la barandilla no consta nadie, y el primero en llegar
+	// desde fuera —que puede ser de la familia— se lleva un apartado antes de
+	// poder escribir la contraseña que le habría hecho constar.
+	if primeraVez {
+		n := operadores.Sembrar(historial.Desde(time.Time{}), baseGeo, time.Now())
+		reg.Info("operadores conocidos sembrados desde el historial",
+			"operadores", n, "criterio", "sesiones caducadas, que prueban que por ahí entró alguien")
+	}
+	// Y aquí es donde el guardia deja de razonar solo por dirección. Sin esta
+	// línea se comporta exactamente como antes: por dirección, con caducidad y
+	// con los umbrales de conducta.
+	cuarentena.ConOperadores(baseGeo, operadores)
+
 	// La marca de novedades. Solo guarda CUÁNDO se miró por última vez; el
 	// resto se deriva de lo que ya sobrevive al reinicio.
 	novedades, err := seguridad.CargarNovedades(cfg.RutaNovedades())
@@ -307,6 +335,7 @@ func ejecutar() error {
 		Hallazgos:         hallazgos,
 		RutaToques:        cfg.RutaToques(),
 		GeoIP:             baseGeo,
+		Operadores:        operadores,
 		// Miniaturas EXIF — rector §7.nonies.bis. Siempre se pasa la ruta
 		// derivada, igual que RutaGeoIP: si nas-miniatura no está instalado
 		// en el nodo, el subproceso simplemente falla al primer intento y
@@ -361,6 +390,13 @@ func ejecutar() error {
 	})
 	go lista.Mantener(pararHistorial, func(err error) {
 		reg.Error("no se pudo volcar la lista de bloqueos", "error", err)
+	})
+	// Los operadores conocidos, en la misma cadencia y por el mismo canal. Que
+	// esto llegue a disco importa más de lo que parece: si se pierde, la
+	// próxima vez que alguien de la familia abra el panel desde el móvil su
+	// operador ya no consta y el guardia lo aparta.
+	go operadores.Mantener(pararHistorial, func(err error) {
+		reg.Error("no se pudieron volcar los operadores conocidos", "error", err)
 	})
 	// Los hallazgos comparten el mismo canal de parada que todo lo demás. Se
 	// vuelcan en la misma cadencia aunque casi nunca cambien: el volcado sale

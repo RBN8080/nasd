@@ -53,7 +53,7 @@ func TestLaExploracionAparta(t *testing.T) {
 	if nuevos[0].Senal != SenalExploracion {
 		t.Errorf("apartado por %v; se esperaba exploración", nuevos[0].Senal)
 	}
-	if !c.Cubre(netip.MustParseAddr(deFuera), ahora) {
+	if _, cubre := c.Cubre(netip.MustParseAddr(deFuera), ahora); !cubre {
 		t.Error("apartado y sin embargo no se le cierra la puerta")
 	}
 }
@@ -143,7 +143,7 @@ func TestLaCuarentenaCaducaSola(t *testing.T) {
 	c.Evaluar(PorOrigen(eventos), ahora)
 
 	despues := ahora.Add(DuracionCuarentena + time.Minute)
-	if c.Cubre(dir, despues) {
+	if _, cubre := c.Cubre(dir, despues); cubre {
 		t.Error("sigue frenando después de caducar")
 	}
 	if len(c.Vigentes(despues)) != 0 {
@@ -213,7 +213,7 @@ func TestSoloElCierreEjecutadoCuenta(t *testing.T) {
 	}
 	// Y a quien no está apartado no se le cuenta nada.
 	c.AnotarCierre(netip.MustParseAddr("198.51.100.9"), ahora)
-	if c.Cubre(netip.MustParseAddr("198.51.100.9"), ahora) {
+	if _, cubre := c.Cubre(netip.MustParseAddr("198.51.100.9"), ahora); cubre {
 		t.Error("cubre una dirección que no está apartada")
 	}
 
@@ -240,7 +240,7 @@ func TestSoltarRetiraAntesDeTiempo(t *testing.T) {
 	if !c.Soltar(dir) {
 		t.Fatal("Soltar dijo que no había nada que soltar")
 	}
-	if c.Cubre(dir, ahora) {
+	if _, cubre := c.Cubre(dir, ahora); cubre {
 		t.Error("sigue frenando tras soltarlo")
 	}
 	if c.Soltar(dir) {
@@ -274,7 +274,7 @@ func TestLaCuarentenaSobreviveAlArranque(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CargarCuarentena tras el reinicio: %v", err)
 	}
-	if !otro.Cubre(dir, ahora) {
+	if _, cubre := otro.Cubre(dir, ahora); !cubre {
 		t.Fatal("tras reiniciar, el apartado se perdió")
 	}
 	v := otro.Vigentes(ahora)
