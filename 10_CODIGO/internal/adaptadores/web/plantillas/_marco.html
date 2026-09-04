@@ -1,6 +1,6 @@
 {{/* _marco.html — el cromo de la maqueta 12, portado pieza a pieza: rail con
-     iconos y medidor de disco, barra superior con buscador y avatar, tira de
-     estado al pie y pestañas en el teléfono.
+     iconos y medidor de disco, barra superior con la inicial de la sesión,
+     tira de estado al pie y pestañas en el teléfono.
 
      # POR QUÉ SON CUATRO BLOQUES Y NO UNO
 
@@ -80,14 +80,45 @@
              va por lo mismo. Quien abre esta página sabe a qué NAS entró; lo
              que necesita saber al llegar es en qué módulo está, y eso lo dice
              el título del cuerpo. */}}
-        {{/* EL BUSCADOR ES REAL: un GET a «/» que filtra el listado por
-             nombre. Va en los cinco módulos porque su promesa es «buscar en
-             todo el NAS» y no «buscar en esta página»: desde donde uno esté,
-             teclear lleva a Archivos con el filtro puesto. */}}
-        <form class="busc" method="get" action="/" role="search">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input type="text" name="q" value="{{.Marco.Busqueda}}" placeholder="Buscar en todo el NAS" aria-label="Buscar en todo el NAS">
-        </form>
+        {{/* AQUÍ VIVÍA EL BUSCADOR, Y SE RETIRA ENTERO — decisión del
+             responsable el 2026-09-04: «no quiero la barra en ningún lado».
+
+             ESTE COMENTARIO NO REPRODUCE NI UNA SOLA CADENA DE LAS QUE
+             LLEVABA EL FORMULARIO, y no es manía: la plantilla viaja entera
+             dentro del binario por embed, así que todo lo que se escriba
+             aquí aparece en un `strings /usr/local/bin/nasd`. Citar el
+             marcador de posición o los nombres de clase y de campo dejaría
+             un señuelo permanente: quien un día audite el binario para
+             comprobar si el buscador volvió encontraría coincidencias y no
+             sabría si son un formulario vivo o esta nota. Se probó, y pasó:
+             la primera redacción de este comentario puso las cuatro cadenas
+             a 1 y dejó la comprobación inservible durante un despliegue.
+
+             PROMETÍA UNA BÚSQUEDA DE TODO EL NAS Y FILTRABA UNA CARPETA.
+             Recortaba por nombre las entradas de un solo directorio —siempre
+             la raíz, porque su destino era fijo— sin entrar en ninguna
+             subcarpeta. Medido el 04/09 sobre el nodo con un árbol de
+             prueba: cuatro archivos con «factura» en el nombre, tres de
+             ellos dentro de Documentos, y encontraba UNO.
+
+             Y estaba en los CINCO módulos, aunque en cuatro no hacía nada:
+             /estado con y sin consulta devolvía la página byte a byte
+             idéntica. Lo único que conseguía desde Estado, Seguridad o
+             Cuentas era EXPULSARTE del módulo a la raíz de Archivos.
+
+             La pantalla llegaba a contradecirse sola: el campo prometía todo
+             el NAS y el resultado vacío contestaba que ningún nombre
+             coincidía EN ESTA CARPETA.
+
+             Se retira en vez de arreglarse porque hacer cierta la promesa
+             exige recorrer el árbol en cada tecleo o construir un índice, y
+             no hay ninguna evidencia de que haga falta — ADR-0015 R1 dice
+             que el listado ES el sistema de archivos, sin índice de por
+             medio. Un control que miente es peor que ningún control.
+
+             REVERSIBLE: vuelve entero con un revert de este commit, y lo que
+             habría que reconstruir es poco — el manejador YA sabía filtrar
+             cualquier carpeta; lo que nunca supo la barra fue pedírselo. */}}
         <div class="usr">{{.Marco.Inicial}}</div>
       </div>
 {{end}}

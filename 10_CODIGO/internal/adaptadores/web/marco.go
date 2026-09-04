@@ -14,8 +14,8 @@ import (
 )
 
 // marco.go — el cromo compartido de la consola (ADR-0075): rail con iconos y
-// medidor de disco, barra superior con buscador, tira de estado al pie y
-// pestañas en el teléfono.
+// medidor de disco, barra superior con la inicial de la sesión, tira de estado
+// al pie y pestañas en el teléfono.
 //
 // # ESTO ES LA MAQUETA 12, NO UNA VERSIÓN DE ELLA
 //
@@ -120,10 +120,6 @@ type marco struct {
 	// el formulario de acceso (inicialDe, sesion.go): identifica sin publicar
 	// el nombre a quien mire por encima del hombro.
 	Inicial string
-	// Busqueda es lo que ya se tecleó, para que el campo no se vacíe al
-	// recargar. El buscador es un GET a «/» — busca ARCHIVOS desde cualquier
-	// módulo, que es lo que promete su marcador de posición.
-	Busqueda string
 
 	// Disco es nulo cuando el volumen no se pudo medir; el rail se queda sin
 	// medidor en vez de pintar ceros.
@@ -236,12 +232,11 @@ func (s *Servidor) anotarVolumen(n sistema.Nodo) {
 // construirMarco resuelve la tabla contra ESTA petición.
 func (s *Servidor) construirMarco(r *http.Request, activo, titulo, sub string) marco {
 	m := marco{
-		Titulo:   titulo,
-		Sub:      sub,
-		Csrf:     s.csrfDe(r),
-		Nodo:     nombreDelNodo(r),
-		Inicial:  inicialDe(usuarioDe(r)),
-		Busqueda: r.URL.Query().Get("q"),
+		Titulo:  titulo,
+		Sub:     sub,
+		Csrf:    s.csrfDe(r),
+		Nodo:    nombreDelNodo(r),
+		Inicial: inicialDe(usuarioDe(r)),
 	}
 
 	for _, def := range modulos {

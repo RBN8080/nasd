@@ -155,28 +155,18 @@ img,svg{max-width:100%;}
 @container (min-width:880px){.miga{display:flex;}}
 .miga b{color:var(--tx);font-weight:600;}
 .miga svg{opacity:.4;flex:0 0 auto;}
-/* EL BUSCADOR NO LLEVA CAJA EN REPOSO.
-   Llevaba contorno y fondo propios, y con la línea de la barra de órdenes
-   justo debajo el resultado eran dos rectángulos encajados alrededor de un
-   campo de texto. Reportado sobre captura el 2026-08-26: «un diseño más
-   simple sin las dos líneas que cubren el cuadro de búsqueda».
-   La caja aparece cuando sirve de algo —al posar el puntero y al escribir—,
-   que es cuando el usuario necesita saber dónde va a caer lo que teclee. El
-   borde transparente se declara igualmente para que al enfocar no se mueva
-   nada: si naciera sin borde, el de foco empujaría el renglón un píxel. */
-.busc{flex:1;min-width:0;display:flex;align-items:center;gap:var(--e1);background:none;
-  border:1px solid transparent;border-radius:var(--r2);padding:6px var(--e2);}
-.busc:hover{background:var(--n2);}
-.busc:focus-within{border-color:var(--acB);background:var(--n3);}
-.busc svg{flex:0 0 14px;opacity:.5;}
-.busc input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--tx);
-  font-family:inherit;font-size:.8rem;}
-.busc input::placeholder{color:var(--tx3);}
 /* LA INICIAL DE QUIEN TIENE LA SESIÓN, con el color que antes gastaba el
    cuadrado del nodo. Es el único sitio de la barra donde un cuadrado de
    acento se gana el sitio: dice de quién es la sesión abierta, y basta una
-   letra para reconocerse sin anunciarle la cuenta a quien mire de reojo. */
-.usr{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r2);background:var(--ac);
+   letra para reconocerse sin anunciarle la cuenta a quien mire de reojo.
+
+   EL «margin-left:auto» ES LO QUE SOSTIENE LA BARRA DESDE QUE SE FUE EL
+   BUSCADOR, y no es cosmético. «.f1» es un flex y el buscador llevaba
+   «flex:1»: era él quien empujaba esta inicial contra el borde derecho. Al
+   retirarlo, «.f1» se quedó con un solo hijo y la inicial se iba a la
+   IZQUIERDA, pegada al hueco donde estaba el campo. Medido en Edge a 390 px
+   y a 1280 px antes de darlo por bueno. */
+.usr{width:26px;height:26px;flex:0 0 26px;margin-left:auto;border-radius:var(--r2);background:var(--ac);
   display:grid;place-items:center;color:#000;font-weight:700;font-size:.68rem;}
 /* Sin línea propia: la separación de la barra de órdenes la da el hueco, y
    una regla más ahí era la segunda de las dos que encajonaban el buscador.

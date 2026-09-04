@@ -973,10 +973,6 @@ func funciones() template.FuncMap {
 			}
 			return string(r)
 		},
-		// add existe para UNA frase: «12 de 37 entradas». El total es la suma
-		// de lo que pasó el filtro y lo que no, y componerla en Go habria
-		// pedido un campo mas en la vista para no decir nada nuevo.
-		"add": func(a, b int) int { return a + b },
 		// inicial es la letra del cuadradito de una fila de cuentas. Usa la
 		// misma función que el formulario de acceso (inicialDe) para que las
 		// dos pantallas no puedan discrepar sobre qué letra le toca a quién.
