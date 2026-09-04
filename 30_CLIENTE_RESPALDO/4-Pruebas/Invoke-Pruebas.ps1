@@ -1501,6 +1501,80 @@ finally {
 Test-Afirmacion -Nombre 'La tarea programada pasa -DesdeTarea: sus corridas SI cuentan contra la ventana' `
     -Esperado $true -Obtenido ($argsTarea -like '*-DesdeTarea*')
 
+# ===========================================================================
+# LA LINEA DE MANDO REGISTRADA TIENE QUE ARRANCAR EL MOTOR DE VERDAD
+# ===========================================================================
+# ESTA ES LA PRUEBA QUE FALTABA, Y COSTO UN DIA ENTERO SIN RESPALDO.
+#
+# El 2026-09-02 se anadio `-Confirm:$false` al final de la linea de mando de la
+# tarea. Con `-File`, PowerShell 5.1 pasa lo que va detras COMO TEXTO LITERAL:
+# llega la cadena "$false", enlazarla al [switch] -Confirm falla, y el fallo
+# ocurre ANTES de la primera linea del guion. El 2026-09-03 las tres ventanas
+# -06:26, 13:33 y 19:22- dispararon, arrancaron el motor y lo mataron en menos
+# de un segundo: cero copias en todo el dia.
+#
+# NINGUNA PRUEBA LO VIO PORQUE NINGUNA EJECUTABA ESA LINEA. Se comprobaba su
+# FORMA -que llevara --headless, que llevara -DesdeTarea- y el motor se invocaba
+# siempre en proceso con el operador `&`, que es justo el camino donde
+# `-Confirm:$false` SI funciona. Comprobar la forma de una linea de mando no
+# dice nada sobre si arranca.
+#
+# ASI QUE AQUI SE EJECUTA LA LINEA REGISTRADA, TAL CUAL, y se exige rastro. Con
+# tres cuidados que no son opcionales:
+#
+#   1. -SoloSimular. Sin el, esta prueba emitiria /start y /fail AL CHECK REAL
+#      de Healthchecks: `Send-LatidoDelCliente` lee la URL del Administrador de
+#      credenciales, y el `testigo` de la configuracion del arenero no lo evita.
+#      Ya paso una vez -esta anotado en el propio testigo.ps1- y no se repite.
+#      En simulacion el latido no se emite: los dos envios cuelgan de -not
+#      $Simular y del retorno temprano.
+#
+#   2. LOCALAPPDATA redirigido al arenero. El registro del motor cuelga de esa
+#      variable, y el proceso hijo la hereda. Sin esto, la prueba escribiria en
+#      el registro de PRODUCCION una linea "ventana 3/3 ... A TIEMPO"
+#      indistinguible de una corrida programada de verdad.
+#
+#   3. Se ejecuta por conhost, como la tarea. Su codigo de salida NO se mira -lo
+#      devuelve conhost y siempre es 0-; se mira lo que el motor dejo escrito.
+Write-Titulo 'La linea de mando de la tarea arranca el motor'
+
+Test-Afirmacion -Nombre 'La linea registrada NO lleva -Confirm: con -File no se puede enlazar' `
+    -Esperado $false -Obtenido ($argsTarea -like '*-Confirm*')
+Test-Afirmacion -Nombre 'Y lleva la configuracion, para no correr contra una distinta de la que le dio el horario' `
+    -Esperado $true -Obtenido ($argsTarea -like '*-RutaConfiguracion*')
+
+$appDataDeLaCaja = Join-Path $caja.Raiz 'appdata-tarea'
+if (Test-Path -LiteralPath $appDataDeLaCaja) { Remove-Item -LiteralPath $appDataDeLaCaja -Recurse -Force }
+New-Item -ItemType Directory -Path $appDataDeLaCaja -Force | Out-Null
+
+$appDataDeVerdad = $env:LOCALAPPDATA
+$registroDeLaCaja = ''
+try {
+    $env:LOCALAPPDATA = $appDataDeLaCaja
+    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') `
+        -ArgumentList ($argsTarea + ' -SoloSimular') -Wait | Out-Null
+}
+finally {
+    $env:LOCALAPPDATA = $appDataDeVerdad
+}
+$logsDeLaCaja = @(Get-ChildItem -LiteralPath (Join-Path $appDataDeLaCaja 'NasRespaldo\registro') `
+        -Filter '*.log' -ErrorAction SilentlyContinue)
+if ($logsDeLaCaja.Count -gt 0) {
+    $registroDeLaCaja = Get-Content -LiteralPath $logsDeLaCaja[0].FullName -Raw -Encoding UTF8
+}
+
+Test-Afirmacion -Nombre 'La linea de mando de la tarea ARRANCA el motor: deja registro' `
+    -Esperado $true -Obtenido ($registroDeLaCaja.Length -gt 0)
+Test-Afirmacion -Nombre 'Y el motor llega a clasificar, o sea que paso el prologo entero' `
+    -Esperado $true -Obtenido ($registroDeLaCaja -match 'clasificar')
+# Que la linea de la ventana aparezca demuestra dos cosas de golpe: que el
+# guion corrio Y que -DesdeTarea se enlazo. Un argumento que no enlaza no
+# produce una corrida a medias: no produce ninguna.
+Test-Afirmacion -Nombre 'Y -DesdeTarea llega ENLAZADO: la corrida se atribuye a su ventana' `
+    -Esperado $true -Obtenido ($registroDeLaCaja -match 'ventana \d+/\d+')
+Test-Afirmacion -Nombre 'La prueba no escribio en el registro de produccion' `
+    -Esperado $true -Obtenido ($env:LOCALAPPDATA -eq $appDataDeVerdad)
+
 # Y la contraria, que es la que fallaba: una corrida a mano deja "a mano" en
 # ESTADO.txt y NINGUNA acusacion de retraso en el registro.
 $carpetaCaja = Join-Path $caja.Raiz 'estado-motor'
@@ -1622,6 +1696,59 @@ Set-Content -LiteralPath (Join-Path $cajaVacia2 '2-Nucleo\respaldo.ps1') -Value 
 $truncado = Test-MotorIntacto -RaizProyecto $cajaVacia2 -Tareas @()
 Test-Afirmacion -Nombre 'Un guion del motor VACIO cuenta como pieza rota, no como presente' `
     -Esperado 1 -Obtenido @($truncado.PiezasFallan).Count
+
+# ---------------------------------------------------------------------------
+#  UNA CORRIDA PROGRAMADA QUE NO DEJA RASTRO
+# ---------------------------------------------------------------------------
+# EL 2026-09-03 ESTA COMPROBACION NO EXISTIA Y COSTO UN DIA SIN RESPALDO. La
+# tarea disparo sus tres ventanas, el motor murio en el enlace de parametros las
+# tres veces, y el Programador siguio diciendo LastTaskResult 0 -- porque quien
+# devuelve ese codigo es `conhost --headless`, no PowerShell. `Test-MotorIntacto`
+# devolvia Intacto: True con el respaldo parado.
+#
+# Lo que no se puede falsear es el rastro: cualquier corrida que pase del
+# prologo escribe ESTADO.txt en su primer segundo.
+$cajaRastro = Join-Path $caja.Raiz 'rastro'
+New-Item -ItemType Directory -Path $cajaRastro -Force | Out-Null
+
+# El caso REAL del 2026-09-03: la tarea dice que arranco a las 19:22 y lo ultimo
+# escrito es de la noche anterior.
+$infoMuda = [pscustomobject]@{ LastRunTime = (Get-Date).AddHours(-2); LastTaskResult = 0 }
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'la corrida de ayer' -Carpeta $cajaRastro -Confirm:$false
+# Write-EstadoRespaldo sella el momento AHORA, asi que para reproducir "lo ultimo
+# escrito es viejo" hay que envejecerlo a mano.
+$rutaRastro = Join-Path $cajaRastro 'ESTADO.txt'
+(Get-Content -LiteralPath $rutaRastro -Raw -Encoding UTF8) `
+    -replace 'momento=.*', ('momento={0:s}' -f (Get-Date).AddHours(-26)) |
+    Set-Content -LiteralPath $rutaRastro -Encoding UTF8 -NoNewline
+$sinRastro = Test-RastroDeCorridaProgramada -Info $infoMuda -CarpetaEstado $cajaRastro
+Test-Afirmacion -Nombre 'La tarea arranco y ESTADO.txt es anterior: NO dejo rastro' `
+    -Esperado $false -Obtenido $sinRastro.Dejo
+Test-Afirmacion -Nombre 'Y lo dice con las dos horas, no con un "algo falla"' `
+    -Esperado $true -Obtenido ($sinRastro.Detalle -match 'NO DEJO RASTRO')
+
+# La contraria: una corrida que si escribio despues de arrancar.
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'la corrida de hace un rato' -Carpeta $cajaRastro -Confirm:$false
+$conRastro = Test-RastroDeCorridaProgramada -Info $infoMuda -CarpetaEstado $cajaRastro
+Test-Afirmacion -Nombre 'Si ESTADO.txt es POSTERIOR al arranque, si dejo rastro' `
+    -Esperado $true -Obtenido $conRastro.Dejo
+
+# UNA TAREA QUE NUNCA CORRIO NO ES UNA TAREA ROTA. Windows devuelve 30/11/1999,
+# y acusarla seria un ambar el dia que se registra la tarea por primera vez.
+$infoNueva = [pscustomobject]@{ LastRunTime = [datetime]'1999-11-30'; LastTaskResult = 267011 }
+Test-Afirmacion -Nombre 'Una tarea que nunca ha corrido no se acusa de nada' `
+    -Esperado $true -Obtenido (Test-RastroDeCorridaProgramada -Info $infoNueva -CarpetaEstado $cajaRastro).Dejo
+
+# LA GRACIA. Sin ella esta comprobacion acusaria al motor que esta arrancando
+# BIEN en ese mismo instante, que es el peor falso positivo posible aqui.
+$infoRecien = [pscustomobject]@{ LastRunTime = (Get-Date).AddMinutes(-1); LastTaskResult = 267009 }
+$vacioRastro = Join-Path $caja.Raiz 'rastro-vacio'
+New-Item -ItemType Directory -Path $vacioRastro -Force | Out-Null
+Test-Afirmacion -Nombre 'Una corrida de hace un minuto todavia no se juzga' `
+    -Esperado $true -Obtenido (Test-RastroDeCorridaProgramada -Info $infoRecien -CarpetaEstado $vacioRastro).Dejo
+Test-Afirmacion -Nombre 'Pero pasada la gracia, sin ESTADO.txt ninguno, es que no corrio' `
+    -Esperado $false `
+    -Obtenido (Test-RastroDeCorridaProgramada -Info $infoMuda -CarpetaEstado $vacioRastro).Dejo
 
 # EL MURO DE ADVERTENCIAS: al archivo entero, a la consola una linea.
 $cajaReg = Join-Path $caja.Raiz 'registro-eco'

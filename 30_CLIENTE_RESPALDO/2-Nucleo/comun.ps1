@@ -586,6 +586,96 @@ function Get-RutaEnDestino {
     throw "No hay traduccion declarada para la ruta '$RutaOrigen'. Anadela a destinos.traduccionDeRutas antes de copiar nada."
 }
 
+function Test-RastroDeCorridaProgramada {
+    <#
+        .SYNOPSIS
+            Dice si la ultima corrida que disparo el Programador dejo rastro.
+
+        .DESCRIPTION
+            POR QUE EXISTE. El 2026-09-03 la tarea disparo sus TRES ventanas
+            -06:26, 13:33 y 19:22-, el motor arranco las tres veces y murio en
+            menos de un segundo cada vez: un `-Confirm:$false` detras de `-File`
+            fallaba al enlazar y mataba el guion ANTES de su primera linea. Cero
+            copias en todo el dia.
+
+            Y NADA EN EL SISTEMA PODIA VERLO. El Programador decia LastRunTime
+            19:22, LastTaskResult 0, State Ready y NumberOfMissedRuns 0, porque
+            `conhost --headless` se traga el codigo de salida del hijo.
+            `Test-MotorIntacto` -escrita justamente para cazar un motor que no
+            corre- devolvia Intacto: True con tres corridas caidas.
+
+            LO QUE NO SE PUEDE FALSEAR ES EL RASTRO. Cualquier corrida que pase
+            del prologo escribe ESTADO.txt: `Enter-MarcaDeCorrida` y un
+            `Copiando` salen en el primer segundo, y el `finally` garantiza que
+            el estado final se escriba pase lo que pase dentro. Asi que si el
+            Programador afirma haber arrancado el motor a una hora y lo ultimo
+            escrito en ESTADO.txt es ANTERIOR a esa hora, el motor no llego a
+            ejecutarse. Eso es exacto y no depende de ningun codigo de salida.
+
+            LA GRACIA NO ES ADORNO: una corrida recien disparada todavia no ha
+            escrito nada, y sin ella esta funcion acusaria a un motor que esta
+            arrancando bien en ese mismo instante.
+
+        .PARAMETER Info
+            Lo que devuelve Get-ScheduledTaskInfo para la tarea del motor.
+
+        .PARAMETER CarpetaEstado
+            Donde vive ESTADO.txt.
+
+        .PARAMETER GraciaMinutos
+            Cuanto se le concede a una corrida para dejar su primera huella.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Info,
+
+        [ValidateNotNullOrEmpty()]
+        [string] $CarpetaEstado = (Get-CarpetaDeEstado),
+
+        [ValidateRange(1, 1440)][int] $GraciaMinutos = 5
+    )
+
+    # Sin una hora de arranque creible no hay nada que juzgar. Una tarea que
+    # nunca corrio trae 30/11/1999, que es "nunca" y no un fallo.
+    if ($Info.PSObject.Properties.Name -notcontains 'LastRunTime') {
+        return [pscustomobject]@{ Dejo = $true; Detalle = 'el Programador no informa de la ultima corrida' }
+    }
+    $ultima = $Info.LastRunTime -as [datetime]
+    if ($null -eq $ultima -or $ultima.Year -lt 2000) {
+        return [pscustomobject]@{ Dejo = $true; Detalle = 'la tarea todavia no ha corrido ninguna vez' }
+    }
+    if (((Get-Date) - $ultima).TotalMinutes -lt $GraciaMinutos) {
+        return [pscustomobject]@{
+            Dejo    = $true
+            Detalle = ('la corrida de las {0:HH:mm} es demasiado reciente para juzgarla' -f $ultima)
+        }
+    }
+
+    $estado = Read-EstadoRespaldo -Carpeta $CarpetaEstado
+    [datetime] $momento = [datetime]::MinValue
+    $hayMomento = $false
+    if ($estado.ContainsKey('momento')) {
+        $hayMomento = [datetime]::TryParse(('' + $estado['momento']), [ref]$momento)
+    }
+    if (-not $hayMomento) {
+        return [pscustomobject]@{
+            Dejo    = $false
+            Detalle = ('arranco el {0:yyyy-MM-dd HH:mm} y NO DEJO RASTRO: no hay ESTADO.txt legible' -f $ultima)
+        }
+    }
+    if ($momento -lt $ultima) {
+        return [pscustomobject]@{
+            Dejo    = $false
+            Detalle = ('arranco el {0:yyyy-MM-dd HH:mm} y NO DEJO RASTRO: lo ultimo escrito es de {1:yyyy-MM-dd HH:mm}' -f $ultima, $momento)
+        }
+    }
+    return [pscustomobject]@{
+        Dejo    = $true
+        Detalle = ('la corrida de las {0:HH:mm} dejo rastro' -f $ultima)
+    }
+}
+
 function Test-MotorIntacto {
     <#
         .SYNOPSIS
@@ -615,16 +705,33 @@ function Test-MotorIntacto {
             misma norma que este proyecto cita para el semaforo). Lo que un
             antivirus produce es DESAPARICION o TRUNCADO, y eso si es inequivoco.
 
-            LA SEGUNDA MITAD ES LastTaskResult. Una tarea puede existir, aparecer
-            "Ready" y haber terminado su ultima corrida con un codigo de error.
-            Sin mirarlo, "la tarea existe" se lee como "la tarea funciona", que
-            son dos afirmaciones distintas.
+            LA SEGUNDA MITAD ERA LastTaskResult, Y ERA UNA RED CON UN AGUJERO.
+            La idea seguia siendo la correcta -una tarea puede existir, aparecer
+            "Ready" y haber terminado su ultima corrida mal, y sin mirarlo "la
+            tarea existe" se lee como "la tarea funciona"-. Lo que fallaba es la
+            fuente: las dos tareas arrancan por `conhost --headless`, que
+            DEVUELVE 0 pase lo que pase con el hijo. El 2026-09-03 esta funcion
+            devolvio Intacto: True con las tres corridas del dia caidas.
+
+            LA SEGUNDA MITAD ES AHORA EL RASTRO, que es lo unico que no se puede
+            falsear: si el Programador afirma haber arrancado el motor a una hora
+            y ESTADO.txt no tiene nada de esa hora en adelante, el motor no llego
+            a ejecutarse. Ver Test-RastroDeCorridaProgramada. El codigo de salida
+            se sigue mirando -un valor distinto de 0 seguiria significando algo-
+            pero ya no es lo que sostiene la comprobacion.
 
         .PARAMETER RaizProyecto
             Carpeta del cliente. Por omision, la que contiene a 2-Nucleo.
 
         .PARAMETER Tareas
             Nombres de las tareas programadas a comprobar.
+
+        .PARAMETER TareaMotor
+            Cual de las de $Tareas es el motor. Solo a esa se le pide rastro:
+            el indicador no escribe ESTADO.txt y no termina nunca.
+
+        .PARAMETER CarpetaEstado
+            Donde vive el ESTADO.txt contra el que se busca ese rastro.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
@@ -632,7 +739,13 @@ function Test-MotorIntacto {
         [ValidateNotNullOrEmpty()]
         [string] $RaizProyecto = (Split-Path $PSScriptRoot -Parent),
 
-        [string[]] $Tareas = @('NasRespaldo-Diario', 'NasRespaldo-Indicador')
+        [string[]] $Tareas = @('NasRespaldo-Diario', 'NasRespaldo-Indicador'),
+
+        [ValidateNotNullOrEmpty()]
+        [string] $TareaMotor = 'NasRespaldo-Diario',
+
+        [ValidateNotNullOrEmpty()]
+        [string] $CarpetaEstado = (Get-CarpetaDeEstado)
     )
 
     # LAS PIEZAS SIN LAS QUE NO HAY RESPALDO. Se nombran una a una en vez de
@@ -672,8 +785,25 @@ function Test-MotorIntacto {
         if (-not $info) { continue }
         # 0 es correcto y 267009 es "corriendo ahora mismo", que tambien lo es.
         # Cualquier otro codigo es una corrida que termino mal.
+        #
+        # PERO ESTE CODIGO CASI NUNCA PUEDE ACUSAR, Y HAY QUE DECIRLO AQUI. Las
+        # dos tareas arrancan por `conhost.exe --headless`, y conhost DEVUELVE 0
+        # pase lo que pase con el hijo -medido el 2026-09-03 con un guion que
+        # deja una marca y sale con 3: la marca aparece y conhost devuelve 0-.
+        # O sea que el Programador anota 0 aunque PowerShell haya muerto antes de
+        # ejecutar una sola linea. Se conserva porque un codigo distinto de 0 SI
+        # significaria algo (fallo del propio conhost), pero NO es la red que
+        # sostiene esto: la red es Test-RastroDeCorridaProgramada, mas abajo.
         if ($info.LastTaskResult -ne 0 -and $info.LastTaskResult -ne 267009) {
             $tareasMal.Add(('{0} -- su ultima corrida termino con codigo {1}' -f $nombre, $info.LastTaskResult))
+        }
+
+        # LA COMPROBACION QUE DE VERDAD MIRA SI EL MOTOR CORRIO.
+        # Solo para el motor: el indicador no escribe ESTADO.txt -solo lo lee- y
+        # no termina nunca, asi que no tiene rastro que buscarle.
+        if ($nombre -eq $TareaMotor) {
+            $rastro = Test-RastroDeCorridaProgramada -Info $info -CarpetaEstado $CarpetaEstado
+            if (-not $rastro.Dejo) { $tareasMal.Add(('{0} -- {1}' -f $nombre, $rastro.Detalle)) }
         }
     }
 

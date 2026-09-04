@@ -40,6 +40,18 @@
            `-NonInteractive` se mantiene en el motor: garantiza que nada pueda
            quedarse esperando una respuesta que nadie va a dar de madrugada.
 
+           LO QUE CUESTA, Y HAY QUE SABERLO: `conhost --headless` SE TRAGA EL
+           CODIGO DE SALIDA DEL HIJO. Medido el 2026-09-03 con un guion que
+           escribe una marca y sale con 3: la marca aparece -o sea que el hijo
+           corrio- y conhost devuelve 0. Por tanto `LastTaskResult` de estas dos
+           tareas vale 0 SIEMPRE, y no es prueba de nada.
+
+           No se cambia el lanzador por eso: la ventana negra es un fallo que se
+           ve todos los dias y este es uno que se ve leyendo. Lo que se hace es
+           NO FIARSE del codigo: `Test-MotorIntacto` comprueba que la ultima
+           corrida programada dejo RASTRO, que es lo unico que aqui no se puede
+           falsear.
+
         3. NO SE PASA `-AutorizarFreno`, Y ES EL PUNTO MAS IMPORTANTE DE ESTE
            ARCHIVO. Si el freno salta en una corrida automatica, la corrida se
            detiene y espera a una persona. Una tarea que se autorizara a si misma
@@ -96,8 +108,9 @@
         Registrar, Consultar, Deshabilitar, Habilitar o Retirar.
 
     .PARAMETER RutaConfiguracion
-        De donde salen las ventanas. Por omision la de 3-Config. Las pruebas
-        apuntan a un arenero.
+        De donde salen las ventanas Y CONTRA QUE CONFIGURACION correra la tarea:
+        si se pasa, viaja dentro de la linea de mando. Por omision la de
+        3-Config, y entonces no se anade nada. Las pruebas apuntan a un arenero.
 
     .PARAMETER NombreTarea
         Como se llama en el Programador de tareas.
@@ -217,6 +230,31 @@ switch ($Accion) {
             # el tablero a las 17:30 no "llego tarde" a la ventana de las 12:00,
             # simplemente no iba a esa cita. Medido el 2026-09-02 en la pantalla
             # del responsable, con una simulacion manual acusada de TARDE.
+            #
+            # AQUI IBA UN `-Confirm:$false` Y ERA UNA BOMBA. Lo puso el
+            # 2026-09-02 el commit 1a7e0e0 y estuvo un dia entero impidiendo TODAS
+            # las corridas automaticas: las tres ventanas del 2026-09-03 -06:26,
+            # 13:33 y 19:22- dispararon, arrancaron el motor y lo mataron en menos
+            # de un segundo. Cero lineas de registro, cero copias, y el icono
+            # explicando en ambar "hace 23 h" sin poder decir por que.
+            #
+            # EL MOTIVO: con `-File`, PowerShell 5.1 pasa los argumentos que van
+            # detras COMO TEXTO LITERAL. `$false` no se evalua: llega la cadena
+            # "$false", y enlazarla al [switch] -Confirm falla. El fallo ocurre en
+            # el ENLACE DE PARAMETROS, o sea ANTES de la primera linea del guion:
+            # ninguna guarda, ningun centinela, ninguna linea de registro.
+            #
+            #   respaldo.ps1 : No se puede convertir 'System.String' al tipo
+            #   'System.Management.Automation.SwitchParameter' ... 'Confirm'.
+            #
+            # Y NO HACIA FALTA. `respaldo.ps1` no llama a ShouldProcess en su
+            # cuerpo -se lo pasa a Invoke-CorridaConEstado, y ahi ya viaja un
+            # -Confirm:$false de verdad, evaluado en proceso-. Verificado por
+            # -File y -NonInteractive el 2026-09-03: corre entero y sale con 0.
+            #
+            # OJO: el mismo argumento SI es correcto cuando se invoca con el
+            # operador `&` -el tablero y las pruebas lo pasan asi-, porque
+            # entonces `$false` lo evalua PowerShell. Es `-File` lo que lo rompe.
             $argumentos = @(
                 '--headless'
                 'powershell.exe'
@@ -226,8 +264,20 @@ switch ($Accion) {
                 '-WindowStyle', 'Hidden'
                 '-File', ('"{0}"' -f $guion)
                 '-DesdeTarea'
-                '-Confirm:$false'
-            ) -join ' '
+            )
+
+            # LA CONFIGURACION VIAJA A LA TAREA, y hasta hoy no viajaba. Se leia
+            # aqui para sacar las ventanas y despues la tarea corria contra la de
+            # 3-Config de todos modos: registrar con -RutaConfiguracion producia
+            # una tarea con el HORARIO de un archivo y la CONFIGURACION de otro.
+            # Nadie lo habia notado porque produccion no pasa el parametro, pero
+            # es la clase de incoherencia que este proyecto persigue -y ademas
+            # deja que las pruebas ejecuten la linea de mando REAL contra su
+            # arenero, sin tocar las ocho raices de verdad-.
+            if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) {
+                $argumentos += @('-RutaConfiguracion', ('"{0}"' -f $RutaConfiguracion))
+            }
+            $argumentos = $argumentos -join ' '
 
             # UN DISPARADOR POR VENTANA, CON EL SORTEO DELEGADO EN WINDOWS.
             # La base es el principio de la ventana y RandomDelay su largo, asi
