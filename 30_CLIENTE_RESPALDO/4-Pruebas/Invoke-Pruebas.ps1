@@ -385,6 +385,57 @@ Test-Afirmacion -Criterio '3' -Nombre 'Clase B: el archivo borrado en local DESA
 Test-Afirmacion -Criterio '3' -Nombre 'Clase B: el destino queda en 5' `
     -Esperado 5 -Obtenido @(Get-ChildItem -LiteralPath $dDocs -File).Count
 
+# --- El freno y la clase A: el ambar del 2026-09-04 ------------------------
+#
+# LO QUE PASO. `Pictures\01_Capturas`, clase A, 22 archivos: 4 capturas nuevas
+# que copiar y 6 sobrantes del 02/09 que el destino guarda PORQUE CLASE A
+# GUARDA. El freno sumaba las dos cosas -10 de 22, 45.45 %- y se plantaba: 45
+# > 5 y 10 >= 10. La corrida no copio nada y el icono paso la noche en ambar
+# por los seis archivos que el criterio 2 existe para conservar.
+#
+# Estas pruebas fijan la regla: un sobrante del destino solo cuenta para el
+# freno si la clase de esa raiz lo fuera a borrar de verdad.
+Write-Titulo 'El freno no cuenta como borrado lo que la clase A no borra (04/09/2026)'
+
+# `foto1.txt` se borro en local dos bloques mas arriba y el criterio 2 acaba de
+# comprobar que SIGUE en el destino. Ese es el sobrante, y es un acierto.
+$raizA  = [pscustomobject]@{ Ruta = "$($caja.Origen)\Pictures\01_FOTOS"; Clase = 'A' }
+$frenoA = Measure-Freno -Raiz $raizA -Destino $dFotos -UmbralPorcentaje 5 -MinimoArchivos 1
+
+Test-Afirmacion -Nombre 'Clase A: el sobrante del destino se SIGUE viendo' `
+    -Esperado 1 -Obtenido $frenoA.ABorrar
+Test-Afirmacion -Nombre 'Clase A: pero no borraria ninguno, porque /E /XO no borra' `
+    -Esperado 0 -Obtenido $frenoA.Borraria
+Test-Afirmacion -Nombre 'Clase A: el sobrante NO cuenta como afectado' `
+    -Esperado 0 -Obtenido $frenoA.Afectados
+Test-Afirmacion -Nombre 'Clase A: y por tanto EL FRENO NO SALTA (el ambar del 04/09)' `
+    -Esperado $false -Obtenido $frenoA.Rebasado
+
+# La otra mitad de la regla: con clase B el sobrante SI se va a borrar, asi que
+# tiene que seguir contando. Si esto se rompiera, el parche habria desarmado el
+# freno en la unica clase donde un borrado masivo es posible.
+'sobrante que el espejo se llevaria' | Set-Content -LiteralPath "$dDocs\_sobrante.txt" -Encoding UTF8
+$raizB  = [pscustomobject]@{ Ruta = "$($caja.Origen)\Documents\01_DOCS"; Clase = 'B' }
+$frenoB = Measure-Freno -Raiz $raizB -Destino $dDocs -UmbralPorcentaje 5 -MinimoArchivos 1
+
+Test-Afirmacion -Criterio '3' -Nombre 'Clase B: el sobrante SI se borraria' `
+    -Esperado 1 -Obtenido $frenoB.Borraria
+Test-Afirmacion -Criterio '3' -Nombre 'Clase B: y por tanto SI cuenta para el freno' `
+    -Esperado $true -Obtenido $frenoB.Rebasado
+Remove-Item -LiteralPath "$dDocs\_sobrante.txt" -Force
+
+# LA DEFENSA NO SE DEBILITA, y esta es la prueba que lo dice. Un cifrado masivo
+# reescribe los archivos DEL ORIGEN, y eso sale del lado del origen: cuenta
+# entero en ACopiar aunque la clase sea A.
+Get-ChildItem -LiteralPath "$($caja.Origen)\Pictures\01_FOTOS" -File | ForEach-Object {
+    'CIFRADO POR ALGUIEN QUE NO ERA EL DUENO' | Set-Content -LiteralPath $_.FullName -Encoding UTF8
+}
+$frenoCifrado = Measure-Freno -Raiz $raizA -Destino $dFotos -UmbralPorcentaje 5 -MinimoArchivos 1
+Test-Afirmacion -Criterio '6' -Nombre 'Clase A: un cifrado masivo del origen SIGUE frenando' `
+    -Esperado $true -Obtenido $frenoCifrado.Rebasado
+Test-Afirmacion -Criterio '6' -Nombre 'Y frena por los archivos reescritos, no por los sobrantes' `
+    -Esperado 3 -Obtenido $frenoCifrado.Afectados
+
 # --- Criterio 1: una carpeta nueva entra sola ------------------------------
 Write-Titulo 'Criterio 1: el numero es el interruptor'
 New-Item -ItemType Directory -Path "$($caja.Origen)\Documents\09_Loquesea" -Force | Out-Null

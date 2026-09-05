@@ -907,14 +907,25 @@ function Show-VeredictoDeSimulacion {
     $ordenados = $frenos | Sort-Object { [double]$_.Porcentaje } -Descending
     $peor      = @($ordenados)[0]
     $aCopiar   = ($frenos | Measure-Object -Property ACopiar -Sum).Sum
-    $aBorrar   = ($frenos | Measure-Object -Property ABorrar -Sum).Sum
+    # SE SUMA Borraria, NO ABorrar. ABorrar es lo que sobra en el destino;
+    # Borraria es lo que esta clase haria con ello, y con clase A es 0 siempre.
+    # Decir "borraria 6" en un cliente cuyas ocho raices son clase A -que por
+    # definicion no borra- era una alarma inventada en la unica pantalla que
+    # existe para mirar antes de saltar.
+    $aBorrar   = ($frenos | Measure-Object -Property Borraria -Sum).Sum
+    $sobran    = ($frenos | Measure-Object -Property ABorrar  -Sum).Sum
 
     Write-Linea ''
-    Show-Texto -Objeto ($ordenados | Select-Object Raiz, Clase, Porcentaje, ACopiar, ABorrar, TotalOrigen)
+    Show-Texto -Objeto ($ordenados | Select-Object Raiz, Clase, Porcentaje, ACopiar, ABorrar, Borraria, TotalOrigen)
     Write-Linea ''
     Write-Veredicto -Nivel 'OK' -Frase (
         'Nada frenaria. {0} raices miradas; la mas movida es {1} con {2} % (umbral {3} %, minimo {4} archivos). Copiaria {5} y borraria {6}.' -f
             $frenos.Count, (Split-Path $peor.Raiz -Leaf), $peor.Porcentaje, $umbral, $minimo, $aCopiar, $aBorrar)
+    if ($sobran -gt $aBorrar) {
+        $p = $script:Paleta
+        Write-Linea ('  {0}{1} sobran en el destino y ahi se quedan: son copias que el origen ya no tiene y que la clase A conserva a proposito. No cuentan para el freno.{2}' -f
+            $p.Tenue, $sobran, $p.Fin)
+    }
 }
 
 function Show-VeredictoDelCotejo {

@@ -198,7 +198,32 @@ function Measure-Freno {
     $totalOrigen = @(Get-ChildItem -LiteralPath $Raiz.Ruta -File -Force -Recurse -ErrorAction SilentlyContinue).Count
     $seco = Invoke-Robocopy -Origen $Raiz.Ruta -Destino $Destino -Clase $Raiz.Clase -SoloListar
 
-    $afectados = $seco.NumACopiar + $seco.NumABorrar
+    # LO QUE ROBOCOPY LISTA DEL LADO DEL DESTINO NO ES UN BORRADO: ES UN
+    # SOBRANTE. Y si la clase es A -/E /XO, la politica que este cliente usa en
+    # las OCHO raices- ese sobrante NO SE VA A TOCAR NUNCA. Contarlo como
+    # "afectado" era medir un riesgo que esta clase no puede correr.
+    #
+    # MEDIDO EL 2026-09-04, y es el defecto que abrio este parche:
+    #   Pictures_Capturas, clase A, 22 archivos en el origen.
+    #   4 capturas nuevas que copiar + 6 sobrantes del 02/09 que el destino
+    #   guarda porque clase A guarda = 10 afectados = 45.45 %.
+    #   45.45 > 5 y 10 >= 10: FRENO, y el icono en ambar toda la noche.
+    # Los 6 sobrantes eran EXACTAMENTE lo que la clase A existe para conservar
+    # (criterio 2 del contrato). El freno se disparo por su propio acierto.
+    #
+    # Un freno que salta cuando el sistema hace bien su trabajo es un freno que
+    # se acaba autorizando a ciegas: la misma fatiga de alarmas de ISA-18.2 que
+    # ya obligo a poner el minimo absoluto.
+    #
+    # LA DEFENSA NO SE DEBILITA. Un cifrado masivo reescribe o renombra los
+    # archivos DEL ORIGEN, y eso sale del lado del origen: cuenta entero en
+    # ACopiar. El caso "el origen desaparecio" lo cubre Test-OrigenUtilizable,
+    # que es anterior a esta medida. Lo unico que deja de contar es un borrado
+    # que la clase A tiene prohibido hacer.
+    $borraria = 0
+    if ($Raiz.Clase -eq 'B') { $borraria = $seco.NumABorrar }
+
+    $afectados = $seco.NumACopiar + $borraria
     $porcentaje = if ($totalOrigen -gt 0) { [math]::Round(100.0 * $afectados / $totalOrigen, 2) } else { 0 }
     # Un destino vacio contra un origen con archivos no es un cifrado: es la
     # primera siembra. Se marca aparte para que el mensaje no mienta.
@@ -218,7 +243,13 @@ function Measure-Freno {
         Destino        = $Destino
         TotalOrigen    = $totalOrigen
         ACopiar        = $seco.NumACopiar
+        # ABorrar es lo que robocopy vio sobrando en el destino; Borraria es lo
+        # que esta clase HARIA con ello. Con clase A siempre es 0, y la
+        # diferencia entre las dos columnas se ensena en la opcion [2]: quien
+        # mira tiene que poder ver el sobrante sin que nadie se lo cuente como
+        # una perdida.
         ABorrar        = $seco.NumABorrar
+        Borraria       = $borraria
         Afectados      = $afectados
         Porcentaje     = $porcentaje
         Umbral         = $UmbralPorcentaje
@@ -421,7 +452,7 @@ $resultado.Causa = 'origenInutilizable'
         foreach ($f in $rebasadas) {
             Write-RegistroRespaldo -Nivel 'FRENO' -Etapa 'freno' `
                 -Mensaje ('{0} clase {1}: {2} % ({3} a copiar, {4} A BORRAR de {5}){6}' -f
-                    $f.Raiz, $f.Clase, $f.Porcentaje, $f.ACopiar, $f.ABorrar, $f.TotalOrigen,
+                    $f.Raiz, $f.Clase, $f.Porcentaje, $f.ACopiar, $f.Borraria, $f.TotalOrigen,
                     $(if ($f.PrimeraSiembra) { ' -- destino vacio: es la primera siembra, no un cifrado' } else { '' }))
         }
         return [pscustomobject]$resultado
