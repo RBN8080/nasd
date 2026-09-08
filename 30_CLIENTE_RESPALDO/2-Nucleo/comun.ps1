@@ -449,8 +449,45 @@ function Invoke-Robocopy {
     #   /FFT        Tolerancia de 2 s entre la marca de Windows y la de Linux.
     #               Sin esto el motor cree que todo cambio en cada corrida.
     #   /DCOPY:DAT  Conserva las fechas de las carpetas, no solo de los archivos.
-    $comunes  = @('/XJ', '/DCOPY:DAT', '/FFT', '/MT:8', '/R:2', '/W:5', '/NP')
+    $comunes  = @('/XJ', '/DCOPY:DAT', '/FFT', '/R:2', '/W:5', '/NP')
     $politica = if ($Clase -eq 'A') { @('/E', '/XO') } else { @('/MIR') }
+
+    # /MT SOLO EN LA COPIA REAL, NUNCA EN LA PASADA EN SECO.
+    #
+    # MEDIDO EL 2026-09-08 contra el nodo: seis pasadas sobre 'C:\dev' con el
+    # disco en el mismo estado, contando las lineas de la salida.
+    #
+    #     modo        seg   ACopiar   ABorrar   sin clasificar
+    #     /MT:8      11.9      1154       411        8
+    #     /MT:8      11.9      1154       488        4
+    #     /MT:8      12.3      1154       438        8
+    #     sin /MT    18.9      1154       551        0
+    #     sin /MT    18.9      1154       551        0
+    #     sin /MT    19.2      1154       551        0
+    #
+    # SIN /MT LA MEDIDA ES EXACTA Y REPETIBLE. Con /MT:8 el conteo de sobrantes
+    # varia entre 411 y 550 sobre el MISMO disco: se pierden entre el 11 % y el
+    # 25 % de las lineas del destino, en silencio, porque ocho hilos escriben a
+    # la vez en la misma salida y se pisan.
+    #
+    # POR QUE ES UN FALLO DE SEGURIDAD Y NO UNA MOLESTIA. De esta medida cuelga
+    # el freno de la capa 2 (seccion 7). Un umbral alimentado por un numero que
+    # depende del planificador de hilos no es un umbral: el mismo disco da
+    # 6.16 % o 5.65 % segun como caiga. Y falla EN LA DIRECCION PELIGROSA: si
+    # /MT se come bastantes lineas de sobrante, el porcentaje baja del umbral y
+    # EL FRENO NO SALTA. Un borrado masivo real puede quedar subcontado hasta el
+    # silencio, que es justo lo que la capa 2 existe para impedir.
+    # Test-Coincidencia (verificar.ps1) bebe de la misma pasada.
+    #
+    # QUE CUESTA: siete segundos por corrida en la mayor de las ocho raices.
+    # /MT:8 no compraba velocidad -12 s contra 19 s- a cambio de volver
+    # aleatoria la unica defensa que no depende de reconocer al atacante.
+    #
+    # LA COPIA REAL LO CONSERVA. Ahi el entrelazado desordena el informe, no el
+    # trabajo: robocopy copia bien con ocho hilos y ningun umbral se decide con
+    # esa salida. El codigo de salida y el cubo de sin clasificar se siguen
+    # mirando igual.
+    if (-not $SoloListar) { $comunes += '/MT:8' }
 
     # /FP ruta completa, para poder clasificar por prefijo.
     # /NJH /NJS sin cabecera ni resumen: el resumen esta localizado y no se usa.
@@ -481,6 +518,12 @@ function Invoke-Robocopy {
         # que caia en el cubo de "sin clasificar" y TUMBABA LA CORRIDA ENTERA.
         # Medido el 2026-09-02: 'C:\dev' reportado como fallido con codigo 3
         # -copia correcta con sobrantes- por una linea que se veia vacia.
+        #
+        # DESDE EL 2026-09-08 LA PASADA EN SECO YA NO LLEVA /MT, asi que estas
+        # lineas dejan de fabricarse justo donde se decidia el freno. La
+        # limpieza SE QUEDA, y no por inercia: la copia real sigue con ocho
+        # hilos y sigue entrelazando. Lo que cambia es que ahora una linea sin
+        # clasificar en una pasada en seco es una senal, no ruido esperado.
         #
         # Se limpian los caracteres de control ANTES de decidir si la linea esta
         # vacia. Una linea de error de verdad -"Acceso denegado"- tiene texto y
