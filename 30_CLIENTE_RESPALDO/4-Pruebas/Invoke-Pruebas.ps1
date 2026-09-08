@@ -436,6 +436,53 @@ Test-Afirmacion -Criterio '6' -Nombre 'Clase A: un cifrado masivo del origen SIG
 Test-Afirmacion -Criterio '6' -Nombre 'Y frena por los archivos reescritos, no por los sobrantes' `
     -Esperado 3 -Obtenido $frenoCifrado.Afectados
 
+# ---------------------------------------------------------------------------
+#  LA PASADA EN SECO TIENE QUE DAR SIEMPRE EL MISMO NUMERO (2026-09-08)
+#
+#  Estas pruebas no existian, y son las que habrian cazado el defecto. Medido
+#  contra el nodo el 2026-09-08, seis pasadas sobre 'C:\dev' con el disco en el
+#  MISMO estado: con /MT:8 el conteo de sobrantes salio 411, 438, 488 y 550;
+#  sin /MT salio 551 las tres veces, y cero lineas sin clasificar.
+#
+#  El freno de la capa 2 decide con ese numero. Un umbral alimentado por el
+#  planificador de hilos falla en la direccion peligrosa: si se pierden
+#  bastantes lineas de sobrante, el porcentaje baja del umbral y EL FRENO NO
+#  SALTA. Por eso esto es una prueba de seguridad y no de rendimiento.
+# ---------------------------------------------------------------------------
+Write-Titulo 'La medida del freno es repetible: la pasada en seco no lleva /MT (08/09/2026)'
+
+# LA PRUEBA QUE FIJA EL CONTRATO. El arenero es pequeno y ocho hilos casi nunca
+# llegan a pisarse ahi, asi que contar tres veces no bastaria para cazar una
+# regresion: lo que se afirma es la BANDERA, que si es determinista.
+$vSeco = & { Invoke-Robocopy -Origen $raizB.Ruta -Destino $dDocs -Clase 'B' -SoloListar -Verbose } 4>&1 |
+    Where-Object { $_ -is [System.Management.Automation.VerboseRecord] } |
+    ForEach-Object { '' + $_.Message }
+Test-Afirmacion -Nombre 'La pasada en seco NO lleva /MT: la medida del freno no se sortea' `
+    -Esperado $false -Obtenido ([bool](@($vSeco) -match '/MT'))
+Test-Afirmacion -Nombre 'Y sigue llevando /L: en seco no se escribe nada' `
+    -Esperado $true -Obtenido ([bool](@($vSeco) -match '/L\b'))
+
+# LA OTRA MITAD: la copia real conserva los ocho hilos. Ahi el entrelazado
+# desordena el informe, no el trabajo, y ningun umbral se decide con esa salida.
+# Sin esta prueba, "quitar /MT" se podria haber aplicado a las dos y el respaldo
+# entero iria mas lento sin ganar nada.
+$vReal = & { Invoke-Robocopy -Origen $raizB.Ruta -Destino $dDocs -Clase 'B' -Verbose } 4>&1 |
+    Where-Object { $_ -is [System.Management.Automation.VerboseRecord] } |
+    ForEach-Object { '' + $_.Message }
+Test-Afirmacion -Nombre 'La copia real SI conserva /MT:8: alli el entrelazado no decide nada' `
+    -Esperado $true -Obtenido ([bool](@($vReal) -match '/MT:8'))
+
+# Y el conteo, tres veces seguidas sobre el mismo disco, tiene que ser el mismo.
+# En el arenero es una comprobacion barata; contra el nodo es la que fallaba.
+$repeticiones = @(1..3 | ForEach-Object {
+    $r = Invoke-Robocopy -Origen $raizB.Ruta -Destino $dDocs -Clase 'B' -SoloListar
+    '{0}/{1}/{2}' -f $r.NumACopiar, $r.NumABorrar, $r.SinClasificar.Count
+})
+Test-Afirmacion -Nombre 'Tres pasadas en seco seguidas dan el mismo conteo, al archivo' `
+    -Esperado 1 -Obtenido (@($repeticiones | Sort-Object -Unique).Count)
+Test-Afirmacion -Nombre 'Y ninguna fabrica lineas sin clasificar de la nada' `
+    -Esperado $true -Obtenido ([bool](@($repeticiones) -match '/0$'))
+
 # --- Criterio 1: una carpeta nueva entra sola ------------------------------
 Write-Titulo 'Criterio 1: el numero es el interruptor'
 New-Item -ItemType Directory -Path "$($caja.Origen)\Documents\09_Loquesea" -Force | Out-Null
