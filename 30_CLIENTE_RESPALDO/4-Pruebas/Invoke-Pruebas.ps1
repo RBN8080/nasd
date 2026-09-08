@@ -1390,6 +1390,65 @@ Test-Afirmacion -Nombre 'La regla lateral no desplaza el contenido ni un caracte
 
 # ===========================================================================
 # ---------------------------------------------------------------------------
+#  H9 - EL COTEJO MIRA LA CLASE, COMO YA HACIA EL FRENO
+#
+#  Mismo defecto de familia que se parcheo en el freno el 04/09: un sobrante
+#  del destino solo es una diferencia si la clase de esa raiz lo fuera a
+#  borrar. En clase A conservarlo es el acierto, no el fallo.
+# ---------------------------------------------------------------------------
+Write-Titulo 'H9: un sobrante de clase A no es una diferencia'
+
+# VERIFICAR.PS1 CORRE AL CARGARSE -- tiene param() y cuerpo de nivel superior --
+# asi que un dot-source aqui lanzaria una verificacion real contra el nodo. Se
+# extrae del AST SOLO la funcion que se quiere probar. Es la unica forma de
+# probar una funcion que vive en un guion ejecutable sin ejecutarlo, y deja la
+# prueba atada al archivo de verdad en vez de a una copia que se desincroniza.
+$astVerificar = [System.Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $nucleo 'verificar.ps1'), [ref]$null, [ref]$null)
+$fnCoincidencia = $astVerificar.FindAll({
+    $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $args[0].Name -eq 'Test-CoincidenciaDeRaiz' }, $true)
+Test-Afirmacion -Nombre 'Test-CoincidenciaDeRaiz sigue existiendo en verificar.ps1' `
+    -Esperado 1 -Obtenido @($fnCoincidencia).Count
+. ([scriptblock]::Create(@($fnCoincidencia)[0].Extent.Text))
+
+$cajaH9 = Join-Path $CarpetaCaja 'cotejo-h9'
+$origenH9  = Join-Path $cajaH9 'origen'
+$destinoH9 = Join-Path $cajaH9 'destino'
+New-Item -ItemType Directory -Path $origenH9, $destinoH9 -Force | Out-Null
+'uno'  | Set-Content -LiteralPath (Join-Path $origenH9  'a.txt') -Encoding UTF8
+'uno'  | Set-Content -LiteralPath (Join-Path $destinoH9 'a.txt') -Encoding UTF8
+# El sobrante: esta en el destino y ya no en el origen.
+'viejo' | Set-Content -LiteralPath (Join-Path $destinoH9 'borrado_en_local.txt') -Encoding UTF8
+
+$h9a = Test-CoincidenciaDeRaiz -Raiz ([pscustomobject]@{ Ruta = $origenH9; Clase = 'A' }) -Destino $destinoH9
+Test-Afirmacion -Nombre 'Clase A: el sobrante se SIGUE viendo en la telemetria' `
+    -Esperado 1 -Obtenido $h9a.Sobran
+Test-Afirmacion -Nombre 'Clase A: pero no cuenta como diferencia, porque /E /XO no borra' `
+    -Esperado 0 -Obtenido $h9a.SobranQueImportan
+Test-Afirmacion -Nombre 'Clase A: y por tanto COINCIDE -- conservarlo es el acierto' `
+    -Esperado $true -Obtenido $h9a.Coincide
+
+# LA OTRA MITAD, y sin ella el parche desarmaria el cotejo justo donde importa:
+# en clase B ese mismo sobrante SI se va a borrar, asi que sigue siendo una
+# diferencia que hay que ver antes de que el espejo se la lleve.
+$h9b = Test-CoincidenciaDeRaiz -Raiz ([pscustomobject]@{ Ruta = $origenH9; Clase = 'B' }) -Destino $destinoH9
+Test-Afirmacion -Nombre 'Clase B: el mismo sobrante SI cuenta como diferencia' `
+    -Esperado 1 -Obtenido $h9b.SobranQueImportan
+Test-Afirmacion -Nombre 'Clase B: y por tanto NO coincide' `
+    -Esperado $false -Obtenido $h9b.Coincide
+
+# UN FALTANTE ES UNA DIFERENCIA EN LAS DOS CLASES. Es lo que impide que este
+# parche se lea como "clase A siempre coincide": si al destino le FALTA algo,
+# no coincide, y da igual la clase.
+'nuevo' | Set-Content -LiteralPath (Join-Path $origenH9 'b.txt') -Encoding UTF8
+$h9c = Test-CoincidenciaDeRaiz -Raiz ([pscustomobject]@{ Ruta = $origenH9; Clase = 'A' }) -Destino $destinoH9
+Test-Afirmacion -Nombre 'Clase A: un FALTANTE si es diferencia -- el parche no ciega el cotejo' `
+    -Esperado $false -Obtenido $h9c.Coincide
+Test-Afirmacion -Nombre 'Y se dice cuantos faltan, que es lo accionable' `
+    -Esperado 1 -Obtenido $h9c.Faltan
+
+# ---------------------------------------------------------------------------
 #  EL VEREDICTO SE PARTE, NO SE CORTA A MEDIA FRASE (04/09/2026)
 # ---------------------------------------------------------------------------
 $fraseLarga = 'FRENO: 1 de 8 raices rebasan el umbral del 5 %. No se copia NADA hasta que se autorice con -AutorizarFreno.'
