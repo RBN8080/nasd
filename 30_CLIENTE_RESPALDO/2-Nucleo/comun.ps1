@@ -203,7 +203,25 @@ function Write-RegistroRespaldo {
     }
 
     switch ($Nivel) {
-        'ERROR'    { Write-Error   -Message $Mensaje -ErrorAction Continue }
+        # UN ErrorRecord CRUDO NO SALE A LA PANTALLA, NUNCA (04/09/2026).
+        #
+        # Write-Error pinta el mensaje CON marco: la linea de codigo que lo
+        # emitio, los caretes debajo, CategoryInfo y FullyQualifiedErrorId. En
+        # un proceso con menu eso cae en mitad del tablero y lo rompe -- pasó el
+        # 04/09 en la opcion [2], con seis lineas de volcado entre la tabla de
+        # raices y el veredicto.
+        #
+        # WriteErrorLine escribe la MISMA linea, en rojo y por el MISMO flujo de
+        # error, sin el marco. No se pierde telemetria (seccion 10): el archivo
+        # del dia ya se escribio arriba con su nivel intacto, y quien capture la
+        # salida sigue viendo el texto por stderr.
+        #
+        # El respaldo por Write-Error se queda para los hosts sin UI -- ISE
+        # antiguo, algun runspace embebido -- donde $Host.UI puede no estar.
+        'ERROR'    {
+            if ($null -ne $Host -and $null -ne $Host.UI) { $Host.UI.WriteErrorLine("ERROR  $Mensaje") }
+            else { Write-Error -Message $Mensaje -ErrorAction Continue }
+        }
         'FRENO'    { Write-Warning -Message $Mensaje }
         'ATENCION' { Write-Warning -Message $Mensaje }
         default    { Write-Verbose -Message $Mensaje }
@@ -948,8 +966,23 @@ function Write-EstadoRespaldo {
     $previo = Read-EstadoRespaldo -Carpeta $Carpeta
     $heredadas = @{}
     foreach ($clave in $previo.Keys) {
+        # `copia_*` SE HEREDA, Y ES LO QUE IMPIDE QUE EL TABLERO MIENTA.
+        # Las otras cuatro familias son de OTROS duenos -- la copia fria, el
+        # cotejo, la semilla, la restauracion -- y se heredan para que una
+        # corrida al nodo no borre lo que ellos escribieron.
+        #
+        # `copia_momento` es distinto: es del motor, pero describe un HECHO
+        # PASADO -- cuando fue la ultima corrida que copio bien -- y ese hecho
+        # sobrevive a la corrida de hoy. Si no se heredara, un aborto lo
+        # borraria y el tablero volveria a quedarse sin nada que ensenar en la
+        # linea "ult. copia", que es como se llego a pintar ahi `momento` y a
+        # anunciar una copia que no ocurrio (04/09/2026).
+        #
+        # Su dueno no es "esta corrida": es "la ultima corrida buena". Solo la
+        # pisa otra corrida buena, que es justo lo que se quiere.
         if ($clave -like 'disco_*' -or $clave -like 'huellas_*' -or
-            $clave -like 'semilla_*' -or $clave -like 'restauracion_*') {
+            $clave -like 'semilla_*' -or $clave -like 'restauracion_*' -or
+            $clave -like 'copia_*') {
             if (-not $Datos.ContainsKey($clave)) { $heredadas[$clave] = $previo[$clave] }
         }
     }

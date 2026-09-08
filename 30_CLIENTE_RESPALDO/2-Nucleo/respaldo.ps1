@@ -201,7 +201,7 @@ function Measure-CambioDeRaiz {
     # "afectado" era medir un riesgo que esta clase no puede correr.
     #
     # MEDIDO EL 2026-09-04, y es el defecto que abrio este parche:
-    #   Pictures_Capturas, clase A, 22 archivos en el origen.
+    #   Pictures\01_Capturas, clase A, 22 archivos en el origen.
     #   4 capturas nuevas que copiar + 6 sobrantes del 02/09 que el destino
     #   guarda porque clase A guarda = 10 afectados = 45.45 %.
     #   45.45 > 5 y 10 >= 10: FRENO, y el icono en ambar toda la noche.
@@ -626,6 +626,31 @@ function Invoke-CorridaConEstado {
         huerfanos = @($resultado.Huerfanos).Count
         copias    = @($resultado.Copias).Count
         fallos    = $fallos.Count
+    }
+
+    # UN ABORTO NO ES UNA COPIA, Y EL TABLERO NECESITA PODER DISTINGUIRLO.
+    #
+    # `momento` es cuando corrio ESTA corrida, haya copiado o no. El tablero lo
+    # pintaba como "ult. copia" y por eso el 04/09 anunciaba "ult. copia hoy
+    # 20:47" de una corrida que aborto en el freno con copias=0. La linea mas
+    # tranquilizadora del tablero era la mas falsa, que es exactamente el engano
+    # contra el que se escribio ADR-0074.
+    #
+    # `copia_momento` SOLO se escribe cuando la corrida llego a copiar y termino
+    # sin fallos. Write-EstadoRespaldo hereda la familia `copia_*`, asi que
+    # una corrida que aborta deja intacto el valor de la ultima que si copio, y
+    # la edad de esa copia crece sola hasta que haya otra buena. Si nunca hubo
+    # ninguna, la clave no existe y el tablero dice "nunca" -- que es distinto de
+    # decir una fecha vieja, y mucho mas distinto de decir "hoy".
+    #
+    # UNA COPIA BUENA DE CERO ARCHIVOS SIGUE SIENDO UNA COPIA BUENA: significa
+    # "comprobado que todo estaba al dia". Por eso la condicion es el estado de
+    # la corrida y no el numero de archivos escritos, que se publica aparte.
+    if ($estado -eq 'Protegido') {
+        $datos['copia_momento']  = Get-Date -Format 's'
+        $escritos = 0
+        foreach ($c in $resultado.Copias) { $escritos += [int]$c.NumACopiar }
+        $datos['copia_archivos'] = $escritos
     }
 
     # LA VENTANA VIAJA A ESTADO.txt, y hace falta para que el tablero pueda decir

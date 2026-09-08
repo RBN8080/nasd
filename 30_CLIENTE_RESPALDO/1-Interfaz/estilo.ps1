@@ -318,6 +318,61 @@ function Limit-Texto {
     return $Texto.Substring(0, $Maximo - 3) + '...'
 }
 
+function Split-TextoEnLineas {
+    <#
+        .SYNOPSIS
+            Parte un texto en lineas que quepan, sin cortar palabras.
+        .DESCRIPTION
+            NO EXISTIA, Y ESA ERA LA CAUSA. El 04/09 el tablero enseno el
+            veredicto cortado a media frase -- "No se copia NADA ha..." -- porque
+            lo unico que habia era Limit-Texto, que RECORTA. Recortar esta bien
+            para una celda de una tabla, donde la alternativa es romper el marco;
+            esta mal para la frase que explica por que no se ha copiado nada, que
+            es justo la que hay que leer entera.
+
+            LAS DOS FUNCIONES CONVIVEN A PROPOSITO: Limit-Texto para lo que tiene
+            que caber en una celda, esta para lo que tiene que leerse.
+
+            Una palabra mas larga que el ancho -- una ruta sin espacios -- se
+            parte por la fuerza en vez de desbordar el marco: entre romper una
+            ruta y romper la ventana, se rompe la ruta.
+        .PARAMETER Texto
+            Texto plano, sin codigos de color.
+        .PARAMETER Ancho
+            Cuantos caracteres caben por linea.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Texto,
+        [Parameter(Mandatory)][ValidateRange(8, 500)][int] $Ancho
+    )
+
+    $limpio = ('' + $Texto).Trim()
+    if ($limpio -eq '') { return @('') }
+
+    $lineas = New-Object System.Collections.Generic.List[string]
+    $actual = ''
+    foreach ($palabra in ($limpio -split '\s+')) {
+        $p = $palabra
+        # Una palabra sola mas larga que el ancho: se trocea por la fuerza.
+        while ($p.Length -gt $Ancho) {
+            if ($actual -ne '') { [void]$lineas.Add($actual); $actual = '' }
+            [void]$lineas.Add($p.Substring(0, $Ancho))
+            $p = $p.Substring($Ancho)
+        }
+        if ($actual -eq '') { $actual = $p }
+        elseif (($actual.Length + 1 + $p.Length) -le $Ancho) { $actual = "$actual $p" }
+        else { [void]$lineas.Add($actual); $actual = $p }
+    }
+    if ($actual -ne '') { [void]$lineas.Add($actual) }
+    # SE DEVUELVE PLANO Y QUIEN LLAME ENVUELVE CON @(). Devolverlo con la coma
+    # de siempre -- `return ,$array` -- lo anida un nivel de mas en cuanto el
+    # llamador tambien usa @(), y entonces `-join` imprime System.String[].
+    # Medido al escribir estas pruebas.
+    return $lineas.ToArray()
+}
+
 function Format-Antiguedad {
     <#
         .SYNOPSIS
