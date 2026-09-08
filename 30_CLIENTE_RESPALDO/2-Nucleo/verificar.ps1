@@ -97,14 +97,38 @@ function Test-CoincidenciaDeRaiz {
     $existe = Test-Path -LiteralPath $Destino -PathType Container
     $seco = Invoke-Robocopy -Origen $Raiz.Ruta -Destino $Destino -Clase $Raiz.Clase -SoloListar
 
+    # UN SOBRANTE SOLO ES UNA DIFERENCIA SI ESTA CLASE LO FUERA A BORRAR.
+    #
+    # Es el mismo defecto de familia que el freno tenia y que se parcheo el
+    # 2026-09-04: en clase A -/E /XO- un archivo que sobra en el destino es
+    # EXACTAMENTE lo que esa clase existe para conservar. Contarlo como
+    # diferencia era llamar fallo al acierto.
+    #
+    # DETECTADO EL 04/09 Y NO PARCHEADO ENTONCES a proposito, para no tocar dos
+    # subsistemas la misma noche. Se cierra hoy.
+    #
+    # POR QUE AHORA Y NO DESPUES DE LA FASE 7: medido el 2026-09-08, este
+    # defecto NO esta produciendo hoy ningun falso positivo -- las dos raices
+    # que difieren, Pictures y C:\dev, tienen FALTANTES reales, asi que el
+    # "2 de 8 raices con diferencias" del ESTADO.txt era verdadero --. Pero se
+    # dispara EN CUANTO Pictures se ponga al dia: tendra Faltan=0 y conservara
+    # sus 12 sobrantes legitimos de clase A. Seria el primer resultado que el
+    # responsable veria al reencender el cliente, y seria falso.
+    $sobranQueImportan = if ($Raiz.Clase -eq 'B') { $seco.NumABorrar } else { 0 }
+
     return [pscustomobject]@{
         Raiz           = $Raiz.Ruta
         Clase          = $Raiz.Clase
         Destino        = $Destino
         DestinoExiste  = $existe
         Faltan         = $seco.NumACopiar
+        # Sobran se sigue publicando ENTERO: quien mire tiene que poder ver el
+        # sobrante aunque no cuente como diferencia (seccion 10, no se quita
+        # telemetria para que el sistema se vea limpio). Lo que cambia es que
+        # deja de ENSUCIAR el veredicto en la clase que no borra.
         Sobran         = $seco.NumABorrar
-        Coincide       = ($seco.NumACopiar -eq 0 -and $seco.NumABorrar -eq 0)
+        SobranQueImportan = $sobranQueImportan
+        Coincide       = ($seco.NumACopiar -eq 0 -and $sobranQueImportan -eq 0)
         CodigoRobocopy = $seco.Codigo
     }
 }
