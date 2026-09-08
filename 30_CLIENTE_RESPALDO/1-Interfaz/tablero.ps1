@@ -369,6 +369,32 @@ function Write-CuerpoDeTabla {
         if ($porDestino.ContainsKey('disco')) { $enDisco = $porDestino['disco'][$raiz] }
         $ref = if ($enNodo) { $enNodo } else { $enDisco }
 
+        # LA COLUMNA CL NO PUEDE AFIRMAR UNA CLASE QUE NO ES LA DEL NODO.
+        #
+        # Una raiz tiene DOS clases legitimas, una por destino: `C:\dev` es B
+        # contra el nodo -espejo, borra lo que sobra- y A contra el disco frio,
+        # que es aditivo siempre por diseno (respaldo.jsonc seccion 6). Las dos
+        # son correctas y RAICES.tsv guarda una fila para cada una.
+        #
+        # El defecto era el `else` de arriba: cuando faltaba la fila del nodo
+        # -- porque la corrida aborto antes de copiar y nunca llego a escribirla --
+        # la columna se rellenaba en silencio con la clase del DISCO. El 04/09
+        # eso puso una `A` tranquilizadora al lado de una raiz sobre la que el
+        # motor iba a borrar 545 archivos por ser `B`. Un dato tranquilizador y
+        # falso es peor que ningun dato.
+        #
+        # Ahora: si las dos filas existen y discrepan, se ensenan las dos
+        # -- "B/A", nodo primero --. Si solo esta la del disco, un guion: no
+        # consta, que es distinto de estar bien.
+        $claseCelda = '?'
+        if ($enNodo) {
+            $claseCelda = '' + $enNodo.Clase
+            if ($enDisco -and ('' + $enDisco.Clase) -ne ('' + $enNodo.Clase)) {
+                $claseCelda = '{0}/{1}' -f $enNodo.Clase, $enDisco.Clase
+            }
+        }
+        elseif ($enDisco) { $claseCelda = '-' }
+
         # LA COLUMNA DICE LO QUE EL NUMERO ES, NO LO QUE GUSTARIA QUE FUERA.
         # La maqueta la titulaba PENDIENTE, pero el dato que el motor puede dar
         # sin volver a escanear es cuantos archivos MOVIO el ultimo pase. Saber
@@ -428,7 +454,7 @@ function Write-CuerpoDeTabla {
 
         Write-Linea ('  {0}{1}{2}{3}{4}' -f `
             (Format-Celda -Texto (Format-EtiquetaDeRaiz -Raiz $raiz) -Ancho 30 -Paleta $Paleta -Color $Paleta.Valor), `
-            (Format-Celda -Texto ('' + $ref.Clase) -Ancho 3 -Paleta $Paleta -Color $Paleta.Tenue), `
+            (Format-Celda -Texto $claseCelda -Ancho 4 -Paleta $Paleta -Color $Paleta.Tenue), `
             (Format-Celda -Texto ('{0} arch. ' -f $movidos) -Ancho 11 -Paleta $Paleta -Derecha `
                     -Color $Paleta.Tenue), `
                 $celdas[0], $celdas[1])
@@ -576,7 +602,15 @@ function Show-Ventana {
     Write-Linea ('  {0}{1}{2}{3}{4}{5}{6}' -f `
             ($p.Fuerte + $p.Titulo), $izq, $p.Fin, (' ' * $hueco), $colorEs, $der, $p.Fin)
     Write-Linea (Get-Regla -Paleta $p -Unicode $u)
-    Write-Linea ('  {0}{1}{2}' -f $p.Tenue, (Limit-Texto -Texto $v.Detalle -Maximo $ancho), $p.Fin)
+    # EL DETALLE SE PARTE, NO SE RECORTA (04/09/2026). Aqui salia
+    # "No se copia NADA ha..." con la frase cortada a la mitad: la unica linea
+    # que explica por que no se ha copiado nada era la unica que no se podia
+    # leer entera. Limit-Texto sigue valiendo para las CELDAS, donde recortar es
+    # la alternativa a romper el marco; para esto hacia falta un partidor, y no
+    # existia hasta hoy.
+    foreach ($trozo in @(Split-TextoEnLineas -Texto ('' + $v.Detalle) -Ancho $ancho)) {
+        Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $trozo, $p.Fin)
+    }
     Write-Linea ' '
 
     # --- Los dos destinos ---------------------------------------------------
@@ -586,13 +620,31 @@ function Show-Ventana {
     $nodoVivo = Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue
     $libresNodo = $null
     if ($nodoVivo) { $libresNodo = Get-EspacioLibre -Ruta $unc }
+
+    # "ULT. COPIA" SALE DE `copia_momento`, NO DE `momento`. Son cosas distintas
+    # y confundirlas produjo la peor mentira del tablero: el 04/09 esta linea
+    # decia "ult. copia hoy 20:47" de una corrida que aborto en el freno sin
+    # copiar un solo archivo. `momento` es cuando corrio; `copia_momento` es
+    # cuando copio bien, y el motor solo lo escribe si la corrida termino en
+    # Protegido.
+    #
+    # SIN LA CLAVE, "nunca" -- y en ambar. Un ESTADO.txt anterior al 08/09 no la
+    # tiene, y eso NO se rellena con `momento` para que la linea no vuelva a
+    # afirmar una copia que nadie puede sostener. Que diga "nunca" y se corrija
+    # sola en la primera corrida buena es preferible a que mienta hoy.
+    $ultimaCopia = 'nunca'
+    $colorCopia  = $p.Ambar
+    if ($estado.ContainsKey('copia_momento')) {
+        $ultimaCopia = Format-Antiguedad -Momento ('' + $estado['copia_momento'])
+        if ($ultimaCopia -ne 'nunca') { $colorCopia = $p.Valor }
+    }
     Write-Linea ('  {0}{1}{2}{3}' -f `
         (Format-Celda -Texto 'NODO' -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
         (Format-Celda -Texto $(if ($nodoVivo) { 'responde' } else { 'NO RESPONDE' }) -Ancho 14 -Paleta $p `
                 -Color $(if ($nodoVivo) { $p.Verde } else { $p.Rojo })), `
         (Format-Celda -Texto (Format-Espacio -Bytes $libresNodo) -Ancho 16 -Paleta $p -Color $p.Tenue), `
-        (Format-Celda -Texto ('ult. copia {0}' -f (Format-Antiguedad -Momento ('' + $estado['momento']))) `
-                -Ancho 26 -Paleta $p -Color $p.Valor))
+        (Format-Celda -Texto ('ult. copia {0}' -f $ultimaCopia) `
+                -Ancho 26 -Paleta $p -Color $colorCopia))
 
     # El disco se conecta A PETICION (seccion 6.3): no hay calendario y es
     # deliberado. Que no este no es una falla, asi que no se pinta en rojo.
@@ -613,7 +665,7 @@ function Show-Ventana {
     # --- La tabla por raiz: la pieza central de la maqueta -------------------
     Write-Linea ('  {0}{1}{2}{3}{4}' -f `
         (Format-Celda -Texto 'RAIZ' -Ancho 30 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'CL' -Ancho 3 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'CL' -Ancho 4 -Paleta $p -Color $p.Etiqueta), `
         (Format-Celda -Texto 'COPIADO ' -Ancho 11 -Paleta $p -Color $p.Etiqueta -Derecha), `
         (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
         (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))

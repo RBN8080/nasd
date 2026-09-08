@@ -1389,6 +1389,67 @@ Test-Afirmacion -Nombre 'La regla lateral no desplaza el contenido ni un caracte
     -Obtenido $verConMarca.IndexOf('algo que avisar')
 
 # ===========================================================================
+# ---------------------------------------------------------------------------
+#  EL VEREDICTO SE PARTE, NO SE CORTA A MEDIA FRASE (04/09/2026)
+# ---------------------------------------------------------------------------
+$fraseLarga = 'FRENO: 1 de 8 raices rebasan el umbral del 5 %. No se copia NADA hasta que se autorice con -AutorizarFreno.'
+$partida = @(Split-TextoEnLineas -Texto $fraseLarga -Ancho 66)
+Test-Afirmacion -Nombre 'Una frase larga se parte en varias lineas, no se recorta' `
+    -Esperado $true -Obtenido ($partida.Count -gt 1)
+Test-Afirmacion -Nombre 'Y NINGUNA linea desborda el ancho: el marco aguanta' `
+    -Esperado $true -Obtenido (@($partida | Where-Object { $_.Length -gt 66 }).Count -eq 0)
+# LA PRUEBA QUE DEFINE LA DIFERENCIA CON Limit-Texto: no se pierde ni una palabra.
+Test-Afirmacion -Nombre 'No se pierde texto por el camino: se lee la frase entera' `
+    -Esperado ($fraseLarga -replace '\s+', ' ') -Obtenido (($partida -join ' ').Trim())
+Test-Afirmacion -Nombre 'Una frase que ya cabe se queda en una sola linea' `
+    -Esperado 1 -Obtenido @(Split-TextoEnLineas -Texto 'Corrida terminada.' -Ancho 66).Count
+# Una ruta sin espacios mas larga que el ancho: se rompe la ruta, no la ventana.
+$rutaLarga = @(Split-TextoEnLineas -Texto ('C:\' + ('x' * 90)) -Ancho 20)
+Test-Afirmacion -Nombre 'Una palabra mas larga que el ancho se trocea en vez de desbordar' `
+    -Esperado $true -Obtenido (@($rutaLarga | Where-Object { $_.Length -gt 20 }).Count -eq 0)
+
+# ---------------------------------------------------------------------------
+#  H6 - EL TABLERO NO PUEDE AFIRMAR UNA COPIA QUE EL REGISTRO NO RESPALDA
+#
+#  LA PRUEBA QUE NO EXISTIA Y QUE DEJO PASAR EL DEFECTO. El 04/09 el tablero
+#  anuncio "ult. copia hoy 20:47" de una corrida que aborto con copias=0.
+#  Nada lo vigilaba, y por eso llego a produccion.
+# ---------------------------------------------------------------------------
+Write-Titulo 'H6: una copia que no ocurrio no se anuncia'
+
+$cajaH6 = Join-Path $CarpetaCaja 'estado-h6'
+New-Item -ItemType Directory -Path $cajaH6 -Force | Out-Null
+
+# 1) Una corrida que ABORTA: escribe momento, pero NO copia_momento.
+Write-EstadoRespaldo -Estado 'Falla' -Detalle 'Centinela alterado' `
+    -Datos @{ copias = 0; causa = 'centinelaAlterado' } -Carpeta $cajaH6 -Confirm:$false
+$h6a = Read-EstadoRespaldo -Carpeta $cajaH6
+Test-Afirmacion -Nombre 'Un aborto deja `momento`, que es cuando CORRIO' `
+    -Esperado $true -Obtenido ($h6a.ContainsKey('momento'))
+Test-Afirmacion -Nombre 'Pero NO deja `copia_momento`: no hubo copia que anunciar' `
+    -Esperado $false -Obtenido ($h6a.ContainsKey('copia_momento'))
+
+# 2) Una corrida BUENA: ahora si.
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle '3 raices al dia' `
+    -Datos @{ copias = 3; copia_momento = (Get-Date -Format 's'); copia_archivos = 7 } `
+    -Carpeta $cajaH6 -Confirm:$false
+$h6b = Read-EstadoRespaldo -Carpeta $cajaH6
+Test-Afirmacion -Nombre 'Una corrida buena SI anota copia_momento' `
+    -Esperado $true -Obtenido ($h6b.ContainsKey('copia_momento'))
+$copiaBuena = '' + $h6b['copia_momento']
+
+# 3) Y UN ABORTO POSTERIOR NO LA PISA NI LA ADELANTA. Es la mitad importante:
+#    la edad de la ultima copia buena tiene que crecer sola mientras no haya
+#    otra, en vez de rejuvenecer con cada intento fallido.
+Start-Sleep -Milliseconds 1100
+Write-EstadoRespaldo -Estado 'Falla' -Detalle 'El nodo no responde' `
+    -Datos @{ copias = 0; causa = 'destinoInalcanzable' } -Carpeta $cajaH6 -Confirm:$false
+$h6c = Read-EstadoRespaldo -Carpeta $cajaH6
+Test-Afirmacion -Nombre 'Un aborto posterior NO adelanta la fecha de la ultima copia buena' `
+    -Esperado $copiaBuena -Obtenido ('' + $h6c['copia_momento'])
+Test-Afirmacion -Nombre 'Y `momento` SI avanza: el intento consta aunque no copiara' `
+    -Esperado $true -Obtenido (('' + $h6c['momento']) -gt $copiaBuena)
+
 Write-Titulo 'La cadencia: tres ventanas, un sorteo y un registro auditable'
 # ===========================================================================
 
