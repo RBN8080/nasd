@@ -635,7 +635,7 @@ function Show-Ventana {
     if ($estado.ContainsKey('cambio')) { $cambio = '' + $estado['cambio'] }
     Write-LineaDeSumario -Etiqueta 'SEGURIDAD' -Paleta $p -Partes @(
         ('centinelas {0}' -f $centinelas),
-        ('cambio {0} % (freno: {1} %)' -f $cambio, $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian))
+        ('cambio {0} % en la ultima corrida' -f $cambio))
 
     $huellas = 'huellas {0}' -f (Format-Antiguedad -Momento ('' + $estado['huellas_momento']))
     if ($estado.ContainsKey('huellas_detalle')) { $huellas += ' ' + $estado['huellas_detalle'] }
@@ -656,7 +656,7 @@ function Show-Ventana {
 
     # --- Menu ----------------------------------------------------------------
     # Los parametros de proteccion NO estan aqui, y no es un olvido (seccion
-    # 10.1): el umbral del freno, los centinelas y las clases se cambian
+    # 10.1): los centinelas y las clases se cambian
     # editando el archivo, porque subir un umbral desde una pantalla bonita
     # desarma la defensa con dos pulsaciones y sin dejar rastro.
     #
@@ -687,7 +687,7 @@ function Show-Ventana {
             (Format-Celda -Texto $fila[1] -Ancho 28 -Paleta $p -Color $p.Valor), `
             (Format-Celda -Texto $fila[2] -Ancho 24 -Paleta $p -Color $p.Valor))
     }
-    Write-Linea ('  {0}freno, centinelas y clases: se cambian en 3-Config/respaldo.jsonc{1}' -f $p.Tenue, $p.Fin)
+    Write-Linea ('  {0}centinelas y clases: se cambian en 3-Config/respaldo.jsonc{1}' -f $p.Tenue, $p.Fin)
     Write-Linea ' '
 }
 
@@ -886,44 +886,45 @@ function Show-VeredictoDeSimulacion {
     }
 
     if ($Resultado.Abortada) {
-        $nivel = if (('' + $Resultado.Motivo) -like 'FRENO*') { 'ATENCION' } else { 'FALLO' }
-        Write-Veredicto -Nivel $nivel -Frase ('' + $Resultado.Motivo) `
-            -Accion 'No se copiaria nada. Con el freno, hay que autorizarlo a mano desde la consola con -AutorizarFreno.'
+        # RETIRADA LA CAPA 2 (ADR-0085), TODO ABORTO ES UN FALLO. Los que
+        # quedan -centinela, origen inutilizable, deuda- no admiten
+        # autorizacion: no hay nada que ofrecer al que mira salvo el registro.
+        Write-Veredicto -Nivel 'FALLO' -Frase ('' + $Resultado.Motivo) `
+            -Accion 'No se copiaria nada. Mira el registro del dia para saber que capa lo paro.'
         return
     }
 
-    # LA PROPIEDAD SE LLAMA Frenos, EN PLURAL: es una por raiz. El defecto que
-    # abrio el pendiente 27 fue pedir Freno, que no existe.
-    $frenos = @($Resultado.Frenos | Where-Object { $null -ne $_ })
-    $umbral = $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian
-    $minimo = $Configuracion.freno.minimoArchivosParaFrenar
+    # LA PROPIEDAD SE LLAMA Cambios, EN PLURAL: es una por raiz. Se llamaba
+    # Frenos hasta ADR-0085; el defecto que abrio el pendiente 27 fue pedirla
+    # en singular, que no existe, y la prueba que lo vigila sigue en pie.
+    $cambios = @($Resultado.Cambios | Where-Object { $null -ne $_ })
 
-    if ($frenos.Count -eq 0) {
+    if ($cambios.Count -eq 0) {
         Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La simulacion no llego a medir ninguna raiz.' `
             -Accion 'Comprueba que el nodo responde y vuelve a intentarlo.'
         return
     }
 
-    $ordenados = $frenos | Sort-Object { [double]$_.Porcentaje } -Descending
+    $ordenados = $cambios | Sort-Object { [double]$_.Porcentaje } -Descending
     $peor      = @($ordenados)[0]
-    $aCopiar   = ($frenos | Measure-Object -Property ACopiar -Sum).Sum
+    $aCopiar   = ($cambios | Measure-Object -Property ACopiar -Sum).Sum
     # SE SUMA Borraria, NO ABorrar. ABorrar es lo que sobra en el destino;
     # Borraria es lo que esta clase haria con ello, y con clase A es 0 siempre.
     # Decir "borraria 6" en un cliente cuyas ocho raices son clase A -que por
     # definicion no borra- era una alarma inventada en la unica pantalla que
     # existe para mirar antes de saltar.
-    $aBorrar   = ($frenos | Measure-Object -Property Borraria -Sum).Sum
-    $sobran    = ($frenos | Measure-Object -Property ABorrar  -Sum).Sum
+    $aBorrar   = ($cambios | Measure-Object -Property Borraria -Sum).Sum
+    $sobran    = ($cambios | Measure-Object -Property ABorrar  -Sum).Sum
 
     Write-Linea ''
     Show-Texto -Objeto ($ordenados | Select-Object Raiz, Clase, Porcentaje, ACopiar, ABorrar, Borraria, TotalOrigen)
     Write-Linea ''
     Write-Veredicto -Nivel 'OK' -Frase (
-        'Nada frenaria. {0} raices miradas; la mas movida es {1} con {2} % (umbral {3} %, minimo {4} archivos). Copiaria {5} y borraria {6}.' -f
-            $frenos.Count, (Split-Path $peor.Raiz -Leaf), $peor.Porcentaje, $umbral, $minimo, $aCopiar, $aBorrar)
+        '{0} raices miradas. La mas movida es {1} con {2} % de su contenido. Copiaria {3} archivos y borraria {4}.' -f
+            $cambios.Count, (Split-Path $peor.Raiz -Leaf), $peor.Porcentaje, $aCopiar, $aBorrar)
     if ($sobran -gt $aBorrar) {
         $p = $script:Paleta
-        Write-Linea ('  {0}{1} sobran en el destino y ahi se quedan: son copias que el origen ya no tiene y que la clase A conserva a proposito. No cuentan para el freno.{2}' -f
+        Write-Linea ('  {0}{1} sobran en el destino y ahi se quedan: son copias que el origen ya no tiene y que la clase A conserva a proposito. No son una perdida.{2}' -f
             $p.Tenue, $sobran, $p.Fin)
     }
 }
@@ -1453,11 +1454,11 @@ function Show-Reparto {
 
             Y EL CORTE DE 10.1 NO SE ROMPE, PORQUE EL CORTE NUNCA FUE "TODO O
             NADA". Lo que 10.1 protege es lo que decide CUANTO se puede destruir
-            antes de que el sistema se plante -- umbral del freno, centinelas,
+            antes de que el sistema se plante -- centinelas,
             clases y exclusiones --, y eso sigue exigiendo abrir el archivo a
             mano. Un horario decide CUANDO se copia: moverlo mal hace que se copie
             con menos frecuencia, y de eso avisan el icono y el testigo. Aflojar
-            el freno, en cambio, no lo nota nadie.
+            una clase o un centinela, en cambio, no lo nota nadie.
 
             LO QUE SI HACIA FALTA ERA QUE NO SE PUDIERA MOVER A OJO, y de eso se
             encargan las tres guardas de Set-HorarioDeRespaldo mas la vista previa
@@ -1500,10 +1501,9 @@ function Show-Reparto {
         Write-Linea ('     {0}Proxima corrida: {1}{2}' -f $p.Valor, $proxima, $p.Fin)
         Write-Linea '     El minuto lo sortea Windows dentro de la ventana; no se sabe hasta que dispara.'
 
-        # LAS CUATRO PROTECCIONES SE ENSENAN Y NO SE TOCAN. Ver la cabecera.
+        # LAS PROTECCIONES QUE QUEDAN SE ENSENAN Y NO SE TOCAN. Ver la cabecera.
         Write-Linea ''
         Write-Linea ('   {0}SOLO EDITANDO EL ARCHIVO{1}   (seccion 10.1, y sigue asi a proposito)' -f $p.Fuerte, $p.Fin)
-        Write-Linea ('     Umbral del freno      {0,5} %' -f $Configuracion.freno.umbralPorcentajeDeArchivosQueCambian)
         Write-Linea ('     Centinelas            {0,5} declarados' -f @($Configuracion.centinelas).Count)
         Write-Linea ('     Clases                {0,5} contenedores, {1} raices' -f `
             @($Configuracion.contenedores).Count, @($Configuracion.raicesDeclaradas).Count)
@@ -1664,11 +1664,11 @@ while ($seguir) {
     try {
         switch ($opcion.Trim().ToUpperInvariant()) {
             '1' {
-                # AUTORIZAR EL FRENO NO ES UNA OPCION DEL MENU y es deliberado:
-                # si el freno salta, quien lo autoriza tiene que verlo primero y
-                # volver a lanzar con -AutorizarFreno desde la consola. Un menu
-                # que ofreciera "copiar de todos modos" convertiria la defensa
-                # en un clic.
+                # NO HAY NADA QUE AUTORIZAR DESDE AQUI (ADR-0085). Cuando
+                # existia el freno, autorizarlo estaba deliberadamente fuera
+                # del menu para que no fuera un clic. Retirada la capa 2, los
+                # abortos que quedan -centinela, origen inutilizable, deuda- no
+                # se autorizan de ninguna manera, ni aqui ni en la consola.
                 Write-Linea '   Copiando al nodo...'
                 $r1 = & "$nucleo\respaldo.ps1" @comunes -Confirm:$false
                 if ($r1 -and $r1.Abortada) { Write-Warning $r1.Motivo }

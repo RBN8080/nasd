@@ -123,7 +123,7 @@ function Get-ConfiguracionRespaldo {
     # empieza a mentir.
     $obligatorias = @(
         'version', 'equipo', 'destinos', 'contenedores', 'raicesDeclaradas',
-        'raicesDelNodo', 'exclusiones', 'freno', 'centinelas', 'cadencia',
+        'raicesDelNodo', 'exclusiones', 'centinelas', 'cadencia',
         'deudaPrimeraCorrida'
     )
     $faltan = @($obligatorias | Where-Object { $cfg.PSObject.Properties.Name -notcontains $_ })
@@ -2234,8 +2234,10 @@ function Resolve-EstadoVigente {
 
     # La UNICA causa que se cura sola es que el destino no respondiera: es la
     # unica que se puede volver a medir y que puede haber cambiado sin que nadie
-    # toque nada. Un centinela alterado NO se cura solo, y el freno espera una
-    # decision de una persona: los dos siguen valiendo lo que valian.
+    # toque nada. Un centinela alterado NO se cura solo, y sigue valiendo lo que
+    # valia. La causa 'freno' ya no la escribe nadie desde ADR-0085, pero los
+    # ESTADO.txt de septiembre de 2026 la llevan dentro y esta funcion tiene que
+    # seguir devolviendolos tal cual en vez de tropezar con ellos.
     if ($Estado -eq 'Falla' -and $Causa -eq 'destinoInalcanzable' -and $DestinoResponde) {
         return [pscustomobject]@{
             Estado   = 'Atencion'

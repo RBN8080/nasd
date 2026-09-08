@@ -24,9 +24,11 @@
              autorizacion posible: un centinela alterado significa que algo esta
              tocando archivos que nadie usa.
 
-          3. FRENO (capa 2). Corrida en seco y conteo de cuantos archivos
-             cambiarian o se borrarian. Si rebasa el umbral NO COPIA NADA: se
-             detiene, avisa y ESPERA AUTORIZACION EXPLICITA (-AutorizarFreno).
+          3. MEDIDA DEL CAMBIO. Corrida en seco y conteo de cuantos archivos
+             se copiarian y cuantos se borrarian, raiz por raiz. INFORMA, NO
+             DETIENE: la capa 2 se retiro el 2026-09-08 (ADR-0085) porque sus
+             falsos positivos costaban mas respaldo del que ninguna de sus
+             detecciones llego a salvar. El cifrado masivo lo cubre la capa 3.
 
           4. Copiar, invocando robocopy. NUNCA reimplementar la copia.
 
@@ -35,14 +37,9 @@
         un arenero con archivos de mentira.
 
     .PARAMETER SoloSimular
-        Hace TODO menos copiar: guardas, centinelas y freno reales, y despues
+        Hace TODO menos copiar: guardas, centinelas y medida reales, y despues
         informa de lo que habria hecho. Es como se mira una corrida antes de
         dejarla correr de verdad.
-
-    .PARAMETER AutorizarFreno
-        Autorizacion explicita para continuar cuando el freno ha saltado. No
-        tiene valor por omision a proposito: si el freno salta y nadie autoriza,
-        no se copia.
 
     .PARAMETER OmitirDeuda
         Salta la comprobacion de la etapa 0. Existe para las pruebas y para
@@ -77,8 +74,6 @@ param(
     [string] $RutaConfiguracion,
 
     [switch] $SoloSimular,
-
-    [switch] $AutorizarFreno,
 
     [switch] $OmitirDeuda,
 
@@ -163,17 +158,23 @@ function Test-DeudaPrimeraCorrida {
 }
 
 # ---------------------------------------------------------------------------
-#  Etapa 3 - capa 2, el freno por tasa de cambio
+#  Etapa 3 - la medida del cambio (era la capa 2, retirada en ADR-0085)
 # ---------------------------------------------------------------------------
 
-function Measure-Freno {
+function Measure-CambioDeRaiz {
     <#
         .SYNOPSIS
-            Capa 2. Corrida en seco y conteo de lo que cambiaria o se borraria.
+            Corrida en seco y conteo de lo que se copiaria o se borraria.
         .DESCRIPTION
-            Un dia normal son decenas; un cifrado masivo son miles de golpe. La
-            comparacion en seco ya se hace de todos modos, asi que esta capa
-            cuesta lo que ya se estaba pagando.
+            INFORMA, NO DECIDE. Hasta el 2026-09-08 esta funcion era el freno
+            de la capa 2 y devolvia un veredicto -Rebasado- que abortaba la
+            corrida. La capa se retiro (ADR-0085) y con ella el veredicto:
+            quedarse con un campo que ya no frena a nadie habria sido peor que
+            quitarlo, porque el tablero seguiria pintando una alarma sin efecto.
+
+            La comparacion en seco se hace de todos modos, asi que esta medida
+            cuesta lo que ya se estaba pagando, y es lo que la opcion [2] del
+            tablero ensena antes de copiar.
 
             El porcentaje es SOBRE EL TOTAL DE ARCHIVOS DEL ORIGEN. Se informan
             por separado los que se copiarian y los que se BORRARIAN, porque no
@@ -183,16 +184,12 @@ function Measure-Freno {
             La raiz a medir, ya resuelta.
         .PARAMETER Destino
             Su ruta en el destino.
-        .PARAMETER UmbralPorcentaje
-            El de la configuracion.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
     param(
         [Parameter(Mandatory)][psobject] $Raiz,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Destino,
-        [Parameter(Mandatory)][ValidateRange(0, 100)][double] $UmbralPorcentaje,
-        [ValidateRange(0, 100000)][int] $MinimoArchivos = 0
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Destino
     )
 
     $totalOrigen = @(Get-ChildItem -LiteralPath $Raiz.Ruta -File -Force -Recurse -ErrorAction SilentlyContinue).Count
@@ -230,13 +227,6 @@ function Measure-Freno {
     $primeraSiembra = (-not (Test-Path -LiteralPath $Destino)) -or
                       (@(Get-ChildItem -LiteralPath $Destino -File -Force -Recurse -ErrorAction SilentlyContinue).Count -eq 0)
 
-    # FRENA SOLO SI SE REBASAN LAS DOS COSAS. Calibrado el 2026-09-02: sin el
-    # minimo absoluto, `Pictures\01_Capturas` -11 archivos, 5 % = 0.55- frena con
-    # UNA captura nueva, y un freno que salta en el uso normal es un freno que se
-    # acaba desactivando (ISA-18.2, la misma fatiga de alarmas que el contrato
-    # cita para el semaforo). Ver respaldo.jsonc para los numeros medidos.
-    $rebasado = ($porcentaje -gt $UmbralPorcentaje) -and ($afectados -ge $MinimoArchivos)
-
     return [pscustomobject]@{
         Raiz           = $Raiz.Ruta
         Clase          = $Raiz.Clase
@@ -252,10 +242,7 @@ function Measure-Freno {
         Borraria       = $borraria
         Afectados      = $afectados
         Porcentaje     = $porcentaje
-        Umbral         = $UmbralPorcentaje
-        MinimoAbsoluto = $MinimoArchivos
         PrimeraSiembra = $primeraSiembra
-        Rebasado       = $rebasado
         SinClasificar  = $seco.SinClasificar
         CodigoRobocopy = $seco.Codigo
     }
@@ -308,8 +295,6 @@ function Invoke-CorridaDeRespaldo {
             El objeto de configuracion completo.
         .PARAMETER Simular
             No copia: informa.
-        .PARAMETER Autorizado
-            El operador autoriza continuar aunque el freno haya saltado.
         .PARAMETER SaltarDeuda
             Omite la etapa 0.
     #>
@@ -318,7 +303,6 @@ function Invoke-CorridaDeRespaldo {
     param(
         [Parameter(Mandatory)][psobject] $Configuracion,
         [switch] $Simular,
-        [switch] $Autorizado,
         [switch] $SaltarDeuda
     )
 
@@ -335,7 +319,7 @@ function Invoke-CorridaDeRespaldo {
         Raices       = @()
         Huerfanos    = @()
         Secretos     = @()
-        Frenos       = @()
+        Cambios      = @()
         Copias       = @()
         Deuda        = $null
         Centinelas   = $null
@@ -420,46 +404,40 @@ $resultado.Causa = 'centinelaAlterado'
     }
     Write-RegistroRespaldo -Etapa 'centinela' -Mensaje "Centinelas correctos: $($cent.Revisados)."
 
-    # --- Etapa 3: el freno, sobre TODAS las raices antes de copiar ninguna --
+    # --- Etapa 3: medir el cambio de TODAS las raices antes de copiar -------
     $traducciones = @($Configuracion.destinos.nodo.traduccionDeRutas)
-    $umbral = [double]$Configuracion.freno.umbralPorcentajeDeArchivosQueCambian
-    $minimo = 0
-    if ($Configuracion.freno.PSObject.Properties.Name -contains 'minimoArchivosParaFrenar') {
-        $minimo = [int]$Configuracion.freno.minimoArchivosParaFrenar
-    }
-    $frenos = New-Object System.Collections.Generic.List[psobject]
+    $cambios = New-Object System.Collections.Generic.List[psobject]
 
     foreach ($r in $raices) {
         if (-not (Test-OrigenUtilizable -Raiz $r)) {
             $resultado.Abortada = $true
             $resultado.Motivo = "Guarda de origen: $($r.Ruta) no es utilizable."
-$resultado.Causa = 'origenInutilizable'
-            $resultado.Frenos = $frenos.ToArray()
+            $resultado.Causa = 'origenInutilizable'
+            $resultado.Cambios = $cambios.ToArray()
             return [pscustomobject]$resultado
         }
         $destino = Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $raizNodo -Traducciones $traducciones
-        $frenos.Add((Measure-Freno -Raiz $r -Destino $destino -UmbralPorcentaje $umbral -MinimoArchivos $minimo))
+        $cambios.Add((Measure-CambioDeRaiz -Raiz $r -Destino $destino))
     }
-    $resultado.Frenos = $frenos.ToArray()
+    $resultado.Cambios = $cambios.ToArray()
 
-    $rebasadas = @($frenos | Where-Object { $_.Rebasado })
-    if ($rebasadas.Count -gt 0 -and -not $Autorizado) {
-        $resultado.Abortada = $true
-        $resultado.Motivo = ('FRENO: {0} de {1} raices rebasan el umbral del {2} %. No se copia NADA hasta que se autorice con -AutorizarFreno.' -f
-            $rebasadas.Count, $frenos.Count, $umbral)
-        $resultado.Causa = 'freno'
-        Write-RegistroRespaldo -Nivel 'FRENO' -Etapa 'freno' -Mensaje $resultado.Motivo
-        foreach ($f in $rebasadas) {
-            Write-RegistroRespaldo -Nivel 'FRENO' -Etapa 'freno' `
-                -Mensaje ('{0} clase {1}: {2} % ({3} a copiar, {4} A BORRAR de {5}){6}' -f
-                    $f.Raiz, $f.Clase, $f.Porcentaje, $f.ACopiar, $f.Borraria, $f.TotalOrigen,
-                    $(if ($f.PrimeraSiembra) { ' -- destino vacio: es la primera siembra, no un cifrado' } else { '' }))
-        }
-        return [pscustomobject]$resultado
-    }
-    if ($rebasadas.Count -gt 0) {
-        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'freno' -Mensaje "Freno rebasado en $($rebasadas.Count) raices y AUTORIZADO explicitamente por el operador."
-    }
+    # LA MEDIDA SE TOMA Y SE PUBLICA, PERO YA NO DETIENE NADA (ADR-0085).
+    # Aqui vivia el freno de la capa 2. Se retiro el 2026-09-08 por decision del
+    # responsable, con las cifras del rescate delante: en tres dias de vida util
+    # no evito ni un solo incidente y produjo los DOS unicos abortos que dejaron
+    # al equipo sin respaldo automatico durante cuatro dias.
+    #
+    # Lo que queda cubierto, y por que esto no deja la casa abierta:
+    #   cifrado masivo    -> capa 3, los ocho centinelas. Un cifrador que toque
+    #                        una raiz toca su centinela, y eso SI aborta.
+    #   origen vacio      -> Test-OrigenUtilizable, justo arriba.
+    #   origen ausente    -> Test-OrigenUtilizable, justo arriba.
+    #
+    # Lo que queda SIN cubrir, y hay que decirlo en voz alta: un borrado masivo
+    # PARCIAL que no toque ningun centinela. El ADR lo documenta entero.
+    #
+    # El conteo sigue en $resultado.Cambios: la opcion [2] del tablero lo
+    # ensena antes de copiar, que es donde una persona puede mirarlo y parar.
 
     # --- Etapa 4: copiar ----------------------------------------------------
     if ($Simular) {
@@ -513,8 +491,6 @@ function Invoke-CorridaConEstado {
             El objeto de configuracion completo.
         .PARAMETER Simular
             No copia: informa.
-        .PARAMETER Autorizado
-            El operador autoriza continuar aunque el freno haya saltado.
         .PARAMETER SaltarDeuda
             Omite la etapa 0.
         .PARAMETER Programada
@@ -527,7 +503,6 @@ function Invoke-CorridaConEstado {
     param(
         [Parameter(Mandatory)][psobject] $Configuracion,
         [switch] $Simular,
-        [switch] $Autorizado,
         [switch] $SaltarDeuda,
         [switch] $Programada,
 
@@ -615,7 +590,7 @@ function Invoke-CorridaConEstado {
         }
 
         $resultado = Invoke-CorridaDeRespaldo -Configuracion $Configuracion `
-            -Simular:$Simular -Autorizado:$Autorizado -SaltarDeuda:$SaltarDeuda -Confirm:$false
+            -Simular:$Simular -SaltarDeuda:$SaltarDeuda -Confirm:$false
     }
     finally {
         if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
@@ -626,16 +601,13 @@ function Invoke-CorridaConEstado {
     # --- Que estado deja esta corrida --------------------------------------
     $fallos = @($resultado.Copias | Where-Object { -not $_.Correcto })
     if ($resultado.Abortada) {
-        # Un centinela alterado y un freno disparado NO son lo mismo, y el
-        # indicador no debe pintarlos igual: el freno es una PARADA PRUDENTE que
-        # espera una decision; el centinela es que algo esta tocando archivos que
-        # nadie usa.
-        if ($resultado.Motivo -like 'FRENO*') {
-            $estado = 'Atencion'; $nivel = 'FRENO'; $situacion = 'respaldo.freno'
-        }
-        else {
-            $estado = 'Falla';    $nivel = 'ERROR'; $situacion = 'respaldo.abortado'
-        }
+        # YA NO HAY FRENO QUE DISTINGUIR (ADR-0085). Antes, aqui se separaba la
+        # parada prudente del freno -ambar, espera una decision- del centinela
+        # alterado -rojo, algo esta tocando archivos que nadie usa-. Retirada la
+        # capa 2, todo aborto que llegue hasta aqui es de los que NO admiten
+        # autorizacion: centinela, origen inutilizable o deuda sin saldar.
+        # Pintarlos de ambar seria rebajar un rojo.
+        $estado = 'Falla'; $nivel = 'ERROR'; $situacion = 'respaldo.abortado'
         $detalle = $resultado.Motivo
     }
     elseif ($fallos.Count -gt 0) {
@@ -704,12 +676,12 @@ function Invoke-CorridaConEstado {
         $datos['equipo'] = $Configuracion.equipo
     }
 
-    # LO QUE MIDIO EL FRENO, NO LO QUE DICE LA CONFIGURACION. El tablero
-    # ensenaba "freno: 5 %" -el umbral- y eso solo repite lo que ya esta escrito
-    # en el archivo. Lo que dice algo es el porcentaje que DE VERDAD cambio en
-    # la ultima corrida: un 0.4 % frente a un umbral del 5 % es tranquilidad
-    # medida, y un 4.8 % es un aviso que ningun umbral da por si solo.
-    $medido = @($resultado.Frenos | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_.Porcentaje })
+    # CUANTO CAMBIO DE VERDAD EN LA ULTIMA CORRIDA. Retirada la capa 2 ya no
+    # hay umbral con el que comparar, y por eso esta cifra importa MAS que
+    # antes y no menos: es lo unico que queda para notar de un vistazo que una
+    # corrida movio diez veces lo normal. El tablero la ensena sin veredicto,
+    # que es lo honesto: quien mira decide.
+    $medido = @($resultado.Cambios | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_.Porcentaje })
     if ($medido.Count -gt 0) {
         $datos['cambio'] = '{0:N1}' -f (($medido | Measure-Object -Maximum).Maximum)
     }
@@ -805,6 +777,6 @@ $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 $rutaCfg = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaConfiguracion } else { '' }
 
 Invoke-CorridaConEstado -Configuracion $configuracion `
-    -Simular:$SoloSimular -Autorizado:$AutorizarFreno -SaltarDeuda:$OmitirDeuda `
+    -Simular:$SoloSimular -SaltarDeuda:$OmitirDeuda `
     -Programada:$DesdeTarea -RutaConfiguracion $rutaCfg `
     -WhatIf:$WhatIfPreference -Confirm:$false

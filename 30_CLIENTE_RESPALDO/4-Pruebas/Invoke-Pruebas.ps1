@@ -203,7 +203,6 @@ function Write-ConfiguracionDeCaja {
             cifrarRaizDeclarada = '_CONFIGS'
             patronesDeDeteccion = @('^\.env($|\.)', '\.pem$', '\.key$', 'contrase', 'token')
         }
-        freno       = @{ umbralPorcentajeDeArchivosQueCambian = $Umbral }
         centinelas  = @($Centinelas)
         # LAS MISMAS TRES VENTANAS QUE PRODUCCION, y a proposito: el arenero
         # existe para que el motor corra de verdad contra archivos de mentira,
@@ -243,12 +242,11 @@ function Invoke-Motor {
     param(
         [Parameter(Mandatory)][psobject] $Caja,
         [switch] $Simular,
-        [switch] $Autorizar,
         [switch] $OmitirDeuda
     )
     $motor = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\respaldo.ps1'
     return & $motor -RutaConfiguracion $Caja.Config `
-        -SoloSimular:$Simular -AutorizarFreno:$Autorizar -OmitirDeuda:$OmitirDeuda -Confirm:$false
+        -SoloSimular:$Simular -OmitirDeuda:$OmitirDeuda -Confirm:$false
 }
 
 # ===========================================================================
@@ -344,20 +342,24 @@ Test-Afirmacion -Criterio '8' -Nombre 'Y lo dice por la deuda, no por otra cosa'
     -Esperado $true -Obtenido ($deudaR.Motivo -like 'DEUDA*')
 Write-ConfiguracionDeCaja -Caja $caja -Confirm:$false
 
-# --- Criterio 6: cambio masivo -> se detiene y pide autorizacion -----------
-Write-Titulo 'Criterio 6: el freno'
+# --- Criterio 6: la medida informa, y ya no detiene (ADR-0085) -------------
+# ESTA PRUEBA DECIA LO CONTRARIO HASTA EL 08/09/2026. Afirmaba que un destino
+# vacio hacia saltar el freno y abortaba la corrida. Retirada la capa 2, la
+# primera siembra COPIA -- que es justo lo que una primera siembra debe hacer --
+# y la medida sigue estando ahi para que la opcion [2] la ensene.
+Write-Titulo 'Criterio 6: la medida del cambio informa, no detiene'
 $r6 = Invoke-Motor -Caja $caja -Simular
-Test-Afirmacion -Criterio '6' -Nombre 'Destino vacio: el freno salta y NO copia' `
-    -Esperado $true -Obtenido $r6.Abortada
-Test-Afirmacion -Criterio '6' -Nombre 'Y el motivo es el freno' `
-    -Esperado $true -Obtenido ($r6.Motivo -like 'FRENO*')
+Test-Afirmacion -Criterio '6' -Nombre 'Destino vacio: la corrida NO se aborta' `
+    -Esperado $false -Obtenido $r6.Abortada
+Test-Afirmacion -Criterio '6' -Nombre 'Y la medida se tomo igual, raiz por raiz' `
+    -Esperado 3 -Obtenido @($r6.Cambios).Count
 Test-Afirmacion -Criterio '6' -Nombre 'Reconoce que es primera siembra, no un cifrado' `
-    -Esperado $true -Obtenido (@($r6.Frenos | Where-Object { $_.PrimeraSiembra }).Count -eq 3)
+    -Esperado $true -Obtenido (@($r6.Cambios | Where-Object { $_.PrimeraSiembra }).Count -eq 3)
 
-# --- Primera copia real, autorizando el freno ------------------------------
-Write-Titulo 'Primera copia (freno autorizado a proposito)'
-$r7 = Invoke-Motor -Caja $caja -Autorizar
-Test-Afirmacion -Nombre 'La corrida autorizada no aborta' -Esperado $false -Obtenido $r7.Abortada
+# --- Primera copia real -----------------------------------------------------
+Write-Titulo 'Primera copia'
+$r7 = Invoke-Motor -Caja $caja
+Test-Afirmacion -Nombre 'La corrida no aborta' -Esperado $false -Obtenido $r7.Abortada
 Test-Afirmacion -Nombre 'Las tres raices se copiaron' -Esperado 3 -Obtenido @($r7.Copias | Where-Object { $_.Correcto }).Count
 
 $dDocs  = "$($caja.Destino)\CAJA\origen\Documents\01_DOCS"
@@ -370,7 +372,7 @@ Test-Afirmacion -Criterio '4' -Nombre 'La carpeta sin numero NO se copio' `
 # --- Criterio 2: clase A, un borrado local NO viaja ------------------------
 Write-Titulo 'Criterio 2: clase A preserva'
 Remove-Item -LiteralPath "$($caja.Origen)\Pictures\01_FOTOS\foto1.txt" -Force
-Invoke-Motor -Caja $caja -Autorizar | Out-Null
+Invoke-Motor -Caja $caja | Out-Null
 Test-Afirmacion -Criterio '2' -Nombre 'Clase A: el archivo borrado en local SIGUE en el destino' `
     -Esperado $true -Obtenido (Test-Path -LiteralPath "$dFotos\foto1.txt")
 Test-Afirmacion -Criterio '2' -Nombre 'Clase A: el destino conserva los 4' `
@@ -379,7 +381,7 @@ Test-Afirmacion -Criterio '2' -Nombre 'Clase A: el destino conserva los 4' `
 # --- Criterio 3: clase B, el espejo si borra -------------------------------
 Write-Titulo 'Criterio 3: clase B espeja'
 Remove-Item -LiteralPath "$($caja.Origen)\Documents\01_DOCS\doc1.txt" -Force
-Invoke-Motor -Caja $caja -Autorizar | Out-Null
+Invoke-Motor -Caja $caja | Out-Null
 Test-Afirmacion -Criterio '3' -Nombre 'Clase B: el archivo borrado en local DESAPARECE del destino' `
     -Esperado $false -Obtenido (Test-Path -LiteralPath "$dDocs\doc1.txt")
 Test-Afirmacion -Criterio '3' -Nombre 'Clase B: el destino queda en 5' `
@@ -400,7 +402,7 @@ Write-Titulo 'El freno no cuenta como borrado lo que la clase A no borra (04/09/
 # `foto1.txt` se borro en local dos bloques mas arriba y el criterio 2 acaba de
 # comprobar que SIGUE en el destino. Ese es el sobrante, y es un acierto.
 $raizA  = [pscustomobject]@{ Ruta = "$($caja.Origen)\Pictures\01_FOTOS"; Clase = 'A' }
-$frenoA = Measure-Freno -Raiz $raizA -Destino $dFotos -UmbralPorcentaje 5 -MinimoArchivos 1
+$frenoA = Measure-CambioDeRaiz -Raiz $raizA -Destino $dFotos
 
 Test-Afirmacion -Nombre 'Clase A: el sobrante del destino se SIGUE viendo' `
     -Esperado 1 -Obtenido $frenoA.ABorrar
@@ -408,20 +410,20 @@ Test-Afirmacion -Nombre 'Clase A: pero no borraria ninguno, porque /E /XO no bor
     -Esperado 0 -Obtenido $frenoA.Borraria
 Test-Afirmacion -Nombre 'Clase A: el sobrante NO cuenta como afectado' `
     -Esperado 0 -Obtenido $frenoA.Afectados
-Test-Afirmacion -Nombre 'Clase A: y por tanto EL FRENO NO SALTA (el ambar del 04/09)' `
-    -Esperado $false -Obtenido $frenoA.Rebasado
+Test-Afirmacion -Nombre 'Clase A: y por tanto el porcentaje sale a 0, no a 45.45' `
+    -Esperado 0 -Obtenido $frenoA.Porcentaje
 
 # La otra mitad de la regla: con clase B el sobrante SI se va a borrar, asi que
 # tiene que seguir contando. Si esto se rompiera, el parche habria desarmado el
 # freno en la unica clase donde un borrado masivo es posible.
 'sobrante que el espejo se llevaria' | Set-Content -LiteralPath "$dDocs\_sobrante.txt" -Encoding UTF8
 $raizB  = [pscustomobject]@{ Ruta = "$($caja.Origen)\Documents\01_DOCS"; Clase = 'B' }
-$frenoB = Measure-Freno -Raiz $raizB -Destino $dDocs -UmbralPorcentaje 5 -MinimoArchivos 1
+$frenoB = Measure-CambioDeRaiz -Raiz $raizB -Destino $dDocs
 
 Test-Afirmacion -Criterio '3' -Nombre 'Clase B: el sobrante SI se borraria' `
     -Esperado 1 -Obtenido $frenoB.Borraria
-Test-Afirmacion -Criterio '3' -Nombre 'Clase B: y por tanto SI cuenta para el freno' `
-    -Esperado $true -Obtenido $frenoB.Rebasado
+Test-Afirmacion -Criterio '3' -Nombre 'Clase B: y por tanto SI cuenta como afectado' `
+    -Esperado $true -Obtenido ($frenoB.Afectados -ge 1)
 Remove-Item -LiteralPath "$dDocs\_sobrante.txt" -Force
 
 # LA DEFENSA NO SE DEBILITA, y esta es la prueba que lo dice. Un cifrado masivo
@@ -430,9 +432,9 @@ Remove-Item -LiteralPath "$dDocs\_sobrante.txt" -Force
 Get-ChildItem -LiteralPath "$($caja.Origen)\Pictures\01_FOTOS" -File | ForEach-Object {
     'CIFRADO POR ALGUIEN QUE NO ERA EL DUENO' | Set-Content -LiteralPath $_.FullName -Encoding UTF8
 }
-$frenoCifrado = Measure-Freno -Raiz $raizA -Destino $dFotos -UmbralPorcentaje 5 -MinimoArchivos 1
-Test-Afirmacion -Criterio '6' -Nombre 'Clase A: un cifrado masivo del origen SIGUE frenando' `
-    -Esperado $true -Obtenido $frenoCifrado.Rebasado
+$frenoCifrado = Measure-CambioDeRaiz -Raiz $raizA -Destino $dFotos
+Test-Afirmacion -Criterio '6' -Nombre 'Clase A: un cifrado masivo del origen SIGUE contandose entero' `
+    -Esperado $true -Obtenido ($frenoCifrado.Porcentaje -ge 50)
 Test-Afirmacion -Criterio '6' -Nombre 'Y frena por los archivos reescritos, no por los sobrantes' `
     -Esperado 3 -Obtenido $frenoCifrado.Afectados
 
@@ -491,7 +493,7 @@ New-Item -ItemType Directory -Path "$($caja.Origen)\Documents\09_Loquesea" -Forc
 # numerada nueva es operacion normal. La configuracion NO se toca: sigue
 # declarando los mismos contenedores y las mismas raices que antes.
 Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
-$r10 = Invoke-Motor -Caja $caja -Autorizar
+$r10 = Invoke-Motor -Caja $caja
 Test-Afirmacion -Criterio '1' -Nombre 'La carpeta nueva se respalda SIN editar la tabla de raices' `
     -Esperado $true -Obtenido (Test-Path -LiteralPath "$($caja.Destino)\CAJA\origen\Documents\09_Loquesea\nuevo.txt")
 Test-Afirmacion -Criterio '1' -Nombre 'Y la deuda saldada ya no aborta las corridas normales' `
@@ -501,14 +503,14 @@ Test-Afirmacion -Criterio '1' -Nombre 'Y la deuda saldada ya no aborta las corri
 Write-Titulo 'Criterio 5: los centinelas'
 $cent = New-Centinela -Carpeta "$($caja.Origen)\Documents\01_DOCS" -Confirm:$false
 Write-ConfiguracionDeCaja -Caja $caja -Centinelas @($cent) -Saldada -Confirm:$false
-$r11 = Invoke-Motor -Caja $caja -Autorizar
+$r11 = Invoke-Motor -Caja $caja
 Test-Afirmacion -Criterio '5' -Nombre 'Con el centinela intacto, la corrida procede' `
     -Esperado $false -Obtenido $r11.Abortada
 
 $antesDeTocar = @(Get-ChildItem -LiteralPath $dDocs -File).Count
 'ALGO LO TOCO' | Add-Content -LiteralPath $cent.ruta -Encoding UTF8
 Remove-Item -LiteralPath "$($caja.Origen)\Documents\01_DOCS\doc2.txt" -Force  # un borrado que el espejo propagaria
-$r12 = Invoke-Motor -Caja $caja -Autorizar
+$r12 = Invoke-Motor -Caja $caja
 Test-Afirmacion -Criterio '5' -Nombre 'Centinela alterado: la corrida ABORTA' `
     -Esperado $true -Obtenido $r12.Abortada
 Test-Afirmacion -Criterio '5' -Nombre 'Y aborta POR el centinela' `
@@ -518,7 +520,7 @@ Test-Afirmacion -Criterio '5' -Nombre 'Y NO ESCRIBIO NADA: el destino no cambio'
 
 # Un centinela BORRADO cuenta igual que uno alterado.
 Remove-Item -LiteralPath $cent.ruta -Force
-$r13 = Invoke-Motor -Caja $caja -Autorizar
+$r13 = Invoke-Motor -Caja $caja
 Test-Afirmacion -Criterio '5' -Nombre 'Centinela BORRADO tambien aborta' `
     -Esperado $true -Obtenido ($r13.Abortada -and $r13.Motivo -like 'CENTINELA*')
 
@@ -526,7 +528,7 @@ Test-Afirmacion -Criterio '5' -Nombre 'Centinela BORRADO tambien aborta' `
 Write-Titulo 'Guarda de origen (el desastre que el freno no ve)'
 Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
 Get-ChildItem -LiteralPath "$($caja.Origen)\proyecto" -Recurse -File | Remove-Item -Force
-$r14 = Invoke-Motor -Caja $caja -Autorizar -OmitirDeuda
+$r14 = Invoke-Motor -Caja $caja -OmitirDeuda
 Test-Afirmacion -Nombre 'Origen vacio con clase B: ABORTA en vez de vaciar el destino' `
     -Esperado $true -Obtenido $r14.Abortada
 Test-Afirmacion -Nombre 'Y el destino conserva sus archivos' `
@@ -1126,7 +1128,9 @@ Test-Afirmacion -Nombre 'Y NUNCA sube a Protegido solo: eso exige una corrida' `
 Test-Afirmacion -Nombre 'Un centinela alterado NO se cura porque el nodo responda' `
     -Esperado 'Falla' `
     -Obtenido (Resolve-EstadoVigente -Estado 'Falla' -Causa 'centinelaAlterado' -DestinoResponde $true).Estado
-Test-Afirmacion -Nombre 'El freno tampoco: espera una decision de una persona' `
+# LA CAUSA 'freno' YA NO LA ESCRIBE NADIE (ADR-0085), pero los ESTADO.txt de
+# septiembre de 2026 la llevan dentro y hay que seguir leyendolos sin tropezar.
+Test-Afirmacion -Nombre 'Una causa historica como freno se devuelve tal cual, sin tropezar' `
     -Esperado 'Atencion' `
     -Obtenido (Resolve-EstadoVigente -Estado 'Atencion' -Causa 'freno' -DestinoResponde $true).Estado
 Test-Afirmacion -Nombre 'Un fallo sin causa anotada se respeta tal cual' `
@@ -1678,7 +1682,7 @@ Test-Afirmacion -Nombre 'La prueba no escribio en el registro de produccion' `
 $carpetaCaja = Join-Path $caja.Raiz 'estado-motor'
 Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
 'algo' | Set-Content -LiteralPath "$($caja.Origen)\proyecto\src\mod1.txt" -Encoding UTF8
-Invoke-Motor -Caja $caja -Autorizar | Out-Null
+Invoke-Motor -Caja $caja | Out-Null
 $estadoManual = Read-EstadoRespaldo -Carpeta $carpetaCaja
 Test-Afirmacion -Nombre 'Una corrida a mano se anota como "a mano", no como una ventana' `
     -Esperado 'a mano' -Obtenido ('' + $estadoManual['ventana'])
@@ -1721,7 +1725,7 @@ Test-Afirmacion -Nombre 'Y su fecha es la del dia siguiente, no la de hoy' `
 $carpetaCaja = Join-Path $caja.Raiz 'estado-motor'
 Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
 'algo mas' | Set-Content -LiteralPath "$($caja.Origen)\proyecto\src\mod1.txt" -Encoding UTF8
-Invoke-Motor -Caja $caja -Autorizar | Out-Null
+Invoke-Motor -Caja $caja | Out-Null
 $estadoUmbral = Read-EstadoRespaldo -Carpeta $carpetaCaja
 
 Test-Afirmacion -Nombre 'ESTADO.txt publica el umbral de aviso, para que el nodo no se invente el suyo' `
@@ -1751,12 +1755,12 @@ Write-Titulo 'El pendiente 27: la forma comun y el motor intacto'
 Write-ConfiguracionDeCaja -Caja $caja -Saldada -Confirm:$false
 $sim27 = Invoke-Motor -Caja $caja -Simular
 $nombres27 = @($sim27.PSObject.Properties.Name)
-Test-Afirmacion -Nombre 'El resultado del motor trae `Frenos`, en plural' `
-    -Esperado $true -Obtenido ($nombres27 -contains 'Frenos')
-Test-Afirmacion -Nombre 'Y NO trae `Freno`: pedirla daba una columna vacia que mentia' `
-    -Esperado $false -Obtenido ($nombres27 -contains 'Freno')
-Test-Afirmacion -Nombre 'Hay una medida de freno por raiz, que es lo que la opcion [2] tiene que ensenar' `
-    -Esperado $true -Obtenido (@($sim27.Frenos).Count -gt 0)
+Test-Afirmacion -Nombre 'El resultado del motor trae `Cambios`, en plural' `
+    -Esperado $true -Obtenido ($nombres27 -contains 'Cambios')
+Test-Afirmacion -Nombre 'Y NO trae `Cambio` en singular: pedirla daba una columna vacia que mentia' `
+    -Esperado $false -Obtenido ($nombres27 -contains 'Cambio')
+Test-Afirmacion -Nombre 'Hay una medida por raiz, que es lo que la opcion [2] tiene que ensenar' `
+    -Esperado $true -Obtenido (@($sim27.Cambios).Count -gt 0)
 
 # EL MOTOR INTACTO. Lo pidio el responsable el 2026-09-02 por las alertas de
 # el antivirus: un antivirus que pone un guion en cuarentena no avisa a nadie, y la
@@ -1914,7 +1918,7 @@ Copy-Item -LiteralPath $cfgReal -Destination $cfgCaja -Force
 
 $textoAntes = Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8
 $comentariosAntes = @($textoAntes -split "`n" | Where-Object { $_ -match '^\s*//' }).Count
-$frenoAntes = (Get-ConfiguracionRespaldo -Ruta $cfgCaja).freno.umbralPorcentajeDeArchivosQueCambian
+$centinelasAntes = @((Get-ConfiguracionRespaldo -Ruta $cfgCaja).centinelas).Count
 
 $horarioNuevo = @(
     [pscustomobject]@{ inicio = '05:00'; duracionHoras = 2 },
@@ -1932,8 +1936,8 @@ Test-Afirmacion -Nombre 'Y el hueco maximo se RECALCULA solo: nadie lo teclea' `
 $textoDespues = Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8
 Test-Afirmacion -Nombre 'LOS COMENTARIOS DEL ARCHIVO SOBREVIVEN al cambio de horario' `
     -Esperado $comentariosAntes -Obtenido @($textoDespues -split "`n" | Where-Object { $_ -match '^\s*//' }).Count
-Test-Afirmacion -Nombre 'Y las cuatro protecciones de la seccion 10.1 no se tocan' `
-    -Esperado $frenoAntes -Obtenido (Get-ConfiguracionRespaldo -Ruta $cfgCaja).freno.umbralPorcentajeDeArchivosQueCambian
+Test-Afirmacion -Nombre 'Y las protecciones de la seccion 10.1 no se tocan' `
+    -Esperado $centinelasAntes -Obtenido @((Get-ConfiguracionRespaldo -Ruta $cfgCaja).centinelas).Count
 
 # LOS FINALES DE LINEA SE HEREDAN DEL ARCHIVO. Con [Environment]::NewLine se
 # metieron CRLF en un archivo que el repositorio mantiene en LF, y NADA FALLO:

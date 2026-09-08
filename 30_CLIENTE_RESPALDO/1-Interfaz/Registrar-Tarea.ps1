@@ -52,11 +52,13 @@
            corrida programada dejo RASTRO, que es lo unico que aqui no se puede
            falsear.
 
-        3. NO SE PASA `-AutorizarFreno`, Y ES EL PUNTO MAS IMPORTANTE DE ESTE
-           ARCHIVO. Si el freno salta en una corrida automatica, la corrida se
-           detiene y espera a una persona. Una tarea que se autorizara a si misma
-           convertiria la capa 2 en un adorno: seria exactamente el cifrado
-           masivo replicandose sin que nadie lo pare.
+        3. NO HAY NADA QUE AUTORIZAR, Y ESO CAMBIO EL 2026-09-08. Hasta
+           ADR-0085 este era el punto mas importante del archivo: la tarea no
+           pasaba `-AutorizarFreno`, asi que un freno en corrida automatica
+           esperaba a una persona. Retirada la capa 2, el interruptor ya no
+           existe. Los abortos que quedan -centinela alterado, origen
+           inutilizable, deuda sin saldar- NUNCA fueron autorizables, ni
+           siquiera a mano, y eso no ha cambiado.
 
         4. EL INDICADOR TAMBIEN ES UNA TAREA, Y HASTA HOY NO LO ERA. La seccion
            10.2 declara el punto ciego -"si el indicador muere no hay icono, y
@@ -311,7 +313,7 @@ switch ($Accion) {
                 -MultipleInstances IgnoreNew `
                 -ExecutionTimeLimit (New-TimeSpan -Hours 4)
 
-            $descripcion = "Cliente de respaldo del NAS. $($cadencia.CorridasPorDia) corridas al dia a minuto sorteado dentro de $($cadencia.Resumen) (30_CLIENTE_RESPALDO seccion 10.2 y pendiente 26). Corre sin menu y sin indicador. NO se autoriza el freno: si salta, espera a una persona."
+            $descripcion = "Cliente de respaldo del NAS. $($cadencia.CorridasPorDia) corridas al dia a minuto sorteado dentro de $($cadencia.Resumen) (30_CLIENTE_RESPALDO seccion 10.2 y pendiente 26). Corre sin menu y sin indicador. Sin capa 2 desde ADR-0085: mide e informa, no frena."
             $queHace     = "Registrar $($cadencia.CorridasPorDia) corridas diarias en $($cadencia.Resumen)"
             $confirmado  = "Tarea '$NombreTarea' registrada: $($cadencia.CorridasPorDia) corridas al dia, minuto sorteado dentro de $($cadencia.Resumen)."
         }

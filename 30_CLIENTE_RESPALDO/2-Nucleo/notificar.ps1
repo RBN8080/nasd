@@ -37,8 +37,10 @@
 
       OK        -> verde      silencioso
       ATENCION  -> amarillo   entra al resumen agrupado
-      FRENO     -> rojo       avisa siempre: el freno significa que algo se
-                              detuvo por conducta anomala, y eso es intervenir
+      FRENO     -> rojo       NADIE LO EMITE YA. La capa 2 se retiro en
+                              ADR-0085. El nivel se conserva en el vocabulario
+                              de la seccion 11 porque los registros de septiembre
+                              de 2026 lo llevan escrito y se siguen leyendo.
       ERROR     -> rojo       avisa siempre
 
     NARANJA NO SE EMITE DESDE AQUI, y es la misma razon por la que el nodo
