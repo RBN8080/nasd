@@ -1,6 +1,7 @@
 package seguridad
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -324,5 +325,94 @@ func TestElConteoSePodaAlVolcar(t *testing.T) {
 	}
 	if n := strings.Count(string(crudo), marcaDia); n != DiasGrafica {
 		t.Errorf("el archivo guarda %d días de conteo, se esperaban %d", n, DiasGrafica)
+	}
+}
+
+// LA CAPA DE PAQUETES DE LA GRÁFICA — el defecto del 2026-09-09.
+//
+// La serie solo llevaba rechazos, y un rechazo exige que alguien llegara a
+// PEDIR algo por HTTP. Un escáner que manda un SYN al 443 y muere en el saludo
+// TLS no produce ninguno: su día salía plano. Medido en el nodo, el 08/09 tuvo
+// siete toques de Internet y cero rechazos, y esa es la forma exacta que estas
+// pruebas reproducen.
+
+// toqueEn compone un toque de Internet en un instante dado. La dirección es de
+// documentación (RFC 3849) y NO casa con ningún prefijo de casa, que es lo que
+// hace falta para que cuente.
+func toqueEn(momento time.Time) Toque {
+	return Toque{
+		Momento: momento,
+		Origen:  netip.MustParseAddr("2001:db8::1"),
+		Puerto:  443,
+		Tipo:    "syn",
+	}
+}
+
+func TestUnDiaConToquesYSinRechazosDejaDeSalirVacio(t *testing.T) {
+	a, _ := anilloEnDisco(t)
+	ahora := ahoraALasDoceDelMediodia()
+	ayer := ahora.AddDate(0, 0, -1)
+
+	serie, _ := a.Serie(ahora, nil)
+	serie = ConToques(serie, []Toque{toqueEn(ayer), toqueEn(ayer.Add(time.Hour))})
+
+	col := serie[len(serie)-2] // ayer
+	if col.Rechazos != 0 {
+		t.Fatalf("la prueba se apoya en que ayer no hubo rechazos, y hay %d", col.Rechazos)
+	}
+	if col.Toques != 2 {
+		t.Errorf("la columna de ayer tiene %d paquetes, se esperaban 2", col.Toques)
+	}
+	if hoy := serie[len(serie)-1]; hoy.Toques != 0 {
+		t.Errorf("los toques de ayer se contaron también hoy: %d", hoy.Toques)
+	}
+}
+
+// Un toque más viejo que la primera columna no tiene dónde caer: manda la
+// serie, no el archivo del sensor —que es un anillo de otro proceso y puede
+// alcanzar más atrás de lo que la gráfica dibuja—.
+func TestUnToqueAnteriorALaSerieNoCuentaEnNingunaColumna(t *testing.T) {
+	a, _ := anilloEnDisco(t)
+	ahora := ahoraALasDoceDelMediodia()
+
+	serie, _ := a.Serie(ahora, nil)
+	serie = ConToques(serie, []Toque{toqueEn(ahora.AddDate(0, 0, -DiasGrafica))})
+
+	for _, d := range serie {
+		if d.Toques != 0 {
+			t.Fatalf("día %v se quedó con %d paquetes de un toque fuera de la serie",
+				d.Fecha.Format(formatoDia), d.Toques)
+		}
+	}
+}
+
+// Los toques NO tocan la columna de rechazos: son dos capas distintas de la
+// misma fila y sumarlas contaría dos veces el tráfico que llegó a las dos.
+func TestLosToquesNoAlteranElConteoDeRechazos(t *testing.T) {
+	a, _ := anilloEnDisco(t)
+	ahora := ahoraALasDoceDelMediodia()
+	a.Anotar(Evento{Momento: ahora, Origen: netip.MustParseAddr("2001:db8::2")})
+
+	serie, _ := a.Serie(ahora, nil)
+	serie = ConToques(serie, []Toque{toqueEn(ahora), toqueEn(ahora)})
+
+	hoy := serie[len(serie)-1]
+	if hoy.Rechazos != 1 {
+		t.Errorf("hoy tiene %d rechazos, se esperaba 1", hoy.Rechazos)
+	}
+	if hoy.Toques != 2 {
+		t.Errorf("hoy tiene %d paquetes, se esperaban 2", hoy.Toques)
+	}
+}
+
+// InicioDeSerie es la primera columna, y quien lee el archivo del sensor le
+// pide esa misma profundidad. Si las dos cuentas discreparan, la gráfica
+// pediría días que no dibuja o dibujaría días que no pidió.
+func TestInicioDeSerieEsLaPrimeraColumna(t *testing.T) {
+	a, _ := anilloEnDisco(t)
+	ahora := ahoraALasDoceDelMediodia()
+	serie, _ := a.Serie(ahora, nil)
+	if inicio := InicioDeSerie(ahora); !inicio.Equal(serie[0].Fecha) {
+		t.Errorf("InicioDeSerie = %v y la primera columna es %v", inicio, serie[0].Fecha)
 	}
 }

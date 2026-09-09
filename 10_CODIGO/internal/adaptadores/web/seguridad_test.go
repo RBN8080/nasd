@@ -1294,3 +1294,139 @@ func TestElVacioDeToquesDiceQueElSensorSigueVivo(t *testing.T) {
 		t.Error("no se pinta la cifra de paquetes vistos, que es la prueba de vida")
 	}
 }
+
+// LA GRÁFICA VEÍA UNA SOLA CAPA DE LAS TRES — el defecto del 2026-09-09.
+//
+// «Actividad por día» dibujaba únicamente los rechazos, y un rechazo exige que
+// alguien llegara a PEDIR algo por HTTP. Un escáner que manda un SYN al 443 y
+// muere en el saludo TLS no produce ninguno, así que su día salía PLANO en la
+// única vista con la que el panel abre. Medido en el nodo: el 08/09 tuvo siete
+// toques de Internet y cero rechazos, y el archivo del anillo lo confirma —
+// «# dia: 2026-09-08 lan=22», sin «internet=».
+//
+// Estas pruebas van contra la GEOMETRÍA que se pinta, no contra un campo de la
+// vista: el defecto era que la línea se quedaba pegada al suelo, y eso solo se
+// puede afirmar mirando las coordenadas que salen en el SVG.
+
+// conSensor cuelga del servidor un archivo de toques como el que escribe
+// nas-sensor, con la misma cabecera y el mismo formato de línea.
+func conSensor(t *testing.T, s *Servidor, momentos ...time.Time) {
+	t.Helper()
+	lineas := []string{
+		"# Historial de toques -- anillo de 2000, del mas antiguo al mas reciente.",
+		"# total-visto: " + strconv.Itoa(len(momentos)),
+	}
+	for _, m := range momentos {
+		// Dirección de documentación (RFC 3849): no casa con ningún prefijo de
+		// casa, así que LeerToques la deja pasar como Internet.
+		lineas = append(lineas, m.UTC().Format(time.RFC3339)+" 2001:db8::1 443 syn")
+	}
+	ruta := filepath.Join(t.TempDir(), "toques")
+	if err := os.WriteFile(ruta, []byte(strings.Join(lineas, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("escribir el archivo de toques: %v", err)
+	}
+	s.rutaToques = ruta
+}
+
+// puntosDe saca las coordenadas de una polilínea del SVG por su clase.
+func puntosDe(t *testing.T, cuerpo, clase string) []float64 {
+	t.Helper()
+	marca := `<polyline class="` + clase + `" points="`
+	i := strings.Index(cuerpo, marca)
+	if i < 0 {
+		t.Fatalf("no se pintó la polilínea %q", clase)
+	}
+	resto := cuerpo[i+len(marca):]
+	crudo := resto[:strings.Index(resto, `"`)]
+
+	var ys []float64
+	for _, par := range strings.Fields(crudo) {
+		_, y, ok := strings.Cut(par, ",")
+		if !ok {
+			t.Fatalf("punto ilegible %q en %q", par, clase)
+		}
+		v, err := strconv.ParseFloat(y, 64)
+		if err != nil {
+			t.Fatalf("altura ilegible %q en %q: %v", y, clase, err)
+		}
+		ys = append(ys, v)
+	}
+	return ys
+}
+
+// EL DÍA DE UN ESCANEO DEJA DE SALIR PLANO. El toque se pone 30 horas atrás a
+// propósito: cae FUERA de la ventana de 24 horas con la que el panel abre —así
+// que la tabla no lo enseña— y DENTRO de la serie de la gráfica, que es
+// exactamente la situación que el responsable describió.
+func TestLaGraficaDibujaUnDiaConPaquetesYSinRechazos(t *testing.T) {
+	s := servidorConAuth(t)
+	hace30h := time.Now().Add(-30 * time.Hour)
+	conSensor(t, s, hace30h, hace30h.Add(time.Minute), hace30h.Add(2*time.Minute))
+
+	cuerpo := panelSeguridad(t, s, "")
+
+	suelo := altoGrafica - margenGrafica
+	for i, y := range puntosDe(t, cuerpo, "gl") {
+		if y != suelo {
+			t.Fatalf("la prueba se apoya en que no hay rechazos, y la columna %d está en %g", i, y)
+		}
+	}
+	levanta := false
+	for _, y := range puntosDe(t, cuerpo, "gp") {
+		if y < suelo {
+			levanta = true
+		}
+	}
+	if !levanta {
+		t.Error("la línea de paquetes salió plana: el día del escaneo se sigue dibujando vacío")
+	}
+	if !strings.Contains(cuerpo, "3 paquetes · 0 rechazos") {
+		t.Error("el rótulo del día no dice cuántos paquetes hubo")
+	}
+}
+
+// SIN SENSOR NO HAY SEGUNDA LÍNEA, y no se dibuja uma plana en su lugar: una
+// línea en cero se lee como «nadie me tocó» cuando significa «no lo estoy
+// mirando». Mismo criterio que HayToques en la tabla.
+func TestSinSensorLaGraficaSigueTeniendoUnaSolaLinea(t *testing.T) {
+	s := servidorConAuth(t)
+	cuerpo := panelSeguridad(t, s, "")
+	if strings.Contains(cuerpo, `class="gp"`) {
+		t.Error("se pintó la capa de paquetes sin sensor instalado")
+	}
+	if strings.Contains(cuerpo, `class="lgd"`) {
+		t.Error("se pintó la leyenda de dos capas habiendo una sola")
+	}
+}
+
+// LA CAPA DE PAQUETES SOLO EXISTE PARA INTERNET, porque LeerToques descarta lo
+// de casa en su propia frontera. Dibujarla junto a unos rechazos filtrados por
+// LAN pondría dos redes distintas en la misma gráfica.
+func TestConOtroOrigenLaGraficaNoDibujaLosPaquetesDeInternet(t *testing.T) {
+	s := servidorConAuth(t)
+	conSensor(t, s, time.Now().Add(-30*time.Hour))
+
+	if cuerpo := panelSeguridad(t, s, "?red=lan"); strings.Contains(cuerpo, `class="gp"`) {
+		t.Error("mirando la LAN se pintaron los paquetes de Internet")
+	}
+	if cuerpo := panelSeguridad(t, s, "?red="); strings.Contains(cuerpo, `class="gp"`) {
+		t.Error("con «cualquier origen» se pintaron los paquetes de Internet")
+	}
+}
+
+// LA CIFRA DE LA VENTANA NO SE CONTAGIA DE LA PROFUNDIDAD DE LA GRÁFICA. El
+// archivo se lee UNA vez y por doce días, así que el «Paquetes» del resumen
+// —que es de la ventana— tiene que salir del recorte y no de lo leído.
+func TestElResumenSigueContandoSoloLosPaquetesDeLaVentana(t *testing.T) {
+	s := servidorConAuth(t)
+	conSensor(t, s, time.Now().Add(-30*time.Hour), time.Now().Add(-time.Hour))
+
+	cuerpo := panelSeguridad(t, s, "")
+	i := strings.Index(cuerpo, "Paquetes")
+	if i < 0 {
+		t.Fatal("el resumen no tiene la fila de paquetes")
+	}
+	if !strings.Contains(cuerpo[max(0, i-200):i], `<div class="n mono">1</div>`) {
+		t.Errorf("la cifra de la ventana no es 1:\n%s", cuerpo[max(0, i-200):i])
+	}
+}

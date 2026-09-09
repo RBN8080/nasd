@@ -131,6 +131,32 @@ type Historial struct {
 	Desde time.Time
 }
 
+// EnVentana recorta lo ya leído a lo posterior a «desde». El cero no acota
+// nada, igual que en LeerToques.
+//
+// EXISTE PORQUE LA PÁGINA PIDE MÁS HONDO DE LO QUE ENSEÑA EN LA TABLA: la
+// gráfica dibuja doce días y la tabla obedece a la ventana del filtro, que
+// abre en veinticuatro horas. Se lee el archivo UNA vez por lo más hondo de las
+// dos y se recorta aquí; con dos lecturas serían dos fotos distintas del mismo
+// archivo —lo reescribe otro proceso cada minuto— y la fila de un origen
+// podría no cuadrar con la columna de su día.
+//
+// No supone que la lista venga ordenada, por lo mismo que LeerToques calcula
+// Desde con un mínimo en vez de fiarse de la primera línea: el orden lo
+// garantiza otro programa.
+func (h Historial) EnVentana(desde time.Time) []Toque {
+	if desde.IsZero() {
+		return h.Toques
+	}
+	out := make([]Toque, 0, len(h.Toques))
+	for _, t := range h.Toques {
+		if !t.Momento.Before(desde) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // LeerToques lee el historial que deja nas-sensor y devuelve SOLO lo de
 // Internet posterior a «desde», del más reciente al más antiguo.
 //

@@ -613,6 +613,21 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .grl .gl{fill:none;stroke:var(--tx2);stroke-width:1.6;
   stroke-linejoin:round;stroke-linecap:round;}
 .grl .ga{fill:var(--n4);}
+/* LA CAPA DE PAQUETES: lo que el sensor vio pasar, y por eso es la que BORDEA
+   el área — la de rechazos se lee encima, limpia y continua.
+
+   NO LLEVA COLOR PROPIO, y no es por ahorro: el único color de esta pantalla
+   es el ámbar de un ESTADO, y gastarlo en «esta es la otra serie» se lo
+   quitaría al que de verdad avisa (misma lección que la franja del pico, más
+   abajo). Se distingue por TRAZO —discontinuo y más fino, en el gris de lo
+   secundario— y no por tono, que es lo único que sigue funcionando para quien
+   no distingue colores y en una captura en blanco y negro.
+
+   El primer intento fue solo un gris más apagado y se descartó MIRANDO la
+   página: a tamaño real las dos líneas se confundían, que es exactamente lo
+   que una leyenda de dos entradas no puede permitirse. */
+.grl .gp{fill:none;stroke:var(--tx3);stroke-width:1.2;stroke-dasharray:3 2;
+  stroke-linejoin:round;stroke-linecap:round;}
 /* El día del pico se marca con su FRANJA y no con un punto de color: un punto
    distinto sobre la línea se confunde con un vértice cualquiera, y la franja
    además alinea el realce con el número del eje que hay debajo.
@@ -630,6 +645,17 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 /* La zona sensible del día. «transparent» y no «none»: con fill:none el <rect>
    deja de recibir el puntero y el <title> no llega a salir nunca. */
 .grl .gz{fill:transparent;}
+
+/* La leyenda de las dos capas. Solo se pinta cuando hay dos trazos (ver
+   seguridad.html); con uno, el rótulo de la sección ya dice de qué habla.
+   Los trocitos de línea son bordes de un <i> vacío y no caracteres: así son
+   la MISMA geometría que la gráfica —grosor y color salen de las mismas
+   variables— y no un dibujo parecido hecho con tipografía. */
+.lgd{display:flex;flex-wrap:wrap;gap:var(--e2);margin-bottom:var(--e1);
+  font-size:.7rem;color:var(--tx3);}
+.lgd span{display:inline-flex;align-items:center;gap:var(--e0);}
+.lgd i{width:16px;border-top:2px dashed var(--tx3);}
+.lgd .lr{border-top:2px solid var(--tx2);}
 
 /* La barra de progreso de una subida a medias. */
 .prog{display:block;width:100%;height:5px;background:var(--n3);}

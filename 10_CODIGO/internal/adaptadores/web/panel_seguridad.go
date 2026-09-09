@@ -367,10 +367,27 @@ type vistaSeguridad struct {
 	// serie de doce días alimentada por una ventana de veinticuatro horas
 	// tenía once columnas en cero por construcción. ActividadDesde dice desde
 	// qué día hay dato de verdad.
+	//
+	// LLEVA DOS LINEAS DESDE EL 2026-09-09, y no es un adorno: con una sola
+	// —la de rechazos— un escaner que toca el 443 y no completa el saludo TLS
+	// pintaba su dia PLANO, porque nunca llega a pedir nada por HTTP. Medido
+	// en el nodo: el 08/09 tuvo siete toques de Internet y cero rechazos. Ver
+	// seguridad.ConToques.
 	Actividad      []diaGrafica
 	Trazo          string
+	TrazoPaquetes  string
 	Relleno        string
 	ActividadDesde time.Time
+	// ConPaquetes decide si se dibuja la capa de abajo. Pide DOS cosas a la
+	// vez: que haya sensor, y que la pagina este mirando Internet.
+	//
+	// LO SEGUNDO NO ES UN CAPRICHO: LeerToques descarta lo de casa en su
+	// propia frontera —es el filtro «solo Internet» del que habla toques.go—,
+	// asi que la capa de paquetes SOLO existe para Internet. Dibujarla junto a
+	// unos rechazos filtrados por LAN pondria dos redes distintas en la misma
+	// grafica, que es el defecto que pordia.go ya evito separando el conteo
+	// por red.
+	ConPaquetes bool
 	// Detalle es el origen seleccionado por «?origen=», o nil si no vino el
 	// parámetro o la dirección no está en Origenes. Se busca en la MISMA
 	// lista que pinta la tabla, así que las dos no pueden discrepar.
@@ -394,8 +411,12 @@ type diaGrafica struct {
 	// era la barra misma; una línea no tiene superficie que señalar, así que
 	// la banda se dibuja aparte y transparente.
 	X, Ancho float64
-	// Cx y Cy son el punto de ese día sobre la línea.
+	// Cx y Cy son el punto de ese día sobre la línea de RECHAZOS.
 	Cx, Cy float64
+	// CyPaquetes es el punto del mismo día sobre la línea de PAQUETES, la capa
+	// de abajo de la escalera. Solo se dibuja cuando la página lo pide —ver
+	// ConPaquetes—, y entonces es esta la que cierra el área.
+	CyPaquetes float64
 	// Pico marca el día de mayor actividad, para que resalte con el ámbar en
 	// vez del gris de los demás — la ÚNICA señal de color del gráfico.
 	Pico bool
@@ -445,43 +466,91 @@ const (
 // Vive en el adaptador y no en internal/seguridad porque es una decisión de
 // PRESENTACIÓN —coordenadas de un SVG concreto—, y aquel paquete no sabe de
 // HTML: el mismo corte que filaOrigen aplica frente a seguridad.Origen.
-func graficaDeActividad(serie []seguridad.Dia) (dias []diaGrafica, trazo, relleno string) {
+func graficaDeActividad(serie []seguridad.Dia, conPaquetes bool) (dias []diaGrafica, trazo, trazoPaquetes, relleno string) {
+	// LA ESCALA LA COMPARTEN LAS DOS LINEAS, y tiene que ser asi: con una
+	// escala por capa, un dia de siete paquetes y cero rechazos dibujaria las
+	// dos al mismo alto y la grafica afirmaria lo contrario de lo que pasa.
+	// Compartida, la distancia entre las lineas ES la parte del ruido que no
+	// llego a pedir nada.
 	max := 0
 	for _, d := range serie {
 		if d.Rechazos > max {
 			max = d.Rechazos
 		}
+		if conPaquetes && d.Toques > max {
+			max = d.Toques
+		}
 	}
 	raizMax := math.Sqrt(float64(max))
 	util := altoGrafica - 2*margenGrafica
 	suelo := altoGrafica - margenGrafica
+	// La altura de un valor, en un solo sitio: dos formulas iguales escritas
+	// dos veces son dos que alguien acaba tocando por separado.
+	alto := func(n int) float64 {
+		if max == 0 || n <= 0 {
+			return suelo
+		}
+		return redondear(suelo - math.Sqrt(float64(n))/raizMax*util)
+	}
 
 	dias = make([]diaGrafica, len(serie))
 	puntos := make([]string, len(serie))
+	puntosPaquetes := make([]string, len(serie))
 	for i, d := range serie {
-		y := suelo
-		if max > 0 && d.Rechazos > 0 {
-			y = redondear(suelo - math.Sqrt(float64(d.Rechazos))/raizMax*util)
-		}
+		y := alto(d.Rechazos)
+		yp := alto(d.Toques)
 		cx := redondear(float64(i)*anchoSlotGrafica + anchoSlotGrafica/2)
+		// EL PICO ES EL DIA QUE TOCA EL TECHO DE LA GRAFICA, venga de la capa
+		// que venga: la franja alinea ese dia con su numero del eje, y marcar
+		// el maximo de una sola capa dejaria sin realce el dia mas alto de la
+		// otra.
+		cima := d.Rechazos
+		if conPaquetes && d.Toques > cima {
+			cima = d.Toques
+		}
+		titulo := fmt.Sprintf("%s · %d", d.Fecha.Format("02/01"), d.Rechazos)
+		if conPaquetes {
+			// Con dos capas, un numero suelto no dice de cual habla.
+			titulo = fmt.Sprintf("%s · %d paquetes · %d rechazos",
+				d.Fecha.Format("02/01"), d.Toques, d.Rechazos)
+		}
 		dias[i] = diaGrafica{
-			X:        redondear(float64(i) * anchoSlotGrafica),
-			Ancho:    redondear(anchoSlotGrafica),
-			Cx:       cx,
-			Cy:       y,
-			Pico:     max > 0 && d.Rechazos == max,
-			Titulo:   fmt.Sprintf("%s · %d", d.Fecha.Format("02/01"), d.Rechazos),
-			Etiqueta: strconv.Itoa(d.Fecha.Day()),
+			X:          redondear(float64(i) * anchoSlotGrafica),
+			Ancho:      redondear(anchoSlotGrafica),
+			Cx:         cx,
+			Cy:         y,
+			CyPaquetes: yp,
+			Pico:       max > 0 && cima == max,
+			Titulo:     titulo,
+			Etiqueta:   strconv.Itoa(d.Fecha.Day()),
 		}
 		puntos[i] = fmt.Sprintf("%g,%g", cx, y)
+		puntosPaquetes[i] = fmt.Sprintf("%g,%g", cx, yp)
 	}
 	trazo = strings.Join(puntos, " ")
 	// El área es el MISMO trazo cerrado contra el suelo, sin recalcular ni un
 	// punto: dos listas compuestas por separado podrían despegarse la una de
 	// la otra en cuanto alguien tocara una de las dos fórmulas.
+	//
+	// Y ES LA DE PAQUETES CUANDO LA HAY: es la capa de contexto —lo que se vio
+	// pasar—, y dejar la de rechazos como linea limpia encima pone el trazo
+	// nitido en la serie que se lee.
+	//
+	// LO QUE ESTA GRAFICA NO AFIRMA, Y CONVIENE NO LEERLE: que una linea
+	// contenga a la otra. La escalera paquete → conexion → rechazo ordena
+	// hasta donde LLEGO cada origen, no las magnitudes: una sola conexion
+	// puede llevar muchas peticiones, asi que un dia con mas rechazos que
+	// paquetes es NORMAL —los 732 rechazos de DRIFTNET en una tarde no fueron
+	// 732 saludos TCP—. Por eso la de rechazos puede salirse por arriba del
+	// area y no hay que corregirlo: corregirlo seria mentir.
+	borde := trazo
+	if conPaquetes {
+		trazoPaquetes = strings.Join(puntosPaquetes, " ")
+		borde = trazoPaquetes
+	}
 	relleno = fmt.Sprintf("%g,%g %s %g,%g",
-		dias[0].Cx, suelo, trazo, dias[len(dias)-1].Cx, suelo)
-	return dias, trazo, relleno
+		dias[0].Cx, suelo, borde, dias[len(dias)-1].Cx, suelo)
+	return dias, trazo, trazoPaquetes, relleno
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -638,12 +707,25 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// proceso (nas-sensor) y nasd solo lee. Un fallo aqui NO tumba la pagina --
 	// se anota en el diario y las columnas de esa capa se esconden, que es
 	// mejor que ensenar una cifra construida sobre lo que si se pudo leer.
-	hist, err := seguridad.LeerToques(s.rutaToques, f.Desde)
+	//
+	// SE PIDE LO MAS HONDO DE LAS DOS COSAS QUE LO USAN: la tabla quiere la
+	// ventana del filtro y la grafica quiere las doce columnas de la serie.
+	// Una sola lectura y un recorte despues (Historial.EnVentana); con dos
+	// lecturas serian dos fotos distintas de un archivo que reescribe otro
+	// proceso cada minuto.
+	ahora := time.Now()
+	desdeToques := seguridad.InicioDeSerie(ahora)
+	if f.Desde.IsZero() || f.Desde.Before(desdeToques) {
+		// El cero de «Todo lo guardado» no acota nada, y por eso gana.
+		desdeToques = f.Desde
+	}
+	hist, err := seguridad.LeerToques(s.rutaToques, desdeToques)
 	if err != nil {
 		s.reg.Warn("no se pudo leer el historial de toques",
 			"ruta", s.rutaToques, "error", err)
 	}
-	tocados := seguridad.PorOrigenTocado(hist.Toques)
+	enVentana := hist.EnVentana(f.Desde)
+	tocados := seguridad.PorOrigenTocado(enVentana)
 
 	// Las tres listas se construyen antes del literal porque el rótulo del
 	// filtro activo sale de ELLAS y no de los parámetros crudos de la URL: si
@@ -657,7 +739,6 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// tabla de arriba lo pinta entero y unirOrigenes lo cuelga de la fila de
 	// cada dirección. Leerlo dos veces daría dos fotos de instantes distintos y
 	// la misma página podría enseñar a alguien apartado arriba y libre abajo.
-	ahora := time.Now()
 	apartados := s.cuarentena.Vigentes(ahora)
 	bloqueos := s.lista.Vigentes(ahora)
 
@@ -677,7 +758,7 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		Conexiones:       len(conexiones),
 		TotalConexiones:  s.conexiones.Total(),
 		HayMasConexiones: s.conexiones.Total() > int64(len(conexiones)),
-		Toques:           len(hist.Toques),
+		Toques:           len(enVentana),
 		HayToques:        hist.Hay,
 		TotalToques:      hist.Total,
 		PaquetesDesde:    hist.Desde,
@@ -705,8 +786,16 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// «24 horas» —que es como abre el panel— once de las doce columnas salían
 	// en cero para todo el mundo. Sí obedece al filtro de RED, que es el que
 	// decide de quién se está hablando en toda la página. Ver pordia.go.
+	// Y LA CAPA DE PAQUETES ENTRA AQUI, con los toques que ya se leyeron: sin
+	// ella la serie solo dibuja lo que llego a pedir algo por HTTP, y un
+	// escaneo del 443 que muere en el saludo TLS sale como un dia vacio.
 	diasActividad, actividadDesde := s.seguridad.Serie(ahora, f.Red)
-	v.Actividad, v.Trazo, v.Relleno = graficaDeActividad(diasActividad)
+	v.ConPaquetes = hist.Hay && v.SoloInternet
+	if v.ConPaquetes {
+		diasActividad = seguridad.ConToques(diasActividad, hist.Toques)
+	}
+	v.Actividad, v.Trazo, v.TrazoPaquetes, v.Relleno =
+		graficaDeActividad(diasActividad, v.ConPaquetes)
 	v.ActividadDesde = actividadDesde
 
 	v.FiltroAbierto = q.Get("abierto") != ""
