@@ -72,9 +72,73 @@ func medianocheLocal(t time.Time) time.Time {
 const marcaDia = "# dia: "
 
 // Dia es un día con su recuento, para la gráfica de actividad de /seguridad.
+//
+// LLEVA DOS CAPAS Y NO UNA. Rechazos sale del conteo persistido del anillo;
+// Toques lo rellena ConToques con lo que el sensor tenga en su archivo, y vale
+// cero mientras nadie lo pida. Ver ConToques para por qué la gráfica no podía
+// quedarse solo con la capa de arriba.
 type Dia struct {
 	Fecha    time.Time
 	Rechazos int
+	Toques   int
+}
+
+// InicioDeSerie es la medianoche de la PRIMERA columna de la gráfica.
+//
+// Se publica porque quien lee el archivo del sensor —el adaptador web— tiene
+// que pedirle exactamente la misma profundidad que la serie va a dibujar. Sin
+// esto, ese cálculo se escribiría una segunda vez fuera de este paquete y las
+// dos copias podrían discrepar en un día.
+func InicioDeSerie(ahora time.Time) time.Time {
+	return medianocheLocal(ahora).AddDate(0, 0, -(DiasGrafica - 1))
+}
+
+// ConToques rellena la columna de PAQUETES de una serie ya construida.
+//
+// # POR QUÉ LA GRÁFICA NO PODÍA SEGUIR SIENDO SOLO DE RECHAZOS
+//
+// «Actividad por día» dibujaba únicamente la capa de ARRIBA de las tres, que
+// es la que exige que alguien llegara a pedir algo por HTTP. Un escáner que
+// manda un SYN al 443 y no completa el saludo TLS no produce ni un rechazo, y
+// la gráfica pintaba su día como un día sin nada.
+//
+// No es una hipótesis: medido en el nodo el 2026-09-09, el 08/09 tuvo SIETE
+// toques de Internet —seis direcciones distintas, todas al 443— y CERO
+// rechazos. El archivo del anillo lo dice en la misma línea: «# dia:
+// 2026-09-08 lan=22», sin «internet=». Ese día salía plano en la vista con la
+// que el panel abre, que es justo la que el responsable mira.
+//
+// La escalera de este panel es paquete → conexión → rechazo y cada capa es
+// superconjunto de la siguiente; dibujar solo la última era enseñar la punta y
+// llamarla actividad. La tabla de orígenes ya enseñaba las tres en columnas
+// desde ADR-0066 — la gráfica se había quedado atrás.
+//
+// # LOS TOQUES NO SE PERSISTEN AQUÍ, Y ES DELIBERADO
+//
+// Los rechazos por día los acumula el propio Anillo porque rota por VOLUMEN y
+// perdía días enteros (ver la cabecera de este archivo). Los toques no piden
+// eso: quien los escribe es otro proceso y nasd solo lee su archivo, así que
+// acumularlos exigiría un cursor de ingesta, una tarea periódica y un sexto
+// punto de estado compartido —justo lo que la cabecera de toques.go se negó a
+// estrenar—. La profundidad de esta columna es la del anillo del sensor, y el
+// panel ya la declara con PaquetesDesde en vez de prometer doce días. Si algún
+// día ese anillo se queda corto para la serie, ENTONCES habrá que persistirla,
+// y este comentario es la condición que lo dispara.
+//
+// Un toque cuyo día no esté en la serie —más viejo que la primera columna— no
+// casa con ninguna clave y se descarta solo: la serie manda, no el archivo.
+func ConToques(serie []Dia, toques []Toque) []Dia {
+	if len(serie) == 0 {
+		return serie
+	}
+	porClave := make(map[string]int, len(toques))
+	for _, t := range toques {
+		porClave[t.Momento.Local().Format(formatoDia)]++
+	}
+	for i := range serie {
+		serie[i].Toques = porClave[serie[i].Fecha.Format(formatoDia)]
+	}
+	return serie
 }
 
 // porDia es el conteo persistido: cuántos rechazos hubo cada día, separados
@@ -166,8 +230,7 @@ func deEventos(eventos []Evento) porDia {
 // doce días» prometería una profundidad que todavía no existe. Mismo criterio
 // que PaquetesDesde.
 func (p *porDia) serie(ahora time.Time, red *Red) (columnas []Dia, desde time.Time) {
-	hoy := medianocheLocal(ahora)
-	inicio := hoy.AddDate(0, 0, -(DiasGrafica - 1))
+	inicio := InicioDeSerie(ahora)
 
 	columnas = make([]Dia, DiasGrafica)
 	for i := range columnas {
