@@ -575,6 +575,22 @@ else
       *:0)         dato "TLS válido, respuesta inesperada: ${COD%%:*}" ;;
       *)           no "TLS no negocia o el certificado no valida ($COD)" ;;
     esac
+
+    # HSTS — ADR-0086. La otra mitad la comprueba 06_verificar_web.sh, que va
+    # por el 80 de la LAN y exige que ahí NO esté: la cabecera es condicional
+    # a r.TLS, y una comprobación que solo mirara este lado no vería si alguien
+    # la deja incondicional.
+    #
+    # Misma petición y mismo --resolve que arriba: si el TLS de dos líneas más
+    # arriba negoció, aquí no puede fallar por otra causa que la cabecera.
+    if curl -sS -o /dev/null -D - \
+         --resolve "$DOM_TLS.duckdns.org:443:[::1]" \
+         "https://$DOM_TLS.duckdns.org/" 2>/dev/null |
+         grep -qi '^strict-transport-security:.*max-age=31536000'; then
+      si "el 443 declara HSTS a un año (ADR-0086)"
+    else
+      no "el 443 NO declara HSTS — se esperaba max-age=31536000 (ADR-0086)"
+    fi
   fi
 fi
 

@@ -689,6 +689,24 @@ func (s *Servidor) conCabecerasSeguridad(siguiente http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// HSTS SOLO POR TLS — ADR-0086, que retoma el punto que ADR-0060
+		// dejó aplazado con su condición escrita: «se retoma si algún día
+		// TLS llega». Llegó con ADR-0048, y el aplazamiento envejeció sin
+		// que nadie lo revisara hasta el escaneo externo del 2026-09-09.
+		//
+		// MISMO DISCRIMINANTE QUE Secure DE LA COOKIE (ADR-0046, sesion.go):
+		// r.TLS != nil, y no una opción de configuración. Los dos listeners
+		// comparten este árbol de manejadores —cmd/nasd/main.go abre el 80 y
+		// el 443 sobre el mismo s.Rutas()—, así que este campo es lo ÚNICO
+		// que distingue por dónde entró la petición.
+		//
+		// POR QUÉ NO SE EMITE POR EL 80: ese puerto es de LAN (ADR-0032,
+		// 03_cortafuegos.sh) y ahí se entra por IP, no por nombre. Emitirla
+		// en claro no protegería nada y afirmaría una garantía que en esa
+		// vía no existe — el motivo exacto por el que ADR-0060 la aplazó.
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		siguiente.ServeHTTP(w, r)
 	})
 }
