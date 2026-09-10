@@ -268,10 +268,27 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .sch{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);flex-wrap:wrap;}
 .sch h2{margin:0;font-size:.69rem;letter-spacing:.14em;text-transform:uppercase;color:var(--tx2);font-weight:600;}
 .sch .ms{font-size:.7rem;color:var(--tx3);}
+/* EL RÓTULO DE UNA TABLA DENTRO DE UNA SECCIÓN — «Contención activa» agrupa
+   tres, y sin un escalón entre el título de la sección y el de cada tabla las
+   cuatro cabeceras pesarían igual y no se vería qué cuelga de qué. Un punto
+   más pequeño y en el gris de lo secundario basta: es jerarquía, no adorno. */
+.sch h3.sub{margin:0;font-size:.63rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--tx3);font-weight:600;}
+.sch:has(h3.sub){margin-top:var(--e1);}
 
 /* Escalera */
 .esc{display:grid;grid-template-columns:1fr;gap:var(--e1);}
 @container (min-width:620px){.esc{grid-template-columns:repeat(3,1fr);gap:var(--e2);}}
+/* CINCO CUADROS EN VEZ DE TRES — «Volumen observado» del panel de seguridad,
+   que el 2026-09-10 fundió en una sola banda las dos que había (tres cifras
+   arriba y cuatro llamadas «Resumen» al otro lado del gráfico).
+   «auto-fit» y no «repeat(5,1fr)» por lo mismo que en cualquier rejilla que
+   tiene que sobrevivir a un teléfono: a 620 px, cinco columnas fijas dejarían
+   114 px por cuadro para un número de 1.95rem. Con auto-fit la banda usa las
+   columnas que caben y baja lo que sobra al renglón siguiente, sin un punto de
+   corte más que mantener. La regla va DESPUÉS de «.esc» a propósito: misma
+   especificidad, gana la última, y el elemento lleva las dos clases. */
+@container (min-width:620px){.esc-5{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}}
 .pl{position:relative;overflow:hidden;background:var(--n2);border:1px solid var(--n4);
   border-radius:var(--r2);padding:var(--e2) var(--e3);display:flex;align-items:center;gap:var(--e3);min-width:0;}
 @container (min-width:620px){.pl{flex-direction:column;align-items:flex-start;gap:2px;padding:var(--e3);}}
@@ -402,12 +419,26 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
      con text-align basta. */
   .t-seg .th > :nth-child(2){justify-content:center;}
   .t-seg .fl > .cl:nth-child(2){text-align:center;}
-  /* BLOQUEOS Y APARTADOS. «Alcance» tenía 104 px para dos pastillas, la fecha
-     de la base y el aviso de base nueva: de ahí salía la pastilla que se
-     dibujaba encima de «Frenados» y del botón. Se le da ancho de verdad a
-     costa de «Cubre», que era un 2fr casi vacío — y con eso el rótulo CUBRE
-     deja de quedarse solo contra el borde izquierdo. */
+  /* BLOQUEOS Y RESPUESTAS INESPERADAS. «Alcance» tenía 104 px para dos
+     pastillas, la fecha de la base y el aviso de base nueva: de ahí salía la
+     pastilla que se dibujaba encima de «Frenados» y del botón. Se le da ancho
+     de verdad a costa de «Cubre», que era un 2fr casi vacío — y con eso el
+     rótulo CUBRE deja de quedarse solo contra el borde izquierdo. */
   .t-blo .th,.t-blo .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 132px 96px;}
+  /* APARTADOS POR CONDUCTA — CINCO COLUMNAS DESDE EL 2026-09-10, y por eso deja
+     de compartir «.t-blo».
+     El estado se separó del motivo: «Apartado» va en verde, en columna propia,
+     porque dice que el control está en vigor; el motivo se queda en ámbar
+     porque es una inferencia sobre alguien. Con las dos cosas en la misma celda
+     el color acababa calificando a la sospecha.
+     La columna del motivo cabe en 1fr desde que las etiquetas de señal son
+     nombres y no frases: «Operador sin acceso previo» mide la mitad que el
+     «Operador desde el que nadie ha entrado nunca» que había antes.
+     «Frenados» lleva 172 px y no 128 porque su celda no es un número: es el
+     número MÁS «hasta 2026-09-11 06:50» en monoespaciada. Con 128 px la fecha
+     se partía en dos renglones y estiraba la fila entera — visto en el render,
+     no en el código. */
+  .t-apa .th,.t-apa .fl{grid-template-columns:minmax(0,1.4fr) 104px minmax(0,1fr) 172px 92px;}
   /* EL ROTULO RECORRIDO AL CENTRO ES SOLO EL DE «Cubre», y por eso lleva
      modificador propio. Se pidio para «Bloqueos puestos», donde la columna es
      ancha y el rotulo quedaba solo contra el borde; se aplico a «.t-blo» y
@@ -415,8 +446,10 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
      donde el contenido es corto y el efecto fue el contrario: el rotulo
      flotando en mitad de un hueco, lejos de la fila que titula. Reportado
      sobre captura el 2026-08-31.
-     Las columnas 2 y 3 SI se centran en las tres tablas, porque ahi tambien se
-     centra el contenido y rotulo y celda comparten eje. */
+     Las columnas 2 y 3 SI se centran en las dos tablas que siguen en «.t-blo»,
+     porque ahi tambien se centra el contenido y rotulo y celda comparten eje.
+     «.t-apa» ya no las hereda, y esta bien: sus cinco columnas van todas a la
+     izquierda, que es como se lee una fila que empieza por una direccion. */
   .t-cub .th > :first-child{justify-content:center;}
   .t-blo .th > :nth-child(2),
   .t-blo .th > :nth-child(3){justify-content:center;}

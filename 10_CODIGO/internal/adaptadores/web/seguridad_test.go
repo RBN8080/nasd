@@ -469,7 +469,13 @@ func TestUnFiltroConBasuraNoRompeNiInyecta(t *testing.T) {
 	}
 	// Y con parámetros ilegibles se cae a la ventana por omisión en vez de
 	// vaciar la página o fallar.
-	if !strings.Contains(cuerpo, "Resumen") {
+	//
+	// EL ANCLA VA CON SU «<h2>» Y NO SUELTA. Aquí ponía «Resumen» a secas, y esa
+	// palabra la pinta TAMBIÉN el rail como rótulo de un módulo: la prueba habría
+	// pasado aunque el cuerpo entero se hubiera quedado sin renderizar. Se vio al
+	// renombrar la sección el 2026-09-10 —el fallo esperado no llegó— y por eso
+	// queda anclada a algo que solo puede venir del cuerpo de esta página.
+	if !strings.Contains(cuerpo, "<h2>Volumen observado</h2>") {
 		t.Error("con parámetros inválidos la página no se renderizó entera")
 	}
 }
@@ -641,7 +647,15 @@ func TestElPanelDeSeguridadSeRenderizaEntero(t *testing.T) {
 	// de ellas con ADR-0075 —vive bajo demanda tras «Filtrar», en la barra de
 	// órdenes, no como sección con su propio <h2>— y se comprueba por ese
 	// control en vez de por el encabezado que ya no tiene.
-	for _, seccion := range []string{"Resumen", "Actividad por día", "Orígenes", "Cronología"} {
+	// «Resumen» pasó a «Volumen observado» y entró «Contención activa» al
+	// reordenar el panel el 2026-09-10. El cambio de nombre no es cosmético para
+	// esta prueba: «Resumen» es TAMBIÉN el rótulo de un ítem del rail, así que
+	// buscarlo suelto habría seguido en verde para siempre sin comprobar nada.
+	// Por eso todas van con su «<h2>» pegado.
+	for _, seccion := range []string{
+		"Contención activa", "Volumen observado",
+		"Actividad por día", "Orígenes", "Cronología",
+	} {
 		if !strings.Contains(cuerpo, "<h2>"+seccion+"</h2>") {
 			t.Errorf("falta la sección %q", seccion)
 		}
@@ -1422,11 +1436,72 @@ func TestElResumenSigueContandoSoloLosPaquetesDeLaVentana(t *testing.T) {
 	conSensor(t, s, time.Now().Add(-30*time.Hour), time.Now().Add(-time.Hour))
 
 	cuerpo := panelSeguridad(t, s, "")
-	i := strings.Index(cuerpo, "Paquetes")
+	// EL ANCLA ES EL RÓTULO DEL CUADRO, NO LA PALABRA «Paquetes» SUELTA.
+	//
+	// Buscaba la primera aparición de «Paquetes» y miraba 200 bytes atrás. La
+	// palabra sale además en el «aria-label» de la gráfica y en su leyenda, así
+	// que la prueba dependía de que la banda de cifras siguiera siendo lo primero
+	// de la página: al reordenar el panel el 2026-09-10 habría empezado a medir
+	// el gráfico y a fallar sin que nada estuviera mal. Con el rótulo completo,
+	// el sitio es uno y solo uno vaya donde vaya la banda.
+	const rotulo = `<div class="q">Paquetes</div>`
+	i := strings.Index(cuerpo, rotulo)
 	if i < 0 {
-		t.Fatal("el resumen no tiene la fila de paquetes")
+		t.Fatal("la banda de cifras no tiene el cuadro de paquetes")
 	}
 	if !strings.Contains(cuerpo[max(0, i-200):i], `<div class="n mono">1</div>`) {
 		t.Errorf("la cifra de la ventana no es 1:\n%s", cuerpo[max(0, i-200):i])
+	}
+}
+
+// LA FRASE DE «CONTENCIÓN ACTIVA» NOMBRA SOLO LO QUE ESTÁ VACÍO, y esa es toda
+// su garantía: no puede afirmar de más porque no afirma nada en positivo.
+//
+// Sustituyó a una pastilla que decía «sin hallazgos» y que el responsable tumbó
+// con la pregunta que la desarma: «entonces si pongo un bloqueo a mano, ¿se
+// cambia de color?». Esta prueba existe para que la sustituta no herede el
+// defecto — el caso que la sujeta es el tercero: con apartados puestos, la
+// frase NO puede seguir diciendo que no hay apartados.
+func TestLaFraseDeContencionSoloNombraLoVacio(t *testing.T) {
+	casos := []struct {
+		nombre                         string
+		apartados, bloqueos, hallazgos int
+		quiero                         string
+	}{
+		{"nada de nada", 0, 0, 0,
+			"Sin apartados por conducta, sin bloqueos puestos a mano y sin respuestas inesperadas del servidor."},
+		{"solo hallazgos", 0, 0, 3,
+			"Sin apartados por conducta y sin bloqueos puestos a mano."},
+		{"solo apartados", 2, 0, 0,
+			"Sin bloqueos puestos a mano y sin respuestas inesperadas del servidor."},
+		{"solo bloqueos", 0, 1, 0,
+			"Sin apartados por conducta y sin respuestas inesperadas del servidor."},
+		{"apartados y bloqueos", 2, 1, 0,
+			"Sin respuestas inesperadas del servidor."},
+		// Con los tres llenos no hay nada que decir: las tres tablas están a la
+		// vista y la frase desaparece entera.
+		{"los tres llenos", 1, 1, 1, ""},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			if hay := fraseDeVacios(c.apartados, c.bloqueos, c.hallazgos); hay != c.quiero {
+				t.Errorf("frase\n  quiero: %q\n  llegó:  %q", c.quiero, hay)
+			}
+		})
+	}
+}
+
+// Y la mitad que de verdad importa, contra la página entera: con apartados
+// puestos, la frase que se pinta no puede desmentir a la tabla que hay encima.
+func TestConApartadosLaFraseNoDiceQueNoHayApartados(t *testing.T) {
+	s := servidorConAuth(t)
+	apartar(t, s, "203.0.113.7")
+
+	cuerpo := panelSeguridad(t, s, "")
+	if strings.Contains(cuerpo, "Sin apartados por conducta") {
+		t.Error("la página enseña un apartado y a la vez dice que no hay apartados")
+	}
+	if !strings.Contains(cuerpo, "sin respuestas inesperadas del servidor") {
+		t.Error("no hay hallazgos y la página no lo dice")
 	}
 }

@@ -254,7 +254,7 @@ func situacionDeOrigen(o OrigenVisto) (Situacion, bool) {
 	// título cuenta la dominante y esta línea dice que hubo más de una, en vez
 	// de emitir un segundo aviso de la misma historia.
 	if len(o.Senales) > 1 {
-		s.conHecho("Señales", strings.Join(clavesDeSenales(o.Senales), ", "))
+		s.conHecho("Señales", strings.Join(etiquetasDeSenales(o.Senales), ", "))
 	}
 
 	// LA RESPUESTA DEL NODO, que es la mitad que convierte una alarma en un
@@ -369,7 +369,17 @@ func rutasPublicables(evidencia []seguridad.Sonda, tope int) []string {
 	return out
 }
 
-func clavesDeSenales(ss []seguridad.Senal) []string {
+// etiquetasDeSenales devuelve el rótulo de pantalla de cada señal, para
+// componer el hecho «Señales» del mensaje.
+//
+// SE LLAMABA «clavesDeSenales» Y DEVOLVÍA ETIQUETAS, que es justo lo que una
+// clave no es: en este paquete y en seguridad la clave es Senal.String() —la
+// forma estable que se escribe en disco— y la etiqueta es texto de pantalla
+// que se reescribe cuando conviene. El nombre viejo invitaba a creer que esto
+// entraba en algún archivo, y no entra: el hecho solo viaja en el mensaje,
+// nunca al Registro persistido. Corregido al acortar las etiquetas el
+// 2026-09-10, porque el cambio dejó el nombre aún más engañoso.
+func etiquetasDeSenales(ss []seguridad.Senal) []string {
 	out := make([]string, 0, len(ss))
 	for _, s := range ss {
 		out = append(out, s.Etiqueta())
