@@ -2,8 +2,6 @@ package web
 
 import (
 	"cmp"
-	"fmt"
-	"math"
 	"net/http"
 	"net/netip"
 	"slices"
@@ -368,26 +366,16 @@ type vistaSeguridad struct {
 	// filtrar. Sin esto habria que volver a abrirlo para corregir una
 	// eleccion, que es justo cuando uno lo necesita.
 	FiltroAbierto bool
-	// Actividad es «Actividad por día»: un punto por día, con su zona
-	// sensible y su rótulo de eje. Trazo y Relleno son la MISMA serie ya
-	// resuelta como listas de coordenadas para la polilínea y para el área de
-	// debajo — ver graficaDeActividad.
+	// Paneles es «Actividad por día»: UNO por serie, cada uno con su propio eje
+	// de valores. Ver panelGrafica en grafica_seguridad.go, donde está escrito
+	// por qué son dos marcos y no dos líneas en uno.
 	//
-	// Sale del conteo persistido del anillo (seguridad.Anillo.Serie) y NO de
+	// Salen del conteo persistido del anillo (seguridad.Anillo.Serie) y NO de
 	// los eventos filtrados: la ventana del filtro gobierna la tabla, y una
-	// serie de doce días alimentada por una ventana de veinticuatro horas
-	// tenía once columnas en cero por construcción. ActividadDesde dice desde
-	// qué día hay dato de verdad.
-	//
-	// LLEVA DOS LINEAS DESDE EL 2026-09-09, y no es un adorno: con una sola
-	// —la de rechazos— un escaner que toca el 443 y no completa el saludo TLS
-	// pintaba su dia PLANO, porque nunca llega a pedir nada por HTTP. Medido
-	// en el nodo: el 08/09 tuvo siete toques de Internet y cero rechazos. Ver
-	// seguridad.ConToques.
-	Actividad      []diaGrafica
-	Trazo          string
-	TrazoPaquetes  string
-	Relleno        string
+	// serie de doce días alimentada por una ventana de veinticuatro horas tenía
+	// once columnas en cero por construcción. ActividadDesde dice desde qué día
+	// hay dato de verdad.
+	Paneles        []panelGrafica
 	ActividadDesde time.Time
 	// ConPaquetes decide si se dibuja la capa de abajo. Pide DOS cosas a la
 	// vez: que haya sensor, y que la pagina este mirando Internet.
@@ -404,164 +392,6 @@ type vistaSeguridad struct {
 	// lista que pinta la tabla, así que las dos no pueden discrepar.
 	Detalle    *filaOrigen
 	ConDetalle bool
-}
-
-// diaGrafica es UN día de «Actividad por día», con su geometría YA CALCULADA
-// en unidades del viewBox del SVG.
-//
-// LA GEOMETRÍA VA EN ATRIBUTOS Y NO EN CSS, y no es una preferencia: la CSP
-// de este servidor es «style-src 'self'» sin 'unsafe-inline' (ADR-0060), así
-// que el «style="height:21%"» de la maqueta se descartaría EN SILENCIO y el
-// gráfico saldría plano sin que nada fallara a gritos. Los atributos x, y,
-// points y width de un SVG no son CSS y la política no los toca.
-// ADR-0017 ya ponía el formato en el servidor; esto extiende la misma regla
-// a la geometría.
-type diaGrafica struct {
-	// X y Ancho son la banda vertical del día: la zona sensible que lleva el
-	// <title> del que sale el rótulo al posar el cursor. Con barras esa zona
-	// era la barra misma; una línea no tiene superficie que señalar, así que
-	// la banda se dibuja aparte y transparente.
-	X, Ancho float64
-	// Cx y Cy son el punto de ese día sobre la línea de RECHAZOS.
-	Cx, Cy float64
-	// CyPaquetes es el punto del mismo día sobre la línea de PAQUETES, la capa
-	// de abajo de la escalera. Solo se dibuja cuando la página lo pide —ver
-	// ConPaquetes—, y entonces es esta la que cierra el área.
-	CyPaquetes float64
-	// Pico marca el día de mayor actividad, para que resalte con el ámbar en
-	// vez del gris de los demás — la ÚNICA señal de color del gráfico.
-	Pico bool
-	// Titulo es lo que sale al posar el cursor: «19/08 · 732». Etiqueta es el
-	// número de día del eje de abajo.
-	Titulo   string
-	Etiqueta string
-}
-
-// La geometría del gráfico, en unidades del viewBox. Cien de ancho y cien de
-// alto, y que el SVG se estire al ancho real con preserveAspectRatio="none".
-//
-// margenGrafica reserva arriba y abajo la mitad del grosor del trazo. Sin él,
-// el día más alto y los días en cero se dibujarían JUSTO sobre el borde del
-// viewBox y el navegador les recortaría media línea: el pico saldría más
-// delgado que el resto de la curva sin que nada lo explicara.
-const (
-	anchoSlotGrafica = 100.0 / seguridad.DiasGrafica
-	altoGrafica      = 100.0
-	margenGrafica    = 4.0
-)
-
-// graficaDeActividad convierte la serie pura de seguridad.Anillo.Serie en los
-// puntos de la línea, con su geometría resuelta.
-//
-// # ES UNA LÍNEA Y NO BARRAS, POR UNA RAZÓN QUE SE PUEDE ENUNCIAR
-//
-// Este gráfico no tiene eje de valores —ni lo tendrá mientras quepa en la
-// altura de una fila del panel—, y una barra sin escala no comunica nada: su
-// altura solo es legible comparada con la barra de al lado, que es justo lo
-// que un eje ausente impide hacer con precisión. Una línea no promete
-// magnitud: promete TENDENCIA, y la tendencia sí se lee de la forma del trazo
-// sin necesidad de números en el margen. Es la corrección que pidió el
-// responsable el 2026-08-31 y coincide con la práctica de las consolas de
-// seguridad, donde la serie temporal se dibuja como línea o área y la magnitud
-// se consulta en el rótulo del punto.
-//
-// # LA ESCALA SIGUE SIENDO LA RAÍZ CUADRADA, Y ESO SE DICE EN LA PANTALLA
-//
-// Con escala lineal, el barrido de DRIFTNET —732 rechazos en un día contra una
-// treintena los demás— aplasta contra el suelo los once días restantes: el
-// pico se ve, y todo lo demás deja de poder compararse entre sí. La raíz
-// cuadrada conserva el orden y el pico, y devuelve relieve a los días
-// normales. NO es una escala neutra, así que el rótulo de la sección lo dice
-// —«escala √»— en vez de dejar creer que las alturas son proporcionales.
-//
-// Vive en el adaptador y no en internal/seguridad porque es una decisión de
-// PRESENTACIÓN —coordenadas de un SVG concreto—, y aquel paquete no sabe de
-// HTML: el mismo corte que filaOrigen aplica frente a seguridad.Origen.
-func graficaDeActividad(serie []seguridad.Dia, conPaquetes bool) (dias []diaGrafica, trazo, trazoPaquetes, relleno string) {
-	// LA ESCALA LA COMPARTEN LAS DOS LINEAS, y tiene que ser asi: con una
-	// escala por capa, un dia de siete paquetes y cero rechazos dibujaria las
-	// dos al mismo alto y la grafica afirmaria lo contrario de lo que pasa.
-	// Compartida, la distancia entre las lineas ES la parte del ruido que no
-	// llego a pedir nada.
-	max := 0
-	for _, d := range serie {
-		if d.Rechazos > max {
-			max = d.Rechazos
-		}
-		if conPaquetes && d.Toques > max {
-			max = d.Toques
-		}
-	}
-	raizMax := math.Sqrt(float64(max))
-	util := altoGrafica - 2*margenGrafica
-	suelo := altoGrafica - margenGrafica
-	// La altura de un valor, en un solo sitio: dos formulas iguales escritas
-	// dos veces son dos que alguien acaba tocando por separado.
-	alto := func(n int) float64 {
-		if max == 0 || n <= 0 {
-			return suelo
-		}
-		return redondear(suelo - math.Sqrt(float64(n))/raizMax*util)
-	}
-
-	dias = make([]diaGrafica, len(serie))
-	puntos := make([]string, len(serie))
-	puntosPaquetes := make([]string, len(serie))
-	for i, d := range serie {
-		y := alto(d.Rechazos)
-		yp := alto(d.Toques)
-		cx := redondear(float64(i)*anchoSlotGrafica + anchoSlotGrafica/2)
-		// EL PICO ES EL DIA QUE TOCA EL TECHO DE LA GRAFICA, venga de la capa
-		// que venga: la franja alinea ese dia con su numero del eje, y marcar
-		// el maximo de una sola capa dejaria sin realce el dia mas alto de la
-		// otra.
-		cima := d.Rechazos
-		if conPaquetes && d.Toques > cima {
-			cima = d.Toques
-		}
-		titulo := fmt.Sprintf("%s · %d", d.Fecha.Format("02/01"), d.Rechazos)
-		if conPaquetes {
-			// Con dos capas, un numero suelto no dice de cual habla.
-			titulo = fmt.Sprintf("%s · %d paquetes · %d rechazos",
-				d.Fecha.Format("02/01"), d.Toques, d.Rechazos)
-		}
-		dias[i] = diaGrafica{
-			X:          redondear(float64(i) * anchoSlotGrafica),
-			Ancho:      redondear(anchoSlotGrafica),
-			Cx:         cx,
-			Cy:         y,
-			CyPaquetes: yp,
-			Pico:       max > 0 && cima == max,
-			Titulo:     titulo,
-			Etiqueta:   strconv.Itoa(d.Fecha.Day()),
-		}
-		puntos[i] = fmt.Sprintf("%g,%g", cx, y)
-		puntosPaquetes[i] = fmt.Sprintf("%g,%g", cx, yp)
-	}
-	trazo = strings.Join(puntos, " ")
-	// El área es el MISMO trazo cerrado contra el suelo, sin recalcular ni un
-	// punto: dos listas compuestas por separado podrían despegarse la una de
-	// la otra en cuanto alguien tocara una de las dos fórmulas.
-	//
-	// Y ES LA DE PAQUETES CUANDO LA HAY: es la capa de contexto —lo que se vio
-	// pasar—, y dejar la de rechazos como linea limpia encima pone el trazo
-	// nitido en la serie que se lee.
-	//
-	// LO QUE ESTA GRAFICA NO AFIRMA, Y CONVIENE NO LEERLE: que una linea
-	// contenga a la otra. La escalera paquete → conexion → rechazo ordena
-	// hasta donde LLEGO cada origen, no las magnitudes: una sola conexion
-	// puede llevar muchas peticiones, asi que un dia con mas rechazos que
-	// paquetes es NORMAL —los 732 rechazos de DRIFTNET en una tarde no fueron
-	// 732 saludos TCP—. Por eso la de rechazos puede salirse por arriba del
-	// area y no hay que corregirlo: corregirlo seria mentir.
-	borde := trazo
-	if conPaquetes {
-		trazoPaquetes = strings.Join(puntosPaquetes, " ")
-		borde = trazoPaquetes
-	}
-	relleno = fmt.Sprintf("%g,%g %s %g,%g",
-		dias[0].Cx, suelo, borde, dias[len(dias)-1].Cx, suelo)
-	return dias, trazo, trazoPaquetes, relleno
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -859,8 +689,7 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	if v.ConPaquetes {
 		diasActividad = seguridad.ConToques(diasActividad, hist.Toques)
 	}
-	v.Actividad, v.Trazo, v.TrazoPaquetes, v.Relleno =
-		graficaDeActividad(diasActividad, v.ConPaquetes)
+	v.Paneles = graficaDeActividad(diasActividad, v.ConPaquetes)
 	v.ActividadDesde = actividadDesde
 
 	v.FiltroAbierto = q.Get("abierto") != ""
