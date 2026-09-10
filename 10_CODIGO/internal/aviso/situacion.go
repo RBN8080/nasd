@@ -142,16 +142,34 @@ func ClaseDesde(s string) (Clase, bool) {
 
 // Titulo es la primera línea del aviso: qué pasó, en una frase, sin alarmismo
 // y sin afirmar más de lo observado.
+//
+// # DOS DE ESTOS TÍTULOS SON COPIA DE seguridad.Senal.Etiqueta, Y HAY QUE
+// # MOVERLOS A LA VEZ
+//
+// ClaseSondeoAjeno y ClaseFuerzaBruta nombran la MISMA conducta que las
+// señales del panel —evaluar.go las mapea una a una—, y sus textos se
+// escribieron aquí a mano en vez de llamar al método. Son cadenas
+// independientes y NINGUNA PRUEBA LAS COMPARA, así que al acortar las
+// etiquetas del panel el 2026-09-10 estas se habrían quedado atrás en
+// silencio: el nodo diría «Sondeo de software ajeno» en la pantalla y
+// «Sondeo de software que aquí no existe» por Telegram, para el mismo hecho.
+// Se mueven las dos con él.
+//
+// NO SE SUSTITUYEN POR UNA LLAMADA a Senal.Etiqueta(), y es deliberado:
+// ClaseExploracion ya dice «Exploración sostenida» donde la señal dice
+// «Exploración de rutas» —el aviso habla de lo que aguantó en el tiempo, la
+// señal de lo que se vio en una petición—, y ese matiz se perdería atando los
+// dos vocabularios. Lo que se comparte es el hecho, no la redacción.
 func (c Clase) Titulo() string {
 	switch c {
 	case ClaseSondeoAjeno:
-		return "Sondeo de software que aquí no existe"
+		return "Sondeo de software ajeno"
 	case ClaseAnomalia:
 		return "Conducta sin clasificar"
 	case ClaseExploracion:
 		return "Exploración sostenida"
 	case ClaseFuerzaBruta:
-		return "Intentos repetidos de contraseña"
+		return "Contraseñas repetidas"
 	case ClaseRutaExpuesta:
 		return "Una ruta no publicada respondió con contenido"
 	case ClaseEnforcementFallido:

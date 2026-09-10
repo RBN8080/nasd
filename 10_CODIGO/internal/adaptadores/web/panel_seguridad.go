@@ -326,7 +326,18 @@ type vistaSeguridad struct {
 	// devolviera 200 en /.git/config el martes sigue siendo verdad hoy si nadie
 	// ha ido a mirar, y esconderlo tras la ventana sería apagar la única alarma
 	// de la página dejando el problema en pie.
+	//
+	// SE PINTA DENTRO DE «CONTENCIÓN ACTIVA» DESDE EL 2026-09-10, junto a los
+	// apartados y los bloqueos, por decisión del responsable. Este comentario
+	// decía antes que iba aparte porque habla del NODO y no de quien llama, y
+	// esa distinción sigue siendo cierta —la tabla conserva su título y su
+	// rótulo de «requieren revisión»—. Lo que las agrupa no es quién las causa,
+	// es qué hay que hacer con ellas: las tres son lo vigente y lo único de la
+	// página que puede terminar en una acción. Ver seguridad.html.
 	Hallazgos []seguridad.Hallazgo
+	// SinContener es la frase que nombra ÚNICAMENTE los grupos de contención que
+	// están vacíos, o "" si los tres tienen algo. Ver fraseDeVacios.
+	SinContener string
 	// TotalHallazgos son los sucesos vistos desde siempre, que puede ser mucho
 	// mayor que las rutas distintas que se listan: una sola ruta expuesta y
 	// pedida mil veces son mil sucesos y una fila.
@@ -633,6 +644,57 @@ func (s *Servidor) soltarApartado(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/seguridad", http.StatusSeeOther)
 }
 
+// fraseDeVacios nombra los grupos de «Contención activa» que están vacíos, y
+// solo esos. Devuelve "" cuando los tres tienen algo, porque entonces no hay
+// nada que decir: las tres tablas están a la vista.
+//
+// # POR QUÉ NO ES UNA PASTILLA DE ESTADO
+//
+// Aquí hubo una que decía «sin hallazgos», y el responsable la tumbó el
+// 2026-09-10 con la pregunta que la desarma: «entonces si pongo un bloqueo a
+// mano, ¿se cambia de color?». Una pastilla que resume TRES listas tiene que
+// elegir un color en cuanto una de ellas deja de estar vacía, y cualquier
+// elección afirma algo falso sobre las otras dos —o dice «todo bien» habiendo
+// un hallazgo, o dice «atención» estando los apartados en su sitio—.
+//
+// Enumerar solo lo vacío no puede equivocarse, porque no afirma nada en
+// positivo: cada trozo de la frase desaparece con el grupo que lo motivaba. Es
+// la misma regla del vacío con fecha de la cronología (ADR-0083): decir qué NO
+// hay es una afirmación, y tiene que ser tan exacta como las demás.
+//
+// El formato va aquí y no en la plantilla por ADR-0017: componer esta frase con
+// {{if}} anidados serían ocho combinaciones escritas a mano en HTML, y siete de
+// ellas no las probaría nadie.
+func fraseDeVacios(apartados, bloqueos, hallazgos int) string {
+	var partes []string
+	if apartados == 0 {
+		partes = append(partes, "sin apartados por conducta")
+	}
+	if bloqueos == 0 {
+		partes = append(partes, "sin bloqueos puestos a mano")
+	}
+	if hallazgos == 0 {
+		partes = append(partes, "sin respuestas inesperadas del servidor")
+	}
+	if len(partes) == 0 {
+		return ""
+	}
+	// EL «sin» SE REPITE EN CADA PARTE, y no se factoriza al principio. Con uno
+	// solo, «Sin bloqueos puestos a mano y respuestas inesperadas del servidor»
+	// se lee como si el nodo hubiera tenido respuestas inesperadas. Visto al
+	// mirar la página renderizada, no al escribirla.
+	//
+	// «y» solo delante del último, que es como se enumera en español.
+	frase := partes[0]
+	switch len(partes) {
+	case 2:
+		frase = partes[0] + " y " + partes[1]
+	case 3:
+		frase = partes[0] + ", " + partes[1] + " y " + partes[2]
+	}
+	return strings.ToUpper(frase[:1]) + frase[1:] + "."
+}
+
 func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -742,11 +804,14 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	apartados := s.cuarentena.Vigentes(ahora)
 	bloqueos := s.lista.Vigentes(ahora)
 
+	hallazgos := s.hallazgos.Todos()
+
 	v := vistaSeguridad{
 		PuedeAdministrar: !acotadoPorRed(r),
 		Apartados:        apartados,
 		Bloqueos:         s.filasDeBloqueo(bloqueos),
-		Hallazgos:        s.hallazgos.Todos(),
+		Hallazgos:        hallazgos,
+		SinContener:      fraseDeVacios(len(apartados), len(bloqueos), len(hallazgos)),
 		TotalHallazgos:   s.hallazgos.Total(),
 		CierresFallidos:  s.cierresFallidos.Load(),
 		TopeSondas:       seguridad.TopeSondas,

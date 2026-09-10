@@ -85,16 +85,32 @@ func SenalDesde(s string) (Senal, bool) {
 	return SenalExploracion, false
 }
 
+// Etiqueta es el rótulo de pantalla, y desde el 2026-09-10 es un NOMBRE y no
+// una frase explicativa.
+//
+// Las cuatro se escribieron como oraciones —«Operador desde el que nadie ha
+// entrado nunca»— y ese texto acaba dentro de una pastilla, que es el sitio
+// donde MENOS cabe una explicación: en la columna «Señales» de una tabla, a
+// 124 px, una frase de cuarenta y cuatro caracteres se parte en cuatro
+// renglones. Reportado sobre captura por el responsable, que pidió además
+// lenguaje profesional.
+//
+// LO EXPLICATIVO NO SE PIERDE, PORQUE NUNCA ESTUVO AQUÍ: cada señal lleva su
+// Explicacion() plegada bajo la fila, y ahí sí se dice en qué se basa y con
+// qué se puede confundir. Acortar la etiqueta no le quita ni una palabra.
+//
+// Y NO AFECTA A NADA GUARDADO. Lo que se persiste es String() —la clave
+// estable—, nunca esto; ver el comentario de String y cuarentena.go.
 func (s Senal) Etiqueta() string {
 	switch s {
 	case SenalExploracion:
-		return "Exploración automatizada"
+		return "Exploración de rutas"
 	case SenalFuerzaBruta:
-		return "Intentos repetidos de contraseña"
+		return "Contraseñas repetidas"
 	case SenalSoftwareAjeno:
-		return "Sondeo de software que aquí no existe"
+		return "Sondeo de software ajeno"
 	case SenalOperadorDesconocido:
-		return "Operador desde el que nadie ha entrado nunca"
+		return "Operador sin acceso previo"
 	}
 	return "Señal desconocida"
 }
