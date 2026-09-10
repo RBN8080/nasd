@@ -237,53 +237,58 @@
 <p class="nota">Las tres no se restan entre sí: el registro de paquetes es más corto que los otros dos y solo alcanza desde el {{fecha .PaquetesDesde}}.</p>
 {{end}}
 
-<!-- ACTIVIDAD POR DÍA — UNA LÍNEA, no barras. Sin eje de valores una barra
-     solo se puede leer comparándola con la de al lado, que es justo lo que la
-     falta de eje impide; una línea no promete magnitud, promete tendencia, y
-     la magnitud exacta la da el rótulo de cada punto. Ver graficaDeActividad.
+<!-- ACTIVIDAD POR DÍA — UN PANEL POR SERIE, CADA UNO CON SU EJE DE VALORES.
+
+     Hasta el 2026-09-10 era un solo marco con las dos capas compartiendo
+     escala y SIN eje: la forma se leía, la magnitud solo salía al posar el
+     cursor. El responsable pidió el eje, y el eje obliga a separar los marcos
+     —está razonado en panelGrafica—: paquetes y rechazos tienen rangos que no
+     se parecen, y un eje para los dos o miente sobre uno o exige dos escalas
+     verticales en el mismo dibujo.
 
      LA SERIE SALE DEL CONTEO PERSISTIDO (pordia.go) y no de los eventos de la
      ventana: con «24 horas» —como abre el panel— once de las doce columnas
      salían en cero para todo el mundo. Obedece al filtro de RED, y por eso el
      rótulo dice de qué origen habla; el de motivo y el de ventana no la tocan.
 
-     El trazo lleva vector-effect="non-scaling-stroke" porque el SVG se estira
-     con preserveAspectRatio="none": sin él, el grosor de la línea se
-     multiplicaría por el ancho y se dibujaría una franja en vez de un trazo.
+     EL EJE VA EN SU PROPIO SVG, sin estirar, porque el del trazo se estira con
+     preserveAspectRatio="none" y ahí dentro el texto saldría deformado — y en
+     HTML habría que colocarlo con «style», que la CSP descarta en silencio.
+     Todo el razonamiento está en grafica_seguridad.go, junto a las constantes.
 
-     Y DIBUJA DOS CAPAS DESDE EL 2026-09-09. Con solo los rechazos, un día en
-     el que alguien barrió el 443 sin llegar a pedir nada por HTTP salía plano
-     —medido: el 08/09, siete toques de Internet y cero rechazos—, y esa es
-     justo la actividad que un panel de seguridad existe para enseñar. La
-     línea de paquetes es la capa de contexto y por eso es la que cierra el
-     área; la de rechazos se lee encima. Las dos NO se contienen: una conexión
-     puede llevar muchas peticiones, así que un día con más rechazos que
-     paquetes es normal. Solo aparece mirando Internet, que es lo único que el
-     sensor deja pasar (ConPaquetes). -->
+     SIN LEYENDA Y SIN MARCA DE PICO. La leyenda sobra porque cada panel lleva
+     el nombre de su serie encima. El realce del día más alto se retiró por
+     encargo: con eje, el pico ya se lee contra un número. -->
 <section class="sc">
   <div class="sch">
     <h2>Actividad por día</h2>
-    <span class="ms">escala √ · {{if .ActividadDesde.IsZero}}sin rechazos registrados{{else}}desde {{dia .ActividadDesde}}{{end}}{{if .ConPaquetes}} · paquetes desde {{dia .PaquetesDesde}}{{end}}</span>
+    <span class="ms">{{if .ActividadDesde.IsZero}}sin rechazos registrados{{else}}desde {{dia .ActividadDesde}}{{end}}{{if .ConPaquetes}} · paquetes desde {{dia .PaquetesDesde}}{{end}}</span>
   </div>
-  {{if .ConPaquetes}}
-  <!-- La leyenda solo existe cuando hay dos trazos que distinguir. Con uno
-       sobra: el rótulo de arriba ya dice de qué habla. -->
-  <div class="lgd"><span><i class="lp"></i>Paquetes</span><span><i class="lr"></i>Rechazos</span></div>
+  {{range .Paneles}}
+  <div class="grp">
+    <div class="grh"><b>{{.Rotulo}}</b><span class="ms">{{.Escala}}{{if .Hay}} · máx {{.Max}}{{end}}</span></div>
+    <div class="grc">
+      <!-- El eje es decorativo para quien no ve la pantalla: la gráfica de al
+           lado ya declara su máximo y su escala en aria-label, y los valores
+           día a día están en el <title> de cada banda. Leerlo dos veces sería
+           ruido. -->
+      <svg class="gry" viewBox="0 0 46 112" aria-hidden="true">
+        {{range .Marcas}}<text class="gyt" x="40" y="{{.Y}}" dy="0.32em">{{.Valor}}</text>{{end}}
+      </svg>
+      <svg class="grl" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
+           aria-label="{{.Rotulo}} por día, últimos {{len .Dias}} días, {{.Escala}}{{if .Hay}}, máximo {{.Max}}{{end}}">
+        {{range .Marcas}}<line class="grj" x1="0" y1="{{.YGrafica}}" x2="100" y2="{{.YGrafica}}" vector-effect="non-scaling-stroke"></line>{{end}}
+        {{if .Relleno}}<polygon class="ga" points="{{.Relleno}}"></polygon>{{end}}
+        <polyline class="{{.Clase}}" points="{{.Trazo}}" vector-effect="non-scaling-stroke"></polyline>
+        <!-- La zona sensible de cada día va ENCIMA y transparente: una línea no
+             tiene superficie que señalar, así que el <title> necesita una banda
+             propia o el rótulo al posar el cursor se pierde. -->
+        {{range .Dias}}<rect class="gz" x="{{.X}}" y="0" width="{{.Ancho}}" height="100"><title>{{.Titulo}}</title></rect>{{end}}
+      </svg>
+      <div class="gre">{{range .Dias}}<span>{{.Etiqueta}}</span>{{end}}</div>
+    </div>
+  </div>
   {{end}}
-  <div class="grc">
-    <svg class="grl" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
-         aria-label="{{if .ConPaquetes}}Paquetes y rechazos por día{{else}}Rechazos por día{{end}}, últimos {{len .Actividad}} días, escala de raíz cuadrada">
-      {{range .Actividad}}{{if .Pico}}<rect class="gpk" x="{{.X}}" y="0" width="{{.Ancho}}" height="100"></rect>{{end}}{{end}}
-      <polygon class="ga" points="{{.Relleno}}"></polygon>
-      {{if .ConPaquetes}}<polyline class="gp" points="{{.TrazoPaquetes}}" vector-effect="non-scaling-stroke"></polyline>{{end}}
-      <polyline class="gl" points="{{.Trazo}}" vector-effect="non-scaling-stroke"></polyline>
-      <!-- La zona sensible de cada día va ENCIMA y transparente: una línea no
-           tiene superficie que señalar, así que el <title> necesita una banda
-           propia o el rótulo al posar el cursor se pierde. -->
-      {{range .Actividad}}<rect class="gz" x="{{.X}}" y="0" width="{{.Ancho}}" height="100"><title>{{.Titulo}}</title></rect>{{end}}
-    </svg>
-    <div class="gre">{{range .Actividad}}<span>{{.Etiqueta}}</span>{{end}}</div>
-  </div>
 </section>
 
 <!-- LA TABLA DE LA PÁGINA: una fila por dirección con las TRES CAPAS en la

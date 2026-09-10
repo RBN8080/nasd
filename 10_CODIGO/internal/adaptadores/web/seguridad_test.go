@@ -1394,8 +1394,15 @@ func TestLaGraficaDibujaUnDiaConPaquetesYSinRechazos(t *testing.T) {
 	if !levanta {
 		t.Error("la línea de paquetes salió plana: el día del escaneo se sigue dibujando vacío")
 	}
-	if !strings.Contains(cuerpo, "3 paquetes · 0 rechazos") {
+	// CADA PANEL ROTULA LO SUYO desde que la gráfica se partió en dos marcos
+	// (2026-09-10): antes un solo <title> decía «3 paquetes · 0 rechazos»
+	// porque las dos capas compartían banda sensible. Ahora la banda de cada
+	// panel habla de su propia serie, y las dos tienen que estar.
+	if !strings.Contains(cuerpo, "· 3 paquetes") {
 		t.Error("el rótulo del día no dice cuántos paquetes hubo")
+	}
+	if !strings.Contains(cuerpo, "· 0 rechazos") {
+		t.Error("el rótulo del día no dice cuántos rechazos hubo")
 	}
 }
 
@@ -1408,8 +1415,16 @@ func TestSinSensorLaGraficaSigueTeniendoUnaSolaLinea(t *testing.T) {
 	if strings.Contains(cuerpo, `class="gp"`) {
 		t.Error("se pintó la capa de paquetes sin sensor instalado")
 	}
-	if strings.Contains(cuerpo, `class="lgd"`) {
-		t.Error("se pintó la leyenda de dos capas habiendo una sola")
+	// Y ENTONCES HAY UN SOLO PANEL. Aquí se comprobaba que no saliera la
+	// leyenda de dos capas; esa leyenda ya no existe —cada panel lleva el
+	// nombre de su serie encima—, así que la comprobación se había quedado sin
+	// nada que vigilar. Se ancla a lo que ahora significa «una sola línea»:
+	// un único marco, y que sea el de los rechazos.
+	if n := strings.Count(cuerpo, `class="grl"`); n != 1 {
+		t.Errorf("sin sensor tiene que haber un solo panel de gráfica; hay %d", n)
+	}
+	if !strings.Contains(cuerpo, "<b>Rechazos</b>") {
+		t.Error("el panel que queda no es el de rechazos")
 	}
 }
 

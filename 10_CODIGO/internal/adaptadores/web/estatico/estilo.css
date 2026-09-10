@@ -309,9 +309,21 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .cf .r{font-size:.61rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
 .cf.mk .n{color:var(--av);}
 
-/* Gráfico */
-.grc{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);padding:var(--e3);}
-.gre{display:flex;margin-top:6px;font-size:.56rem;color:var(--tx3);}
+/* Gráfico — un panel por serie, cada uno con su eje de valores a la izquierda.
+   La rejilla es lo que alinea las tres piezas: el eje de valores ocupa la
+   primera columna y la gráfica y el eje de días la segunda, así que los días
+   caen bajo el trazo y no bajo los números. */
+.grp{display:flex;flex-direction:column;gap:var(--e1);}
+.grh{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);}
+.grh b{font-size:.72rem;font-weight:600;}
+/* «.ms» estaba definido SOLO dentro de «.sch», así que aquí heredaba el cuerpo
+   de la página y «lineal · máx 22» salía del tamaño de un párrafo, gritando
+   más que el título del panel. Visto en el render. */
+.grh .ms{font-size:.66rem;color:var(--tx3);font-family:"DM Mono",monospace;}
+.grc{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
+  padding:var(--e2) var(--e3) var(--e3);
+  display:grid;grid-template-columns:46px minmax(0,1fr);align-items:start;}
+.gre{grid-column:2;display:flex;margin-top:6px;font-size:.56rem;color:var(--tx3);}
 @container (min-width:620px){.gre{font-size:.62rem;}}
 /* El eje va SIN hueco entre rótulos y con cada uno centrado en su franja: son
    las mismas doce franjas en las que la gráfica reparte los días, así que un
@@ -653,11 +665,11 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .rail > .gr:last-of-type{margin-bottom:auto;}
 .salir-rail .od{width:100%;}
 
-/* LA GRÁFICA DE ACTIVIDAD — UNA LÍNEA.
-   Eran barras y no comunicaban: sin eje de valores, la altura de una barra
-   solo se puede juzgar contra la de al lado. La línea dice la tendencia, que
-   es lo que se puede afirmar sin escala, y la cifra exacta la da el <title>
-   del día. Corrección pedida el 2026-08-31.
+/* LA GRÁFICA DE ACTIVIDAD — UNA LÍNEA POR PANEL, CON SU EJE DE VALORES.
+   Eran barras y no comunicaban: sin eje, la altura de una barra solo se puede
+   juzgar contra la de al lado. Se pasó a línea el 2026-08-31, y el 2026-09-10
+   llegó el eje que faltaba — con él, cada capa necesita su propio marco, y el
+   razonamiento entero está en grafica_seguridad.go.
 
    «vector-effect:non-scaling-stroke» NO ES OPCIONAL AQUÍ. El SVG se estira al
    ancho real con preserveAspectRatio="none", así que la transformación es
@@ -666,55 +678,48 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
    dibujaría una franja. Con el efecto, el grosor se mide en píxeles de
    pantalla y la deformación solo afecta a la POSICIÓN de los puntos, que es
    justo lo que se quiere. Por el mismo motivo no hay círculos en los vértices:
-   un <circle> saldría convertido en una elipse tumbada. */
-.grl{display:block;width:100%;height:88px;}
-@container (min-width:620px){.grl{height:112px;}}
+   un <circle> saldría convertido en una elipse tumbada.
+
+   LOS DOS ALTOS TIENEN QUE SER EL MISMO — el de «.grl» y el de «.gry» —, y por
+   eso van en la misma regla. El eje se dibuja en un SVG cuyo viewBox mide
+   46×112, exactamente lo que mide su caja, para que la escala sea 1:1 y el
+   texto no se deforme; si aquí se cambia el alto sin cambiar el viewBox de
+   grafica_seguridad.go (altoEje), los números dejan de coincidir con su
+   rejilla. */
+.grl,.gry{display:block;height:112px;}
+.grl{width:100%;}
+.gry{width:46px;}
+/* Los números del eje. Al ir en un SVG a escala 1:1, «px» aquí son unidades
+   del viewBox: 8 px de fuente son 8 unidades de las 112. */
+.gyt{fill:var(--tx3);font-family:"DM Mono",monospace;font-size:9px;
+  text-anchor:end;font-variant-numeric:tabular-nums;}
+/* La rejilla es RECESIVA: está para poder leer una altura, no para verse. Va
+   en el tono de las líneas de tabla, que es el más tenue de la paleta. */
+.grl .grj{stroke:var(--n4);stroke-width:1;}
+/* LA SERIE QUE SE LEE: un trazo limpio, sin relleno que lo emborrone. */
 .grl .gl{fill:none;stroke:var(--tx2);stroke-width:1.6;
   stroke-linejoin:round;stroke-linecap:round;}
-.grl .ga{fill:var(--n4);}
-/* LA CAPA DE PAQUETES: lo que el sensor vio pasar, y por eso es la que BORDEA
-   el área — la de rechazos se lee encima, limpia y continua.
+/* LA CAPA DE CONTEXTO: lo que el sensor vio pasar. Se dibuja como ÁREA con un
+   trazo más fino encima, y esa es toda su distinción respecto del panel de
+   abajo — que es un trazo suelto.
 
-   NO LLEVA COLOR PROPIO, y no es por ahorro: el único color de esta pantalla
-   es el ámbar de un ESTADO, y gastarlo en «esta es la otra serie» se lo
-   quitaría al que de verdad avisa (misma lección que la franja del pico, más
-   abajo). Se distingue por TRAZO —discontinuo y más fino, en el gris de lo
-   secundario— y no por tono, que es lo único que sigue funcionando para quien
-   no distingue colores y en una captura en blanco y negro.
+   ANTES ERA UNA LÍNEA DISCONTINUA, y tenía sentido mientras las dos capas
+   compartían marco: había que separarlas sin gastar color, porque el único
+   color de esta pantalla es el ámbar de un ESTADO. Con un panel por serie la
+   separación la da el propio marco, y una discontinua sobre su relleno se lee
+   peor que una continua. Lo que no cambia es el criterio de fondo: las dos
+   capas se distinguen por FORMA —área contra trazo— y no por tono, que es lo
+   único que sigue funcionando para quien no distingue colores y en una captura
+   en blanco y negro.
 
-   El primer intento fue solo un gris más apagado y se descartó MIRANDO la
-   página: a tamaño real las dos líneas se confundían, que es exactamente lo
-   que una leyenda de dos entradas no puede permitirse. */
-.grl .gp{fill:none;stroke:var(--tx3);stroke-width:1.2;stroke-dasharray:3 2;
+   NO LLEVA COLOR PROPIO por lo mismo de siempre: gastarlo aquí se lo quitaría
+   al que de verdad avisa. */
+.grl .gp{fill:none;stroke:var(--tx3);stroke-width:1.3;
   stroke-linejoin:round;stroke-linecap:round;}
-/* El día del pico se marca con su FRANJA y no con un punto de color: un punto
-   distinto sobre la línea se confunde con un vértice cualquiera, y la franja
-   además alinea el realce con el número del eje que hay debajo.
-
-   Y LA FRANJA ES NEUTRA, NO ÁMBAR. Nació en ámbar el 2026-08-31, pero ese
-   binario no llegó al nodo hasta el 2026-09-04 y el responsable la vio por
-   primera vez ese día: «un cambio de tonalidad a ámbar ligerísimo que no fue
-   solicitado». Tenía razón en lo que importa — el ámbar de esta consola es un
-   ESTADO (--av, el mismo del icono de la barra y del semáforo), y gastarlo en
-   «este es el día más alto» le quita significado al día que de verdad avise.
-   El realce se queda, porque alinea el pico con su número del eje; lo que se
-   va es el color prestado. Mismo peso visual con el gris de la propia
-   gráfica. */
-.grl .gpk{fill:var(--tx2);opacity:.14;}
+.grl .ga{fill:var(--n4);}
 /* La zona sensible del día. «transparent» y no «none»: con fill:none el <rect>
    deja de recibir el puntero y el <title> no llega a salir nunca. */
 .grl .gz{fill:transparent;}
-
-/* La leyenda de las dos capas. Solo se pinta cuando hay dos trazos (ver
-   seguridad.html); con uno, el rótulo de la sección ya dice de qué habla.
-   Los trocitos de línea son bordes de un <i> vacío y no caracteres: así son
-   la MISMA geometría que la gráfica —grosor y color salen de las mismas
-   variables— y no un dibujo parecido hecho con tipografía. */
-.lgd{display:flex;flex-wrap:wrap;gap:var(--e2);margin-bottom:var(--e1);
-  font-size:.7rem;color:var(--tx3);}
-.lgd span{display:inline-flex;align-items:center;gap:var(--e0);}
-.lgd i{width:16px;border-top:2px dashed var(--tx3);}
-.lgd .lr{border-top:2px solid var(--tx2);}
 
 /* La barra de progreso de una subida a medias. */
 .prog{display:block;width:100%;height:5px;background:var(--n3);}
