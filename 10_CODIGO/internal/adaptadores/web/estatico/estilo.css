@@ -66,6 +66,32 @@
   --tx:#e9ecf1; --tx2:#868d99; --tx3:#5b616b;
   --ac:#b9cdea; --ac2:#d9e5f6; --acT:#b9cdea14; --acB:#b9cdea40;
   --ok:#3fb950; --av:#d29922; --fa:#f85149; --nada:#6b7280;
+
+  /* LA LINEA DE TABLA TIENE TOKEN PROPIO, y no es un capricho de nomenclatura.
+     Hasta el 2026-09-09 las seis tablas separaban sus filas con «--n4», el
+     mismo tono que dibuja el borde del rail, el de la barra superior y el de
+     cada tarjeta. Ahi funciona: son bordes de PIEZA, uno por elemento, y hay
+     que verlos. Dentro de una tabla no son piezas — son veinte trazos
+     apilados, y a ese ritmo el mismo hilo deja de separar filas y empieza a
+     dibujar una rejilla. Reportado sobre captura de /estado, que es donde
+     primero se nota: sus filas miden 42.5 px contra 46 de Archivos y 65 de
+     Cuentas, y ademas es el unico modulo que pinta una linea por rotulo de
+     grupo. Veinte lineas por pantalla frente a doce.
+     El valor es «--n3», que ya estaba en el vocabulario: la mitad justa del
+     salto contra el fondo, visible sin marcar. Se separa en token porque el
+     borde de tabla y el borde de pieza dejan de ser la misma decision — quien
+     retoque uno no debe arrastrar el otro sin querer.
+
+     ALCANCE: TODA SEPARACION ENTRE RENGLONES DE UNA LISTA, en las once
+     paginas. No es solo la tabla — el criterio es el papel que hace la
+     linea, no la clase que la dibuja. Lo lleva «.th», «.fl» y «.gh» de las
+     seis tablas; «.dp», que apila los datos del panel de detalle; las
+     carpetas de Mover y las subidas en curso de Archivos. Lo que sigue en
+     «--n4» es lo que dibuja el CONTORNO de una pieza —el rail, la barra
+     superior, la tira de estado, las pestañas, las tarjetas y los campos—:
+     ahi la linea no separa renglones, cierra un objeto, y bajarle el tono
+     lo disolveria contra el fondo. */
+  --lnT:var(--n3);
 }
 
 *{box-sizing:border-box;}
@@ -284,7 +310,7 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .th{display:none;}
 .fls{display:flex;flex-direction:column;gap:2px;}
 .gh{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);
-  margin-top:var(--e2);padding:var(--e1) var(--e2) 5px;border-bottom:1px solid var(--n4);
+  margin-top:var(--e2);padding:var(--e1) var(--e2) 5px;border-bottom:1px solid var(--lnT);
   font-size:.62rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
 .gh:first-child{margin-top:0;}
 .notas{margin-top:auto;padding-top:var(--e4);display:flex;flex-direction:column;gap:3px;
@@ -341,7 +367,7 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .ct2 .lapso{white-space:normal;}
 
 @container (min-width:1100px){
-  .th{display:grid;gap:var(--e2);padding:0 var(--e2) 5px;border-bottom:1px solid var(--n4);}
+  .th{display:grid;gap:var(--e2);padding:0 var(--e2) 5px;border-bottom:1px solid var(--lnT);}
   .th > *{min-width:0;}
   .th span,.th button,.th a{color:var(--tx3);font-family:inherit;font-size:.6rem;letter-spacing:.1em;
     text-transform:uppercase;font-weight:600;background:none;border:0;padding:0;text-align:left;
@@ -349,7 +375,7 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
   .th button:hover,.th a:hover{color:var(--tx);}
   .th button.act,.th a.act{color:var(--ac2);}
   .fl{align-items:start;gap:var(--e2);padding:9px var(--e2);background:transparent;
-    border-radius:0;border-bottom:1px solid var(--n4);border-left:2px solid transparent;}
+    border-radius:0;border-bottom:1px solid var(--lnT);border-left:2px solid transparent;}
   .fl:hover{background:var(--n2);}
   .fl[aria-selected=true],.fl.sel{border-left-color:var(--ac);}
   .cl>.et{display:none;}
@@ -505,7 +531,7 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .dip{font-family:"DM Mono",monospace;font-size:.71rem;color:var(--ac2);word-break:break-all;}
 .db{display:flex;flex-direction:column;gap:5px;min-width:0;}
 .db .h{font-size:.58rem;letter-spacing:.13em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
-.dp{display:flex;justify-content:space-between;gap:var(--e2);font-size:.74rem;padding:3px 0;border-bottom:1px solid var(--n4);}
+.dp{display:flex;justify-content:space-between;gap:var(--e2);font-size:.74rem;padding:3px 0;border-bottom:1px solid var(--lnT);}
 .dp span{color:var(--tx3);}
 .dp b{font-weight:500;font-family:"DM Mono",monospace;font-size:.71rem;text-align:right;}
 .dsn{display:flex;flex-direction:column;gap:2px;}
@@ -797,7 +823,7 @@ input::placeholder{color:var(--tx3);}
 /* Lista de carpetas del navegador de RF-17 */
 .carpetas{list-style:none;margin:0;padding:0;border:1px solid var(--n4);
   border-radius:var(--r2);max-height:45vh;overflow-y:auto;background:var(--n2);}
-.carpetas li + li{border-top:1px solid var(--n4);}
+.carpetas li + li{border-top:1px solid var(--lnT);}
 .carpetas a{display:flex;align-items:center;gap:var(--e2);padding:9px var(--e2);
   font-size:.82rem;color:var(--tx2);}
 .carpetas a:hover{background:var(--n3);color:var(--tx);}
@@ -852,7 +878,7 @@ input::placeholder{color:var(--tx3);}
 #progreso{list-style:none;margin:var(--e2) 0 0;padding:0;display:flex;
   flex-direction:column;gap:var(--e0);}
 #progreso li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--e2);
-  align-items:center;padding:var(--e1) 0;border-bottom:1px solid var(--n4);font-size:.74rem;}
+  align-items:center;padding:var(--e1) 0;border-bottom:1px solid var(--lnT);font-size:.74rem;}
 #progreso li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #progreso button{background:none;border:1px solid var(--n4);border-radius:var(--r1);
   color:var(--tx2);font-family:inherit;font-size:.68rem;padding:2px 7px;cursor:pointer;}
