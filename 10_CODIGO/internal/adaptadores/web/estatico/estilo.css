@@ -453,8 +453,18 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
      porque es una inferencia sobre alguien. Con las dos cosas en la misma celda
      el color acababa calificando a la sospecha.
      La columna del motivo cabe en 1fr desde que las etiquetas de señal son
-     nombres y no frases: «Operador sin acceso previo» mide la mitad que el
-     «Operador desde el que nadie ha entrado nunca» que había antes.
+     nombres y no frases: las nuevas miden aproximadamente la mitad que las
+     oraciones que había antes.
+
+     NO SE CITA AQUÍ NINGUNA ETIQUETA RETIRADA, y no es manía. Esta hoja viaja
+     ENTERA dentro del binario por embed, comentarios incluidos, así que todo lo
+     que se escriba aquí aparece en un «strings /usr/local/bin/nasd». Citar el
+     rótulo viejo dejaría un señuelo permanente: quien un día audite el binario
+     para comprobar si aquel texto se retiró de verdad encontraría una
+     coincidencia y no sabría si es una etiqueta viva o esta nota. Se comprobó
+     el 2026-09-10 sobre el binario ya desplegado, y pasó: el rótulo retirado
+     seguía saliendo. Es la misma regla que _marco.html dejó escrita al retirar
+     el buscador.
      «Frenados» lleva 172 px y no 128 porque su celda no es un número: es el
      número MÁS «hasta 2026-09-11 06:50» en monoespaciada. Con 128 px la fecha
      se partía en dos renglones y estiraba la fila entera — visto en el render,
