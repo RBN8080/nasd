@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -194,13 +195,53 @@ func (s *Servidor) flujoDeCuentas(w http.ResponseWriter, r *http.Request) {
 	servirFlujo(s, w, r, s.cuentas)
 }
 
-// servirFlujo es la fontanería de SSE, común a los dos flujos: cabeceras,
-// suscripción, y un bucle que escribe marcos hasta que el cliente se va.
+// servirFlujo sirve un flujo alimentado por un MUESTREADOR COMPARTIDO: todos
+// los espectadores reciben el mismo marco. Es lo que quieren /estado y
+// /administracion, donde lo que se publica no depende de quién mira.
 //
 // VA COMO FUNCIÓN Y NO COMO MÉTODO porque los métodos de Go no admiten
 // parámetros de tipo propios. No hay ninguna intención de diseño detrás de esa
 // forma; es la única que el lenguaje permite.
 func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *muestreador[T]) {
+	emitirFlujo(s, w, r, func() (func(context.Context) (T, bool), func()) {
+		marcos, cancelar := m.suscribir()
+		return func(ctx context.Context) (T, bool) {
+			select {
+			case <-ctx.Done():
+				var cero T
+				return cero, false
+			case marco := <-marcos:
+				return marco, true
+			}
+		}, cancelar
+	})
+}
+
+// emitirFlujo es la fontanería de SSE, y SOLO la fontanería: cabeceras, plazo
+// de escritura, revalidación de la sesión en cada marco y el formato del
+// evento. De dónde salen los marcos no es asunto suyo.
+//
+// # POR QUÉ SE SEPARÓ DEL MUESTREADOR — 2026-09-10
+//
+// Hasta hoy esto vivía dentro de servirFlujo, pegado a la suscripción, porque
+// los dos flujos que había se alimentaban igual. El de /seguridad no puede:
+// su marco es función del FILTRO de quien mira —origen, ventana y motivo viajan
+// en la URL—, y un muestreador reparte el mismo marco a todos los oyentes. Con
+// el muestreador, dos pestañas con filtros distintos verían las cifras de la
+// otra.
+//
+// La alternativa era copiar estas sesenta líneas, y es justo lo que ADR-0056 se
+// negó a hacer cuando /administracion necesitó lo mismo que /estado: esta es la
+// parte delicada del programa —los dos peores defectos del proyecto fueron
+// carreras— y una copia sería una segunda versión de la revalidación de sesión
+// y del plazo de inactividad, envejeciendo por separado.
+//
+// «abrir» se llama DESPUÉS de las cabeceras y del primer Flush, no antes: si el
+// ResponseWriter no deja vaciar no hay flujo posible, y no tiene sentido haber
+// arrancado una suscripción ni un temporizador para nada.
+func emitirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request,
+	abrir func() (siguiente func(context.Context) (T, bool), cerrar func()),
+) {
 	rc := http.NewResponseController(w)
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -216,23 +257,22 @@ func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *
 		return
 	}
 
-	marcos, cancelar := m.suscribir()
-	defer cancelar()
+	siguiente, cerrar := abrir()
+	defer cerrar()
 
 	// EL PLAZO POR ACTIVIDAD DE ADR-0026 SE APLICA IGUAL QUE EN UNA DESCARGA, y
 	// hay que comprobar que no corta esto: es un plazo de 60 s que se RENUEVA
-	// con cada escritura, y aquí se escribe cuatro veces por segundo. Una
-	// conexión viva lo renueva 240 veces antes de acercarse al plazo; una
+	// con cada escritura, y aquí se escribe varias veces por segundo. Una
+	// conexión viva lo renueva muchas veces antes de acercarse al plazo; una
 	// conexión muerta deja de aceptar escrituras y el flujo se cierra solo, que
 	// es justo lo que se quiere. Verificado con TestElFlujoSobreviveAlPlazo.
 	//
 	// SE PASA nil COMO TOCADOR, Y ES UNA DECISIÓN, NO UN OLVIDO (ADR-0059).
-	// Este envoltorio escribe cuatro veces por segundo; si cada una avisara a
-	// la sesión, una pestaña de /estado o /administracion abierta y olvidada
-	// haría que la sesión NUNCA caducara por inactividad, que es justo el
-	// requisito que ADR-0059 existe para cumplir. Un flujo abierto no es
-	// actividad de nadie — la caducidad de esta conexión concreta la impone
-	// el bucle de abajo, comprobando la sesión en cada marco.
+	// Este envoltorio escribe solo; si cada escritura avisara a la sesión, una
+	// pestaña abierta y olvidada haría que la sesión NUNCA caducara por
+	// inactividad, que es justo el requisito que ADR-0059 existe para cumplir.
+	// Un flujo abierto no es actividad de nadie — la caducidad de esta conexión
+	// concreta la impone el bucle de abajo, comprobando la sesión en cada marco.
 	escribir := escrituraConPlazo(w, s.plazoInactividad, nil)
 	cod := json.NewEncoder(escribir)
 
@@ -247,36 +287,34 @@ func servirFlujo[T any](s *Servidor, w http.ResponseWriter, r *http.Request, m *
 	}
 
 	for {
-		select {
-		case <-r.Context().Done():
+		marco, hay := siguiente(r.Context())
+		if !hay {
 			// El espectador cerró la pestaña o se fue la red. Nada que
 			// registrar: es el final normal de toda conexión de este tipo.
 			return
-		case marco := <-marcos:
-			// LA SESIÓN SE COMPRUEBA EN CADA MARCO — ADR-0059. Sin esto, un
-			// flujo abierto antes de que la sesión caducara por inactividad
-			// seguiría entregando telemetría del nodo entero indefinidamente:
-			// la puerta opaca solo se ejecuta al ABRIR la conexión SSE, y esta
-			// puede vivir horas. Valida() es una consulta pura —no cuenta
-			// como actividad—, así que comprobar aquí no alarga la sesión
-			// que se está comprobando.
-			if !s.sesiones.Valida(testigo) {
-				return
-			}
-			if _, err := escribir.Write([]byte("data: ")); err != nil {
-				return
-			}
-			// Encode ya escribe el salto de línea final; el segundo cierra el
-			// evento, que es lo que el formato SSE exige para entregarlo.
-			if err := cod.Encode(marco); err != nil {
-				return
-			}
-			if _, err := escribir.Write([]byte("\n")); err != nil {
-				return
-			}
-			if err := rc.Flush(); err != nil {
-				return
-			}
+		}
+		// LA SESIÓN SE COMPRUEBA EN CADA MARCO — ADR-0059. Sin esto, un flujo
+		// abierto antes de que la sesión caducara por inactividad seguiría
+		// entregando telemetría del nodo entero indefinidamente: la puerta
+		// opaca solo se ejecuta al ABRIR la conexión SSE, y esta puede vivir
+		// horas. Valida() es una consulta pura —no cuenta como actividad—, así
+		// que comprobar aquí no alarga la sesión que se está comprobando.
+		if !s.sesiones.Valida(testigo) {
+			return
+		}
+		if _, err := escribir.Write([]byte("data: ")); err != nil {
+			return
+		}
+		// Encode ya escribe el salto de línea final; el segundo cierra el
+		// evento, que es lo que el formato SSE exige para entregarlo.
+		if err := cod.Encode(marco); err != nil {
+			return
+		}
+		if _, err := escribir.Write([]byte("\n")); err != nil {
+			return
+		}
+		if err := rc.Flush(); err != nil {
+			return
 		}
 	}
 }

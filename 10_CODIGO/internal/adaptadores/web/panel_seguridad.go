@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,11 +23,17 @@ import (
 //
 // NO LLEVA conAlmacen: no toca ni un archivo. Todo sale del anillo en memoria.
 //
-// NO LLEVA FLUJO EN VIVO, y es deliberado —al contrario que /estado
-// (ADR-0051) y /administracion (ADR-0056)—. Un panel forense se lee, se
-// filtra y se piensa; refrescarlo cuatro veces por segundo movería las filas
-// bajo el cursor justo mientras se intenta leer una. Se recarga a mano, que
-// es lo que uno hace de todos modos al cambiar un filtro.
+// LLEVA FLUJO EN VIVO DESDE EL 2026-09-10 — /seguridad/flujo, ver
+// vivo_seguridad.go. Aquí ponía que NO lo llevaba y que era deliberado: «un
+// panel forense se lee, se filtra y se piensa; refrescarlo cuatro veces por
+// segundo movería las filas bajo el cursor justo mientras se intenta leer una».
+//
+// Esa frase sigue siendo cierta en su parte importante, y por eso el flujo NO
+// manda las tablas: refresca las cinco cifras de «Volumen observado» y el
+// rótulo de conexión, y de la contención solo el recuento, con el que avisa de
+// que hay algo nuevo sin mover nada. Lo que cambió es la conclusión —el
+// responsable pidió ver los números moverse mientras mira— y el ritmo: dos
+// segundos, no los 250 ms de /estado.
 
 // ventanaPorOmision es el «últimas 24 horas» que pidió el responsable.
 const ventanaPorOmision = 24 * time.Hour
@@ -336,6 +343,10 @@ type vistaSeguridad struct {
 	// SinContener es la frase que nombra ÚNICAMENTE los grupos de contención que
 	// están vacíos, o "" si los tres tienen algo. Ver fraseDeVacios.
 	SinContener string
+	// Contencion es cuántas filas se pintaron en «Contención activa». Viaja a
+	// la página como data-contencion para que el flujo en vivo pueda comparar y
+	// avisar de que ya no es lo que se está viendo. Ver marcoSeguridad.
+	Contencion int
 	// TotalHallazgos son los sucesos vistos desde siempre, que puede ser mucho
 	// mayor que las rutas distintas que se listan: una sola ruta expuesta y
 	// pedida mil veces son mil sucesos y una fila.
@@ -525,10 +536,23 @@ func fraseDeVacios(apartados, bloqueos, hallazgos int) string {
 	return strings.ToUpper(frase[:1]) + frase[1:] + "."
 }
 
-func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-
-	horas := ventanaPorOmision / time.Hour
+// filtroDeSeguridad interpreta los parámetros de la URL del panel: la ventana,
+// el motivo y la red de origen.
+//
+// # VIVE APARTE PARA QUE LA PÁGINA Y SU FLUJO NO PUEDAN DISCREPAR — 2026-09-10
+//
+// Estaba escrito dentro de verSeguridad, y ahí se quedaba mientras el panel era
+// lo único que lo necesitaba. Desde que /seguridad/flujo refresca las cifras en
+// vivo hay DOS sitios que tienen que entender «?red=&horas=168» exactamente
+// igual: copiarlo sería crear dos criterios para la misma pregunta, y el día
+// que uno de los dos cambiara, el flujo estaría refrescando las cifras de otra
+// vista sin que nada fallara a gritos. Es la misma regla con la que el rótulo
+// del filtro se compone de las MISMAS listas que pintan los desplegables.
+//
+// Devuelve también las horas y la red en crudo porque de ellas salen las
+// opciones de los desplegables, que el flujo no necesita y la página sí.
+func filtroDeSeguridad(q url.Values) (f seguridad.Filtro, horas time.Duration, redElegida string) {
+	horas = ventanaPorOmision / time.Hour
 	if v := q.Get("horas"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			horas = time.Duration(n)
@@ -539,7 +563,7 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// servían; el tercero porque filtraba por una columna que el panel no
 	// enseña —la gravedad solo se ve como el color de una fila, y el mapa
 	// motivo→gravedad vive únicamente en Motivo.Gravedad()—.
-	var f seguridad.Filtro
+	//
 	// horas=0 significa «todo lo guardado»: Desde queda en el cero de
 	// time.Time, que el anillo interpreta como sin límite inferior.
 	if horas > 0 {
@@ -566,13 +590,19 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// siempre red= (vacío en «Cualquier origen»), así que elegir «todo» se
 	// distingue de no haber elegido nada. Consecuencia buscada: «Quitar
 	// filtros», que no manda campos, devuelve a Internet-solo.
-	redElegida := seguridad.RedInternet.String()
+	redElegida = seguridad.RedInternet.String()
 	if q.Has("red") {
 		redElegida = q.Get("red")
 	}
 	if red, ok := redDesde(redElegida); ok {
 		f.Red = &red
 	}
+	return f, horas, redElegida
+}
+
+func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f, horas, redElegida := filtroDeSeguridad(q)
 
 	eventos := s.seguridad.Filtrados(f)
 	origenes := seguridad.PorOrigen(eventos)
@@ -642,6 +672,7 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		Bloqueos:         s.filasDeBloqueo(bloqueos),
 		Hallazgos:        hallazgos,
 		SinContener:      fraseDeVacios(len(apartados), len(bloqueos), len(hallazgos)),
+		Contencion:       len(apartados) + len(bloqueos) + len(hallazgos),
 		TotalHallazgos:   s.hallazgos.Total(),
 		CierresFallidos:  s.cierresFallidos.Load(),
 		TopeSondas:       seguridad.TopeSondas,

@@ -1451,22 +1451,42 @@ func TestElResumenSigueContandoSoloLosPaquetesDeLaVentana(t *testing.T) {
 	conSensor(t, s, time.Now().Add(-30*time.Hour), time.Now().Add(-time.Hour))
 
 	cuerpo := panelSeguridad(t, s, "")
-	// EL ANCLA ES EL RÓTULO DEL CUADRO, NO LA PALABRA «Paquetes» SUELTA.
+	// EL ANCLA ES «data-cifra», NO LA PALABRA «Paquetes» SUELTA.
 	//
 	// Buscaba la primera aparición de «Paquetes» y miraba 200 bytes atrás. La
-	// palabra sale además en el «aria-label» de la gráfica y en su leyenda, así
-	// que la prueba dependía de que la banda de cifras siguiera siendo lo primero
-	// de la página: al reordenar el panel el 2026-09-10 habría empezado a medir
-	// el gráfico y a fallar sin que nada estuviera mal. Con el rótulo completo,
-	// el sitio es uno y solo uno vaya donde vaya la banda.
-	const rotulo = `<div class="q">Paquetes</div>`
-	i := strings.Index(cuerpo, rotulo)
+	// palabra sale además en el «aria-label» de la gráfica, así que la prueba
+	// dependía de que la banda de cifras siguiera siendo lo primero de la
+	// página: al reordenarla el 2026-09-10 habría empezado a medir el gráfico y
+	// a fallar sin que nada estuviera mal.
+	//
+	// Ahora se apoya en el mismo atributo del que se agarra el flujo en vivo, y
+	// eso le da una segunda propiedad: si alguien retira el ancla, esta prueba
+	// se entera — y el refresco en vivo de ese cuadro depende de ella.
+	if valor := valorDeCifra(t, cuerpo, "paquetes"); valor != "1" {
+		t.Errorf("la cifra de la ventana es %q y tenía que ser 1", valor)
+	}
+}
+
+// valorDeCifra saca el número que la banda «Volumen observado» pinta en un
+// cuadro, buscándolo por su ancla del flujo en vivo.
+func valorDeCifra(t *testing.T, cuerpo, clave string) string {
+	t.Helper()
+	i := strings.Index(cuerpo, `data-cifra="`+clave+`"`)
 	if i < 0 {
-		t.Fatal("la banda de cifras no tiene el cuadro de paquetes")
+		t.Fatalf("la banda no tiene el cuadro %q", clave)
 	}
-	if !strings.Contains(cuerpo[max(0, i-200):i], `<div class="n mono">1</div>`) {
-		t.Errorf("la cifra de la ventana no es 1:\n%s", cuerpo[max(0, i-200):i])
+	const ancla = `class="n mono cifra">`
+	resto := cuerpo[i:]
+	j := strings.Index(resto, ancla)
+	if j < 0 {
+		t.Fatalf("el cuadro %q no lleva el ancla «.cifra» que el flujo necesita", clave)
 	}
+	resto = resto[j+len(ancla):]
+	k := strings.Index(resto, "<")
+	if k < 0 {
+		t.Fatalf("el cuadro %q no cierra", clave)
+	}
+	return resto[:k]
 }
 
 // LA FRASE DE «CONTENCIÓN ACTIVA» NOMBRA SOLO LO QUE ESTÁ VACÍO, y esa es toda

@@ -634,11 +634,18 @@ func (s *Servidor) Rutas() http.Handler {
 	// /administracion, y aquí el motivo es aún más fuerte: publica las
 	// direcciones de origen de todo el que ha tocado el nodo.
 	//
-	// UNA SOLA RUTA Y NINGÚN FLUJO, al contrario que las dos anteriores: no
-	// hay nada que cerrar «por la puerta de al lado» (D-21) porque no existe
-	// una segunda vía que publique lo mismo. Si algún día se le añade flujo,
-	// entra aquí envuelto igual y el mismo día.
+	// YA TIENE FLUJO, DESDE EL 2026-09-10. Aquí ponía «una sola ruta y ningún
+	// flujo… si algún día se le añade, entra aquí envuelto igual y el mismo
+	// día», y ese día llegó: el responsable pidió que el panel se refrescara
+	// solo, como ya hace /estado. Entra envuelto igual, como estaba escrito.
+	//
+	// SIN soloDesdeDentro, como su página y por la misma razón: las acciones de
+	// este panel se pensaron para poder usarse desde fuera de casa. Cerrar el
+	// flujo más que la página no protegería nada —publica un subconjunto de lo
+	// que la página ya entrega— y sí rompería el refresco justo cuando se está
+	// mirando desde el túnel.
 	protegido.HandleFunc("GET /seguridad", s.soloSuperusuario(s.verSeguridad))
+	protegido.HandleFunc("GET /seguridad/flujo", s.soloSuperusuario(s.flujoDeSeguridad))
 	// La primera ACCIÓN de este panel: soltar a quien el nodo apartó solo.
 	// No lleva soloDesdeDentro a propósito —ver soltarApartado—: es reversible
 	// y su caso de uso es justo el de alguien que está fuera de casa.

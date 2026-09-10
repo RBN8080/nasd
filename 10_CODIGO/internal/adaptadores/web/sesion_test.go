@@ -224,6 +224,10 @@ func TestSinSesionTodoResponde401(t *testing.T) {
 		// Y el panel de seguridad, que publica las direcciones de origen de
 		// todo el que ha tocado el nodo.
 		{"GET", "/seguridad"},
+		// Y su flujo en vivo (2026-09-10), por el mismo argumento que los dos
+		// de arriba: publica un subconjunto de lo que la página entrega, y de
+		// forma continua. Entra el mismo día que nace.
+		{"GET", "/seguridad/flujo"},
 	}
 	for _, c := range rutas {
 		w := httptest.NewRecorder()
