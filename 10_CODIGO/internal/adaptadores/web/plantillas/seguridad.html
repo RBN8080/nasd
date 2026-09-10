@@ -9,6 +9,12 @@
      una línea de JavaScript (ADR-0027). */}}
 <input class="ctl" type="checkbox" id="f-abre"{{if .FiltroAbierto}} checked{{end}}>
 {{template "marco-abre" .}}
+{{/* El rótulo de conexión, en la misma línea del título, igual que en
+     /estado. Lo enciende seguridad.js al conectar el flujo y NACE OCULTO A
+     PROPÓSITO: sin JavaScript esta página no se refresca sola, y un cartel que
+     dijera «en línea» sobre una foto congelada sería justo la clase de
+     indicador que miente que 00_RECTOR.md §12.5 lleva años corrigiendo. */}}
+<span id="latido" class="p p-na" hidden></span>
 {{template "marco-cabeza" .}}
 
 <!-- «Estado», «Cuentas» y «Salir» ya no viven aquí (ADR-0075): son navegación
@@ -194,6 +200,17 @@
        (ver fraseDeVacios). Si aparece un bloqueo, su trozo de la frase
        desaparece con él; si aparecen los tres, la frase entera desaparece. -->
   {{if .SinContener}}<p class="nota">{{.SinContener}}</p>{{end}}
+
+  <!-- EL AVISO DE QUE ESTO YA NO ES LO QUE SE ESTÁ VIENDO. Las tablas de
+       arriba NO se refrescan solas, y es deliberado: mover filas bajo el cursor
+       mientras alguien va a pulsar «Soltar» es peor que no moverlas (el mismo
+       criterio que en /administracion). Lo que sí puede hacer el flujo es
+       CONTAR, y decir que hay algo nuevo sin decidir por nadie.
+       «data-contencion» lleva cuántas filas se pintaron; seguridad.js compara
+       con lo que llega y descubre este párrafo cuando dejan de coincidir. -->
+  <p class="nota nvo" id="contencion-nueva" data-contencion="{{.Contencion}}" hidden>
+    Ha cambiado la contención activa desde que se abrió esta página. Recárguela para verla.
+  </p>
 </section>
 
 <!-- VOLUMEN OBSERVADO — UNA SOLA BANDA, Y TODAS EN LA MISMA BASE DE TIEMPO.
@@ -224,12 +241,17 @@
          informa, y encima se lee como un dato distinto. -->
 <section class="sc">
   <div class="sch"><h2>Volumen observado</h2><span class="ms">{{.FiltroActivo}}</span></div>
+  <!-- «data-cifra» es el ANCLA del flujo en vivo, no un rótulo: seguridad.js
+       opera por ella sobre «.cifra» y no toca nada más de la banda. Si cambia
+       aquí sin cambiar allí, el cuadro deja de refrescarse y no falla nada a
+       gritos — mismo contrato que data-clave en /estado y data-usuario en
+       /administracion. Los subtítulos NO viajan en el flujo: no cambian. -->
   <div class="esc esc-5">
-    <div class="pl"><div class="n mono">{{if .HayToques}}{{.Toques}}{{else}}—{{end}}</div><div class="t"><div class="q">Paquetes</div><div class="d">{{if .HayToques}}nas-sensor{{else}}Sin sensor instalado{{end}}</div></div></div>
-    <div class="pl"><div class="n mono">{{.Conexiones}}</div><div class="t"><div class="q">Conexiones</div><div class="d">Aceptadas en TCP</div></div></div>
-    <div class="pl"><div class="n mono">{{.Resumen.Eventos}}</div><div class="t"><div class="q">Rechazos</div><div class="d">{{if .SinFiltroDeRed}}{{.Resumen.DesdeFuera}} desde Internet{{else}}Por nasd{{end}}</div></div></div>
-    <div class="pl"><div class="n mono">{{.Resumen.IPsUnicas}}</div><div class="t"><div class="q">Direcciones</div><div class="d">Distintas</div></div></div>
-    <div class="pl"><div class="n mono">{{.Resumen.AutenticacionFallida}}</div><div class="t"><div class="q">Contraseñas</div><div class="d">Incorrectas</div></div></div>
+    <div class="pl" data-cifra="paquetes"><div class="n mono cifra">{{if .HayToques}}{{.Toques}}{{else}}—{{end}}</div><div class="t"><div class="q">Paquetes</div><div class="d">{{if .HayToques}}nas-sensor{{else}}Sin sensor instalado{{end}}</div></div></div>
+    <div class="pl" data-cifra="conexiones"><div class="n mono cifra">{{.Conexiones}}</div><div class="t"><div class="q">Conexiones</div><div class="d">Aceptadas en TCP</div></div></div>
+    <div class="pl" data-cifra="rechazos"><div class="n mono cifra">{{.Resumen.Eventos}}</div><div class="t"><div class="q">Rechazos</div><div class="d">{{if .SinFiltroDeRed}}{{.Resumen.DesdeFuera}} desde Internet{{else}}Por nasd{{end}}</div></div></div>
+    <div class="pl" data-cifra="direcciones"><div class="n mono cifra">{{.Resumen.IPsUnicas}}</div><div class="t"><div class="q">Direcciones</div><div class="d">Distintas</div></div></div>
+    <div class="pl" data-cifra="contrasenas"><div class="n mono cifra">{{.Resumen.AutenticacionFallida}}</div><div class="t"><div class="q">Contraseñas</div><div class="d">Incorrectas</div></div></div>
   </div>
 </section>
 
@@ -570,6 +592,7 @@
 {{end}}
 
 {{template "marco-cierra" .}}
+<script src="/estatico/seguridad.js"></script>
 </body>
 </html>
 {{end}}

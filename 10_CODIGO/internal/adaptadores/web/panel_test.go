@@ -42,6 +42,10 @@ func TestSoloElSuperusuarioAlcanzaLaAdministracion(t *testing.T) {
 		// extremos que cambian algo. Aquí el motivo es más fuerte que en la
 		// administración de cuentas: publica de dónde se conecta cada quien.
 		{"GET", "/seguridad"},
+		// Y su flujo en vivo. No hace falta cancelar el contexto como en
+		// acceso_test: la envoltura rechaza a un usuario normal ANTES de entrar
+		// en el bucle de marcos, así que la petición vuelve sola.
+		{"GET", "/seguridad/flujo"},
 	} {
 		r := httptest.NewRequest(c.metodo, c.ruta, nil)
 		r.AddCookie(deJuan)

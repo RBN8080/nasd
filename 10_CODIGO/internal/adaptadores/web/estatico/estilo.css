@@ -309,6 +309,15 @@ body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .cf .r{font-size:.61rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
 .cf.mk .n{color:var(--av);}
 
+/* EL AVISO DE QUE LO QUE SE ESTÁ VIENDO YA NO ES LO QUE HAY. Es una nota, no
+   una alarma: el nodo no ha fallado, solo ha cambiado algo mientras la página
+   estaba quieta. Lleva la barra de acento a la izquierda —el mismo recurso de
+   «.msg» y «.aviso»— para que no se lea como una más de las notas grises del
+   pie, y nace oculta: sin JavaScript nunca aparece, porque sin JavaScript
+   tampoco hay nada que la contradiga. */
+.nota.nvo{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ac);
+  border-radius:var(--r2);padding:var(--e2) var(--e3);color:var(--ac2);}
+
 /* Gráfico — un panel por serie, cada uno con su eje de valores a la izquierda.
    La rejilla es lo que alinea las tres piezas: el eje de valores ocupa la
    primera columna y la gráfica y el eje de días la segunda, así que los días

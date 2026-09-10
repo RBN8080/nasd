@@ -92,9 +92,9 @@ func comprimible(tipo string) bool {
 //
 // # POR QUÉ NO ES EL SUBÁRBOL ENTERO
 //
-// Porque /acceso necesita dos archivos y el directorio tiene siete. Los otros
-// cinco —subida.js, cuentas.js, estado.js, menus.js, visor.js— solo existen
-// para páginas que un desconocido no puede abrir, y publicarlos le entrega
+// Porque /acceso necesita dos archivos y el directorio tiene más. Los demás
+// —subida.js, cuentas.js, estado.js, seguridad.js, menus.js, visor.js— solo
+// existen para páginas que un desconocido no puede abrir, y publicarlos entrega
 // gratis la huella del programa: qué funciones tiene, qué versión es y qué
 // endpoints llama, todo sin autenticarse. Un asset del panel accesible en
 // anónimo convierte /estatico/ en la puerta lateral de la que la puerta
