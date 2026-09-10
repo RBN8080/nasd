@@ -112,6 +112,21 @@ echo
 dato "RSS en reposo: $(( $(rss) / 1024 )) MB   (RNF-02)"
 echo
 
+# HSTS: POR AQUÍ NO DEBE SALIR — ADR-0086.
+#
+# Este script va por HTTP contra la LAN ($BASE es http://), y la cabecera es
+# condicional a r.TLS. Que ESTÉ por el 443 lo comprueba 09_verificar_operacion.sh;
+# lo que se comprueba aquí es la otra mitad, que es la que nadie miraría: si
+# alguien la deja incondicional, por esta vía se estaría afirmando una garantía
+# que la LAN no da —el motivo por el que ADR-0060 la aplazó en su día—, y sin
+# esta línea el verificador del 443 seguiría en verde sin enterarse.
+if curl -s -o /dev/null -D - "$BASE/acceso" | grep -qi '^strict-transport-security:'; then
+  no "el 80 emite HSTS y no debe: se afirma en claro lo que esa vía no da (ADR-0086)"
+else
+  si "el 80 NO emite HSTS (ADR-0086)"
+fi
+echo
+
 # Material de prueba: 10 MB aleatorios que se concatenan. Evita /dev/zero,
 # donde un fallo que escribiera ceros pasaría inadvertido.
 head -c 10485760 /dev/urandom > "$TRABAJO/base"
