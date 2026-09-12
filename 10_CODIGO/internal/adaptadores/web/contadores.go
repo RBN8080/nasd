@@ -122,6 +122,14 @@ type Instantanea struct {
 	// Vacía cuando no hay cliente configurado, y entonces su indicador no se
 	// pinta: ver evaluarRespaldo.
 	Respaldo respaldo.Lectura `json:"respaldo_cliente"`
+
+	// BaseGeoIP es cuándo se preparó la base de país y operador que este
+	// proceso tiene abierta. Cero cuando no hay base, y entonces su indicador
+	// tampoco se pinta: ver evaluarBaseGeoIP.
+	//
+	// ES LA FECHA QUE SE SIRVE, NO LA DEL ARCHIVO EN DISCO. La rellena
+	// instantaneaCompleta desde geoip.Fecha(), que es la mtime leída al abrir.
+	BaseGeoIP time.Time `json:"base_geoip"`
 }
 
 func (c *contadores) instantanea() Instantanea {
