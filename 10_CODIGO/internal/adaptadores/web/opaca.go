@@ -1,10 +1,8 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"net/http"
-	"strconv"
 
 	"nasd/internal/autenticacion"
 	"nasd/internal/seguridad"
@@ -164,7 +162,7 @@ func (s *Servidor) negarOpaco(w http.ResponseWriter, r *http.Request, protegido 
 		motivo = siExistiera
 	}
 	marcarRechazo(r, motivo)
-	s.responderOpaco(w, r)
+	s.responderOpaco(w)
 }
 
 // resolverRuta pregunta al ROUTER qué es esta petición, sin ejecutar nada suyo.
@@ -270,6 +268,14 @@ func (s *sumidero) Write(p []byte) (int, error) {
 // responderOpaco es LA respuesta. Una sola, para toda petición no pública sin
 // sesión, sea cual sea la ruta y sea cual sea el motivo interior.
 //
+// # NO RECIBE LA PETICIÓN, Y ESO ES LA PROPIEDAD
+//
+// La firma dejó de tomar *http.Request en ADR-0088. Lo tomaba para leer la
+// cookie del nombre recordado, y mientras esa puerta siguiera abierta «el
+// cuerpo no depende de la petición» era una promesa que había que volver a
+// revisar cada vez que alguien tocara esta función. Ahora no hay nada que
+// revisar: lo que no se recibe no se puede filtrar.
+//
 // # QUÉ NO PUEDE DEPENDER DE LA RUTA
 //
 // Ni el estado, ni el cuerpo, ni su longitud, ni el tipo, ni una redirección,
@@ -283,46 +289,52 @@ func (s *sumidero) Write(p []byte) (int, error) {
 // una vía de error que se escapara sin CSP sería un agujero abierto por la
 // puerta de al lado (D-21).
 //
-// # POR QUÉ EL CUERPO ES EL FORMULARIO DE ACCESO
+// # POR QUÉ EL CUERPO VA VACÍO — ADR-0088, QUE SUPERSEDE A ADR-0072 §2
 //
-// Porque tiene que ser el MISMO para todas las rutas, y de todos los cuerpos
-// posibles este es el único que además sirve para algo: quien abre la
-// dirección del NAS en el teléfono —que es cómo se usa esto todos los días—
-// se encuentra la casilla de la contraseña y entra, en vez de un 404 seco que
-// le obligaría a saberse la ruta /acceso de memoria.
+// Hasta ADR-0088 el cuerpo era el formulario de acceso, y el argumento era
+// bueno: tiene que ser el MISMO para todas las rutas, y de todos los cuerpos
+// posibles ese era el único que además servía para algo —quien abría la
+// dirección del NAS en el teléfono se encontraba la casilla de la contraseña
+// en vez de un 404 seco—. El coste estaba declarado y se aceptó con los ojos
+// abiertos.
 //
-// No regala nada. /acceso es público a propósito (ADR-0072 §9) y entrega ese
-// mismo formulario: quien sondea ya podía verlo. Y el coste tampoco es nuevo:
-// antes de ADR-0072, CADA petición anónima renderizaba exactamente esta misma
-// plantilla dentro de un 401.
+// Lo que lo retira no es una opinión nueva, es una MEDICIÓN: en el panel de
+// seguridad los sondeos automáticos piden «/» y no piden «/acceso». Contra ese
+// tráfico —que es casi todo el que llega— el formulario dentro del 404 estaba
+// sirviendo la interfaz a quien nunca habría sabido pedirla.
+//
+// Lo que se gana es poco, y es real:
+//
+//	el bot que solo pide «/» deja de recibir la interfaz
+//	se corta el rastro a /estatico/* desde toda URL anónima
+//	desaparece un eje de variación: el cuerpo ya no se renderiza con la
+//	cookie nas_usuario, que la escribe el cliente
+//
+// LO QUE ESTO NO ES. No es esconder el NAS. /acceso sigue siendo pública a
+// propósito (ADR-0072 §9) y entrega el formulario con un 200 a quien lo pida:
+// quien busque este nodo A PROPÓSITO lo encuentra igual de rápido. Lo único
+// que cambia es que deja de servírsele a quien no lo buscaba.
 //
 // # SIN NEGOCIACIÓN POR Accept
 //
-// A propósito, y es un cambio respecto a pedirAccesoComo: aquí no se mira
-// Accept. Una sola representación, para nadie hay dos. Un cliente de API que
-// pierda la sesión recibe HTML en un 404; no le sirve para menos que un texto
-// plano, y a cambio la respuesta no tiene ni un eje más por el que variar.
-func (s *Servidor) responderOpaco(w http.ResponseWriter, r *http.Request) {
-	// El cuerpo se compone ENTERO antes de tocar la respuesta. Así la longitud
-	// se puede declarar —y es una de las cosas que no deben variar— y un fallo
-	// de plantilla no puede dejar medio cuerpo escrito con otro tamaño.
-	var cuerpo bytes.Buffer
-	v := vistaAcceso{Usuario: usuarioRecordado(r)}
-	v.Inicial = inicialDe(v.Usuario)
-	if err := s.plantillas.ExecuteTemplate(&cuerpo, "acceso.html", v); err != nil {
-		s.reg.Error("render de la respuesta opaca", "error", err)
-		cuerpo.Reset()
-	}
-
+// A propósito: aquí no se mira Accept. Una sola representación, para nadie hay
+// dos. Con el cuerpo vacío la cuestión casi se disuelve —no hay nada que
+// representar— pero el tipo declarado sigue siendo uno y fijo.
+func (s *Servidor) responderOpaco(w http.ResponseWriter) {
 	h := w.Header()
-	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Content-Length", strconv.Itoa(cuerpo.Len()))
-	// no-store y no «no-cache»: esta respuesta lleva el formulario de acceso y
-	// no debe quedarse en el disco de un equipo prestado, que es el caso de uso
-	// declarado del 443 (ADR-0042).
+	// text/plain y no text/html: ya no hay HTML que anunciar. El tipo es una
+	// constante más de esta respuesta, no la consecuencia de lo que se escriba.
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	// Declarado, y no deducido del troceado, por el mismo motivo que cuando el
+	// cuerpo medía 1050 bytes: la longitud es una de las cosas que no pueden
+	// variar con la ruta, así que se dice en vez de dejar que salga sola.
+	h.Set("Content-Length", "0")
+	// no-store se queda aunque el formulario ya no viaje aquí: esta sigue
+	// siendo la respuesta que recibe un equipo prestado (ADR-0042), y una
+	// negativa cacheada contestaría por el servidor a una sesión posterior.
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNotFound)
-	// El error se descarta igual que en servirEstatico: significa que el
-	// cliente se fue, que es rutina y no un fallo nuestro.
-	_, _ = w.Write(cuerpo.Bytes())
+	// Y NO SE LLAMA A Write. Con Content-Length: 0 declarado la respuesta está
+	// completa aquí: no hay cuerpo, ni troceado, ni un error de escritura que
+	// pudiera llegar a distinguir una ruta de otra.
 }
