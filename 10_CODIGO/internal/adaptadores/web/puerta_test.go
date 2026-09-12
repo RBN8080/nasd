@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -82,8 +83,23 @@ func TestAlApartadoSeLeAnotaLaConexionYDespuesSeLeCuelga(t *testing.T) {
 	if errors.As(err, &vencido) && vencido.Timeout() {
 		t.Fatalf("la conexión del apartado siguió abierta hasta agotar el plazo: %v", err)
 	}
-	if !errors.Is(err, io.EOF) && !strings.Contains(err.Error(), "reset") &&
-		!strings.Contains(err.Error(), "forcibly closed") {
+	// SE MIRA EL TIPO DEL ERROR, NO SU TEXTO.
+	//
+	// Antes se buscaba «reset» y «forcibly closed» dentro de err.Error(), y eso
+	// ataba la prueba al idioma del sistema: en un Windows en español el mismo
+	// RST llega como «Se ha forzado la interrupción de una conexión existente
+	// por el host remoto», que no contiene ninguna de las dos, y la prueba
+	// fallaba sin que nada estuviera roto. Comparar errno tampoco sirve tal
+	// cual: en Windows syscall.ECONNRel antivirus vale 536870935 y NO coincide con el
+	// WSAECONNRel antivirus (10054) que de verdad llega — medido el 2026-09-12.
+	//
+	// Lo que la prueba quiere afirmar es «se murió la conexión», y ya ha
+	// descartado arriba los dos casos que la refutarían: que contestara
+	// (err == nil) y que siguiera abierta (Timeout). Cualquier error de la capa
+	// de sockets que quede es la afirmación buscada, y syscall.Errno es
+	// exactamente «esto viene del sistema operativo», en cualquier idioma.
+	var errno syscall.Errno
+	if !errors.Is(err, io.EOF) && !errors.As(err, &errno) {
 		t.Fatalf("se esperaba una conexión cerrada; llegó: %v", err)
 	}
 
