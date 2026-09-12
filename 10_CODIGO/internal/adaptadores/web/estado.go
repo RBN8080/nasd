@@ -143,7 +143,8 @@ type indicador struct {
 func evaluar(n sistema.Nodo, i Instantanea) []indicador {
 	out := append(evaluarVivos(n.Vivo, i), evaluarLentos(n)...)
 	out = append(out, evaluarSalidas(i)...)
-	return append(out, evaluarRespaldo(i, time.Now())...)
+	out = append(out, evaluarRespaldo(i, time.Now())...)
+	return append(out, evaluarBaseGeoIP(i, time.Now())...)
 }
 
 // horasParaAvisarPorOmision es el umbral que se usa si el cliente NO publica el
@@ -295,6 +296,96 @@ func veredictoDeRespaldo(ind indicador, e respaldo.Estado, ahora time.Time) indi
 		}
 	}
 	return ind
+}
+
+// diasBaseGeoIPVieja es a partir de cuántos días la base de país y operador
+// deja de estar simplemente «al día» y pasa a decir que su refresco no corrió.
+//
+// # DE DÓNDE SALE EL NÚMERO
+//
+// 18_geoip.sh instala nas-geoip.timer con OnCalendar=monthly y
+// RandomizedDelaySec=6h. El peor caso NORMAL es por tanto el mes más largo más
+// el retardo aleatorio de la corrida siguiente: 31 días y 6 horas. Por debajo
+// de eso no hay nada que decir.
+//
+// 45 deja catorce días de margen sobre ese peor caso y todavía avisa a mitad de
+// camino de la ventana siguiente, que caería sobre los 62. Es lo que separa «el
+// refresco va con retraso» de «el refresco no se ejecutó».
+const diasBaseGeoIPVieja = 45
+
+// evaluarBaseGeoIP juzga la EDAD de la base de país y operador.
+//
+// # POR QUÉ ESTO VIVE EN EL BINARIO Y NO EN UN OnFailure= DE systemd
+//
+// El refresco mensual funciona: el 2026-09-01 a las 02:17:43 corrió sin nadie
+// delante. Lo que NO deja es rastro que se pueda auditar después — el diario de
+// aquella ventana ya no existe, y «journalctl -u nas-geoip» responde «No
+// entries» sobre una corrida que sí ocurrió (00_RECTOR.md §7.octies). De ahí lo
+// que importa: un refresco que FALLE deja la base vieja en su sitio y no avisa
+// a nadie.
+//
+// La otra opción era un OnFailure= en la unidad, con su guion, su unidad de
+// aviso y su credencial aparte. Se descartó por el responsable, y con razón:
+// son piezas nuevas fuera del binario para vigilar algo que el binario ya tiene
+// delante. nasd abre la base al arrancar, así que ya conoce su fecha; y un
+// indicador que cambia de veredicto ya se escribe en el diario y ya sale por el
+// canal de avisos, sin una línea de fontanería nueva (ver mantenimiento.go).
+//
+// # SE MIDE LA FECHA QUE SE SIRVE, NO LA DEL ARCHIVO EN DISCO
+//
+// geoip.Fecha() es la mtime leída al abrir y no se vuelve a mirar. No es una
+// limitación de la que haya que disculparse: es lo que hay que medir. Un
+// refresco BUENO reinicia nasd —paso 4 de 18_geoip.sh—, así que la fecha nueva
+// entra sola. Y si el archivo del disco fuera más nuevo que el que este proceso
+// tiene abierto, entonces nasd está respondiendo con una base vieja, que es
+// exactamente lo que este indicador existe para decir.
+//
+// # NO SUBE A «FALLO» POR MUY VIEJA QUE SEA
+//
+// geoip es la única dependencia OPCIONAL del servidor (ADR-0062): sin ella el
+// panel enseña menos, no falla. Una base atrasada envejece las etiquetas de
+// país y operador de /seguridad y nada más. Rojo está reservado a lo que deja
+// al nodo diciendo menos de lo que pasa, y esto no lo es.
+//
+// # SIN BASE NO SE PINTA
+//
+// Mismo criterio que las salidas y que el respaldo: un nodo al que todavía no
+// se le ha ejecutado 18_geoip.sh no debe enseñar un semáforo en gris para
+// siempre (ADR-0065).
+func evaluarBaseGeoIP(i Instantanea, ahora time.Time) []indicador {
+	if i.BaseGeoIP.IsZero() {
+		return nil
+	}
+
+	ind := indicador{Clave: "base_geoip", Nombre: "Base de país y operador"}
+	edad := ahora.Sub(i.BaseGeoIP)
+	preparada := "del " + i.BaseGeoIP.Format("2006-01-02")
+
+	switch {
+	case edad < 0:
+		// Una fecha en el futuro daría una edad negativa, que se leería como
+		// recién preparada: la mentira tranquilizadora que evaluarRespaldo ya
+		// declara para el reloj del equipo. Aquí el reloj es el del propio
+		// nodo, así que si el archivo viene del futuro lo que falla es la hora
+		// —y con ella todas las fechas de esta página, no solo esta fila—.
+		ind.Valor = "preparada en el futuro: " + i.BaseGeoIP.Format("2006-01-02 15:04")
+		ind.Veredicto = vAtencion
+		ind.Accion = "El reloj del nodo no cuadra con la fecha del archivo. Compruebe " +
+			"«timedatectl» antes de fiarse de ninguna fecha de esta página."
+
+	case edad > diasBaseGeoIPVieja*24*time.Hour:
+		ind.Valor = preparada + " · " + duracionLegible(edad) + " sin refrescarse"
+		ind.Veredicto = vAtencion
+		ind.Accion = "El refresco mensual no se ha ejecutado. Compruebe «systemctl list-timers " +
+			"nas-geoip.timer» y, si hace falta, ejecute «sudo ./18_geoip.sh» en el nodo. " +
+			"Mientras tanto, el país y el operador de /seguridad pueden estar desactualizados."
+
+	default:
+		ind.Valor = preparada + " · " + duracionLegible(edad)
+		ind.Veredicto = vOK
+	}
+
+	return []indicador{ind}
 }
 
 // evaluarSalidas juzga las DOS vías por las que el nodo habla hacia fuera.
@@ -621,7 +712,7 @@ type vistaEstado struct {
 	// Marco es el cromo compartido — ADR-0075.
 	Marco marco
 	// Detalle es el indicador seleccionado por «?ind=», o nil si no vino el
-	// parámetro o no coincide con ninguno de los quince. NUNCA se inventa uno
+	// parámetro o no coincide con ninguno de los dieciséis. NUNCA se inventa uno
 	// para una clave que no exista: el panel se queda cerrado, que es la
 	// misma regla con la que el resto de esta página no rellena lo que no
 	// pudo medir (ver Avisos).
@@ -815,8 +906,9 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	// EL VIGÍA TIENE CACHÉ, así que las dos llamadas del mismo render no leen
 	// el disco dos veces (ver respaldo.vigencia).
 	respaldos := conVeredictoPintado(comoFilas(evaluarRespaldo(inst, time.Now())))
+	referencia := conVeredictoPintado(comoFilas(evaluarBaseGeoIP(inst, time.Now())))
 
-	// LOS CINCO GRUPOS DE LA TABLA. Los tres últimos solo aparecen si tienen
+	// LOS SEIS GRUPOS DE LA TABLA. Los cuatro últimos solo aparecen si tienen
 	// algo: un nodo sin la capa de avisos instalada no enseña dos semáforos
 	// en gris permanente, que es lo que ADR-0065 vino a retirar.
 	v := vistaEstado{
@@ -833,6 +925,7 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 		{"Almacenamiento y hardware", lentos},
 		{"Salidas hacia fuera", salidas},
 		{"Respaldo del equipo", respaldos},
+		{"Datos de referencia", referencia},
 	} {
 		if len(g.Filas) > 0 {
 			v.Grupos = append(v.Grupos, g)
@@ -933,6 +1026,9 @@ func (s *Servidor) instantaneaCompleta() Instantanea {
 	// vivo, una vez por segundo, y el archivo lo escribe el cliente tres veces
 	// al día. Ver el comentario de respaldo.vigencia.
 	i.Respaldo = s.vigiaRespaldo.Leer()
+	// Nil-safe: Fecha() devuelve el cero cuando no hay base, que es justo lo
+	// que evaluarBaseGeoIP lee como «no configurada».
+	i.BaseGeoIP = s.geo.Fecha()
 	return i
 }
 
