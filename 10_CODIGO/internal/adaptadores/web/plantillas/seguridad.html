@@ -120,6 +120,7 @@
         <div class="cl">
           <form method="post" action="/seguridad/soltar">
             <input type="hidden" name="csrf" value="{{$.Csrf}}">
+            <input type="hidden" name="volver" value="{{$.Volver}}">
             <input type="hidden" name="ip" value="{{.IP}}">
             <button type="submit" class="bt">Soltar</button>
           </form>
@@ -155,6 +156,7 @@
         <div class="cl">
           <form method="post" action="/seguridad/retirar">
             <input type="hidden" name="csrf" value="{{$.Csrf}}">
+            <input type="hidden" name="volver" value="{{$.Volver}}">
             <input type="hidden" name="id" value="{{.ID}}">
             <button type="submit" class="bt pel">Retirar</button>
           </form>
@@ -475,7 +477,7 @@
     <div class="fls">
       {{range .Origenes}}
       <div class="fl{{if .Seleccionada}} sel{{end}}">
-        <div class="cl"><span class="et">Dirección</span>{{if .IP.IsValid}}<a class="ip" href="?origen={{.IP}}">{{.IP}}</a>{{else}}<span class="ip">sin dirección</span>{{end}}</div>
+        <div class="cl"><span class="et">Dirección</span>{{if .IP.IsValid}}<a class="ip" href="{{.Enlace}}">{{.IP}}</a>{{else}}<span class="ip">sin dirección</span>{{end}}</div>
 
         <div class="cl"><span class="et">Operador</span><span class="op">
           {{- if $.SinFiltroDeRed}}{{.Red.Etiqueta}}{{if .TieneGeo}} · {{.Geo.Pais}} AS{{.Geo.ASN}} {{.Geo.Nombre}}{{end}}
@@ -553,6 +555,7 @@
           {{if and .IP.IsValid .Red.DeFuera}}{{if not .Bloqueo}}
           <form method="get" action="/seguridad/bloquear">
             <input type="hidden" name="ip" value="{{.IP}}">
+            <input type="hidden" name="volver" value="{{$.Volver}}">
             <button type="submit" class="bt">Bloquear…</button>
           </form>
           {{end}}{{end}}
@@ -667,7 +670,7 @@
         <h3>{{if .TieneGeo}}{{.Geo.Nombre}}{{else}}Origen{{end}}</h3>
         <div class="dip">{{.IP}}</div>
       </div>
-      <a class="x" href="/seguridad" aria-label="Cerrar">✕</a>
+      <a class="x" href="{{$.EnlaceCerrar}}" aria-label="Cerrar">✕</a>
     </div>
 
     {{if .TieneGeo}}
@@ -708,12 +711,14 @@
       {{if .Bloqueo}}
       <form method="post" action="/seguridad/retirar">
         <input type="hidden" name="csrf" value="{{$.Csrf}}">
+            <input type="hidden" name="volver" value="{{$.Volver}}">
         <input type="hidden" name="id" value="{{.Bloqueo.ID}}">
         <button type="submit" class="bt pel">Retirar el bloqueo</button>
       </form>
       {{else if .Apartado}}
       <form method="post" action="/seguridad/soltar">
         <input type="hidden" name="csrf" value="{{$.Csrf}}">
+            <input type="hidden" name="volver" value="{{$.Volver}}">
         <input type="hidden" name="ip" value="{{.IP}}">
         <button type="submit" class="bt">Soltar</button>
       </form>

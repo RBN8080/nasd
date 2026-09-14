@@ -129,6 +129,14 @@ type filaOrigen struct {
 	Ultima  time.Time
 	// Seleccionada marca la fila cuyo detalle esta abierto.
 	Seleccionada bool
+	// Enlace abre el detalle de esta dirección SIN perder el filtro puesto.
+	//
+	// Se compone en Go y no en la plantilla —que antes escribía
+	// «?origen={{.IP}}» a mano— porque ese enlace tiene que conservar la
+	// consulta entera, y una plantilla que la recompusiera a mano tendría que
+	// escapar la consulta allí, que es justo donde se olvida (ver moverA en
+	// mover.go, que existe por lo mismo).
+	Enlace string
 }
 
 // Frenados son las conexiones EFECTIVAMENTE CERRADAS a esta dirección, vengan
@@ -418,6 +426,15 @@ type vistaSeguridad struct {
 	// lista que pinta la tabla, así que las dos no pueden discrepar.
 	Detalle    *filaOrigen
 	ConDetalle bool
+	// EnlaceCerrar cierra el detalle CONSERVANDO el filtro. La ✕ apuntaba a
+	// «/seguridad» a secas, así que cerrar el detalle deshacía el filtro con
+	// el que se había llegado hasta él.
+	EnlaceCerrar string
+	// Volver es la consulta actual, para que los formularios que ESCRIBEN
+	// —soltar, bloquear, retirar— puedan devolver a la misma vista después de
+	// actuar. Viaja en un campo oculto y vuelve reconstruida, nunca repetida:
+	// ver volverA y clavesDeFiltro.
+	Volver string
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -497,7 +514,10 @@ func (s *Servidor) soltarApartado(w http.ResponseWriter, r *http.Request) {
 		s.reg.Info("apartado soltado a mano",
 			"origen", ip.String(), "usuario", usuarioDe(r), "desde", origenDe(r))
 	}
-	http.Redirect(w, r, "/seguridad", http.StatusSeeOther)
+	// Se vuelve a la MISMA vista de la que se salio, filtro incluido: la
+	// pagina puso su consulta en el campo «volver», y volverA la reconstruye
+	// por lista blanca en vez de repetirla.
+	http.Redirect(w, r, volverA(r.PostForm.Get("volver")), http.StatusSeeOther)
 }
 
 // fraseDeVacios nombra los grupos de «Contención activa» que están vacíos, y
@@ -615,6 +635,75 @@ func filtroDeSeguridad(q url.Values) (f seguridad.Filtro, horas time.Duration, r
 	return f, horas, redElegida
 }
 
+// clavesDeFiltro son los ÚNICOS parámetros que una navegación dentro de
+// /seguridad conserva. Todo lo demás se descarta.
+//
+// # POR QUÉ UNA LISTA BLANCA Y NO «copiar la consulta entera»
+//
+// Porque esta lista la usa también el regreso de las acciones que escriben
+// —soltar, bloquear, retirar—, y ahí el destino viaja en un campo del
+// formulario, es decir: lo manda el cliente. Copiar lo que llegue sería una
+// redirección abierta de manual. Con la lista blanca el destino no se
+// REPITE nunca, se RECONSTRUYE: sea cual sea la basura que entre, lo que sale
+// es «/seguridad» con, como mucho, estas seis claves.
+var clavesDeFiltro = []string{"red", "horas", "motivo", "abierto", "capa", "origen"}
+
+// enlaceDeSeguridad compone una URL de /seguridad conservando el filtro que
+// esté puesto y aplicando los cambios que se le pidan. Un cambio con valor
+// vacío QUITA esa clave.
+//
+// # EL DEFECTO QUE ESTO CORRIGE, Y LO ENCONTRÓ EL RESPONSABLE USÁNDOLO
+//
+// El filtro de este panel vive en la URL a propósito (R1 de ADR-0015): se
+// puede marcar y compartir. Pero cada enlace y cada redirección de la página
+// estaba escrito a mano contra «/seguridad» o contra «?origen=…», así que
+// CUALQUIER acción tiraba el filtro y devolvía la página a «Internet · 24
+// horas · cualquier motivo».
+//
+// No era solo una molestia. Con «todo lo guardado» puesto, la tabla enseña
+// orígenes de hace días; al pulsar uno, la URL perdía «horas=0», la ventana
+// volvía a 24 horas, y ESE ORIGEN YA NO ESTABA en la lista recalculada — así
+// que el panel de detalle no se abría. Un clic que no hace nada y encima
+// deshace el filtro que costó poner. El síntoma parecía del detalle; la causa
+// estaba en el enlace.
+func enlaceDeSeguridad(q url.Values, cambios map[string]string) string {
+	fuera := url.Values{}
+	for _, clave := range clavesDeFiltro {
+		if v := q.Get(clave); v != "" {
+			fuera.Set(clave, v)
+		}
+	}
+	for clave, valor := range cambios {
+		if valor == "" {
+			fuera.Del(clave)
+			continue
+		}
+		fuera.Set(clave, valor)
+	}
+	if len(fuera) == 0 {
+		// Sin parámetros, un «?» suelto es ruido en la barra de direcciones.
+		return "/seguridad"
+	}
+	return "/seguridad?" + fuera.Encode()
+}
+
+// volverA reconstruye el destino de una acción que escribe, a partir del
+// campo «volver» que la página puso en su formulario.
+//
+// Lo que llega es texto del cliente y se trata como tal: se interpreta como
+// consulta y se pasa por la MISMA lista blanca que todo lo demás, de modo que
+// un «volver=https://otro.sitio/» no produce una redirección a ningún sitio —
+// produce «/seguridad». Ver clavesDeFiltro.
+func volverA(crudo string) string {
+	q, err := url.ParseQuery(strings.TrimPrefix(crudo, "?"))
+	if err != nil {
+		// Una consulta ilegible no es motivo para no volver: se vuelve al
+		// panel limpio, que es donde estaría sin esta función.
+		return "/seguridad"
+	}
+	return enlaceDeSeguridad(q, nil)
+}
+
 func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f, horas, redElegida := filtroDeSeguridad(q)
@@ -722,6 +811,21 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		HayMasRutas:      resumen.RutasVistas > seguridad.TopeRutas,
 		Capacidad:        seguridad.Capacidad,
 		Marco:            s.construirMarco(r, "seguridad", "Seguridad", ""),
+		// Cerrar el detalle vuelve a ESTA vista sin el detalle, no al panel
+		// limpio: el filtro con el que se llegó hasta aquí se conserva.
+		EnlaceCerrar: enlaceDeSeguridad(q, map[string]string{"origen": ""}),
+		Volver:       r.URL.RawQuery,
+	}
+
+	// EL ENLACE DE CADA FILA SE COMPONE AQUÍ, con la consulta en la mano. La
+	// plantilla escribía «?origen={{.IP}}», que tiraba el filtro entero.
+	for i := range v.Origenes {
+		if !v.Origenes[i].IP.IsValid() {
+			continue
+		}
+		v.Origenes[i].Enlace = enlaceDeSeguridad(q, map[string]string{
+			"origen": v.Origenes[i].IP.String(),
+		})
 	}
 
 	// LA SERIE NO PASA POR EL FILTRO DE VENTANA, y ese era el defecto: con
