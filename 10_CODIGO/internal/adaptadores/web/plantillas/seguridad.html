@@ -9,12 +9,19 @@
      una línea de JavaScript (ADR-0027). */}}
 <input class="ctl" type="checkbox" id="f-abre"{{if .FiltroAbierto}} checked{{end}}>
 {{template "marco-abre" .}}
-{{/* El rótulo de conexión, en la misma línea del título, igual que en
-     /estado. Lo enciende seguridad.js al conectar el flujo y NACE OCULTO A
-     PROPÓSITO: sin JavaScript esta página no se refresca sola, y un cartel que
-     dijera «en línea» sobre una foto congelada sería justo la clase de
-     indicador que miente que 00_RECTOR.md §12.5 lleva años corrigiendo. */}}
-<span id="latido" class="p p-na" hidden></span>
+{{/* AQUÍ VIVÍA «#latido», LA PASTILLA DE CONEXIÓN, y se retira por encargo del
+     responsable — la línea del título vuelve a llevar solo el título.
+
+     SU FUNCIÓN NO SE PIERDE, SUBE: la absorbe el piloto de la cinta, unas
+     líneas más abajo. Era el ÚNICO indicador de si el flujo seguía conectado,
+     así que quitarlo sin sustituto habría dejado el panel congelado
+     pareciendo vivo — el modo de fallo que ADR-0083 y §12.5 persiguen.
+
+     Y EL PILOTO DICE MÁS QUE LA PASTILLA. Aquella nacía OCULTA: sin
+     JavaScript la página era una foto fija y no lo decía en ninguna parte. El
+     piloto nace diciendo de cuándo es la foto, y con el flujo vivo lleva la
+     hora del último marco avanzando de segundo en segundo. Un reloj detenido
+     delata el panel congelado sin que nadie tenga que fiarse de una palabra. */}}
 {{template "marco-cabeza" .}}
 
 <!-- «Estado», «Cuentas» y «Salir» ya no viven aquí (ADR-0075): son navegación
@@ -30,8 +37,69 @@
   <!-- EL ESTADO DEL FILTRO VA JUNTO AL CONTROL QUE LO CAMBIA: es un adjetivo
        del control, no de la página. Se compone en el servidor a partir de las
        MISMAS listas que pintan los desplegables, así que no puede decir una
-       cosa mientras el control enseña otra. -->
+       cosa mientras el control enseña otra.
+
+       DEJA DE LLEVAR «margin-left:auto», y eso es lo que libera esta fila.
+       Con el auto se iba al borde derecho, es decir LO MÁS LEJOS que la fila
+       permite del control del que es adjetivo — lo contrario de lo que esta
+       nota dice querer. Pegado al botón, el resto del renglón queda para la
+       cinta. -->
   <span class="rango">{{.FiltroActivo}}</span>
+
+  <!-- ═══ LA CINTA EN VIVO — ver cinta_seguridad.go ═══════════════════════
+       VA AQUÍ Y NO JUNTO AL TÍTULO, y la razón es el teléfono: «.tv h1» es
+       «nowrap» con recorte por puntos y comparte renglón con la inicial de la
+       sesión, así que a 390 px quedarían ~150 px de pista y el título se
+       recortaría para hacerle sitio. La pastilla cabía ahí porque era una
+       palabra; una cinta no.
+
+       Y VA EN «.ordenes», QUE ESTÁ DENTRO DE «.top»: esa es una fila de la
+       rejilla del cromo, FUERA de «.cuerpo», que es el único elemento con
+       «overflow-y:auto». Persistente al desplazamiento sin «position:sticky»,
+       sin z-index que pelear con la columna de detalle y sin volver a pisar la
+       trampa de «overflow» que en agosto recortó los desplegables de esta
+       misma fila.
+
+       UNA REGLA, DOS COMPOSICIONES. «.ordenes» ya envuelve: con «flex:1 1
+       18rem» la cinta se queda en línea con «Filtrar» en el escritorio y, en
+       el teléfono —donde tras el botón y el rótulo sobran unos 140 px—,
+       envuelve sola a su propio renglón y se lleva el ancho entero. Sin una
+       media query nueva.
+
+       EL TEXTO VA DOS VECES A PROPÓSITO. La animación lleva la pista de
+       «translateX(0)» a «translateX(-50%)», así que la distancia recorrida es
+       el ancho de UNA copia: el bucle no tiene hueco y la velocidad no depende
+       del tamaño de la ventana. La segunda copia es «aria-hidden» porque para
+       quien la escucha no existe. -->
+  <div class="marq" tabindex="0"
+       data-contencion="{{.Contencion}}"
+       aria-label="Estado del panel y contención vigente">
+    {{/* EL PILOTO NO SE MUEVE NUNCA Y NO SE RECORTA NUNCA: un estado que se
+         desliza fuera de la pantalla es peor que no tenerlo. Nace en «foto»
+         —lo que el servidor puede afirmar— y seguridad.js lo asciende a «en
+         vivo» al conectar. Solo la PALABRA de estado es región viva: el reloj
+         cambia cada segundo y anunciarlo sería ruido para un lector. */}}
+    <span class="pil pil-foto" id="piloto">
+      <i aria-hidden="true"></i>
+      <span class="pil-txt" aria-live="polite">{{.Cinta.Foto}}</span>
+      <span class="pil-hr mono">{{.Cinta.FotoNota}}</span>
+    </span>
+
+    {{/* EL AVISO DE QUE ESTO YA NO ES LO QUE SE ESTÁ VIENDO, mudado desde el
+         pie de «Contención activa». Allí quedaba fuera de la pantalla justo
+         cuando servía: quien está leyendo la cronología no ve el final de una
+         sección que dejó ocho pantallas más arriba. Anclado aquí, llega
+         siempre. Lo descubre seguridad.js comparando «data-contencion» con lo
+         que trae el flujo; solo aparece, nunca desaparece. */}}
+    <span class="marq-nvo" id="contencion-nueva" hidden>la contención cambió — recargue</span>
+
+    <div class="marq-caja">
+      <div class="marq-pista {{.Cinta.Velocidad}}">
+        <div class="tira">{{template "cinta-segmentos" .Cinta}}</div>
+        <div class="tira marq-copia" aria-hidden="true">{{template "cinta-segmentos" .Cinta}}</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- method="get": el filtro viaja en la URL, igual que el orden del listado
@@ -214,16 +282,14 @@
        desaparece con él; si aparecen los tres, la frase entera desaparece. -->
   {{if .SinContener}}<p class="nota">{{.SinContener}}</p>{{end}}
 
-  <!-- EL AVISO DE QUE ESTO YA NO ES LO QUE SE ESTÁ VIENDO. Las tablas de
-       arriba NO se refrescan solas, y es deliberado: mover filas bajo el cursor
-       mientras alguien va a pulsar «Soltar» es peor que no moverlas (el mismo
-       criterio que en /administracion). Lo que sí puede hacer el flujo es
-       CONTAR, y decir que hay algo nuevo sin decidir por nadie.
-       «data-contencion» lleva cuántas filas se pintaron; seguridad.js compara
-       con lo que llega y descubre este párrafo cuando dejan de coincidir. -->
-  <p class="nota nvo" id="contencion-nueva" data-contencion="{{.Contencion}}" hidden>
-    Ha cambiado la contención activa desde que se abrió esta página. Recárguela para verla.
-  </p>
+  <!-- EL AVISO DE «HA CAMBIADO LA CONTENCIÓN» YA NO VIVE AQUÍ: subió a la
+       cinta, con «data-contencion» y todo. El mecanismo no cambia —las tablas
+       siguen sin refrescarse solas, porque mover filas bajo el cursor mientras
+       alguien va a pulsar «Soltar» es peor que no moverlas, igual que en
+       /administracion; el flujo CUENTA y avisa sin decidir por nadie—. Lo que
+       cambia es dónde se lee: al pie de esta sección quedaba fuera de la
+       pantalla justo cuando servía, porque quien está leyendo la cronología
+       dejó este párrafo ocho pantallas más arriba. -->
 </section>
 
 <!-- VOLUMEN OBSERVADO — UNA SOLA BANDA, Y TODAS EN LA MISMA BASE DE TIEMPO.
@@ -671,6 +737,14 @@
        arriba quedaba dentro de una fila que habla de la ventana filtrada. */}}
   {{if .HayMasConexiones}}<span class="nt">Conexiones aceptadas desde siempre: <b>{{.TotalConexiones}}</b>.</span>{{end}}
   <span class="nt">Las señales son inferencias, no veredictos: cada una lleva escrito con qué se puede confundir.</span>
+  {{/* EL ÚNICO DATO DE LA CINTA QUE NO ESTABA ESCRITO EN NINGUNA OTRA PARTE,
+       y por eso baja aquí: ninguna información puede vivir SOLO en una
+       marquesina. Los otros dos segmentos ya tenían sitio —la contención son
+       las tablas de arriba, y el último rechazo es la primera fila de la
+       cronología o, si sale vacía, su propio párrafo—. Este no: el aviso
+       equivalente solo se pinta DENTRO del vacío de la cronología, así que con
+       una sola fila en esa tabla el dato desaparecía de la página entera. */}}
+  {{if .UltimoFrenado.Hay}}<span class="nt">Última puerta cerrada: <b>{{fecha .UltimoFrenado.Cuando}}</b>, a {{.UltimoFrenado.Que}}. Mientras siga cerrada no volverá a salir en la cronología aunque regrese.</span>{{end}}
 </div>
 
 {{template "marco-fin" .}}
@@ -748,3 +822,22 @@
 </body>
 </html>
 {{end}}
+
+{{/* LOS SEGMENTOS DE LA CINTA, escritos UNA vez y usados DOS —el original y la
+     copia que cierra el bucle sin hueco—. Con dos copias del marcado, un
+     cambio en una y no en la otra produciría un salto a mitad del ciclo que
+     nadie asociaría a esto.
+
+     «data-seg» es el ANCLA del flujo, no un rótulo: seguridad.js escribe sobre
+     «.vl» y no toca nada más. Mismo contrato que «data-cifra» en esta misma
+     página. Si la clave cambia aquí sin cambiar allí, el segmento deja de
+     refrescarse y no falla nada a gritos — por eso lo fija una prueba.
+
+     UN SEGMENTO SIN VALOR SE PINTA VACÍO Y LO ESCONDE EL CSS, en vez de no
+     pintarse: si el nodo no existiera, el flujo no tendría dónde escribir ese
+     hecho cuando apareciera, y la primera puerta cerrada del día exigiría
+     recargar para verse. Es el límite que «cuentas.js» declaró para las filas
+     que no están en la página, aquí resuelto reservando el hueco. */}}
+{{define "cinta-segmentos"}}
+{{- range .Segmentos}}<span class="sg {{.Clase}}" data-seg="{{.Clave}}"><span class="et">{{.Etiqueta}}</span><span class="vl">{{.Valor}}</span></span>{{end}}
+{{- end}}
