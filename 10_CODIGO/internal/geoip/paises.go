@@ -1,0 +1,220 @@
+// nombresDePais traduce el código ISO 3166-1 alfa-2 al nombre del país en
+// español, para el mapa de «Procedencia» y su lista de al lado.
+//
+// SOLO SE USA AHÍ. La tabla de orígenes de la página de seguridad sigue
+// enseñando el código —geoip.go ya explica por qué: el operador es lo que de
+// verdad hace interpretable una fila, y traducir 250 nombres para repetirlos
+// junto al código no añadía nada—. Lo que sí cambió es que ahora hay un
+// sitio donde vive esa traducción, prometido por el propio comentario de
+// Info.Pais: «si algún día el responsable quiere los nombres en español, la
+// tabla entra aquí y no cambia nada más».
+//
+// LA FUENTE es el campo NAME_ES de Natural Earth 110m —el mismo conjunto de
+// datos con el que cmd/preparar-mapa dibuja el mapa, así que un país que
+// aparece en el mapa tiene, con altísima probabilidad, una entrada aquí. Un
+// código que esta tabla no conoce —una micronación nueva, un territorio que
+// Natural Earth no nombra— se resuelve a sí mismo: NombreDePais nunca
+// devuelve una cadena vacía ni un guion.
+package geoip
+
+var nombresDePais = map[string]string{
+	"AE": "Emiratos Árabes Unidos",
+	"AF": "Afganistán",
+	"AL": "Albania",
+	"AM": "Armenia",
+	"AO": "Angola",
+	"AR": "Argentina",
+	"AT": "Austria",
+	"AU": "Australia",
+	"AZ": "Azerbaiyán",
+	"BA": "Bosnia y Herzegovina",
+	// Sin forma propia en Natural Earth 110m —cmd/preparar-mapa los marca
+	// como un punto en el mapa (ver puntosManuales)— pero SÍ aparecen como
+	// origen de tráfico real, así que necesitan nombre igual que cualquier
+	// otro país.
+	"HK": "Hong Kong",
+	"SG": "Singapur",
+	"BD": "Bangladés",
+	"BE": "Bélgica",
+	"BF": "Burkina Faso",
+	"BG": "Bulgaria",
+	"BI": "Burundi",
+	"BJ": "Benín",
+	"BN": "Brunéi",
+	"BO": "Bolivia",
+	"BR": "Brasil",
+	"BS": "Bahamas",
+	"BT": "Bután",
+	"BW": "Botsuana",
+	"BY": "Bielorrusia",
+	"BZ": "Belice",
+	"CA": "Canadá",
+	"CD": "República Democrática del Congo",
+	"CF": "República Centroafricana",
+	"CG": "República del Congo",
+	"CH": "Suiza",
+	"CI": "Costa de Marfil",
+	"CL": "Chile",
+	"CM": "Camerún",
+	"CN": "China",
+	"CO": "Colombia",
+	"CR": "Costa Rica",
+	"CU": "Cuba",
+	"CY": "Chipre",
+	"CZ": "República Checa",
+	"DE": "Alemania",
+	"DJ": "Yibuti",
+	"DK": "Dinamarca",
+	"DO": "República Dominicana",
+	"DZ": "Argelia",
+	"EC": "Ecuador",
+	"EE": "Estonia",
+	"EG": "Egipto",
+	"EH": "Sahara Occidental",
+	"ER": "Eritrea",
+	"ES": "España",
+	"ET": "Etiopía",
+	"FI": "Finlandia",
+	"FJ": "Fiyi",
+	"FK": "Islas Malvinas",
+	"FR": "Francia",
+	"GA": "Gabón",
+	"GB": "Reino Unido",
+	"GE": "Georgia",
+	"GH": "Ghana",
+	"GL": "Groenlandia",
+	"GM": "Gambia",
+	"GN": "Guinea",
+	"GQ": "Guinea Ecuatorial",
+	"GR": "Grecia",
+	"GT": "Guatemala",
+	"GW": "Guinea-Bisáu",
+	"GY": "Guyana",
+	"HN": "Honduras",
+	"HR": "Croacia",
+	"HT": "Haití",
+	"HU": "Hungría",
+	"ID": "Indonesia",
+	"IE": "Irlanda",
+	"IL": "Israel",
+	"IN": "India",
+	"IQ": "Irak",
+	"IR": "Irán",
+	"IS": "Islandia",
+	"IT": "Italia",
+	"JM": "Jamaica",
+	"JO": "Jordania",
+	"JP": "Japón",
+	"KE": "Kenia",
+	"KG": "Kirguistán",
+	"KH": "Camboya",
+	"KP": "Corea del Norte",
+	"KR": "Corea del Sur",
+	"KW": "Kuwait",
+	"KZ": "Kazajistán",
+	"LA": "Laos",
+	"LB": "Líbano",
+	"LK": "Sri Lanka",
+	"LR": "Liberia",
+	"LS": "Lesoto",
+	"LT": "Lituania",
+	"LU": "Luxemburgo",
+	"LV": "Letonia",
+	"LY": "Libia",
+	"MA": "Marruecos",
+	"MD": "Moldavia",
+	"ME": "Montenegro",
+	"MG": "Madagascar",
+	"MK": "Macedonia del Norte",
+	"ML": "Malí",
+	"MM": "Birmania",
+	"MN": "Mongolia",
+	"MR": "Mauritania",
+	"MW": "Malaui",
+	"MX": "México",
+	"MY": "Malasia",
+	"MZ": "Mozambique",
+	"NA": "Namibia",
+	"NC": "Nueva Caledonia",
+	"NE": "Níger",
+	"NG": "Nigeria",
+	"NI": "Nicaragua",
+	"NL": "Países Bajos",
+	"NO": "Noruega",
+	"NP": "Nepal",
+	"NZ": "Nueva Zelanda",
+	"OM": "Omán",
+	"PA": "Panamá",
+	"PE": "Perú",
+	"PG": "Papúa Nueva Guinea",
+	"PH": "Filipinas",
+	"PK": "Pakistán",
+	"PL": "Polonia",
+	"PR": "Puerto Rico",
+	"PS": "Palestina",
+	"PT": "Portugal",
+	"PY": "Paraguay",
+	"QA": "Catar",
+	"RO": "Rumania",
+	"RS": "Serbia",
+	"RU": "Rusia",
+	"RW": "Ruanda",
+	"SA": "Arabia Saudita",
+	"SB": "Islas Salomón",
+	"SD": "Sudán",
+	"SE": "Suecia",
+	"SI": "Eslovenia",
+	"SK": "Eslovaquia",
+	"SL": "Sierra Leona",
+	"SN": "Senegal",
+	"SO": "Somalia",
+	"SR": "Surinam",
+	"SS": "Sudán del Sur",
+	"SV": "El Salvador",
+	"SY": "Siria",
+	"SZ": "Suazilandia",
+	"TD": "Chad",
+	"TF": "Tierras Australes y Antárticas Francesas",
+	"TG": "Togo",
+	"TH": "Tailandia",
+	"TJ": "Tayikistán",
+	"TL": "Timor Oriental",
+	"TM": "Turkmenistán",
+	"TN": "Túnez",
+	"TR": "Turquía",
+	"TT": "Trinidad y Tobago",
+	// NAME_ES de Natural Earth trae aquí el nombre oficial largo,
+	// "República de China", que en un vistazo rápido se confunde con
+	// "China" —justo lo contrario de lo que esta tabla existe para
+	// evitar—. Se sustituye por el exónimo que de verdad se reconoce.
+	"TW": "Taiwán",
+	"TZ": "Tanzania",
+	"UA": "Ucrania",
+	"UG": "Uganda",
+	"US": "Estados Unidos",
+	"UY": "Uruguay",
+	"UZ": "Uzbekistán",
+	"VE": "Venezuela",
+	"VN": "Vietnam",
+	"VU": "Vanuatu",
+	"XK": "Kosovo",
+	"YE": "Yemen",
+	"ZA": "Sudáfrica",
+	"ZM": "Zambia",
+	"ZW": "Zimbabue",
+}
+
+// NombreDePais devuelve el nombre en español de un país a partir de su
+// código ISO-2, o el propio código cuando la tabla no lo conoce. Para
+// cualquier código real —los dos que trae geoip.Info.Pais y los que trae el
+// SVG del mapa siempre tienen dos letras— el resultado nunca es una cadena
+// vacía, así que la plantilla no tiene que decidir qué pintar en su lugar.
+// Con la cadena vacía como entrada devuelve la cadena vacía: no hay país que
+// inventar para «ninguno», y esta función no es el sitio para decidir qué
+// se pinta cuando no hay dato — esa decisión ya la toman HayGeo y TieneGeo.
+func NombreDePais(iso2 string) string {
+	if n, ok := nombresDePais[iso2]; ok {
+		return n
+	}
+	return iso2
+}

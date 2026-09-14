@@ -354,3 +354,32 @@ registro:
 
 limpiar:
 	rm -f $(BINARIO) $(BIN_MINIATURA) $(BIN_SENSOR)
+
+# ═══════════════════════════════════════════════════════════════════════
+# EL MAPA BASE DE «PROCEDENCIA» — ADR-0089
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Regenera internal/adaptadores/web/estatico/mundo.svg desde Natural Earth
+# 110m. NO hace falta para compilar ni para desplegar: el SVG resultante se
+# compromete en el repositorio y viaja incrustado como cualquier otro recurso
+# estático (ADR-0017). Esto solo se ejecuta si cambian las fronteras o si se
+# quiere otra resolución — es decir, casi nunca.
+#
+# CORRE EN EL HOST Y NO EN EL NODO, al revés que «nasd --preparar-geoip», que
+# sí es un temporizador mensual allí: aquel refresca un dato que caduca, este
+# convierte uno que no.
+#
+# La fuente es de dominio público y se descarga sin cuenta ni clave — el mismo
+# criterio con el que geoip.go descartó GeoLite2. El preparador se
+# autocomprueba contra seis países ancla antes de publicar el archivo, así que
+# un GeoJSON equivocado se detiene aquí y no en el navegador del responsable.
+MAPA_FUENTE = https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson
+MAPA_SALIDA = internal/adaptadores/web/estatico/mundo.svg
+
+mapa:
+	@tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	echo ">> descargando $(MAPA_FUENTE)"; \
+	curl -fsS --max-time 300 "$(MAPA_FUENTE)" -o "$$tmp/paises.geojson" \
+	  || { echo "ERROR: no se pudo descargar el GeoJSON"; exit 1; }; \
+	go run ./cmd/preparar-mapa "$$tmp/paises.geojson" "$(MAPA_SALIDA)"
