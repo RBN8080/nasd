@@ -316,6 +316,14 @@ type vistaSeguridad struct {
 	// pintar una columna vacia que se leeria como «no se sabe de nadie»
 	// cuando en realidad es «no se ha instalado la base».
 	HayGeo bool
+	// Paises son los países DISTINTOS que hay detrás de los rechazos de la
+	// ventana. Es el quinto cuadro de «Volumen observado» desde el
+	// 2026-09-13, donde antes iba «Contraseñas» — decisión del responsable.
+	//
+	// Cuenta sobre los mismos rechazos que Resumen.IPsUnicas, y por eso son
+	// hermanos: «cuántas direcciones» y «desde cuántos países». Ver
+	// paisesDistintos para por qué no depende de la capa del mapa.
+	Paises int
 	// Apartados son las direcciones que el nodo ha apartado SOLO, por
 	// conducta. Es lo único de esta página que no es historia: es estado
 	// vigente, y por eso se pinta arriba del todo y con su acción al lado.
@@ -388,6 +396,13 @@ type vistaSeguridad struct {
 	// hay dato de verdad.
 	Paneles        []panelGrafica
 	ActividadDesde time.Time
+	// Procedencia es el mapa de países — ADR-0089, mapa_seguridad.go.
+	//
+	// Sale de las MISMAS filas que pinta la tabla de orígenes, agrupadas por
+	// su código ISO-2, así que obedece exactamente al mismo filtro y las dos
+	// no pueden discrepar sobre qué se está mirando. No lee nada que la
+	// página no tuviera ya cargado.
+	Procedencia panelProcedencia
 	// ConPaquetes decide si se dibuja la capa de abajo. Pide DOS cosas a la
 	// vez: que haya sensor, y que la pagina este mirando Internet.
 	//
@@ -693,6 +708,7 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		UltimoFrenado:    ultimoFrenadoDe(bloqueos, apartados),
 		HayGeo:           s.geo != nil,
 		FechaGeo:         s.geo.Fecha(),
+		Paises:           s.paisesDistintos(origenes),
 		Eventos:          cronologia,
 		FiltroActivo:     rotuloDeFiltro(redes, ventanas, motivos),
 		SinFiltroDeRed:   f.Red == nil,
@@ -722,6 +738,14 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	}
 	v.Paneles = graficaDeActividad(diasActividad, v.ConPaquetes)
 	v.ActividadDesde = actividadDesde
+
+	// EL MAPA VA DESPUÉS DE LA TABLA Y SE ALIMENTA DE ELLA, no del anillo:
+	// v.Origenes ya trae el país de cada dirección resuelto y filtrado, así
+	// que agrupar por ISO-2 es una vuelta más sobre lo que ya está en memoria.
+	// La capa de paquetes se ofrece con la MISMA condición con la que se
+	// dibuja su gráfica —sensor instalado y mirando Internet—, para que el
+	// panel no tenga dos ideas distintas de cuándo esa capa existe.
+	v.Procedencia = procedenciaDe(v.Origenes, q, v.HayGeo, v.ConPaquetes)
 
 	v.FiltroAbierto = q.Get("abierto") != ""
 

@@ -251,7 +251,16 @@
     <div class="pl" data-cifra="conexiones"><div class="n mono cifra">{{.Conexiones}}</div><div class="t"><div class="q">Conexiones</div><div class="d">Aceptadas en TCP</div></div></div>
     <div class="pl" data-cifra="rechazos"><div class="n mono cifra">{{.Resumen.Eventos}}</div><div class="t"><div class="q">Rechazos</div><div class="d">{{if .SinFiltroDeRed}}{{.Resumen.DesdeFuera}} desde Internet{{else}}Por nasd{{end}}</div></div></div>
     <div class="pl" data-cifra="direcciones"><div class="n mono cifra">{{.Resumen.IPsUnicas}}</div><div class="t"><div class="q">Direcciones</div><div class="d">Distintas</div></div></div>
-    <div class="pl" data-cifra="contrasenas"><div class="n mono cifra">{{.Resumen.AutenticacionFallida}}</div><div class="t"><div class="q">Contraseñas</div><div class="d">Incorrectas</div></div></div>
+    <!-- «PAÍSES» OCUPA EL SITIO DE «CONTRASEÑAS» desde el 2026-09-13, por
+         decisión del responsable al aprobar el mapa. La cifra de contraseñas
+         no se pierde de la página: la señal «Contraseñas repetidas» sigue
+         saliendo en la fila del origen y en «Contención activa», que es donde
+         de verdad pide una decisión.
+         Cuenta sobre los MISMOS rechazos que «Direcciones» —son hermanos:
+         cuántas direcciones y desde cuántos países—, no sobre la capa que
+         tenga puesta el mapa; ver paisesDistintos. Sin base va «—» y no cero,
+         por lo mismo que «Paquetes» sin sensor. -->
+    <div class="pl" data-cifra="paises"><div class="n mono cifra">{{if .HayGeo}}{{.Paises}}{{else}}—{{end}}</div><div class="t"><div class="q">Países</div><div class="d">{{if .HayGeo}}Distintos{{else}}Sin base de operadores{{end}}</div></div></div>
   </div>
 </section>
 
@@ -312,6 +321,130 @@
   </div>
   {{end}}
 </section>
+
+<!-- PROCEDENCIA — EL MAPA DE PAÍSES (ADR-0089).
+
+     VA ENTRE «ACTIVIDAD POR DÍA» Y «ORÍGENES» a propósito: el panel está
+     ordenado como una consola SIEM —primero lo que exige decidir, luego el
+     volumen, luego cuándo, luego dónde, luego quién—, y «dónde» es justo el
+     escalón que faltaba entre la serie temporal y la tabla de direcciones.
+
+     NO LEE NADA NUEVO. Agrupa por su código ISO-2 las MISMAS filas que pinta
+     la tabla de abajo, así que obedece exactamente al mismo filtro y las dos
+     no pueden discrepar. Sin base de operadores no se pinta —igual que la
+     columna de operador— y el resto de la página sigue entera (RF-30, 1).
+
+     EL FONDO ES UNA IMAGEN Y LO ENCENDIDO VA EN LÍNEA. /estatico/mundo.svg
+     son 176 países en gris tierra, servidos con ETag y 304 en las recargas:
+     se baja UNA vez. Encima va un SVG con los trazos de SOLO los países con
+     actividad —cinco o veinte, unos pocos KB— que es lo que cambia en cada
+     carga. Los dos comparten viewBox, así que se alinean sin que nadie
+     calcule un porcentaje.
+
+     EL COLOR VA EN CLASES «b0…b5» Y NUNCA EN «fill» EN LÍNEA: la CSP es
+     «style-src 'self'» sin 'unsafe-inline' (ADR-0060) y un estilo en línea se
+     descartaría en silencio. Mismo mecanismo que el medidor de disco del rail
+     y que las barras de «Rutas más rechazadas». -->
+{{with .Procedencia}}{{if .Hay}}
+<section class="sc" id="procedencia">
+  <div class="sch">
+    <h2>Procedencia</h2>
+    <span class="ms">{{len .Paises}} {{if eq (len .Paises) 1}}país{{else}}países{{end}} · {{$.FiltroActivo}}{{if $.HayGeo}} · base de operadores {{fecha $.FechaGeo}}{{end}}</span>
+  </div>
+
+  <!-- EL SELECTOR DE CAPA SON DOS ENLACES, NO UN CONTROL DE JAVASCRIPT: el
+       estado viaja en la URL igual que el orden del listado (P-3) y que el
+       filtro de esta página, así que se puede marcar y compartir, y sigue
+       siendo el servidor quien decide qué se pinta (ADR-0076). «Paquetes»
+       solo aparece cuando de verdad se puede servir —sensor instalado y
+       mirando Internet—; un botón apagado invitaría a preguntarse qué hay
+       que hacer para encenderlo. -->
+  {{if gt (len .Opciones) 1}}
+  <div class="mctl">
+    <span class="sgl">Capa</span>
+    <div class="sgg">
+      {{range .Opciones}}<a class="sg{{if .Elegido}} on{{end}}" href="{{.Enlace}}"{{if .Elegido}} aria-current="true"{{end}}>{{.Etiqueta}}</a>{{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if .SinDatos}}
+  <!-- UNA AUSENCIA ANUNCIADA, no un hueco en blanco (ADR-0083): con este
+       filtro no hay ningún origen de Internet que situar, y decirlo distingue
+       «no ha venido nadie» de «esto dejó de funcionar». -->
+  <div class="vacio">
+    <p>Ningún origen de Internet con estos filtros.</p>
+    <p class="nota">El mapa solo sitúa direcciones de fuera: las de la LAN, el túnel y el propio nodo no tienen país que resolver.</p>
+  </div>
+  {{else}}
+  <div class="mgrid">
+    <div class="mcaja">
+      <div class="mfig">
+        <img class="mfondo" src="/estatico/mundo.svg" alt="" width="1000" height="501">
+        <svg class="mcapa" viewBox="0 0 1000 501" role="img"
+             aria-label="Mapa del mundo: {{len .Paises}} países con actividad, coloreados por {{.EtiquetaCapa}}, máximo {{.Max}}">
+          {{- range .Paises}}{{if .EnMapa}}
+          {{- if .Punto}}<circle class="pt b{{.Cubo}}" cx="{{.CX}}" cy="{{.CY}}" r="5.5" tabindex="0" data-iso="{{.ISO}}" data-lectura="{{.Lectura}}"><title>{{.Titulo}}</title></circle>
+          {{- else}}<path class="pa b{{.Cubo}}" d="{{.Trazo}}" tabindex="0" data-iso="{{.ISO}}" data-lectura="{{.Lectura}}"><title>{{.Titulo}}</title></path>{{end}}
+          {{- end}}{{end}}
+        </svg>
+      </div>
+      <!-- LA LEYENDA ESCRIBE EL MÁXIMO REAL y no solo el corte más alto de la
+           escala: un «300+» a secas prometería menos de lo que se sabe.
+           Mismo criterio que el eje de «Actividad por día». -->
+      <div class="ley">
+        <span class="cap">{{.EtiquetaCapa}}</span>
+        <span class="sw"><i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><i class="l5"></i></span>
+        <span class="sw"><span class="tk">0</span>{{range .Cortes}}<span class="tk">{{.}}</span>{{end}}</span>
+        <span class="mx mono">máx {{.Max}}</span>
+      </div>
+    </div>
+
+    <!-- LA LISTA VA AL LADO DEL MAPA Y NO DEBAJO, y esa es toda su razón de
+         ser: el mapa dice DÓNDE y la lista dice CUÁNTO. Un país pequeño se
+         pierde en el mapa a cualquier resolución, y dos que no tienen forma a
+         la de Natural Earth 110m —Singapur y Hong Kong— se dibujan como un
+         punto. La lista no pierde a ninguno.
+         SE VEN LOS PRIMEROS Y EL RESTO ESTÁ EN EL HTML: lo descubre el mismo
+         interruptor de CSS que abre el panel de filtros, sin JavaScript. -->
+    <div class="mlista">
+      <input class="ctl" type="checkbox" id="m-todos">
+      <ol class="rank">
+        {{$tope := .Tope}}{{$max := .Max}}
+        {{range .Paises}}
+        <li class="rk{{if gt .Puesto $tope}} rk-mas{{end}}" tabindex="0" data-iso="{{.ISO}}" data-lectura="{{.Lectura}}">
+          <span class="rkp mono">{{.Puesto}}</span>
+          <span class="rkn">{{.Nombre}}{{if not .EnMapa}} <span class="avi" title="sin forma en el mapa: la base de operadores devolvió un código que el mapa no dibuja">•</span>{{end}}<small class="rko mono">{{.ISO}}{{if .Operador}} · {{.Operador}}{{end}}</small></span>
+          <span class="rkv mono">{{.Valor}}</span>
+          <svg class="rkb" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true">
+            <rect class="rkbf" x="0" y="0" width="{{porcentaje .Valor $max}}" height="4"></rect>
+          </svg>
+        </li>
+        {{end}}
+      </ol>
+      {{if gt (len .Paises) .Tope}}
+      <label class="rkmas" for="m-todos">
+        <span class="mas-abrir">Ver los {{len .Paises}} — ahora se ven los {{.Tope}} primeros</span>
+        <span class="mas-cerrar">Ver solo los {{.Tope}} primeros</span>
+      </label>
+      {{end}}
+    </div>
+  </div>
+
+  <!-- LA LÍNEA DE LECTURA. Nace con su texto de reposo y la rellena
+       seguridad.js al posar, enfocar o tocar un país. SIN JavaScript no falta
+       nada: cada trazo lleva su <title>, que es lo que el navegador enseña al
+       posar. Lo que añade el guion es que funcione con el dedo y con el
+       tabulador, que es justo lo que un <title> no hace. -->
+  <p class="lect" id="lector-mapa" aria-live="polite"
+     data-reposo="Posa el cursor sobre un país —o recórrelos con el tabulador— para ver quién es.">Posa el cursor sobre un país —o recórrelos con el tabulador— para ver quién es.</p>
+
+  {{if eq .Capa "paquetes"}}
+  <p class="nota"><b>Paquetes:</b> lo que el sensor vio llegar, haya llegado o no a pedir algo. Su archivo es más corto que el anillo de rechazos, así que esta capa alcanza menos atrás.</p>
+  {{end}}
+  {{end}}
+</section>
+{{end}}{{end}}
 
 <!-- LA TABLA DE LA PÁGINA: una fila por dirección con las TRES CAPAS en la
      misma celda (ADR-0066). Con tres tablas había que cruzar tres filas a ojo

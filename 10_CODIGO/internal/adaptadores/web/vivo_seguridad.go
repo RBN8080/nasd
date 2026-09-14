@@ -98,13 +98,27 @@ func (s *Servidor) marcoDeSeguridad(f seguridad.Filtro) marcoSeguridad {
 		paquetes = strconv.Itoa(len(hist.EnVentana(f.Desde)))
 	}
 
+	paises := "—"
+	if s.geo != nil {
+		paises = strconv.Itoa(s.paisesDistintos(origenes))
+	}
+
 	return marcoSeguridad{
 		Cifras: []cifraViva{
 			{Clave: "paquetes", Valor: paquetes},
 			{Clave: "conexiones", Valor: strconv.Itoa(len(conexiones))},
 			{Clave: "rechazos", Valor: strconv.Itoa(resumen.Eventos)},
 			{Clave: "direcciones", Valor: strconv.Itoa(resumen.IPsUnicas)},
-			{Clave: "contrasenas", Valor: strconv.Itoa(resumen.AutenticacionFallida)},
+			// «Países» sustituye a «Contraseñas» en la banda por decisión del
+			// responsable (2026-09-13). La cifra de contraseñas no se pierde:
+			// resumen.AutenticacionFallida sigue existiendo, y la señal
+			// «Contraseñas repetidas» sigue saliendo en la fila del origen y
+			// en «Contención activa», que es donde pide una decisión.
+			//
+			// Sin base de operadores va «—» y no un cero, por lo mismo que
+			// «Paquetes» sin sensor: un cero se lee como «no ha venido nadie
+			// de fuera» cuando significa «no se está mirando».
+			{Clave: "paises", Valor: paises},
 		},
 		Contencion: len(s.cuarentena.Vigentes(ahora)) +
 			len(s.lista.Vigentes(ahora)) +

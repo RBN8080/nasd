@@ -945,3 +945,132 @@ input::placeholder{color:var(--tx3);}
 /* El visor cuando el navegador no puede con el formato: la tarjeta centrada
    y nada más, que es lo que RF-25 pide al pie de la letra. */
 .no-compatible{text-align:center;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PROCEDENCIA — el mapa de países de /seguridad (ADR-0089).
+   ═══════════════════════════════════════════════════════════════════════
+
+   DOS CAPAS SUPERPUESTAS, y la de abajo es una IMAGEN. «/estatico/mundo.svg»
+   son los 176 países en gris tierra: se baja una vez, con su ETag, y en las
+   recargas vuelve un 304 sin cuerpo. La capa de encima es un SVG en línea con
+   los trazos de SOLO los países que tienen actividad — cinco o veinte, unos
+   pocos KB, que es lo único que cambia entre dos cargas.
+
+   Las dos comparten el viewBox «0 0 1000 501», así que basta con que midan lo
+   mismo para que encajen: «position:absolute; inset:0» sobre un contenedor
+   con la relación de aspecto puesta. Sin cálculo de porcentajes en ninguna
+   plantilla.
+
+   EL COLOR VA EN CLASES Y NUNCA EN «fill» EN LÍNEA — la CSP es
+   «style-src 'self'» sin 'unsafe-inline' (ADR-0060) y un estilo en línea se
+   descartaría en silencio, dejando el mapa entero del color de la tierra sin
+   que nada fallara a gritos. Mismo mecanismo que el medidor de disco. */
+
+/* La rampa: UN tono, de apagado a encendido sobre el fondo oscuro. Nace del
+   acento de la consola, que es su escalón más alto. Seis escalones y no una
+   rampa continua porque el ojo no compara dos azules parecidos; con seis, la
+   leyenda se lee una vez y ya no hace falta volver a ella. */
+:root{
+  --tierra:#1b1e24;
+  --m1:#2b3b52; --m2:#3c5679; --m3:#5077a6; --m4:#7099cb; --m5:#a8c4e6;
+}
+
+.mctl{display:flex;flex-wrap:wrap;gap:var(--e1) var(--e2);align-items:center;}
+.sgl{font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
+/* El control segmentado son dos ENLACES, no botones: cambiar de capa es
+   navegar, igual que ordenar el listado (P-3). Se les quita el subrayado por
+   lo mismo que a «.ni» y a «.tb». */
+.sgg{display:inline-flex;background:var(--n2);border:1px solid var(--n4);
+  border-radius:var(--r2);padding:2px;gap:2px;}
+.sgg .sg{display:inline-block;padding:5px var(--e2);border-radius:var(--r1);
+  font-size:.71rem;color:var(--tx3);text-decoration:none;white-space:nowrap;}
+.sgg .sg:hover{color:var(--tx2);background:var(--n3);}
+.sgg .sg.on{background:var(--acT);color:var(--ac2);box-shadow:inset 0 0 0 1px var(--acB);}
+
+/* El mapa a la izquierda y la lista a la derecha, y no la lista debajo: el
+   mapa dice DÓNDE y la lista dice CUÁNTO, y se leen juntas. Por debajo del
+   ancho de un portátil se apilan, que en un teléfono es la única opción. */
+.mgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--e2);align-items:start;}
+@container (min-width:900px){.mgrid{grid-template-columns:minmax(0,1.9fr) minmax(260px,1fr);}}
+.mcaja{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
+  padding:var(--e2);display:flex;flex-direction:column;gap:var(--e2);min-width:0;}
+
+/* «aspect-ratio» y no una altura fija: es la relación del viewBox que escribe
+   cmd/preparar-mapa, y atarla aquí evita que la capa de color y el fondo se
+   despeguen si algún día cambia el recorte de latitudes. */
+.mfig{position:relative;width:100%;aspect-ratio:1000/501;}
+/* «max-width:100%» aunque las dos vayan absolutas y no puedan ensanchar a su
+   padre: el <img> declara width=1000 en el atributo —que es lo que evita que
+   la caja salte mientras carga— y esa cifra no debe poder escaparse nunca de
+   la tarjeta en un teléfono. Cuesta nada y cierra la duda. */
+.mfondo,.mcapa{position:absolute;inset:0;width:100%;height:100%;max-width:100%;display:block;}
+.mcapa{overflow:visible;}
+.pa,.pt{fill:var(--tierra);stroke:var(--n2);stroke-linejoin:round;}
+.pa{stroke-width:.5;}
+.pt{stroke-width:1.2;}
+.b0{fill:var(--tierra);}
+.b1{fill:var(--m1);} .b2{fill:var(--m2);} .b3{fill:var(--m3);}
+.b4{fill:var(--m4);} .b5{fill:var(--m5);}
+/* Lo que tiene datos se puede señalar, con el dedo y con el tabulador. */
+.mcapa [data-iso]{cursor:pointer;}
+.mcapa [data-iso]:hover,.mcapa [data-iso]:focus-visible,.mcapa [data-iso].act{
+  stroke:var(--ac2);stroke-width:1.4;outline:none;}
+
+.ley{display:flex;align-items:center;gap:var(--e1);flex-wrap:wrap;
+  font-size:.62rem;color:var(--tx3);}
+.ley .cap{letter-spacing:.1em;text-transform:uppercase;font-weight:600;}
+.ley .sw{display:flex;align-items:center;}
+.ley i{width:26px;height:9px;display:block;border-radius:1px;}
+.ley .l0{background:var(--tierra);} .ley .l1{background:var(--m1);}
+.ley .l2{background:var(--m2);} .ley .l3{background:var(--m3);}
+.ley .l4{background:var(--m4);} .ley .l5{background:var(--m5);}
+.ley .tk{width:26px;text-align:center;font-family:"DM Mono",monospace;}
+.ley .mx{margin-left:auto;color:var(--tx2);}
+
+/* LA LÍNEA DE LECTURA. Reserva su alto desde el principio para que rellenarla
+   al posar no empuje el resto de la página hacia abajo. */
+.lect{margin:0;min-height:2.1rem;padding:var(--e1) var(--e2);background:var(--n2);
+  border:1px solid var(--n4);border-radius:var(--r2);
+  font-size:.73rem;color:var(--tx2);line-height:1.45;}
+
+/* La lista de países. Se ven los primeros y el resto está en el HTML: lo
+   descubre el MISMO interruptor de CSS que abre el panel de filtros
+   —un checkbox fuera de la vista y «:has()»—, sin una línea de JavaScript. */
+.mlista{display:flex;flex-direction:column;min-width:0;}
+.mlista .rank{list-style:none;margin:0;padding:0;background:var(--n2);
+  border:1px solid var(--n4);border-radius:var(--r2) var(--r2) 0 0;overflow:hidden;}
+.mlista:not(:has(.rkmas)) .rank{border-radius:var(--r2);}
+.rk{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:2px var(--e1);
+  align-items:baseline;padding:7px var(--e2);border-bottom:1px solid var(--lnT);}
+.rk:last-child{border-bottom:0;}
+.rk:hover,.rk:focus-visible,.rk.act{background:var(--acT);outline:none;}
+.rkp{font-size:.66rem;color:var(--tx3);font-variant-numeric:tabular-nums;}
+.rkn{font-size:.76rem;min-width:0;display:flex;flex-direction:column;}
+.rko{font-size:.63rem;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rkv{font-size:.8rem;font-weight:500;}
+.rkb{grid-column:2/4;width:100%;height:3px;display:block;background:var(--n3);border-radius:1px;}
+.rkbf{fill:var(--m3);}
+.rk.act .rkbf{fill:var(--m5);}
+/* La marca de «este país no se pudo situar en el mapa»: ámbar, que en esta
+   consola es el color de lo que hay que mirar con reservas. */
+.avi{color:var(--av);}
+.rk-mas{display:none;}
+.mlista:has(#m-todos:checked) .rk-mas{display:grid;}
+.rkmas{display:block;padding:8px var(--e2);background:var(--n2);
+  border:1px solid var(--n4);border-top:0;border-radius:0 0 var(--r2) var(--r2);
+  font-size:.68rem;color:var(--tx3);cursor:pointer;}
+.rkmas:hover{background:var(--n3);color:var(--tx2);}
+.mas-cerrar{display:none;}
+.mlista:has(#m-todos:checked) .mas-abrir{display:none;}
+.mlista:has(#m-todos:checked) .mas-cerrar{display:inline;}
+
+/* ── EL MAPA EN EL TELÉFONO ──
+   A 390 px el mapa mide 358 × 179: sirve para ver qué continente está
+   encendido, no para leer países pequeños. Por eso la lista va justo debajo y
+   la línea de lectura se mantiene: con el dedo no hay «posar el cursor», y el
+   <title> de un trazo no se enseña nunca en un móvil. */
+@container (max-width:899px){
+  .mfig{aspect-ratio:1000/501;}
+  .ley .tk{width:22px;}
+  .ley i{width:22px;}
+}

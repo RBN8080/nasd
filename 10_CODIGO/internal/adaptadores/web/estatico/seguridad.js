@@ -110,3 +110,76 @@
 
   arrancar();
 })();
+
+// El lector del mapa de «Procedencia» — ADR-0089.
+//
+// MEJORA PROGRESIVA ESTRICTA, como el flujo de arriba: sin este bloque no
+// falta ni un dato. Cada trazo del mapa lleva su <title>, que es lo que el
+// navegador enseña al posar el cursor, y la lista de al lado dice lo mismo
+// escrito. Lo que añade esto es que la información aparezca SIN posar —con el
+// dedo y con el tabulador—, que es justo lo que un <title> no sabe hacer: en
+// un teléfono no se enseña nunca.
+//
+// NO RECALCULA NADA. La capa que se pinta la decide el servidor y viaja en la
+// URL (?capa=), así que aquí no hay cifras que derivar: cada elemento trae ya
+// escrita su línea en «data-lectura» y esto solo la copia al sitio donde se
+// lee. Es la misma disciplina que ADR-0017 aplica al resto de la página —
+// quien decide cómo se escribe un dato es Go, no el navegador.
+(() => {
+  'use strict';
+
+  const lector = document.getElementById('lector-mapa');
+  const seccion = document.getElementById('procedencia');
+  // Sin mapa en la página no hay nada que enganchar. Pasa siempre que no hay
+  // base de operadores instalada, que es un estado normal y no un fallo.
+  if (!lector || !seccion) return;
+
+  const reposo = lector.dataset.reposo || '';
+
+  // El realce se mueve de un elemento a otro, nunca se acumula: el país que
+  // se está leyendo es uno.
+  let marcado = null;
+  function marcar(iso) {
+    if (marcado === iso) return;
+    marcado = iso;
+    for (const el of seccion.querySelectorAll('[data-iso]')) {
+      el.classList.toggle('act', iso !== null && el.dataset.iso === iso);
+    }
+  }
+
+  function leer(el) {
+    if (!el) return;
+    const texto = el.dataset.lectura;
+    if (!texto) return;
+    lector.textContent = texto;
+    marcar(el.dataset.iso);
+  }
+
+  function soltar() {
+    lector.textContent = reposo;
+    marcar(null);
+  }
+
+  // Delegación en la sección entera: el mapa y la lista comparten el mismo
+  // «data-iso», así que posar sobre China o sobre su fila hacen lo mismo — y
+  // se realzan las dos a la vez, que es lo que las relaciona sin una leyenda
+  // que lo explique.
+  seccion.addEventListener('pointerover', (e) => {
+    const el = e.target.closest('[data-lectura]');
+    if (el) leer(el);
+  });
+  // focusin y no focus: focus no burbujea, y sin esto el tabulador movería el
+  // realce sin escribir la línea.
+  seccion.addEventListener('focusin', (e) => {
+    const el = e.target.closest('[data-lectura]');
+    if (el) leer(el);
+  });
+  seccion.addEventListener('pointerleave', soltar);
+
+  // En un teléfono no hay «salir» de un elemento: se toca otro o se toca
+  // fuera. Sin esto, la línea se quedaría con el último país tocado para
+  // siempre, diciendo algo que ya no se está mirando.
+  document.addEventListener('pointerdown', (e) => {
+    if (!seccion.contains(e.target)) soltar();
+  });
+})();

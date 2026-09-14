@@ -152,7 +152,12 @@ func TestElFlujoDeSeguridadEntregaMarcos(t *testing.T) {
 	if !strings.Contains(cuerpo, "data: ") {
 		t.Fatalf("no llegó ningún marco:\n%s", cuerpo)
 	}
-	for _, clave := range []string{"paquetes", "conexiones", "rechazos", "direcciones", "contrasenas"} {
+	// «paises» ocupa el sitio de «contrasenas» desde el 2026-09-13, por
+	// decisión del responsable al aprobar el mapa de «Procedencia». Las cinco
+	// anclas del marco tienen que seguir siendo exactamente las cinco que la
+	// página pinta: si una deja de coincidir, el cuadro deja de refrescarse y
+	// no falla nada a gritos — que es el contrato que este archivo vigila.
+	for _, clave := range []string{"paquetes", "conexiones", "rechazos", "direcciones", "paises"} {
 		if !strings.Contains(cuerpo, `"clave":"`+clave+`"`) {
 			t.Errorf("el marco no trae la cifra %q", clave)
 		}
