@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -347,6 +348,37 @@ func TestLaPlantillaYElGuionNombranLosMismosGanchos(t *testing.T) {
 		t.Error(".marq-nvo fija display y no desactiva [hidden]: el aviso nacería visible en toda carga")
 	}
 
+	// LA CINTA SE MUEVE SIEMPRE, y las dos mitades tienen que conocer las
+	// MISMAS copias.
+	//
+	// Aquí hubo una regla que PARABA la cinta cuando el texto ya cabía en la
+	// ventana, y en el escritorio eso era casi siempre: lo reportó el
+	// responsable viéndolo quieto. Ahora el guion repite el texto las copias
+	// que hagan falta y pide al CSS que desplace 100/n —UNA copia exacta—, para
+	// que la distancia recorrida no dependa del ancho de la pantalla.
+	//
+	// SI UNA CLASE FALTA EN LA HOJA la pista se queda con el «-50%» por
+	// omisión, y a n copias eso recorre n/2 veces la distancia en el mismo
+	// tiempo: la cinta se dispara de velocidad sin que nada falle a gritos.
+	//
+	// Se compara la LISTA del guion contra las clases de la hoja, y no se busca
+	// cada nombre suelto en el texto: «n2» aparece por casualidad dentro de
+	// otras palabras, así que esa comprobación pasaba sin comprobar nada —se
+	// vio al escribirla, porque solo fallaba para «n10» y «n12»—.
+	m := regexp.MustCompile(`COPIAS = \[([0-9, ]+)\]`).FindStringSubmatch(js)
+	if m == nil {
+		t.Fatal("seguridad.js ya no declara la lista COPIAS: nada decide cuántas veces se repite el texto")
+	}
+	for _, n := range strings.Split(m[1], ",") {
+		n = strings.TrimSpace(n)
+		clase := ".n" + n + "{animation-name:"
+		if !strings.Contains(css, clase) {
+			t.Errorf("el guion puede pedir %s copias y estilo.css no define %q", n, clase)
+		}
+	}
+	if strings.Contains(css, "marq-quieta") || strings.Contains(js, "marq-quieta") {
+		t.Error("vuelve a haber una regla que para la cinta; se pidió una marquesina, no un cartel")
+	}
 	// La alternativa sin movimiento no es opcional: una marquesina que ignora
 	// «prefers-reduced-motion» es un patrón hostil.
 	if !strings.Contains(css, "prefers-reduced-motion") {

@@ -142,18 +142,63 @@
     }
   }
 
-  // SI EL TEXTO YA CABE, QUE NO SE MUEVA. Go elige el cubo de velocidad por
-  // número de caracteres y puede errar por exceso en una pantalla ancha; esto
-  // lo mide de verdad. Se compara contra la PRIMERA copia y no contra la pista
-  // entera, que mide el doble: si se midiera la pista, esconder la copia
-  // volvería a hacerla caber y la clase oscilaría en cada pasada.
-  function ajustarMovimiento() {
+  // CUÁNTAS COPIAS DEL TEXTO HACEN FALTA PARA QUE LA CINTA NO SE VACÍE NUNCA.
+  //
+  // Aquí hubo una regla que PARABA la cinta cuando el texto ya cabía. El
+  // responsable lo reportó el 2026-09-14 —en el escritorio no avanzaba— y
+  // tenía razón: se pidió una marquesina, no un cartel que a veces se mueve.
+  //
+  // El problema que aquella regla tapaba es real: Go manda el texto DOS veces,
+  // que es lo que hace falta cuando el texto desborda la ventana —el caso del
+  // teléfono—, pero en un monitor ancho el texto es más estrecho que la
+  // ventana y al desplazar una copia entera detrás queda hueco. La salida es
+  // repetirlo hasta que, desplazado el ancho de UNA copia, siga quedando
+  // contenido cubriendo la ventana:  (copias − 1) × ancho ≥ ancho de la caja.
+  //
+  // La clase «n<copias>» le dice al CSS que desplace 100/n, es decir UNA copia
+  // exacta: así la distancia en píxeles no depende del ancho de la pantalla y
+  // la duración que Go eligió por longitud sigue siendo la velocidad real.
+  const COPIAS = [2, 3, 4, 5, 6, 8, 10, 12];
+
+  function ajustarCopias() {
+    let cambio = false;
     for (const caja of document.querySelectorAll('.marq-caja')) {
       const pista = caja.querySelector('.marq-pista');
-      const tira = pista && pista.querySelector('.tira');
-      if (!tira) continue;
-      pista.classList.toggle('marq-quieta', tira.scrollWidth <= caja.clientWidth);
+      if (!pista) continue;
+      const tiras = pista.querySelectorAll('.tira');
+      if (!tiras.length) continue;
+      const base = tiras[0];
+      const ancho = base.scrollWidth;
+      // Sin ancho medible no se decide nada. Pasa mientras las tipografías
+      // propias siguen cargando, y decidir ahí dejaría copias de más —o de
+      // menos— congeladas para toda la sesión. Por eso se vuelve a llamar
+      // cuando las fuentes están listas.
+      if (!ancho) continue;
+      const hacenFalta = Math.ceil(caja.clientWidth / ancho) + 1;
+      let n = COPIAS[COPIAS.length - 1];
+      for (const c of COPIAS) {
+        if (c >= hacenFalta) { n = c; break; }
+      }
+      if (tiras.length !== n) {
+        // Se reconstruye desde la PRIMERA, que es la que lleva el texto que
+        // se lee; las demás son decorado y van «aria-hidden» para que un
+        // lector de pantalla no repita la misma frase doce veces.
+        for (let i = tiras.length - 1; i > 0; i--) tiras[i].remove();
+        for (let i = 1; i < n; i++) {
+          const copia = base.cloneNode(true);
+          copia.classList.add('marq-copia');
+          copia.setAttribute('aria-hidden', 'true');
+          pista.appendChild(copia);
+        }
+        cambio = true;
+      }
+      const clase = 'n' + n;
+      if (!pista.classList.contains(clase)) {
+        for (const c of COPIAS) pista.classList.remove('n' + c);
+        pista.classList.add(clase);
+      }
     }
+    return cambio;
   }
 
   function marcarPiloto(estado, texto) {
@@ -174,15 +219,30 @@
 
   function arrancar() {
     const cifras = indexar('data-cifra', '.cifra');
-    const cinta = indexar('data-seg', '.vl');
+    // EL ÍNDICE DE LA CINTA NO PUEDE SER CONSTANTE, al revés que el de las
+    // cifras: ajustarCopias crea y destruye nodos según el ancho, y un índice
+    // viejo apuntaría a copias que ya no están en la página mientras las
+    // nuevas se quedan con el texto del momento en que se clonaron. Se rehace
+    // cada vez que el número de copias cambia, y solo entonces.
+    let cinta = indexar('data-seg', '.vl');
     // Sin nada que refrescar no se abre el flujo: poner al nodo a muestrear
     // para nadie es gasto puro. Mismo cortocircuito que cuentas.js.
     if (cifras.size === 0 && cinta.size === 0) return;
 
     const caja = document.querySelector('.marq');
     const aviso = document.getElementById('contencion-nueva');
-    ajustarMovimiento();
-    window.addEventListener('resize', ajustarMovimiento);
+    function recolocar() {
+      if (ajustarCopias()) cinta = indexar('data-seg', '.vl');
+    }
+    recolocar();
+    window.addEventListener('resize', recolocar);
+    // LAS TIPOGRAFÍAS PROPIAS LLEGAN DESPUÉS Y CAMBIAN EL ANCHO DEL TEXTO
+    // (estilo.css las sirve desde el binario con font-display:swap). Medir
+    // solo al arrancar dejaría las copias calculadas sobre la fuente del
+    // sistema, que no es la que se acaba viendo.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(recolocar).catch(() => {});
+    }
 
     // EL FLUJO LLEVA LA MISMA CONSULTA QUE LA PÁGINA, y esa es la pieza que lo
     // hace honesto: las cifras de este panel dependen del filtro —origen,
@@ -207,7 +267,7 @@
       aplicarCifras(cifras, marco.cifras || []);
       aplicarCinta(cinta, marco.cinta || []);
       ponerVelocidad(marco.velocidad);
-      ajustarMovimiento();
+      recolocar();
       vigilarContencion(caja, aviso, marco.contencion || 0);
     };
 

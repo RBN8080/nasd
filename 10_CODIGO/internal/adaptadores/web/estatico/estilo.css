@@ -1031,12 +1031,47 @@ input::placeholder{color:var(--tx3);}
 .marq:hover .marq-pista,
 .marq:focus-within .marq-pista{animation-play-state:paused;}
 
-/* CUANDO EL TEXTO YA CABE, NO SE MUEVE. Lo decide seguridad.js midiendo, y lo
-   aplica con una CLASE —nunca con un estilo—. Sin JavaScript gobierna el cubo
-   de Go, que puede errar por exceso: el daño máximo es un texto que se mueve
-   pudiendo estar quieto, y se para posando el cursor. */
-.marq-quieta{animation:none;width:auto;}
-.marq-quieta .marq-copia{display:none;}
+/* LA CINTA SE MUEVE SIEMPRE, Y ESTO ES LO QUE LO GARANTIZA.
+   Reportado por el responsable el 2026-09-14: en el escritorio no avanzaba.
+   La causa era una regla mía —«si el texto ya cabe, que no se mueva»— que
+   estaba mal planteada: se pidió una marquesina, no un cartel que a veces se
+   mueve. Se retira entera.
+
+   Lo que quedaba debajo sí era un problema real: con DOS copias, en un
+   monitor ancho el texto es más estrecho que la ventana, así que al desplazar
+   una copia entera detrás queda hueco vacío. La salida no es parar, es
+   REPETIR el texto las veces que hagan falta para que, desplazado el ancho de
+   una copia, siempre quede contenido cubriendo la ventana:
+
+       (copias − 1) × ancho_de_una  ≥  ancho_de_la_ventana
+
+   Y EL DESPLAZAMIENTO SIGUE SIENDO EL DE UNA SOLA COPIA, no la mitad de la
+   pista. Por eso hay una clase por número de copias, cada una con su
+   porcentaje 100/n: así la DISTANCIA en píxeles es siempre el ancho del
+   texto, y la duración que Go eligió por longitud sigue valiendo. Con un
+   «-50%» fijo y cuatro copias, un monitor recorrería el doble de distancia en
+   el mismo tiempo y la cinta iría al doble de velocidad que en el teléfono.
+
+   Cuántas copias hacen falta lo mide seguridad.js y lo aplica con una CLASE,
+   nunca con un estilo (ADR-0060). Sin JavaScript quedan las dos que escribe
+   Go y el «-50%» por omisión, que es exacto en el teléfono —donde el texto
+   siempre desborda— y deja hueco en un monitor ancho. Es la degradación
+   aceptable: sin JavaScript la cinta es una foto que se desplaza. */
+.n2{animation-name:correr;}
+@keyframes correr3{from{transform:translateX(0)}to{transform:translateX(-33.3333%)}}
+.n3{animation-name:correr3;}
+@keyframes correr4{from{transform:translateX(0)}to{transform:translateX(-25%)}}
+.n4{animation-name:correr4;}
+@keyframes correr5{from{transform:translateX(0)}to{transform:translateX(-20%)}}
+.n5{animation-name:correr5;}
+@keyframes correr6{from{transform:translateX(0)}to{transform:translateX(-16.6667%)}}
+.n6{animation-name:correr6;}
+@keyframes correr8{from{transform:translateX(0)}to{transform:translateX(-12.5%)}}
+.n8{animation-name:correr8;}
+@keyframes correr10{from{transform:translateX(0)}to{transform:translateX(-10%)}}
+.n10{animation-name:correr10;}
+@keyframes correr12{from{transform:translateX(0)}to{transform:translateX(-8.3333%)}}
+.n12{animation-name:correr12;}
 
 .tira{display:flex;align-items:center;flex:0 0 auto;}
 .sg{display:flex;align-items:baseline;gap:6px;padding:0 var(--e2);white-space:nowrap;
