@@ -439,6 +439,13 @@ type vistaSeguridad struct {
 	// poder ser una frase fija el día que un apartado por operador no caduca:
 	// ver fraseDeCaducidad.
 	CaducidadApartados string
+	// Cinta es la banda en vivo de la fila de órdenes — ver cinta_seguridad.go.
+	//
+	// LA COMPONE LA MISMA FUNCIÓN QUE ALIMENTA AL FLUJO, y esa es la pieza que
+	// la hace honesta: si el texto se escribiera aquí y otra vez en
+	// marcoDeSeguridad, la cinta cambiaría de palabra sola al primer tic sin
+	// que nada fallara a gritos.
+	Cinta cintaSeguridad
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -821,6 +828,20 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		EnlaceCerrar: enlaceDeSeguridad(q, map[string]string{"origen": ""}),
 		Volver:       r.URL.RawQuery,
 	}
+
+	// LA CINTA SE COMPONE CON LO QUE YA ESTÁ EN LA MANO, sin releer nada: los
+	// apartados, los bloqueos y los hallazgos son los MISMOS que pintan las
+	// tablas, así que la banda y la sección no pueden discrepar sobre cuántos
+	// hay. Ver cinta_seguridad.go.
+	v.Cinta = componerCinta(hechosDeCinta{
+		Apartados: len(apartados),
+		Bloqueos:  len(bloqueos),
+		Hallazgos: len(hallazgos),
+		Rechazo:   v.UltimoRechazo,
+		Frenado:   v.UltimoFrenado,
+		Red:       etiquetaDeRed(f.Red),
+		Ahora:     ahora,
+	})
 
 	// EL ENLACE DE CADA FILA SE COMPONE AQUÍ, con la consulta en la mano. La
 	// plantilla escribía «?origen={{.IP}}», que tiraba el filtro entero.

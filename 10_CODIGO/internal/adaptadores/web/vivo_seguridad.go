@@ -69,6 +69,21 @@ type marcoSeguridad struct {
 	// refrescarlas. Lo que el número permite es AVISAR de que hay algo nuevo y
 	// dejar que sea la persona quien recargue.
 	Contencion int `json:"contencion"`
+	// Cinta son los segmentos de la banda de la fila de órdenes, con su texto
+	// YA ESCRITO por Go (ADR-0017). Ver cinta_seguridad.go.
+	Cinta []segmentoCinta `json:"cinta"`
+	// Velocidad es la clase «v1…v6» de la animación. Viaja porque el texto
+	// cambia de largo: una puerta cerrada nueva alarga la pista, y con la
+	// duración quieta la cinta se aceleraría sola.
+	Velocidad string `json:"velocidad"`
+	// Hora es el reloj del nodo en ESTE marco, ya formateado.
+	//
+	// ES LA PRUEBA DE VIDA DEL PANEL, y por eso viaja en cada marco aunque
+	// nada más haya cambiado: el piloto lo enseña y lo hace avanzar de segundo
+	// en segundo mientras siga confirmándose. Si los marcos dejan de llegar,
+	// el reloj se para delante de quien mira — que es lo que distingue un
+	// panel tranquilo de un panel muerto (ADR-0083).
+	Hora string `json:"hora"`
 }
 
 // marcoDeSeguridad arma el marco para un filtro concreto.
@@ -103,6 +118,27 @@ func (s *Servidor) marcoDeSeguridad(f seguridad.Filtro) marcoSeguridad {
 		paises = strconv.Itoa(s.paisesDistintos(origenes))
 	}
 
+	// LAS TRES LISTAS SE LEEN UNA VEZ Y SE REPARTEN entre el recuento de
+	// contención y la cinta. Leerlas dos veces daría dos fotos de instantes
+	// distintos dentro del MISMO marco, y el aviso de «ha cambiado» podría
+	// dispararse contra una cuenta que la cinta no está enseñando.
+	apartados := s.cuarentena.Vigentes(ahora)
+	bloqueos := s.lista.Vigentes(ahora)
+	hallazgos := s.hallazgos.Todos()
+
+	// LA CINTA LA COMPONE LA MISMA FUNCIÓN QUE LA PÁGINA. No hay aquí ni un
+	// texto escrito a mano: si lo hubiera, la banda cambiaría de palabra sola
+	// al primer tic. Ver cinta_seguridad.go.
+	cinta := componerCinta(hechosDeCinta{
+		Apartados: len(apartados),
+		Bloqueos:  len(bloqueos),
+		Hallazgos: len(hallazgos),
+		Rechazo:   ultimoRechazoDe(s.seguridad, f.Red),
+		Frenado:   ultimoFrenadoDe(bloqueos, apartados),
+		Red:       etiquetaDeRed(f.Red),
+		Ahora:     ahora,
+	})
+
 	return marcoSeguridad{
 		Cifras: []cifraViva{
 			{Clave: "paquetes", Valor: paquetes},
@@ -120,9 +156,10 @@ func (s *Servidor) marcoDeSeguridad(f seguridad.Filtro) marcoSeguridad {
 			// de fuera» cuando significa «no se está mirando».
 			{Clave: "paises", Valor: paises},
 		},
-		Contencion: len(s.cuarentena.Vigentes(ahora)) +
-			len(s.lista.Vigentes(ahora)) +
-			len(s.hallazgos.Todos()),
+		Contencion: len(apartados) + len(bloqueos) + len(hallazgos),
+		Cinta:      cinta.Segmentos,
+		Velocidad:  cinta.Velocidad,
+		Hora:       cinta.Hora,
 	}
 }
 

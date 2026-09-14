@@ -238,7 +238,13 @@ body:has(#f-abre:checked) .chips{display:flex;}
 body:has(#f-abre:checked) .fbtn{background:var(--acT);border-color:var(--acB);color:var(--ac2);}
 body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
 .cv{transition:transform .12s;}
-.rango{margin-left:auto;color:var(--tx3);font-size:.72rem;font-variant-numeric:tabular-nums;}
+/* SIN «margin-left:auto» DESDE LA CINTA. Con el auto este rótulo se iba al
+   borde derecho —lo más lejos que la fila permite del control del que es
+   adjetivo— y dejaba muerto todo el centro del renglón. Pegado al botón, el
+   resto queda para la marquesina, y además cumple mejor lo que su propia nota
+   en seguridad.html ya decía querer. */
+.rango{color:var(--tx3);font-size:.72rem;font-variant-numeric:tabular-nums;
+  flex:0 0 auto;padding-left:var(--e1);white-space:nowrap;}
 .chips::-webkit-scrollbar{display:none;}
 
 /* ── CUERPO ── */
@@ -945,6 +951,130 @@ input::placeholder{color:var(--tx3);}
 /* El visor cuando el navegador no puede con el formato: la tarjeta centrada
    y nada más, que es lo que RF-25 pide al pie de la letra. */
 .no-compatible{text-align:center;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LA CINTA EN VIVO DE /seguridad — ver cinta_seguridad.go.
+   ═══════════════════════════════════════════════════════════════════════
+
+   UNA SOLA LÍNEA, Y DEL ALTO DEL BOTÓN. «flex-wrap:nowrap» no es un descuido:
+   con «wrap» —que es lo que se probó primero— el piloto y el texto se partían
+   en dos renglones, la fila crecía y dejaba de leerse como una banda. Con
+   «nowrap» el piloto manda a la izquierda, la pista se come el resto, y el
+   aviso de contención —cuando lo hay— ESTRECHA la pista en vez de empujar la
+   fila hacia abajo. «min-height» iguala el alto con «.fbtn» para que los tres
+   objetos de la fila compartan línea de base.
+
+   «flex:1 1 18rem» ES LO QUE DA LAS DOS COMPOSICIONES CON UNA REGLA: en el
+   escritorio cabe detrás de «Filtrar» y su rótulo; en el teléfono, donde tras
+   esos dos sobran unos 140 px, la base de 18rem no entra y «.ordenes» —que ya
+   envuelve— la baja sola a su propio renglón, entera. Sin una media query
+   nueva y sin una segunda plantilla. */
+.marq{flex:1 1 18rem;min-width:0;display:flex;flex-wrap:nowrap;align-items:center;
+  gap:var(--e1);min-height:28px;margin-left:var(--e2);
+  background:var(--n2);border:1px solid var(--n4);border-radius:var(--r1);
+  padding:2px 3px 2px 4px;}
+
+/* EL PILOTO — lo que sustituye a la pastilla «#latido» de la línea del título.
+   Es «flex:0 0 auto» y «nowrap» a propósito: un indicador de estado que se
+   recorta o que se desliza fuera de la pantalla es peor que no tenerlo. */
+.pil{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:2px 7px;
+  border-radius:var(--r1);border:1px solid currentColor;font-size:.6rem;font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase;line-height:1.6;white-space:nowrap;}
+.pil i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 6px;}
+.pil .pil-hr{font-family:"DM Mono",monospace;font-weight:400;letter-spacing:0;
+  text-transform:none;opacity:.85;font-variant-numeric:tabular-nums;}
+/* Los cuatro estados. «foto» es el que escribe el servidor y el único que se
+   ve sin JavaScript; los otros tres los pone seguridad.js. */
+.pil-foto{color:var(--nada);}
+.pil-vivo{color:var(--ok);}
+.pil-aviso{color:var(--av);}
+.pil-corte{color:var(--fa);}
+/* El punto late mientras llegan marcos. Es la única señal que no depende de
+   leer: si deja de latir, algo pasó. Se apaga con «prefers-reduced-motion»
+   como todo lo demás. */
+@keyframes latir{0%,100%{opacity:1}50%{opacity:.35}}
+.pil-vivo i{animation:latir 2s ease-in-out infinite;}
+
+/* EL AVISO DE CONTENCIÓN CAMBIADA, mudado desde el pie de su sección.
+   «[hidden]» VA EXPLÍCITO Y NO ES REDUNDANTE: el atributo del HTML se aplica
+   con un «display:none» de la hoja del navegador, y CUALQUIER regla de autor
+   que fije «display» lo pisa. Sin esta línea el aviso nacía VISIBLE en toda
+   carga —diciendo «recargue» a quien acababa de recargar—, y no lo cazó
+   ninguna prueba: lo cazó mirar la pantalla. */
+.marq-nvo{flex:0 0 auto;display:flex;align-items:center;gap:5px;font-size:.62rem;
+  color:var(--av);padding:2px 7px;border:1px solid var(--av);border-radius:var(--r1);
+  white-space:nowrap;}
+.marq-nvo[hidden]{display:none;}
+
+.marq-caja{flex:1 1 auto;min-width:0;overflow:hidden;}
+
+/* LA PISTA LLEVA EL TEXTO DOS VECES y se anima de «translateX(0)» a
+   «translateX(-50%)»: la distancia recorrida es el ancho de UNA copia, o sea
+   el del texto, y no el de la ventana. De ahí que el bucle no tenga hueco y
+   que la velocidad no cambie entre un teléfono y un monitor.
+
+   LA DURACIÓN VIENE EN UNA CLASE QUE ESCRIBE GO —«v1…v6»— Y NUNCA EN UN
+   ESTILO EN LÍNEA: la CSP es «style-src 'self'» sin 'unsafe-inline'
+   (ADR-0060), así que un «style="animation-duration:42s"» se descartaría en
+   silencio y la cinta se quedaría quieta sin que nada fallara a gritos. Mismo
+   mecanismo que los cubos «b0…b5» del mapa y que el medidor de disco. */
+.marq-pista{display:flex;width:max-content;animation-name:correr;
+  animation-timing-function:linear;animation-iteration-count:infinite;}
+@keyframes correr{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.v1{animation-duration:20s;} .v2{animation-duration:30s;} .v3{animation-duration:42s;}
+.v4{animation-duration:56s;} .v5{animation-duration:72s;} .v6{animation-duration:92s;}
+
+/* SE DETIENE AL POSAR EL CURSOR Y AL ENFOCAR CON EL TABULADOR. Una marquesina
+   que no se puede parar es un patrón hostil: quien lee despacio no debería
+   tener que esperar otra vuelta. «.marq» lleva «tabindex» para que el teclado
+   llegue hasta aquí. */
+.marq:hover .marq-pista,
+.marq:focus-within .marq-pista{animation-play-state:paused;}
+
+/* CUANDO EL TEXTO YA CABE, NO SE MUEVE. Lo decide seguridad.js midiendo, y lo
+   aplica con una CLASE —nunca con un estilo—. Sin JavaScript gobierna el cubo
+   de Go, que puede errar por exceso: el daño máximo es un texto que se mueve
+   pudiendo estar quieto, y se para posando el cursor. */
+.marq-quieta{animation:none;width:auto;}
+.marq-quieta .marq-copia{display:none;}
+
+.tira{display:flex;align-items:center;flex:0 0 auto;}
+.sg{display:flex;align-items:baseline;gap:6px;padding:0 var(--e2);white-space:nowrap;
+  font-size:.72rem;}
+.sg + .sg{border-left:1px solid var(--n4);}
+.sg .et{font-size:.58rem;letter-spacing:.13em;text-transform:uppercase;color:var(--tx3);}
+.sg .vl{color:var(--tx2);}
+/* UN SEGMENTO SIN VALOR NO SE PINTA, pero su nodo sigue en el DOM para que el
+   flujo tenga dónde escribirlo cuando ese hecho aparezca. Mismo recurso que
+   «.accion:empty» en /estado. */
+.sg:has(.vl:empty){display:none;}
+/* EL ÁMBAR VA EN EL RÓTULO Y NO EN EL VALOR, y esto se corrigió mirando la
+   pantalla. Pintar el valor entero dejaba «sin respuestas inesperadas» en
+   ámbar, y en esta consola el ámbar es el color de las sospechas (ADR-0061):
+   se estaba coloreando de alarma un hecho BUENO. El valor es una enumeración
+   con partes buenas y malas dentro de una sola cadena de texto —viaja plana
+   por el flujo a propósito, para que ningún guion tenga que componer marcado—,
+   así que no hay forma de teñir solo los números sin volver a meter HTML en el
+   JSON. El rótulo sí puede llevarlo: dice «aquí hay contención vigente», que
+   es exactamente lo que el color tiene que señalar.
+   Y solo cuando hay algo: un ámbar permanente enseña a ignorar el panel
+   (ADR-0065). */
+.sg-av .et{color:var(--av);}
+
+/* ── LA ALTERNATIVA ESTÁTICA, Y NO ES OPCIONAL ──
+   Con «prefers-reduced-motion» el texto NO se mueve: la copia desaparece, la
+   pista deja de ser una tira de ancho infinito y los mismos segmentos se leen
+   envueltos en dos o tres renglones. Dice exactamente lo mismo; lo único que
+   se pierde es el movimiento, que es justo lo que se ha pedido perder. */
+@media(prefers-reduced-motion:reduce){
+  .marq{flex-wrap:wrap;row-gap:var(--e0);}
+  .marq-caja{overflow:visible;flex-basis:100%;}
+  .marq-pista{animation:none;width:auto;}
+  .marq-copia{display:none;}
+  .tira{flex-wrap:wrap;row-gap:2px;}
+  .sg + .sg{border-left:0;}
+  .pil-vivo i{animation:none;}
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    PROCEDENCIA — el mapa de países de /seguridad (ADR-0089).
