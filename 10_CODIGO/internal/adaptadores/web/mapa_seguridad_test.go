@@ -449,3 +449,112 @@ func TestElSelectorDeCapaNoSeOfreceSinSensor(t *testing.T) {
 		t.Error("sin sensor no debería ofrecerse la capa de paquetes")
 	}
 }
+
+// ── El filtro sobrevive a la navegación ──────────────────────────────────
+//
+// Todo lo de aquí abajo nace de un defecto que encontró el responsable
+// usando el panel: con «todo lo guardado» puesto, pulsar una dirección de la
+// tabla devolvía la página a «Internet · 24 horas» Y ADEMÁS no abría el
+// detalle. Las dos mitades eran el mismo fallo: el enlace decía
+// «?origen=…» a secas, así que la ventana volvía a 24 h, el origen ya no
+// estaba en la lista recalculada, y no había detalle que enseñar.
+
+func TestElEnlaceDeUnOrigenConservaElFiltro(t *testing.T) {
+	q := url.Values{"red": {"internet"}, "horas": {"0"}, "motivo": {"ruta_inexistente"}}
+	enlace := enlaceDeSeguridad(q, map[string]string{"origen": "203.0.113.7"})
+
+	for _, trozo := range []string{"red=internet", "horas=0", "motivo=ruta_inexistente", "origen=203.0.113.7"} {
+		if !strings.Contains(enlace, trozo) {
+			t.Errorf("el enlace %q perdió %q", enlace, trozo)
+		}
+	}
+}
+
+func TestCerrarElDetalleConservaElFiltroYSoloQuitaElOrigen(t *testing.T) {
+	q := url.Values{"red": {"internet"}, "horas": {"0"}, "origen": {"203.0.113.7"}}
+	enlace := enlaceDeSeguridad(q, map[string]string{"origen": ""})
+
+	if strings.Contains(enlace, "origen=") {
+		t.Errorf("cerrar debería quitar el origen: %q", enlace)
+	}
+	for _, trozo := range []string{"red=internet", "horas=0"} {
+		if !strings.Contains(enlace, trozo) {
+			t.Errorf("cerrar no puede tirar el filtro, perdió %q: %q", trozo, enlace)
+		}
+	}
+}
+
+// TestVolverNoEsUnaRedireccionAbierta es la contrapartida de que el destino
+// viaje en un campo del formulario, es decir: que lo mande el cliente. El
+// destino no se repite, se RECONSTRUYE por lista blanca, así que nada de lo
+// que entre puede sacar al navegador de /seguridad.
+func TestVolverNoEsUnaRedireccionAbierta(t *testing.T) {
+	casos := []string{
+		"https://evil.example/robado",
+		"//evil.example/robado",
+		"/etc/passwd",
+		"red=internet&siguiente=https://evil.example",
+		"%zz%zz",
+		"",
+	}
+	for _, crudo := range casos {
+		destino := volverA(crudo)
+		if !strings.HasPrefix(destino, "/seguridad") {
+			t.Errorf("volverA(%q) = %q — tiene que quedarse en /seguridad", crudo, destino)
+		}
+		if strings.Contains(destino, "evil.example") || strings.Contains(destino, "passwd") {
+			t.Errorf("volverA(%q) = %q — se coló contenido del cliente", crudo, destino)
+		}
+	}
+}
+
+func TestVolverConservaLoQueSiEsFiltro(t *testing.T) {
+	destino := volverA("red=internet&horas=0&motivo=ruta_inexistente&origen=203.0.113.7&basura=x")
+	for _, trozo := range []string{"red=internet", "horas=0", "motivo=ruta_inexistente", "origen=203.0.113.7"} {
+		if !strings.Contains(destino, trozo) {
+			t.Errorf("volverA perdió %q: %q", trozo, destino)
+		}
+	}
+	if strings.Contains(destino, "basura") {
+		t.Errorf("volverA dejó pasar una clave que no es del filtro: %q", destino)
+	}
+}
+
+// TestPulsarUnOrigenConTodoLoGuardadoAbreSuDetalle es el defecto EXACTO que
+// se reportó, de punta a punta: un origen que solo tiene actividad fuera de
+// la ventana de 24 horas tiene que poder abrirse cuando el filtro dice «todo
+// lo guardado», y la página resultante tiene que seguir diciendo lo mismo.
+func TestPulsarUnOrigenConTodoLoGuardadoAbreSuDetalle(t *testing.T) {
+	s := servidorConGeo(t)
+	tocarDesde(t, s, "203.0.113.7")
+
+	// «horas=0» es «todo lo guardado». Con la tabla así filtrada, el enlace
+	// de la fila tiene que llevar ese mismo filtro consigo.
+	cuerpo := panelSeguridad(t, s, "?red=internet&horas=0")
+	if !strings.Contains(cuerpo, "horas=0") {
+		t.Fatal("el enlace de la fila no lleva la ventana consigo")
+	}
+
+	// Y al seguirlo, el detalle se abre Y el filtro sigue puesto.
+	detalle := panelSeguridad(t, s, "?red=internet&horas=0&origen=203.0.113.7")
+	if !strings.Contains(detalle, `class="detalle"`) {
+		t.Error("el panel de detalle no se abrió")
+	}
+	if !strings.Contains(detalle, "Todo lo guardado") {
+		t.Error("la ventana volvió a su valor por omisión al abrir el detalle")
+	}
+}
+
+// TestLasAccionesQueEscribenDevuelvenALaMismaVista: soltar, bloquear y
+// retirar mandan el destino en un campo oculto, y la página tiene que
+// ponerlo. Sin él, actuar sobre una fila deshace el filtro con el que se
+// había llegado hasta ella.
+func TestLasAccionesQueEscribenDevuelvenALaMismaVista(t *testing.T) {
+	s := servidorConGeo(t)
+	tocarDesde(t, s, "203.0.113.7")
+
+	cuerpo := panelSeguridad(t, s, "?red=internet&horas=0&origen=203.0.113.7")
+	if !strings.Contains(cuerpo, `name="volver"`) {
+		t.Error("los formularios de acción no llevan el campo «volver»")
+	}
+}

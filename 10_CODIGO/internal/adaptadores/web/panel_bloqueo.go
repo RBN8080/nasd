@@ -81,6 +81,11 @@ type vistaBloqueo struct {
 	// la URL para que la página lo pueda enseñar tras el redirect.
 	Aviso string
 	Csrf  string
+	// Volver es la vista de /seguridad desde la que se llego, para no
+	// devolver al panel limpio despues de bloquear. Viaja por la URL hasta
+	// aqui y de aqui al formulario; vuelve RECONSTRUIDA por lista blanca, no
+	// repetida (ver volverA).
+	Volver string
 }
 
 // verBloqueo compone la pantalla de confirmación: qué cubre cada alcance y qué
@@ -99,6 +104,7 @@ func (s *Servidor) verBloqueo(w http.ResponseWriter, r *http.Request) {
 		Ventana:     "7 días",
 		Aviso:       r.URL.Query().Get("aviso"),
 		Csrf:        s.csrfDe(r),
+		Volver:      r.URL.Query().Get("volver"),
 	}
 	v.Geo, v.TieneGeo = s.geo.Buscar(ip)
 
@@ -265,13 +271,18 @@ func (s *Servidor) bloquear(w http.ResponseWriter, r *http.Request) {
 	s.reg.Warn("bloqueo puesto a mano",
 		"id", puesta.ID, "alcance", alcance.String(), "cubre", etiqueta,
 		"tramos", len(tramos), "usuario", usuarioDe(r), "porque", puesta.Motivo)
-	http.Redirect(w, r, "/seguridad", http.StatusSeeOther)
+	http.Redirect(w, r, volverA(r.Form.Get("volver")), http.StatusSeeOther)
 }
 
 func (s *Servidor) volverAlBloqueo(w http.ResponseWriter, r *http.Request, ip netip.Addr, aviso string) {
 	destino := "/seguridad/bloquear?ip=" + ip.String()
 	if aviso != "" {
 		destino += "&aviso=" + url.QueryEscape(aviso)
+	}
+	// La vista de origen sobrevive al rechazo: si no, corregir el motivo y
+	// reintentar devolveria al panel sin filtro.
+	if v := r.Form.Get("volver"); v != "" {
+		destino += "&volver=" + url.QueryEscape(v)
 	}
 	http.Redirect(w, r, destino, http.StatusSeeOther)
 }
@@ -292,5 +303,5 @@ func (s *Servidor) retirarBloqueo(w http.ResponseWriter, r *http.Request) {
 	} else if err == nil {
 		s.reg.Info("bloqueo retirado", "id", id, "usuario", usuarioDe(r))
 	}
-	http.Redirect(w, r, "/seguridad", http.StatusSeeOther)
+	http.Redirect(w, r, volverA(r.PostForm.Get("volver")), http.StatusSeeOther)
 }

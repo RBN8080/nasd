@@ -48,6 +48,7 @@
 <div class="sch"><h2>Aplicar</h2></div>
 <form method="post" action="/seguridad/bloquear" class="filtros">
   <input type="hidden" name="csrf" value="{{.Csrf}}">
+  <input type="hidden" name="volver" value="{{.Volver}}">
   <input type="hidden" name="ip" value="{{.IP}}">
 
   <div>

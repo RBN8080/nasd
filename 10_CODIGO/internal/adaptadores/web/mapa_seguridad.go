@@ -412,9 +412,9 @@ func opcionesDeCapa(q url.Values, elegida string, permitePaquetes bool) []opcion
 	return out
 }
 
-// enlaceConCapa conserva el resto de la consulta y cambia solo la capa.
+// enlaceConCapa conserva el resto del filtro y cambia solo la capa.
 //
-// CONSERVARLA NO ES UN ADORNO: sin esto, cambiar de capa perdería el filtro de
+// CONSERVARLO NO ES UN ADORNO: sin esto, cambiar de capa perdería el filtro de
 // red, la ventana y el motivo, y el mapa pasaría a hablar de otra cosa que la
 // tabla de debajo. Son dos controles ortogonales y tienen que comportarse
 // como tales.
@@ -422,20 +422,11 @@ func opcionesDeCapa(q url.Values, elegida string, permitePaquetes bool) []opcion
 // La capa por omisión no se escribe en la URL: «/seguridad» y
 // «/seguridad?capa=rechazos» son la misma vista, y ensuciar la barra de
 // direcciones con el caso normal hace más difícil compartir el enlace útil.
+// Por eso «rechazos» viaja como cadena vacía, que es como enlaceDeSeguridad
+// dice «quita esta clave».
 func enlaceConCapa(q url.Values, capa string) string {
-	nueva := url.Values{}
-	for k, vs := range q {
-		if k == "capa" {
-			continue
-		}
-		nueva[k] = vs
+	if capa == "rechazos" {
+		capa = ""
 	}
-	if capa != "rechazos" {
-		nueva.Set("capa", capa)
-	}
-	if len(nueva) == 0 {
-		// Sin parámetros, un «?» suelto es ruido en la barra de direcciones.
-		return "/seguridad"
-	}
-	return "/seguridad?" + nueva.Encode()
+	return enlaceDeSeguridad(q, map[string]string{"capa": capa})
 }
