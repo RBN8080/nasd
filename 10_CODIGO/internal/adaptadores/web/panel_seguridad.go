@@ -435,6 +435,10 @@ type vistaSeguridad struct {
 	// actuar. Viaja en un campo oculto y vuelve reconstruida, nunca repetida:
 	// ver volverA y clavesDeFiltro.
 	Volver string
+	// CaducidadApartados es el rótulo de «Apartados por conducta». Dejó de
+	// poder ser una frase fija el día que un apartado por operador no caduca:
+	// ver fraseDeCaducidad.
+	CaducidadApartados string
 }
 
 // filaBloqueo es una entrada de la lista más lo único que ella sola no puede
@@ -785,32 +789,33 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		Origenes: s.unirOrigenes(
 			tocados, seguridad.PorOrigenConectado(conexiones), origenes,
 			apartados, bloqueos, f.Motivo != nil),
-		Conexiones:       len(conexiones),
-		TotalConexiones:  s.conexiones.Total(),
-		HayMasConexiones: s.conexiones.Total() > int64(len(conexiones)),
-		Toques:           len(enVentana),
-		HayToques:        hist.Hay,
-		TotalToques:      hist.Total,
-		PaquetesDesde:    hist.Desde,
-		HuecoDePaquetes:  hist.Hay && !hist.Desde.IsZero() && hist.Desde.After(f.Desde),
-		UltimoRechazo:    ultimoRechazoDe(s.seguridad, f.Red),
-		UltimoFrenado:    ultimoFrenadoDe(bloqueos, apartados),
-		HayGeo:           s.geo != nil,
-		FechaGeo:         s.geo.Fecha(),
-		Paises:           s.paisesDistintos(origenes),
-		Eventos:          cronologia,
-		FiltroActivo:     rotuloDeFiltro(redes, ventanas, motivos),
-		SinFiltroDeRed:   f.Red == nil,
-		SoloInternet:     f.Red != nil && *f.Red == seguridad.RedInternet,
-		Ventanas:         ventanas,
-		Motivos:          motivos,
-		Redes:            redes,
-		TopeCronologico:  topeCronologico,
-		HayMas:           hayMas,
-		TopeRutas:        seguridad.TopeRutas,
-		HayMasRutas:      resumen.RutasVistas > seguridad.TopeRutas,
-		Capacidad:        seguridad.Capacidad,
-		Marco:            s.construirMarco(r, "seguridad", "Seguridad", ""),
+		Conexiones:         len(conexiones),
+		TotalConexiones:    s.conexiones.Total(),
+		HayMasConexiones:   s.conexiones.Total() > int64(len(conexiones)),
+		Toques:             len(enVentana),
+		HayToques:          hist.Hay,
+		TotalToques:        hist.Total,
+		PaquetesDesde:      hist.Desde,
+		HuecoDePaquetes:    hist.Hay && !hist.Desde.IsZero() && hist.Desde.After(f.Desde),
+		UltimoRechazo:      ultimoRechazoDe(s.seguridad, f.Red),
+		UltimoFrenado:      ultimoFrenadoDe(bloqueos, apartados),
+		CaducidadApartados: fraseDeCaducidad(apartados),
+		HayGeo:             s.geo != nil,
+		FechaGeo:           s.geo.Fecha(),
+		Paises:             s.paisesDistintos(origenes),
+		Eventos:            cronologia,
+		FiltroActivo:       rotuloDeFiltro(redes, ventanas, motivos),
+		SinFiltroDeRed:     f.Red == nil,
+		SoloInternet:       f.Red != nil && *f.Red == seguridad.RedInternet,
+		Ventanas:           ventanas,
+		Motivos:            motivos,
+		Redes:              redes,
+		TopeCronologico:    topeCronologico,
+		HayMas:             hayMas,
+		TopeRutas:          seguridad.TopeRutas,
+		HayMasRutas:        resumen.RutasVistas > seguridad.TopeRutas,
+		Capacidad:          seguridad.Capacidad,
+		Marco:              s.construirMarco(r, "seguridad", "Seguridad", ""),
 		// Cerrar el detalle vuelve a ESTA vista sin el detalle, no al panel
 		// limpio: el filtro con el que se llegó hasta aquí se conserva.
 		EnlaceCerrar: enlaceDeSeguridad(q, map[string]string{"origen": ""}),
@@ -1167,4 +1172,38 @@ func (s *Servidor) unirOrigenes(
 		return strings.Compare(x.IP.String(), y.IP.String())
 	})
 	return filas
+}
+
+// fraseDeCaducidad es el rótulo de «Apartados por conducta», compuesto a
+// partir de las filas REALES.
+//
+// # POR QUÉ DEJÓ DE PODER SER UNA FRASE FIJA
+//
+// Decía «los puso el nodo · caducan solos», y desde ADR-0083 eso es falso a
+// medias: los apartados por DIRECCIÓN conservan sus 24 h, pero los de
+// OPERADOR no caducan nunca —`Hasta` en cero—, y en la misma tabla puede haber
+// de los dos. Una frase fija tiene que elegir, y cualquier elección miente
+// sobre la otra mitad. Enumerar lo que de verdad hay no puede equivocarse: es
+// el mismo criterio de `fraseDeVacios`, y el mismo motivo por el que se
+// compone en Go y no con `{{if}}` anidados en la plantilla.
+func fraseDeCaducidad(apartados []seguridad.Apartado) string {
+	const base = "los puso el nodo"
+	var conFecha, eternos int
+	for _, a := range apartados {
+		if a.Hasta.IsZero() {
+			eternos++
+			continue
+		}
+		conFecha++
+	}
+	switch {
+	case eternos == 0 && conFecha == 0:
+		return base
+	case eternos == 0:
+		return base + " · caducan solos"
+	case conFecha == 0:
+		return base + " · son de operador y no caducan"
+	default:
+		return base + " · los de dirección caducan solos; los de operador, no"
+	}
 }

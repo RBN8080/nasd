@@ -107,7 +107,11 @@
        sospechas (ADR-0061). Antes las dos cosas compartían pastilla y el
        color acababa calificando a la sospecha, que es lo contrario de lo que
        se quiere decir. -->
-  <div class="sch"><h3 class="sub">Apartados por conducta</h3><span class="ms">los puso el nodo · caducan solos</span></div>
+  {{/* EL RÓTULO SE COMPONE EN GO A PARTIR DE LAS FILAS REALES. Decía «los
+       puso el nodo · caducan solos», y desde ADR-0083 eso es falso a medias:
+       los de DIRECCIÓN conservan sus 24 h, los de OPERADOR no caducan nunca, y
+       en la misma tabla puede haber de los dos. Ver fraseDeCaducidad. */}}
+  <div class="sch"><h3 class="sub">Apartados por conducta</h3><span class="ms">{{.CaducidadApartados}}</span></div>
   <div class="t-apa">
     <div class="th"><span>Dirección</span><span>Estado</span><span>Motivo</span><span>Frenados</span><span></span></div>
     <div class="fls">
@@ -116,7 +120,14 @@
         <div class="cl"><span class="et">Dirección</span><span class="ip">{{.IP}}</span></div>
         <div class="cl"><span class="et">Estado</span><span class="pls"><span class="p p-ok">Apartado</span></span></div>
         <div class="cl"><span class="et">Motivo</span><span class="pls"><span class="p p-av">{{.Senal.Etiqueta}}</span></span></div>
-        <div class="cl"><span class="et">Frenados</span><span class="ct2">{{.Frenados}} <small>hasta {{fecha .Hasta}}</small></span></div>
+        {{/* UN «Hasta» EN CERO SIGNIFICA «NO CADUCA», NO EL AÑO 1. Esto
+             imprimía «hasta 0000-12-31 17:23» en toda fila de operador —el
+             cero de time.Time pasado por .Local()—, que no es un dato: es un
+             artefacto con forma de fecha. La tabla de «Bloqueos puestos» ya
+             resolvía esto bien unas líneas más abajo con Caduca; se copia su
+             criterio para que las dos tablas no tengan distinta idea de cómo
+             se escribe «para siempre». */}}
+        <div class="cl"><span class="et">Frenados</span><span class="ct2">{{.Frenados}} <small>{{if .Hasta.IsZero}}sin caducidad{{else}}hasta {{fecha .Hasta}}{{end}}</small></span></div>
         <div class="cl">
           <form method="post" action="/seguridad/soltar">
             <input type="hidden" name="csrf" value="{{$.Csrf}}">
@@ -528,7 +539,10 @@
           {{if .Frenada}}
           <details class="plg">
             <summary>Se le está cerrando la puerta{{if .Frenados}} · {{.Frenados}} conexiones cerradas{{end}}</summary>
-            {{with .Apartado}}<p class="nota"><b>Cuarentena por conducta</b> desde {{fecha .Desde}} y hasta {{fecha .Hasta}}. La disparó: {{.Senal.Etiqueta}}. La puso el nodo solo.</p>{{end}}
+            {{/* EL MISMO «Hasta» EN CERO QUE LA COLUMNA «FRENADOS», y aquí
+                 tampoco estaba guardado: esta línea escribía «y hasta
+                 0000-12-31 17:23» sobre cualquier apartado de operador. */}}
+            {{with .Apartado}}<p class="nota"><b>Cuarentena por conducta</b> desde {{fecha .Desde}} y {{if .Hasta.IsZero}}<b>sin caducidad</b>{{else}}hasta {{fecha .Hasta}}{{end}}. La disparó: {{.Senal.Etiqueta}}. La puso el nodo solo.</p>{{end}}
             {{with .Bloqueo}}<p class="nota"><b>Bloqueo puesto a mano</b> — {{.Alcance.Etiqueta}}, cubre {{.Etiqueta}} ({{len .Tramos}} tramos). Motivo: {{.Motivo}}</p>{{end}}
             {{if and .Apartado .Bloqueo}}
             <p class="nota">Coinciden los dos controles. <b>La conexión se cierra UNA sola vez</b> y el cierre se le atribuye al bloqueo puesto a mano, que es la decisión que firmó una persona; por eso el apartado puede enseñar cero frenados aunque la puerta esté cerrada.</p>
