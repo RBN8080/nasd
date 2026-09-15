@@ -1684,6 +1684,68 @@ function Show-Reparto {
     return $vigente
 }
 
+function Test-HayCorridaEnCurso {
+    <#
+        .SYNOPSIS
+            Dice si ya hay alguien escribiendo, para no lanzar un segundo motor.
+
+        .DESCRIPTION
+            LA PUERTA QUE FALTABA EN EL UNICO SITIO QUE PODIA ABRIRLA.
+
+            El Programador de tareas impide dos corridas automaticas a la vez
+            -MultipleInstances IgnoreNew-, asi que se daba por hecho que dos
+            motores no podian coincidir. Falso: NADA impedia pulsar [1] mientras
+            una corrida programada estaba copiando. Las ventanas son tres al dia
+            a minuto sorteado y una corrida dura ~107 s, de modo que el solape no
+            hay que buscarlo: llega solo.
+
+            LO QUE COSTABA, MEDIDO. Dos procesos anexando al mismo registro del
+            dia perdian entre el 62 % y el 100 % de sus lineas por violacion de
+            uso compartido -- y como Write-RegistroRespaldo corre con
+            ErrorActionPreference 'Stop', esa violacion LANZABA y mataba la
+            corrida a mitad. Ademas el segundo motor pisaba EN_CURSO.lock del
+            primero, el que acabara antes borraba la marca del otro, y los dos
+            robocopy trabajaban sobre el mismo par origen -> destino.
+
+            El registro ya no se rompe -- Write-LineaDeRegistro comparte el
+            archivo y se rinde en silencio -- pero eso arregla el sintoma. Dos
+            motores copiando a la vez al mismo sitio sigue sin tener ningun
+            sentido, y esta es la unica puerta por la que entra el segundo.
+
+            ES LA MISMA COMPROBACION QUE YA HACIA verificar.ps1, movida a donde
+            hacia mas falta. Alli se usa para NO PISAR una marca ajena; aqui para
+            no arrancar. Cotejar mientras se copia es legitimo -- solo lee --, y
+            por eso la opcion [3] no pasa por esta puerta.
+
+            UNA MARCA VIEJA NO CIERRA NADA. Si el proceso que la puso ya no
+            existe, lo que hay no es una corrida en curso sino un cadaver, y
+            negarse a copiar por un cadaver dejaria el respaldo bloqueado hasta
+            que alguien borrase un archivo a mano.
+        .PARAMETER Configuracion
+            El objeto de configuracion, para dar con la carpeta de estado.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    $marca = Get-MarcaDeCorrida -Carpeta (Get-CarpetaDeEstado -Configuracion $Configuracion)
+    if (-not ($marca.Existe -and -not $marca.Vieja)) {
+        return [pscustomobject]@{ EnCurso = $false; Detalle = '' }
+    }
+    $que = switch ('' + $marca.Tipo) {
+        'disco'        { 'una copia al disco frio' }
+        'verificacion' { 'un cotejo contra el nodo' }
+        default        { 'una corrida al nodo' }
+    }
+    return [pscustomobject]@{
+        EnCurso = $true
+        Detalle = ('Ya hay {0} en marcha (pid {1}, desde hace {2} min). No se lanza una segunda: espera a que termine.' -f
+            $que, $marca.Pid, $marca.Minutos)
+    }
+}
+
 # CARGADO CON PUNTO SE EXPONEN LAS FUNCIONES Y NO SE ABRE NADA. Es la misma
 # puerta que ya tienen verificar.ps1 y disco.ps1, y aqui hacia falta por una
 # razon concreta: sin ella, la unica forma de comprobar como QUEDA PINTADA la
@@ -1721,10 +1783,14 @@ while ($seguir) {
                 # del menu para que no fuera un clic. Retirada la capa 2, los
                 # abortos que quedan -centinela, origen inutilizable, deuda- no
                 # se autorizan de ninguna manera, ni aqui ni en la consola.
-                Write-Linea '   Copiando al nodo...'
-                $r1 = & "$nucleo\respaldo.ps1" @comunes -Confirm:$false
-                if ($r1 -and $r1.Abortada) { Write-Warning $r1.Motivo }
-                else { Write-Linea '   Corrida terminada.' }
+                $puerta = Test-HayCorridaEnCurso -Configuracion $configuracion
+                if ($puerta.EnCurso) { Write-Warning $puerta.Detalle }
+                else {
+                    Write-Linea '   Copiando al nodo...'
+                    $r1 = & "$nucleo\respaldo.ps1" @comunes -Confirm:$false
+                    if ($r1 -and $r1.Abortada) { Write-Warning $r1.Motivo }
+                    else { Write-Linea '   Corrida terminada.' }
+                }
             }
             '2' {
                 Write-Anuncio -Que 'Simulacion de la copia al NODO' `
@@ -1754,17 +1820,21 @@ while ($seguir) {
                 # Las DOS pasadas. Si el nodo no responde corre solo la del
                 # equipo y la copia queda declarada INCOMPLETA: nunca se dice
                 # "al dia" a una copia fria a la que le falto la mitad (6.2).
-                Write-Linea '   Copiando al disco frio (dos pasadas)...'
-                $rd = & "$nucleo\disco.ps1" @comunes -Confirm:$false
-                if ($rd.Abortada) { Write-Warning $rd.Motivo }
-                elseif (-not $rd.Completa) {
-                    Write-Warning 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.'
-                }
-                elseif ($rd.ArchivosCopiados -eq 0) {
-                    Write-Linea '   Copia fria AL DIA: las dos pasadas corrieron y no habia nada nuevo que copiar.'
-                }
+                $puerta = Test-HayCorridaEnCurso -Configuracion $configuracion
+                if ($puerta.EnCurso) { Write-Warning $puerta.Detalle }
                 else {
-                    Write-Linea ('   Copia fria COMPLETA: {0} archivos nuevos.' -f $rd.ArchivosCopiados)
+                    Write-Linea '   Copiando al disco frio (dos pasadas)...'
+                    $rd = & "$nucleo\disco.ps1" @comunes -Confirm:$false
+                    if ($rd.Abortada) { Write-Warning $rd.Motivo }
+                    elseif (-not $rd.Completa) {
+                        Write-Warning 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.'
+                    }
+                    elseif ($rd.ArchivosCopiados -eq 0) {
+                        Write-Linea '   Copia fria AL DIA: las dos pasadas corrieron y no habia nada nuevo que copiar.'
+                    }
+                    else {
+                        Write-Linea ('   Copia fria COMPLETA: {0} archivos nuevos.' -f $rd.ArchivosCopiados)
+                    }
                 }
             }
             '8' { Show-Texto -Objeto (& "$nucleo\disco.ps1" @comunes -SoloSimular -Confirm:$false) -Lista -Vacio 'La simulacion no devolvio nada.' }

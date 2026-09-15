@@ -138,6 +138,106 @@ function Get-ConfiguracionRespaldo {
     return $cfg
 }
 
+function Write-LineaDeRegistro {
+    <#
+        .SYNOPSIS
+            Anexa una linea al registro del dia SIN PODER TUMBAR AL LLAMADOR.
+
+        .DESCRIPTION
+            ES UNA FUNCION APARTE PORQUE ES UNA GUARDA, NO UN DETALLE. Aqui vivia
+            un `Add-Content` a pelo, y `Add-Content` abre el archivo SIN COMPARTIR
+            LA ESCRITURA: mientras lo tiene abierto, otro proceso que intente
+            anexar recibe una violacion de uso compartido.
+
+            MEDIDO, y no es un caso de laboratorio: dos procesos anexando 400
+            lineas cada uno al mismo archivo del dia perdieron 247 y 399. O sea
+            entre el 62 % y el 100 % de los apuntes.
+
+            QUE DOS PROCESOS ESCRIBAN A LA VEZ ES NORMAL AQUI. El Programador
+            impide dos corridas automaticas simultaneas (MultipleInstances
+            IgnoreNew), pero NO impide que alguien pulse [1] en el tablero
+            mientras una corrida programada esta copiando. Los dos escriben en
+            `respaldo-AAAA-MM-DD.log`.
+
+            Y EL FALLO NO SE QUEDABA EN UNA LINEA PERDIDA. `Write-RegistroRespaldo`
+            corre con $ErrorActionPreference = 'Stop' y se llama desde el camino
+            critico del motor: la violacion LANZABA, y como la corrida no tiene
+            catch, el motor moria a mitad dejando ESTADO.txt en 'Copiando' -- que
+            el indicador pintaba VERDE. Un apunte de registro que no se puede
+            escribir no puede costar un respaldo.
+
+            DOS ARREGLOS, Y HACEN FALTA LOS DOS:
+
+              1. Se abre con FileShare::ReadWrite para que los dos escritores
+                 quepan a la vez, Y CON EL PERMISO AppendData, que es la mitad
+                 que de verdad importa.
+
+                 COMPARTIR EL ARCHIVO NO BASTA, Y SE MIDIO. Con el permiso
+                 normal de escritura, `FileMode::Append` coloca el puntero al
+                 final UNA VEZ, AL ABRIR: dos procesos que abren a la vez se
+                 quedan con el mismo desplazamiento y el segundo escribe encima
+                 del primero. Dos procesos de 400 lineas dieron 799 de 800, y
+                 los DOS creyeron haberlas escrito todas -- o sea una perdida
+                 silenciosa, que es la peor clase.
+
+                 Con AppendData, Windows situa cada escritura al final del
+                 archivo EN EL MOMENTO DE ESCRIBIR, no al abrir. Cada linea va
+                 en una sola llamada, asi que ni se pisan ni se parten. Con ese
+                 permiso las 800 salen 800.
+
+              2. Si aun asi no se puede -disco lleno, permisos, antivirus-, se
+                 reintenta un punado de veces y despues SE RINDE EN SILENCIO.
+                 Es la misma regla que ya gobierna a notificar.ps1 y testigo.ps1:
+                 el respaldo es lo importante y anotar es lo secundario.
+
+            EL BOM SE CONSERVA. `Add-Content -Encoding UTF8` en PowerShell 5.1
+            escribe marca de orden de bytes al crear el archivo, y quien lo lee
+            con `Get-Content` a secas depende de ella para no destrozar los
+            acentos de una ruta. Se escribe a mano solo cuando el archivo nace.
+        .PARAMETER Archivo
+            El registro del dia.
+        .PARAMETER Linea
+            La linea ya formada, sin salto final.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Archivo,
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Linea
+    )
+
+    $carpeta = Split-Path -Path $Archivo -Parent
+    for ($intento = 1; $intento -le 5; $intento++) {
+        try {
+            if ($carpeta -and -not (Test-Path -LiteralPath $carpeta)) {
+                New-Item -ItemType Directory -Path $carpeta -Force -ErrorAction Stop | Out-Null
+            }
+            $nace = -not (Test-Path -LiteralPath $Archivo -PathType Leaf)
+            $texto = $Linea + "`r`n"
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($texto)
+            if ($nace) { $bytes = ([byte[]]@(0xEF, 0xBB, 0xBF)) + $bytes }
+
+            $flujo = New-Object System.IO.FileStream(
+                $Archivo,
+                [System.IO.FileMode]::Append,
+                [System.Security.AccessControl.FileSystemRights]::AppendData,
+                [System.IO.FileShare]::ReadWrite,
+                4096,
+                [System.IO.FileOptions]::None)
+            try { $flujo.Write($bytes, 0, $bytes.Length) }
+            finally { $flujo.Dispose() }
+            return $true
+        }
+        catch {
+            # Espera creciente y corta: lo que se disputa es un archivo de texto,
+            # no un recurso caro. Cinco intentos cubren de sobra el solape de dos
+            # corridas; lo que no arregle eso no lo arregla esperar mas.
+            if ($intento -lt 5) { Start-Sleep -Milliseconds (20 * $intento) }
+        }
+    }
+    return $false
+}
+
 function Write-RegistroRespaldo {
     <#
         .SYNOPSIS
@@ -190,12 +290,17 @@ function Write-RegistroRespaldo {
         [switch] $SoloArchivo
     )
 
-    if (-not (Test-Path -LiteralPath $CarpetaRegistro)) {
-        New-Item -ItemType Directory -Path $CarpetaRegistro -Force | Out-Null
-    }
     $archivo = Join-Path $CarpetaRegistro ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))
     $linea = '{0} {1,-8} {2,-12} {3}' -f (Get-Date -Format 's'), $Nivel, $Etapa, $Mensaje
-    Add-Content -LiteralPath $archivo -Value $linea -Encoding UTF8
+    # A Out-Null Y NO A PELO. Write-LineaDeRegistro devuelve si pudo escribir, y
+    # esta funcion esta declarada [OutputType([void])] por un motivo: la llaman
+    # Test-OrigenUtilizable, Test-EspacioEnDestino, Get-DiscoFrio y media docena
+    # mas JUSTO ANTES de su propio return. Un booleano suelto se colaria en la
+    # tuberia y esas funciones devolverian un ARRAY de dos cosas en vez de su
+    # veredicto -- o sea que una guarda que dice "no" pasaria a decir "no, y
+    # ademas si". Cazado al probar el arreglo, antes de que llegara a ninguna
+    # corrida.
+    Write-LineaDeRegistro -Archivo $archivo -Linea $linea | Out-Null
 
     if ($SoloArchivo) {
         Write-Verbose -Message $Mensaje
@@ -207,7 +312,7 @@ function Write-RegistroRespaldo {
         #
         # Write-Error pinta el mensaje CON marco: la linea de codigo que lo
         # emitio, los caretes debajo, CategoryInfo y FullyQualifiedErrorId. En
-        # un proceso con menu eso cae en mitad del tablero y lo rompe -- pasó el
+        # un proceso con menu eso cae en mitad del tablero y lo rompe -- paso el
         # 04/09 en la opcion [2], con seis lineas de volcado entre la tabla de
         # raices y el veredicto.
         #
@@ -300,6 +405,19 @@ function Test-RutaUnc {
             "\192.168.1.38\datos", que Windows resuelve RELATIVO A C:. Se
             copiaron 27 508 archivos a C:\192.168.1.38\ y al nodo no llego ni
             uno. Una sola barra de diferencia entre respaldar y no respaldar.
+
+            DOS BARRAS DELANTE NO BASTAN PARA QUE SEA RED, y esto es el mismo
+            desastre con otra ortografia. El espacio de nombres de dispositivo de
+            Windows -\\?\ y \\.\- empieza igual que una UNC y pasaba la guarda:
+
+                \\?\C:\datos   ->  era C:\datos
+                \\.\C:\datos   ->  era C:\datos
+
+            Las dos son el disco LOCAL escritas de forma que parecen un servidor
+            remoto, o sea exactamente el estropicio del 02/09 con un prefijo
+            distinto. Y no hay motivo legitimo para declararlas: el destino del
+            nodo es \\<equipo>\<recurso>, donde el primer tramo es un nombre de
+            maquina. '?' y '.' no lo son.
         .PARAMETER Ruta
             La ruta a comprobar.
     #>
@@ -310,6 +428,7 @@ function Test-RutaUnc {
         [AllowEmptyString()]
         [string] $Ruta
     )
+    if ($Ruta -match '^\\\\[?.]\\') { return $false }
     return $Ruta -match '^\\\\[^\\]+\\[^\\]+'
 }
 
@@ -515,8 +634,27 @@ function Invoke-Robocopy {
     $argumentos = @($Origen, $Destino) + $politica + $comunes + $formato
     if ($SoloListar) { $argumentos += '/L' }
 
+    # SIN `2>&1`, Y QUITARLO ES UNA GUARDA. Ese redirector no traia nada y podia
+    # tumbar la corrida entera:
+    #
+    #   LO QUE NO TRAIA. robocopy NO ESCRIBE POR EL CANAL DE ERROR. Medido con
+    #   tres formas de hacerlo fallar -origen inexistente, bandera invalida y sin
+    #   argumentos-: codigo 16 las tres veces y CERO lineas por ese canal. Sus
+    #   "ERROR 2 (0x00000002)" salen por la salida normal, que es justo de donde
+    #   los recoge el cubo de sin clasificar de mas abajo.
+    #
+    #   LO QUE SI PODIA COSTAR. Con $ErrorActionPreference = 'Stop' -que es como
+    #   corre todo este cliente-, PowerShell 5.1 convierte la PRIMERA linea que un
+    #   programa externo escriba por el canal de error, si va redirigida con 2>&1,
+    #   en un error TERMINANTE (NativeCommandError). Verificado en este equipo.
+    #   O sea que el dia que una version de robocopy, un antivirus interpuesto o
+    #   una capa de red escribieran una sola linea por ahi, esta funcion dejaria
+    #   de devolver su resultado tipado y LANZARIA -- y la corrida moriria a mitad
+    #   dejando ESTADO.txt en 'Copiando'.
+    #
+    # Una trampa armada a cambio de nada. Se retira.
     Write-Verbose "robocopy $($argumentos -join ' ')"
-    $salida = & robocopy.exe @argumentos 2>&1
+    $salida = & robocopy.exe @argumentos
     $codigo = $LASTEXITCODE
 
     $origenNorm  = $Origen.TrimEnd('\')  + '\'

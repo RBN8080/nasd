@@ -30,7 +30,17 @@
              falsos positivos costaban mas respaldo del que ninguna de sus
              detecciones llego a salvar. El cifrado masivo lo cubre la capa 3.
 
+          3b. QUE QUEPA. Se suman los bytes que la pasada en seco dijo que se
+             copiarian y se compara contra el espacio libre del nodo. Se
+             pregunta por lo que se va a escribir, no por la raiz entera, para
+             que una corrida normal no despierte un freno. No saber cuanto hay
+             libre NO aborta: se anota y se sigue.
+
           4. Copiar, invocando robocopy. NUNCA reimplementar la copia.
+
+        Y SI ALGO REVIENTA A MITAD, se escribe Falla antes de que la excepcion
+        suba (ver el catch de Invoke-CorridaConEstado). Hasta el 2026-09-14 no
+        se escribia nada y el icono se quedaba en VERDE hasta 22 h.
 
     .PARAMETER RutaConfiguracion
         Configuracion a usar. Por omision la de 3-Config. Las pruebas apuntan a
@@ -192,8 +202,32 @@ function Measure-CambioDeRaiz {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Destino
     )
 
-    $totalOrigen = @(Get-ChildItem -LiteralPath $Raiz.Ruta -File -Force -Recurse -ErrorAction SilentlyContinue).Count
+    # EL RECORRIDO SE APROVECHA DOS VECES. Esta enumeracion ya se pagaba para
+    # contar el total del origen; quedarse ademas con el tamano de cada archivo
+    # no cuesta ni una lectura mas de disco y es lo que permite responder
+    # "cabe" antes de copiar, sin una segunda pasada.
+    $archivosOrigen = @(Get-ChildItem -LiteralPath $Raiz.Ruta -File -Force -Recurse -ErrorAction SilentlyContinue)
+    $totalOrigen = $archivosOrigen.Count
+    $tamanos = @{}
+    foreach ($a in $archivosOrigen) { $tamanos[$a.FullName.ToLowerInvariant()] = [int64]$a.Length }
+
     $seco = Invoke-Robocopy -Origen $Raiz.Ruta -Destino $Destino -Clase $Raiz.Clase -SoloListar
+
+    # CUANTOS BYTES SON LOS QUE SE COPIARIAN. Se suman los archivos que la pasada
+    # en seco nombro, NO la raiz entera: preguntar si cabe la raiz completa
+    # cuando solo cambiaron cuatro capturas seria un freno que salta por su
+    # propio acierto, que es el error que ADR-0085 ya hizo retirar una capa.
+    #
+    # Un archivo que la pasada nombro y el recorrido no vio -aparecio entre las
+    # dos medidas- no suma: no se sabe cuanto ocupa, y adivinar un tamano para
+    # despues frenar con el seria peor que no contarlo. Se cuenta aparte.
+    [int64]$bytesACopiar = 0
+    $sinTamano = 0
+    foreach ($ruta in $seco.ACopiar) {
+        $clave = ('' + $ruta).Trim().ToLowerInvariant()
+        if ($tamanos.ContainsKey($clave)) { $bytesACopiar += $tamanos[$clave] }
+        else { $sinTamano++ }
+    }
 
     # LO QUE ROBOCOPY LISTA DEL LADO DEL DESTINO NO ES UN BORRADO: ES UN
     # SOBRANTE. Y si la clase es A -/E /XO, la politica que este cliente usa en
@@ -242,6 +276,12 @@ function Measure-CambioDeRaiz {
         Borraria       = $borraria
         Afectados      = $afectados
         Porcentaje     = $porcentaje
+        # Lo que hay que tener sitio para escribir. `BytesSinMedir` son los
+        # archivos que la pasada nombro y el recorrido no vio: si ese numero no
+        # es cero, la suma es un MINIMO y no un total, y quien decida con ella
+        # tiene que saberlo.
+        BytesACopiar   = $bytesACopiar
+        BytesSinMedir  = $sinTamano
         PrimeraSiembra = $primeraSiembra
         SinClasificar  = $seco.SinClasificar
         CodigoRobocopy = $seco.Codigo
@@ -284,6 +324,82 @@ function Test-OrigenUtilizable {
 }
 
 # ---------------------------------------------------------------------------
+#  Guarda de espacio - la cuarta que no estaba
+# ---------------------------------------------------------------------------
+
+function Test-EspacioEnDestino {
+    <#
+        .SYNOPSIS
+            Se niega a empezar una copia que no cabe.
+        .DESCRIPTION
+            NADIE MIRABA EL ESPACIO. `Get-EspacioLibre` existia desde el
+            2026-09-02 y solo la usaba el tablero PARA PINTARLA: el motor copiaba
+            sin preguntar si cabia. Llenar el nodo no era un fallo silencioso
+            -robocopy devuelve >= 8 y el estado queda en Falla- pero se enteraba
+            DESPUES del destrozo y sin poder decir que el problema era el sitio.
+
+            SE COMPARA CONTRA LO QUE SE VA A ESCRIBIR, NO CONTRA LA RAIZ ENTERA.
+            La suma sale de la pasada en seco que ya se hizo, asi que una corrida
+            normal -cuatro capturas nuevas- pregunta por cuatro capturas y no por
+            los 64 GB de Videos. Un umbral que salta cuando el sistema hace bien
+            su trabajo se acaba autorizando a ciegas; ese error ya costo una capa
+            entera (ADR-0085) y no se repite aqui.
+
+            NO SABER NO ES MOTIVO PARA ABORTAR. `Get-EspacioLibre` devuelve $null
+            cuando la API no puede responder, y eso es distinto de devolver cero.
+            Un respaldo que se niega a correr porque no pudo medir el disco es un
+            respaldo que no corre; se anota en ATENCION y se sigue.
+
+            LA RESERVA EXISTE POR DOS MOTIVOS MEDIBLES. Uno, que entre la medida
+            y la copia el nodo sigue vivo y puede escribir por su cuenta. Dos,
+            que un espejo BORRA mientras copia y esos bytes liberados no se
+            cuentan aqui: la suma es conservadora a proposito, y la reserva es lo
+            que absorbe el margen sin tener que adivinar el orden de robocopy.
+        .PARAMETER Unc
+            Raiz UNC del recurso, que es de quien se pregunta el espacio.
+        .PARAMETER BytesNecesarios
+            Lo que suman las pasadas en seco de todas las raices.
+        .PARAMETER ReservaBytes
+            Lo que se exige libre POR ENCIMA de lo necesario.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Unc,
+        [Parameter(Mandatory)][int64] $BytesNecesarios,
+        [int64] $ReservaBytes = 1GB
+    )
+
+    # Nada que escribir es nada que preguntar. Una corrida que solo comprueba que
+    # todo estaba al dia no puede quedarse sin sitio.
+    if ($BytesNecesarios -le 0) {
+        return [pscustomobject]@{ Cabe = $true; Libres = $null; Necesarios = 0; Motivo = 'no hay nada que escribir' }
+    }
+
+    $libres = Get-EspacioLibre -Ruta $Unc
+    if ($null -eq $libres) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'guarda' `
+            -Mensaje ("No se pudo medir el espacio libre en '{0}'. Se copia de todos modos: no saber no es lo mismo que no haber." -f $Unc)
+        return [pscustomobject]@{ Cabe = $true; Libres = $null; Necesarios = $BytesNecesarios; Motivo = 'no se pudo medir' }
+    }
+
+    $hacenFalta = $BytesNecesarios + $ReservaBytes
+    $cabe = ($libres -ge $hacenFalta)
+    if (-not $cabe) {
+        Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'guarda' -Mensaje (
+            'NO CABE EN EL DESTINO. Se copiarian {0:N2} GiB, libres {1:N2} GiB y la reserva son {2:N2} GiB. No se escribe nada.' -f
+            ($BytesNecesarios / 1GB), ($libres / 1GB), ($ReservaBytes / 1GB))
+    }
+    return [pscustomobject]@{
+        Cabe       = $cabe
+        Libres     = $libres
+        Necesarios = $BytesNecesarios
+        Reserva    = $ReservaBytes
+        Motivo     = $(if ($cabe) { 'cabe' } else { 'no cabe' })
+    }
+}
+
+# ---------------------------------------------------------------------------
 #  La corrida
 # ---------------------------------------------------------------------------
 
@@ -309,6 +425,13 @@ function Invoke-CorridaDeRespaldo {
     $inicio = Get-Date
     $resultado = [ordered]@{
         Inicio       = $inicio
+        # SE DECLARA AQUI AUNQUE SE RELLENE AL FINAL. Las salidas por aborto no
+        # pasan por donde se asigna, asi que sin esta linea devolvian un objeto
+        # SIN la propiedad Fin -- y bajo Set-StrictMode leer una propiedad que no
+        # existe LANZA. El primero que quisiera cronometrar una corrida abortada
+        # se habria llevado la excepcion, y en el sitio donde una excepcion sale
+        # mas cara: dentro de la corrida.
+        Fin          = $null
         Simulada     = [bool]$Simular
         Abortada     = $false
         Motivo       = $null
@@ -323,10 +446,18 @@ function Invoke-CorridaDeRespaldo {
         Copias       = @()
         Deuda        = $null
         Centinelas   = $null
+        Espacio      = $null
     }
 
     # --- Etapa 1a: resolver que se copia -----------------------------------
-    $raices = Get-RaicesDeRespaldo -Configuracion $Configuracion
+    # EL @() NO ES ADORNO, Y SIN EL LA GUARDA DE ABAJO NO SERVIA. PowerShell
+    # DESENVUELVE lo que devuelve una funcion: una lista vacia no llega como
+    # array vacio sino como $null, y bajo Set-StrictMode `$null.Count` LANZA. O
+    # sea que el caso que esta guarda existe para cubrir -que no se resuelva
+    # ninguna raiz- era justo el unico que no podia cubrir: en vez del aborto
+    # limpio con Causa 'sinRaices' salia una excepcion. Descubierto el
+    # 2026-09-14 al probar el catch nuevo, que es lo que hizo visible el fallo.
+    $raices = @(Get-RaicesDeRespaldo -Configuracion $Configuracion)
     $resultado.Raices = $raices
     if ($raices.Count -eq 0) {
         $resultado.Abortada = $true
@@ -438,6 +569,29 @@ $resultado.Causa = 'centinelaAlterado'
     #
     # El conteo sigue en $resultado.Cambios: la opcion [2] del tablero lo
     # ensena antes de copiar, que es donde una persona puede mirarlo y parar.
+
+    # --- Etapa 3b: cabe ---------------------------------------------------
+    # VA DESPUES DE MEDIR PORQUE BEBE DE LA MEDIDA, y antes de copiar porque es
+    # una guarda: como las otras tres, no escribe un byte en el destino.
+    [int64]$bytesTotales = 0
+    $sinMedir = 0
+    foreach ($c in $resultado.Cambios) {
+        $bytesTotales += [int64]$c.BytesACopiar
+        $sinMedir += [int]$c.BytesSinMedir
+    }
+    if ($sinMedir -gt 0) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'guarda' -Mensaje (
+            '{0} archivos aparecieron entre la medida y el conteo: la suma de bytes es un MINIMO.' -f $sinMedir)
+    }
+    $espacio = Test-EspacioEnDestino -Unc $unc -BytesNecesarios $bytesTotales
+    $resultado.Espacio = $espacio
+    if (-not $espacio.Cabe) {
+        $resultado.Abortada = $true
+        $resultado.Motivo = ('NO CABE EN EL NODO. Se copiarian {0:N2} GiB y quedan {1:N2} GiB libres. No se escribe nada.' -f
+            ($espacio.Necesarios / 1GB), ($espacio.Libres / 1GB))
+        $resultado.Causa = 'sinEspacio'
+        return [pscustomobject]$resultado
+    }
 
     # --- Etapa 4: copiar ----------------------------------------------------
     if ($Simular) {
@@ -591,6 +745,73 @@ function Invoke-CorridaConEstado {
 
         $resultado = Invoke-CorridaDeRespaldo -Configuracion $Configuracion `
             -Simular:$Simular -SaltarDeuda:$SaltarDeuda -Confirm:$false
+    }
+    catch {
+        # LO QUE FALTABA, Y DEJABA EL ICONO EN VERDE.
+        #
+        # Aqui habia un try/finally SIN catch. El finally retira la marca -- eso
+        # funcionaba -- pero el estado se escribe MAS ABAJO, fuera del try. Una
+        # excepcion se llevaba por delante todo lo que viene despues, asi que
+        # quedaba: sin marca y con ESTADO.txt puesto en 'Copiando'.
+        #
+        # Y ESE PAR NO LO CAZABA NADIE. El indicador pregunta por orden: marca
+        # vieja -no hay marca, el finally la quito-, estado en Falla o Atencion
+        # -dice 'Copiando', que no es ninguno de los dos- y acaba cayendo en su
+        # ultimo return, que es PROTEGIDO. Verde durante 22 h, despues ambar por
+        # antiguedad, y rojo jamas. Reproducido el 2026-09-14.
+        #
+        # Es exactamente la mentira tranquilizadora contra la que se escribio
+        # ADR-0074, y el comentario de esta misma funcion la desmentia sin querer:
+        # "pase lo que pase dentro, la marca se retira y el estado queda escrito".
+        # Lo primero era verdad; lo segundo, solo si no habia excepcion.
+        #
+        # POR DONDE SE LLEGA AQUI DE VERDAD, que no es teorico: Get-FileHash sobre
+        # un centinela que esta pero no se puede leer -sector muerto, bloqueo,
+        # permisos-, Get-RutaEnDestino cuando una raiz no tiene traduccion
+        # declarada, o cualquier cosa nueva que se anada manana. El caso "matan el
+        # motor" ya salia bien -la marca se queda y su PID muere-, y sigue igual.
+        #
+        # SE ANOTA Y SE RELANZA. Nadie aqui sabe arreglar una excepcion imprevista
+        # y tragarsela seria peor: quien invoco al motor tiene que enterarse. Lo
+        # unico que se hace es dejar el rastro que faltaba antes de que suba.
+        $fallo = $_
+        if (-not $Simular) {
+            # EL RASTRO NO PUEDE MORIR POR UN SEGUNDO FALLO. Si el nodo esta
+            # caido o el disco lleno, cada una de estas cuatro cosas puede
+            # lanzar a su vez, y una excepcion dentro de un catch TAPA la
+            # original -- que es la unica que explica lo que paso.
+            try {
+                $porque = $fallo.Exception.Message
+                Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'corrida' `
+                    -Mensaje "LA CORRIDA MURIO POR UNA EXCEPCION NO PREVISTA: $porque"
+
+                # `causa` = 'excepcion' y no una de las conocidas. Resolve-EstadoVigente
+                # solo rebaja a ambar la que se cura sola -el nodo que no respondia-;
+                # esta no se cura sola y tiene que quedarse en ROJO hasta que una
+                # persona mire el registro del dia.
+                Write-EstadoRespaldo -Estado 'Falla' `
+                    -Detalle "La corrida murio a mitad: $porque" `
+                    -Datos @{ causa = 'excepcion' } -Carpeta $carpetaEstado -Confirm:$false
+
+                if ($rutaSistema) {
+                    Publish-EstadoAlNodo -RutaSistema $rutaSistema -Carpeta $carpetaEstado -Confirm:$false | Out-Null
+                    Send-EventoAlNodo -Nivel 'ERROR' -Situacion 'respaldo.excepcion' `
+                        -Mensaje "La corrida murio a mitad: $porque" `
+                        -Hechos @{ etapa = 'desconocida' } -RutaSistema $rutaSistema -Confirm:$false | Out-Null
+                }
+
+                # El testigo se abrio con /start al empezar; si no se cierra, se
+                # pondra rojo solo al pasar el margen. Cerrarlo en rojo AHORA dice
+                # lo mismo pero sin esperar.
+                if ($Programada) {
+                    Send-LatidoDelCliente -Senal 'Mal' -Detalle "corrida muerta: $porque" -Confirm:$false | Out-Null
+                }
+            }
+            catch {
+                Write-Warning "Ademas fallo al dejar constancia de la corrida muerta: $($_.Exception.Message)"
+            }
+        }
+        throw $fallo
     }
     finally {
         if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
