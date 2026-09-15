@@ -2239,6 +2239,259 @@ Test-Afirmacion -Nombre 'Ninguna opcion se sigue llamando "simular": no decia si
 Test-Afirmacion -Nombre 'La vista previa va SANGRADA bajo la copia que previsualiza' `
     -Esperado $true -Obtenido ($fuenteMenu -match "\[2\]\s\s+vista previa" -and $fuenteMenu -match "\[8\]\s\s+vista previa")
 
+# ---------------------------------------------------------------------------
+#  LA AUDITORIA DEL 2026-09-14 -- siete defectos, y seis eran el mismo camino
+#
+#  Todos comparten una forma: el motor se cae por una via que nadie previo, y
+#  NADIE LO DICE. La prueba del criterio 9 ya cubria "matan el motor" -la marca
+#  se queda, su PID muere, el icono lo pinta rojo-, pero no cubria "el motor se
+#  muere solo", que es la via por la que se llega sin que nadie apriete nada.
+# ---------------------------------------------------------------------------
+
+Write-Titulo 'Auditoria 2026-09-14: el motor que moria en silencio'
+
+# --- 1. 'Copiando' SIN MARCA ES FALLA, Y ANTES ERA VERDE --------------------
+#
+# El defecto mas caro de los siete. Una excepcion dentro de la corrida dejaba
+# ESTADO.txt en 'Copiando' y el finally retiraba la marca, asi que el indicador
+# no veia ni marca vieja ni un estado malo y caia en su ultimo return, que dice
+# Protegido. VERDE con el motor muerto, hasta 22 h.
+$cajaVerde = Join-Path $caja.Raiz 'estado-copiando-colgado'
+New-Item -ItemType Directory -Path $cajaVerde -Force | Out-Null
+Write-EstadoRespaldo -Estado 'Copiando' -Detalle 'Corrida en curso' -Carpeta $cajaVerde -Confirm:$false
+
+# Una tarea que EXISTA y este habilitada, o el indicador sale por el paso 1 y la
+# prueba mediria otra cosa. Se busca una cualquiera del sistema en vez de fiarse
+# de que la tarea real este registrada hoy: eso es lo que ya rompio una prueba
+# el 2026-09-02.
+$tareaCualquiera = @(Get-ScheduledTask -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -ne 'Disabled' } | Select-Object -First 1)
+if ($tareaCualquiera.Count -eq 1) {
+    $vistaColgada = & $indicador -UnaSolaLectura -NombreTarea $tareaCualquiera[0].TaskName -CarpetaEstado $cajaVerde
+    Test-Afirmacion -Criterio '9' -Nombre 'Un "Copiando" SIN marca es FALLA, no Protegido (el verde que mentia)' `
+        -Esperado 'Falla' -Obtenido $vistaColgada.Estado
+    Test-Afirmacion -Criterio '9' -Nombre 'Y lo dice sin rodeos: empezo y nunca dijo como acabo' `
+        -Esperado $true -Obtenido ($vistaColgada.Detalle -like '*nunca dijo como acabo*')
+}
+
+# --- 2. EL CATCH QUE FALTABA, PROBADO ROMPIENDO EL MOTOR DE VERDAD ----------
+#
+# No se simula la excepcion: se provoca. Una raiz declarada FUERA de toda
+# traduccion hace que Get-RutaEnDestino lance -- lanza a proposito, para no
+# inventarse un arbol paralelo en el nodo -- y esa excepcion sale justo por
+# donde salian todas: dentro de la corrida y despues de escribir 'Copiando'.
+$fuera = Join-Path $caja.Raiz 'fuera-de-traduccion'
+New-Item -ItemType Directory -Path (Join-Path $fuera 'algo') -Force | Out-Null
+'contenido' | Set-Content -LiteralPath (Join-Path $fuera 'algo\archivo.txt') -Encoding UTF8
+
+# SE PARTE DE LA CONFIGURACION DEL ARENERO PERO SE DEJA UNA SOLA RAIZ, Y ES A
+# PROPOSITO: las pruebas anteriores rompen centinelas y vacian carpetas a
+# proposito, asi que heredar su estado haria que esta corrida abortara
+# LIMPIAMENTE en una guarda anterior -- y entonces no probaria nada. Lo que se
+# quiere medir es que la excepcion, cuando llega, deja rastro.
+$cfgRota = Join-Path $caja.Raiz 'respaldo-sin-traduccion.jsonc'
+$objRoto = Get-Content -LiteralPath $caja.Config -Raw -Encoding UTF8 | ConvertFrom-Jsonc
+$objRoto.contenedores     = @()
+$objRoto.centinelas       = @()
+$objRoto.raicesDeclaradas = @([pscustomobject]@{
+        ruta = $fuera; clase = 'A'; nota = 'sin traduccion declarada: el motor tiene que lanzar'
+    })
+$objRoto.carpetaEstado = Join-Path $caja.Raiz 'estado-excepcion'
+$objRoto | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $cfgRota -Encoding UTF8
+New-Item -ItemType Directory -Path $objRoto.carpetaEstado -Force | Out-Null
+
+$motorAuditoria = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\respaldo.ps1'
+$lanzo = $false
+try { & $motorAuditoria -RutaConfiguracion $cfgRota -OmitirDeuda -Confirm:$false | Out-Null }
+catch { $lanzo = $true }
+
+Test-Afirmacion -Nombre 'Una raiz sin traduccion sigue lanzando: la excepcion NO se traga' `
+    -Esperado $true -Obtenido $lanzo
+$estadoTrasMorir = Read-EstadoRespaldo -Carpeta $objRoto.carpetaEstado
+Test-Afirmacion -Criterio '9' -Nombre 'Pero ahora deja escrito FALLA antes de que la excepcion suba' `
+    -Esperado 'Falla' -Obtenido ('' + $estadoTrasMorir['estado'])
+Test-Afirmacion -Criterio '9' -Nombre 'Con causa "excepcion", que Resolve-EstadoVigente NO rebaja a ambar' `
+    -Esperado 'excepcion' -Obtenido ('' + $estadoTrasMorir['causa']).Trim()
+Test-Afirmacion -Criterio '9' -Nombre 'Y la marca no se queda colgada: el finally sigue haciendo su parte' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $objRoto.carpetaEstado 'EN_CURSO.lock'))
+
+# Un estado 'Falla' con causa 'excepcion' NO es de los que se curan solos, ni
+# aunque el nodo responda: nadie ha arreglado lo que rompio la corrida.
+$sigueRojo = Resolve-EstadoVigente -Estado 'Falla' -Causa 'excepcion' -DestinoResponde $true
+Test-Afirmacion -Nombre 'Una corrida muerta sigue ROJA aunque el nodo responda' `
+    -Esperado 'Falla' -Obtenido $sigueRojo.Estado
+
+# --- 3. EL REGISTRO NO PUEDE TUMBAR UNA CORRIDA -----------------------------
+#
+# Add-Content abre sin compartir la escritura: dos corridas a la vez perdian
+# entre el 62 % y el 100 % de sus lineas, y como esto corre con 'Stop', la
+# violacion LANZABA y mataba el motor.
+$cajaLog = Join-Path $caja.Raiz 'registro-disputado'
+New-Item -ItemType Directory -Path $cajaLog -Force | Out-Null
+$logDelDia = Join-Path $cajaLog ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))
+
+# Otro escritor lo tiene abierto en modo compartido, que es como lo deja ahora
+# el propio motor. Antes esto bastaba para que el segundo muriera.
+Write-LineaDeRegistro -Archivo $logDelDia -Linea 'primera linea' | Out-Null
+$otro = [System.IO.File]::Open($logDelDia, [System.IO.FileMode]::Append,
+    [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+try {
+    $escribio = Write-LineaDeRegistro -Archivo $logDelDia -Linea 'segunda linea con el archivo ya abierto'
+}
+finally { $otro.Dispose() }
+Test-Afirmacion -Nombre 'Con el registro del dia ya abierto por otro, la linea SE ESCRIBE igual' `
+    -Esperado $true -Obtenido $escribio
+Test-Afirmacion -Nombre 'Y no se pierde la que ya estaba: las dos conviven' `
+    -Esperado $true `
+    -Obtenido ((Get-Content -LiteralPath $logDelDia -Raw -Encoding UTF8) -match 'primera linea' -and
+               (Get-Content -LiteralPath $logDelDia -Raw -Encoding UTF8) -match 'segunda linea')
+
+# Y CUANDO DE VERDAD NO SE PUEDE, SE RINDE EN SILENCIO. Bloqueo exclusivo: nadie
+# va a poder escribir. Lo que NO puede pasar es que eso lance y se lleve por
+# delante una copia que iba bien.
+$cerrado = [System.IO.File]::Open($logDelDia, [System.IO.FileMode]::Append,
+    [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+$tumbo = $false
+try { Write-RegistroRespaldo -Nivel 'OK' -Etapa 'prueba' -Mensaje 'con el registro bloqueado' -CarpetaRegistro $cajaLog }
+catch { $tumbo = $true }
+finally { $cerrado.Dispose() }
+Test-Afirmacion -Criterio '9' -Nombre 'Un registro que no se puede escribir NO tumba la corrida' `
+    -Esperado $false -Obtenido $tumbo
+
+# LAS 800 LINEAS DE DOS PROCESOS SALEN 800. Compartir el archivo no bastaba:
+# FileMode::Append pone el puntero al final AL ABRIR, asi que dos procesos que
+# abren a la vez escriben en el mismo sitio y uno pisa al otro -- 799 de 800, y
+# los dos creyendo haber escrito. Con el permiso AppendData, Windows coloca cada
+# escritura al final en el momento de escribirla.
+$logDuelo = Join-Path $cajaLog 'duelo.log'
+$guionDuelo = Join-Path $cajaLog 'escribe.ps1'
+@"
+param([string]`$archivo)
+`$ErrorActionPreference = 'Stop'
+. '$(Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\comun.ps1')'
+for (`$i = 0; `$i -lt 400; `$i++) {
+    [void](Write-LineaDeRegistro -Archivo `$archivo -Linea ("linea {0} de {1}" -f `$i, `$PID))
+}
+"@ | Set-Content -LiteralPath $guionDuelo -Encoding UTF8
+# Con $using: y no con -ArgumentList: es lo que el analizador pide y ademas deja
+# leer de un vistazo que los dos trabajos apuntan al MISMO archivo, que es lo
+# unico que hace valida esta prueba.
+$duelo = 1..2 | ForEach-Object {
+    Start-Job -ScriptBlock {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $using:guionDuelo -archivo $using:logDuelo
+    }
+}
+$duelo | Wait-Job | Out-Null
+$duelo | Remove-Job
+Test-Afirmacion -Nombre 'Dos procesos anexando a la vez no se pisan ni una linea' `
+    -Esperado 800 -Obtenido @(Get-Content -LiteralPath $logDuelo -Encoding UTF8).Count
+
+# Y NO DEVUELVE NADA A LA TUBERIA. Write-LineaDeRegistro si devuelve si pudo
+# escribir, y dejar ese booleano suelto haria que toda guarda que anota justo
+# antes de su return -Test-OrigenUtilizable, Test-EspacioEnDestino,
+# Get-DiscoFrio- devolviera DOS cosas en vez de su veredicto. Una guarda que
+# dice "no, y ademas si" no es una guarda.
+$loQueDevuelve = @(Write-RegistroRespaldo -Nivel 'OK' -Etapa 'prueba' `
+        -Mensaje 'esto no puede salir por la tuberia' -CarpetaRegistro $cajaLog)
+Test-Afirmacion -Nombre 'Write-RegistroRespaldo no emite NADA a la tuberia' `
+    -Esperado 0 -Obtenido $loQueDevuelve.Count
+
+# --- 4. LA PUERTA DE LAS DOS CORRIDAS ---------------------------------------
+#
+# El Programador impide dos corridas automaticas, pero nada impedia pulsar [1]
+# mientras una estaba copiando.
+$cajaPuerta = Join-Path $caja.Raiz 'estado-puerta'
+New-Item -ItemType Directory -Path $cajaPuerta -Force | Out-Null
+$cfgPuerta = [pscustomobject]@{ carpetaEstado = $cajaPuerta }
+
+Test-Afirmacion -Nombre 'Sin marca, el tablero deja arrancar una corrida' `
+    -Esperado $false -Obtenido (Test-HayCorridaEnCurso -Configuracion $cfgPuerta).EnCurso
+
+[void](Enter-MarcaDeCorrida -Carpeta $cajaPuerta -Confirm:$false)
+$puertaCerrada = Test-HayCorridaEnCurso -Configuracion $cfgPuerta
+Test-Afirmacion -Nombre 'Con una corrida VIVA en marcha, el tablero se niega a lanzar otra' `
+    -Esperado $true -Obtenido $puertaCerrada.EnCurso
+Test-Afirmacion -Nombre 'Y dice quien la tiene tomada, no solo que no' `
+    -Esperado $true -Obtenido ($puertaCerrada.Detalle -match ('pid {0}' -f $PID))
+
+# UNA MARCA VIEJA NO BLOQUEA. Negarse a copiar por un cadaver dejaria el
+# respaldo parado hasta que alguien borrase un archivo a mano.
+Set-Content -LiteralPath (Join-Path $cajaPuerta 'EN_CURSO.lock') -Encoding UTF8 `
+    -Value "pid=999999`ninicio=$((Get-Date).AddHours(-5).ToString('s'))`nequipo=CAJA`ntipo=nodo`n"
+Test-Afirmacion -Nombre 'Una marca VIEJA no bloquea: es un cadaver, no una corrida' `
+    -Esperado $false -Obtenido (Test-HayCorridaEnCurso -Configuracion $cfgPuerta).EnCurso
+Exit-MarcaDeCorrida -Carpeta $cajaPuerta -Confirm:$false
+
+# Y la puerta esta puesta donde se escribe, no donde solo se lee: cotejar
+# mientras se copia es legitimo.
+$fuenteTablero = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\tablero.ps1') -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'Las dos opciones que ESCRIBEN pasan por la puerta' `
+    -Esperado 2 -Obtenido ([regex]::Matches($fuenteTablero, 'Test-HayCorridaEnCurso -Configuracion \$configuracion').Count)
+
+# --- 5. LA GUARDA DE ESPACIO ------------------------------------------------
+Test-Afirmacion -Nombre 'Sin nada que escribir no se pregunta por el espacio' `
+    -Esperado $true -Obtenido (Test-EspacioEnDestino -Unc $caja.Raiz -BytesNecesarios 0).Cabe
+Test-Afirmacion -Nombre 'Lo que cabe de sobra, cabe' `
+    -Esperado $true -Obtenido (Test-EspacioEnDestino -Unc $caja.Raiz -BytesNecesarios 1024).Cabe
+Test-Afirmacion -Nombre 'Un petabyte no cabe, y se dice ANTES de escribir un byte' `
+    -Esperado $false -Obtenido (Test-EspacioEnDestino -Unc $caja.Raiz -BytesNecesarios 1PB).Cabe
+# NO SABER NO ES MOTIVO PARA NO RESPALDAR. Un respaldo que se niega a correr
+# porque no pudo medir un disco es un respaldo que no corre.
+$noSeSabe = Test-EspacioEnDestino -Unc '\\no-existe-este-equipo-zz\recurso' -BytesNecesarios 1024
+Test-Afirmacion -Nombre 'Si no se puede medir el espacio se copia igual, y se anota' `
+    -Esperado $true -Obtenido ($noSeSabe.Cabe -and $noSeSabe.Motivo -eq 'no se pudo medir')
+
+# --- 6. LAS RUTAS DE DISPOSITIVO NO SON EL NODO -----------------------------
+Test-Afirmacion -Criterio '1' -Nombre 'Una UNC de verdad sigue valiendo' `
+    -Esperado $true -Obtenido (Test-RutaUnc -Ruta '\\192.168.1.38\datos')
+Test-Afirmacion -Criterio '1' -Nombre 'La barra que faltaba el 02/09 se sigue cazando' `
+    -Esperado $false -Obtenido (Test-RutaUnc -Ruta '\192.168.1.38\datos')
+Test-Afirmacion -Criterio '1' -Nombre '\\?\C:\ es el disco LOCAL disfrazado de UNC: se rechaza' `
+    -Esperado $false -Obtenido (Test-RutaUnc -Ruta '\\?\C:\datos')
+Test-Afirmacion -Criterio '1' -Nombre 'Y \\.\C:\ tambien' `
+    -Esperado $false -Obtenido (Test-RutaUnc -Ruta '\\.\C:\datos')
+
+# --- 7. EL RESULTADO ABORTADO ESTA COMPLETO ---------------------------------
+# Bajo StrictMode, leer una propiedad que no existe LANZA. Las salidas por
+# aborto no llevaban Fin, asi que el primero que cronometrara una corrida
+# abortada se llevaba la excepcion dentro de la corrida.
+$abortada = Invoke-CorridaDeRespaldo -Configuracion ([pscustomobject]@{
+        deudaPrimeraCorrida = [pscustomobject]@{ raices = @(); saldada = $true }
+        contenedores        = @()
+        raicesDeclaradas    = @()
+        exclusiones         = @()
+    }) -Confirm:$false
+Test-Afirmacion -Nombre 'Una corrida sin raices aborta, no revienta' `
+    -Esperado $true -Obtenido $abortada.Abortada
+# LA GUARDA DE "NINGUNA RAIZ" NO PODIA CUBRIR SU PROPIO CASO. PowerShell
+# desenvuelve lo que devuelve una funcion, asi que una lista vacia llegaba como
+# $null y `$null.Count` LANZA bajo StrictMode: en vez del aborto limpio salia una
+# excepcion. Se destapo al probar el catch nuevo.
+Test-Afirmacion -Nombre 'Y aborta LIMPIAMENTE, con su causa, en vez de lanzar' `
+    -Esperado 'sinRaices' -Obtenido ('' + $abortada.Causa)
+Test-Afirmacion -Nombre 'Y su resultado trae Fin declarado: StrictMode no lo puede tumbar' `
+    -Esperado $true -Obtenido ($abortada.PSObject.Properties.Name -contains 'Fin')
+
+# UNA GUARDA DEVUELVE UN VEREDICTO, NO UNA LISTA. Es la otra cara de que
+# Write-RegistroRespaldo no emita: estas funciones anotan y despues devuelven.
+$origenAusente = Test-OrigenUtilizable -Raiz ([pscustomobject]@{
+        Ruta = Join-Path $caja.Raiz 'no-existe-jamas'; Clase = 'B' })
+Test-Afirmacion -Nombre 'Una guarda que dice que no, devuelve UN solo no' `
+    -Esperado $true -Obtenido ($origenAusente -is [bool] -and -not $origenAusente)
+
+# --- 8. ADR-0078: LOS .ps1 VAN SIN ACENTOS, Y AHORA HAY QUIEN LO VIGILE -----
+#
+# El repositorio va en LF y sin BOM, y PowerShell 5.1 lee un .ps1 sin BOM como
+# ANSI: un acento sale roto. La regla estaba escrita en tres sitios y NADIE la
+# comprobaba; la auditoria encontro un "paso" con tilde viviendo en comun.ps1.
+$conAcentos = New-Object System.Collections.Generic.List[string]
+foreach ($archivoPs1 in @(Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Parent) -Filter '*.ps1' -Recurse)) {
+    $bytes = [System.IO.File]::ReadAllBytes($archivoPs1.FullName)
+    if (@($bytes | Where-Object { $_ -gt 127 }).Count -gt 0) { $conAcentos.Add($archivoPs1.Name) }
+}
+Test-Afirmacion -Nombre 'Ningun .ps1 lleva un solo byte fuera de ASCII (ADR-0078)' `
+    -Esperado '' -Obtenido ($conAcentos -join ', ')
+
 # ===========================================================================
 
 if (-not $Conservar) {

@@ -192,6 +192,33 @@ function Get-EstadoParaElIcono {
         if ($ultimo -eq 'SinDatos') {
             return [pscustomobject]@{ Estado = 'SinDatos'; Detalle = '' + $estado['detalle']; Fuente = 'estado' }
         }
+
+        # 'Copiando' SIN MARCA ES UNA CONTRADICCION, Y SE PINTA COMO TAL.
+        #
+        # Llegar hasta aqui significa que el paso 3 no vio marca: nadie esta
+        # copiando. Que ESTADO.txt siga diciendo 'Copiando' solo puede querer
+        # decir que alguien empezo una corrida y nunca escribio como acabo.
+        #
+        # ANTES ESTO SALIA VERDE, y era el peor fallo que tenia el semaforo.
+        # 'Copiando' no es 'Falla' ni 'Atencion', asi que se escapaba de la
+        # pregunta de abajo y caia en el ultimo return de la funcion, que dice
+        # Protegido. Un motor muerto pintaba VERDE hasta 22 h -- reproducido el
+        # 2026-09-14 -- y despues ambar por antiguedad, nunca rojo.
+        #
+        # LA CAUSA YA SE ARREGLO donde tenia que arreglarse: respaldo.ps1 tiene
+        # ahora un catch que escribe Falla antes de que la excepcion suba. Esto
+        # se queda de todos modos, y no por desconfianza: es un INVARIANTE del
+        # semaforo -sin marca no se esta copiando- y el dia que otra pieza deje
+        # un 'Copiando' colgado, el icono tiene que decirlo sin que nadie haya
+        # tenido que preverlo. Un punto ciego que ya se cerro una vez merece que
+        # el otro lado tambien lo cierre.
+        if ($ultimo -eq 'Copiando') {
+            return [pscustomobject]@{
+                Estado  = 'Falla'
+                Detalle = 'Una corrida empezo y nunca dijo como acabo: mira el registro de hoy'
+                Fuente  = 'estado'
+            }
+        }
         # UN ROJO CUYA CAUSA YA NO EXISTE NO PUEDE SEGUIR SIENDO ROJO. El
         # 2026-09-02 el nodo se cayo por un apagon, la corrida aborto y el icono
         # se puso rojo -correctamente-. Cuando el nodo volvio, el icono seguia
