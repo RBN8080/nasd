@@ -126,10 +126,27 @@ func (r Red) Etiqueta() string {
 }
 
 var (
-	// Los dos prefijos que el nodo conoce. Literales y no configurables: son
-	// los mismos que ya están fijados en ADR-0018 y en 12_wireguard.sh, y una
-	// opción de configuración que nadie va a cambiar es exactamente el
-	// «por si acaso» que el estilo del proyecto prohíbe.
+	// Los dos prefijos que el nodo cuenta como «de casa».
+	//
+	// LO QUE HAY ESCRITO AQUÍ YA NO ES LA VERDAD, SINO EL VALOR DE PARTIDA.
+	// Hasta el 2026-09-15 eran literales y no configurables, con este
+	// argumento: «son los mismos que ya están fijados en ADR-0018 y en
+	// 12_wireguard.sh, y una opción que nadie va a cambiar es el por si acaso
+	// que el estilo del proyecto prohíbe». El argumento se sostenía mientras
+	// hubiera un solo nodo en una sola casa, y dejó de sostenerse al querer
+	// que el sistema se levantara en cualquier red (ADR-0095).
+	//
+	// LO QUE PASABA EN OTRA LAN no era un error visible: 192.168.1.0/24 no
+	// contiene ninguna dirección de una red 10.0.0.0/8, así que la casa
+	// ENTERA caía en RedInternet. Nada falla, nada se registra, y el
+	// superusuario pierde borrar, mover y dar de alta desde su propio salón
+	// (sesion.go) mientras el panel cuenta a la familia como extraños.
+	//
+	// SE QUEDAN COMO VALOR DE PARTIDA Y NO SE VACÍAN, a propósito: así el
+	// paquete sigue siendo usable sin configurar nada —las pruebas de este
+	// paquete no tienen que montar un TOML para razonar sobre la red— y un
+	// nodo que arrancara sin pasar por la raíz de composición se comporta
+	// como se comportaba antes, no como si no tuviera casa.
 	prefijoLAN   = netip.MustParsePrefix("192.168.1.0/24")
 	prefijoTunel = netip.MustParsePrefix("10.77.0.0/24")
 
@@ -157,6 +174,35 @@ var (
 	// necesitar uno.
 	prefijosPropios []netip.Prefix
 )
+
+// ConfigurarRedes fija las dos redes que el nodo cuenta como propias. La llama
+// la raíz de composición al arrancar, con lo que traiga el TOML (ADR-0095).
+//
+// UN PREFIJO INVÁLIDO NO BORRA EL QUE HABÍA, y esa es toda la política de
+// error de esta función: config.lanDe se niega a adivinar la LAN en tres
+// casos (IPv6, bucle local, dirección pública) y devuelve un prefijo
+// inválido, que aquí significa «no sé», no «no hay casa». Vaciar el prefijo
+// ante un «no sé» sería reintroducir por la puerta de atrás exactamente el
+// fallo que esto arregla: la casa entera contada como Internet.
+//
+// ESTADO COMPARTIDO (ADR-0013), igual que prefijosPropios y con la misma
+// condición: se escribe UNA vez, desde la raíz de composición, antes de que
+// exista ningún servidor. A partir de ahí es de solo lectura y por eso no
+// lleva candado. Si algún día hubiera un segundo escritor, esto pasa a
+// necesitar uno.
+//
+// Devuelve lo que queda en vigor, para que quien la llame pueda anotarlo: sin
+// eso, la diferencia entre «se configuró» y «se ignoró en silencio» no se ve
+// desde fuera.
+func ConfigurarRedes(lan, tunel netip.Prefix) (netip.Prefix, netip.Prefix) {
+	if lan.IsValid() {
+		prefijoLAN = lan.Masked()
+	}
+	if tunel.IsValid() {
+		prefijoTunel = tunel.Masked()
+	}
+	return prefijoLAN, prefijoTunel
+}
 
 // AprenderRedesPropias registra como «de casa» los /64 de las direcciones
 // IPv6 globales del nodo. La llama la raíz de composición al arrancar.
