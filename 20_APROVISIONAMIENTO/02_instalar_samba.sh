@@ -13,12 +13,21 @@ set -euo pipefail
 
 PUNTO=/srv/nas
 USUARIO=nas
-RED=192.168.1.0/24
-RED_TUNEL=10.77.0.0/24   # debe coincidir con RED_TUNEL de 12_wireguard.sh
 RECURSO=datos
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
+
+# Los seis valores de esta red — ADR-0095. Se leen de un archivo en vez de
+# estar escritos aquí: el mismo valor hacía falta en varios scripts y mantener
+# copias sincronizadas a mano es un acoplamiento que nadie declara. Mismo
+# mecanismo que /etc/nas/ddns.conf ya usaba.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${RED:?falta RED en $AJUSTES}"
+: "${RED_TUNEL:?falta RED_TUNEL en $AJUSTES}"
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
 mountpoint -q "$PUNTO" || { rojo "$PUNTO no está montado. Ejecute antes 01_preparar_disco.sh"; exit 1; }

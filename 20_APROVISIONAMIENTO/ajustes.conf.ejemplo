@@ -1,0 +1,86 @@
+# ajustes.conf — los seis valores que cambian de una casa a otra. ADR-0095.
+#
+# CÓMO SE USA, una sola vez y a mano:
+#
+#     sudo install -d -m 0755 /etc/nas
+#     sudo cp ajustes.conf.ejemplo /etc/nas/ajustes.conf
+#     sudo nano /etc/nas/ajustes.conf
+#
+# Los scripts de esta carpeta lo leen con «.» (source), igual que ya hacían
+# con /etc/nas/ddns.conf. Si falta, se paran y lo dicen: ninguno adivina.
+#
+# POR QUÉ SE EDITA A MANO Y NO SE DETECTA SOLO. Detectar la LAN de la interfaz
+# es fácil y acierta casi siempre; el «casi» es el problema. Un nodo con dos
+# interfaces, una Wi-Fi todavía conectada, o un DHCP que aún no ha dado la
+# dirección definitiva producen una detección PLAUSIBLE Y EQUIVOCADA, y esa es
+# justo la clase de fallo que este proyecto persigue: el que no se rompe, solo
+# miente. Seis líneas escritas por quien conoce su casa son verificables; una
+# detección no. Ver ADR-0095.
+#
+# AQUÍ NO VA NINGÚN SECRETO (P4 del charter). Ni el testigo de DuckDNS, ni la
+# contraseña del NAS, ni las claves de WireGuard. El testigo vive en
+# /etc/nas/ddns.conf; la contraseña la pide 07_credencial_web.sh y solo se
+# guardan sus derivaciones; las claves las genera 12_wireguard.sh en el nodo.
+#
+# EL NOMBRE DDNS TAMPOCO VA AQUÍ, y no es un olvido: es opcional —un NAS solo
+# de LAN no lo necesita— y ya tiene su sitio, /etc/nas/ddns.conf, junto al
+# testigo que lo acompaña. Separarlos crearía dos archivos para lo mismo.
+
+# La red de casa, en CIDR. Es lo que decide quién puede borrar, mover y dar de
+# alta, y qué cuenta el panel como visita de fuera.
+#
+# Se usa en: 02_instalar_samba.sh (hosts allow), 03_cortafuegos.sh (las reglas
+# de entrada) y, a través del TOML que escribe 05_instalar_servicio.sh, en el
+# propio nasd.
+#
+# MÍRELA, NO LA SUPONGA. En el nodo:   ip -4 -o addr show
+# Una línea como «inet 192.168.1.38/24» significa RED=192.168.1.0/24.
+RED=192.168.1.0/24
+
+# La dirección fija de este nodo, dentro de RED. Fija de verdad: por reserva
+# en el router o por configuración estática. Si cambia, los perfiles de
+# WireGuard ya repartidos dejan de encontrar la web y nadie avisa.
+#
+# ADR-0018: nasd se enlaza a ESTA dirección, no a 0.0.0.0, de modo que el
+# proceso ni siquiera escucha fuera de la interfaz declarada.
+NODO_IP=192.168.1.38
+
+# El nombre de la interfaz de red por cable.
+#
+# NO LO DÉ POR SABIDO: en Raspberry Pi OS Bookworm suele ser «end0» y no
+# «eth0», y el nombre equivocado NO da error — devuelve vacío, y entonces el
+# acceso remoto por IPv6 se queda sin prefijo en silencio.
+#
+# Mírelo con:   ip -o link show
+INTERFAZ=eth0
+
+# El disco de datos, por su nombre de dispositivo.
+#
+# ############################################################################
+# #  01_preparar_disco.sh FORMATEA ENTERO LO QUE DIGA AQUÍ. Compruébelo dos  #
+# #  veces:   lsblk -o NAME,SIZE,MODEL,SERIAL,TRAN                           #
+# ############################################################################
+#
+# Es el único valor de este archivo que destruye datos si se equivoca, y por
+# eso existe el de abajo.
+DISCO=/dev/sdb
+
+# El modelo que se espera encontrar en DISCO. Es una segunda llave, no un
+# requisito del producto: los nombres /dev/sdX los reparte el kernel por orden
+# de aparición y cambian entre arranques (pasó de verdad el 2026-07-31, ver
+# 10_resiliencia_disco.sh). Si el modelo no coincide, el disco no es el que
+# usted cree y el formateo se detiene.
+#
+# Se compara por prefijo, así que basta con el principio del modelo.
+# Sáquelo de:   lsblk -ndo MODEL /dev/sdb
+DISCO_MODELO=ST1000LM035
+
+# La red privada del túnel WireGuard, en CIDR. Déjela como está si no sabe qué
+# es: no se toca nada de la casa, es una red que solo existe dentro del túnel.
+#
+# NO PUEDE SOLAPARSE CON «RED». nasd comprueba la LAN primero, así que un
+# túnel dentro de la LAN se contaría entero como red local y el panel lo diría
+# con toda seguridad. Si se solapan, nasd no arranca.
+#
+# Cámbiela solo si 10.77.0.x ya se usa para otra cosa en su casa.
+RED_TUNEL=10.77.0.0/24
