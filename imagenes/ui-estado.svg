@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-label="Maqueta del modulo Estado: salud del nodo con dos indicadores en ambar">
+<title>nasd · Estado</title>
+<!-- Maqueta generada por 40_PUBLICACION/generar_maquetas.py. Datos inventados: no es una captura de ningun nodo real. No editar a mano. -->
+<rect width="1000" height="560" fill="#000000"/>
+<rect x="0" y="0" width="208" height="560" fill="#08090a"/>
+<rect x="208" y="0" width="1" height="560" fill="#21242a"/>
+<text x="20" y="34" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" text-anchor="start" letter-spacing="0">nas-ejemplo</text>
+<circle cx="22" cy="50" r="3" fill="#3fb950"/>
+<text x="31" y="54" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">en línea · 4d 20h</text>
+<rect x="24" y="79" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="89" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Resumen</text>
+<rect x="24" y="113" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="123" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Archivos</text>
+<text x="20" y="160" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" text-anchor="start" letter-spacing="1.3">SISTEMA</text>
+<rect x="10" y="163" width="186" height="32" rx="6" fill="#14171c"/>
+<rect x="10" y="163" width="2" height="32" rx="1" fill="#b9cdea"/>
+<rect x="24" y="169" width="11" height="11" rx="2" fill="none" stroke="#b9cdea"/>
+<text x="46" y="179" fill="#d9e5f6" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">Estado</text>
+<rect x="24" y="203" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="213" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Seguridad</text>
+<rect x="24" y="237" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="247" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Cuentas</text>
+<text x="20" y="536" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">Salir</text>
+<rect x="209" y="0" width="791" height="62" fill="#08090a"/>
+<rect x="209" y="62" width="791" height="1" fill="#21242a"/>
+<text x="232" y="28" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" text-anchor="start" letter-spacing="0">Estado</text>
+<text x="232" y="48" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">Salud del nodo  ·  medido hace 12 s</text>
+<circle cx="964" cy="31" r="14" fill="#21242a"/>
+<text x="964" y="36" fill="#d9e5f6" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" text-anchor="middle" letter-spacing="0">R</text>
+<rect x="232" y="92" width="744" height="38" rx="10" fill="#0e0f11" stroke="#d29922" stroke-width="1"/>
+<circle cx="252" cy="111" r="5" fill="#d29922"/>
+<text x="268" y="116" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">Dos indicadores piden atención. Ninguno impide servir.</text>
+<rect x="232" y="148" width="744" height="352" rx="10" fill="#0e0f11" stroke="#21242a" stroke-width="1"/>
+<text x="248" y="174" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" text-anchor="start" letter-spacing="1.2">INDICADORES</text>
+<circle cx="254" cy="205" r="4" fill="#3fb950"/>
+<text x="272" y="210" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">nasd</text>
+<text x="472" y="210" fill="#3fb950" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">activo</text>
+<text x="960" y="210" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">sin reinicios desde hace 4 d 20 h</text>
+<rect x="248" y="228" width="712" height="1" fill="#16181b"/>
+<circle cx="254" cy="249" r="4" fill="#3fb950"/>
+<text x="272" y="254" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">Samba</text>
+<text x="472" y="254" fill="#3fb950" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">activo</text>
+<text x="960" y="254" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">2 sesiones abiertas</text>
+<rect x="248" y="272" width="712" height="1" fill="#16181b"/>
+<circle cx="254" cy="293" r="4" fill="#d29922"/>
+<text x="272" y="298" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">Disco de datos</text>
+<text x="472" y="298" fill="#d29922" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">71 % ocupado</text>
+<text x="960" y="298" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">268 GB libres de 932 GB</text>
+<rect x="248" y="316" width="712" height="1" fill="#16181b"/>
+<circle cx="254" cy="337" r="4" fill="#d29922"/>
+<text x="272" y="342" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">Respaldo EQUIPO-01</text>
+<text x="472" y="342" fill="#d29922" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">hace 9 h</text>
+<text x="960" y="342" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">el umbral que publica el cliente son 8 h</text>
+<rect x="248" y="360" width="712" height="1" fill="#16181b"/>
+<circle cx="254" cy="381" r="4" fill="#3fb950"/>
+<text x="272" y="386" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-sensor</text>
+<text x="472" y="386" fill="#3fb950" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">activo</text>
+<text x="960" y="386" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">1 340 paquetes analizados hoy</text>
+<rect x="248" y="404" width="712" height="1" fill="#16181b"/>
+<circle cx="254" cy="425" r="4" fill="#3fb950"/>
+<text x="272" y="430" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">Temperatura</text>
+<text x="472" y="430" fill="#3fb950" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">48,3 °C</text>
+<text x="960" y="430" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">sin limitación del SoC</text>
+<rect x="248" y="448" width="712" height="1" fill="#16181b"/>
+<circle cx="254" cy="469" r="4" fill="#6b7280"/>
+<text x="272" y="474" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="500" text-anchor="start" letter-spacing="0">Certificado TLS</text>
+<text x="472" y="474" fill="#6b7280" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">no configurado</text>
+<text x="960" y="474" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">el nodo sirve solo en la red local</text>
+</svg>

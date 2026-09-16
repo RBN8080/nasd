@@ -30,6 +30,14 @@ In production since July 2026.
 | `20_APROVISIONAMIENTO` | 22 shell scripts that take a clean OS install to a working node |
 | `30_CLIENTE_RESPALDO` | Windows backup client: scheduled runs, cold-disk copy, anti-ransomware sentinels, tray indicator |
 
+## The interface
+
+![Security: origin map, live ribbon, per-network breakdown and quarantined addresses](imagenes/ui-seguridad.svg)
+
+The security panel, over the same map the node serves. The interface is in
+Spanish, as the product is. The other four modules are in
+[**The interface**](INTERFACE.md).
+
 ## Access control
 
 <picture>

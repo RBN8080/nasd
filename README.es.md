@@ -31,6 +31,14 @@ En producción desde julio de 2026.
 | `20_APROVISIONAMIENTO` | 22 guiones de shell que llevan una instalación limpia del sistema hasta un nodo en marcha |
 | `30_CLIENTE_RESPALDO` | Cliente de respaldo para Windows: corridas programadas, copia a disco frío, centinelas antiransomware, indicador en la bandeja |
 
+## La interfaz
+
+![Seguridad: mapa de orígenes, cinta en vivo, desglose por red y direcciones en cuarentena](imagenes/ui-seguridad.svg)
+
+El panel de seguridad, sobre el mismo mapa que sirve el nodo. Los otros cuatro
+módulos —Resumen, Archivos, Estado y Cuentas— están en
+[**La interfaz**](INTERFAZ.md).
+
 ## Control de acceso
 
 <picture>

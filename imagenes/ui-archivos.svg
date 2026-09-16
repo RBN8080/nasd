@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" width="1000" height="560" role="img" aria-label="Maqueta del modulo Archivos: un listado con una subida en curso">
+<title>nasd · Archivos</title>
+<!-- Maqueta generada por 40_PUBLICACION/generar_maquetas.py. Datos inventados: no es una captura de ningun nodo real. No editar a mano. -->
+<rect width="1000" height="560" fill="#000000"/>
+<rect x="0" y="0" width="208" height="560" fill="#08090a"/>
+<rect x="208" y="0" width="1" height="560" fill="#21242a"/>
+<text x="20" y="34" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" text-anchor="start" letter-spacing="0">nas-ejemplo</text>
+<circle cx="22" cy="50" r="3" fill="#3fb950"/>
+<text x="31" y="54" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">en línea · 4d 20h</text>
+<rect x="24" y="79" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="89" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Resumen</text>
+<rect x="10" y="107" width="186" height="32" rx="6" fill="#14171c"/>
+<rect x="10" y="107" width="2" height="32" rx="1" fill="#b9cdea"/>
+<rect x="24" y="113" width="11" height="11" rx="2" fill="none" stroke="#b9cdea"/>
+<text x="46" y="123" fill="#d9e5f6" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">Archivos</text>
+<text x="20" y="160" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="9.5" font-weight="600" text-anchor="start" letter-spacing="1.3">SISTEMA</text>
+<rect x="24" y="169" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="179" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Estado</text>
+<rect x="24" y="203" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="213" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Seguridad</text>
+<rect x="24" y="237" width="11" height="11" rx="2" fill="none" stroke="#5b616b"/>
+<text x="46" y="247" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="400" text-anchor="start" letter-spacing="0">Cuentas</text>
+<text x="20" y="536" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">Salir</text>
+<rect x="209" y="0" width="791" height="62" fill="#08090a"/>
+<rect x="209" y="62" width="791" height="1" fill="#21242a"/>
+<text x="232" y="28" fill="#e9ecf1" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" text-anchor="start" letter-spacing="0">Archivos</text>
+<text x="232" y="48" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">almacén  ›  fotos  ›  vacaciones-2026</text>
+<circle cx="964" cy="31" r="14" fill="#21242a"/>
+<text x="964" y="36" fill="#d9e5f6" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="600" text-anchor="middle" letter-spacing="0">R</text>
+<rect x="232" y="90" width="62" height="28" rx="6" fill="#0e0f11" stroke="#30343c" stroke-width="1"/>
+<text x="263.0" y="109" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="middle" letter-spacing="0">Subir</text>
+<rect x="302" y="90" width="112" height="28" rx="6" fill="#0e0f11" stroke="#30343c" stroke-width="1"/>
+<text x="358.0" y="109" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="middle" letter-spacing="0">Nueva carpeta</text>
+<rect x="422" y="90" width="62" height="28" rx="6" fill="#0e0f11" stroke="#30343c" stroke-width="1"/>
+<text x="453.0" y="109" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="middle" letter-spacing="0">Mover</text>
+<rect x="492" y="90" width="66" height="28" rx="6" fill="#0e0f11" stroke="#f85149" stroke-width="1"/>
+<text x="525.0" y="109" fill="#f85149" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="middle" letter-spacing="0">Borrar</text>
+<text x="960" y="109" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">218 elementos · 7,4 GB</text>
+<rect x="232" y="136" width="744" height="54" rx="10" fill="#0e0f11" stroke="#3f454f" stroke-width="1"/>
+<text x="248" y="158" fill="#d9e5f6" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">Subiendo  DSC_0447.jpg</text>
+<text x="960" y="158" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">60 %  ·  2,4 de 4,0 MB</text>
+<rect x="248" y="170" width="712" height="6" rx="3.0" fill="#21242a"/>
+<rect x="248" y="170" width="427.2" height="6" rx="3.0" fill="#b9cdea"/>
+<rect x="232" y="210" width="744" height="296" rx="10" fill="#0e0f11" stroke="#21242a" stroke-width="1"/>
+<rect x="250" y="235" width="14" height="12" rx="2" fill="none" stroke="#b9cdea"/>
+<text x="276" y="246" fill="#e9ecf1" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">01_playa</text>
+<text x="790" y="246" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">64 elementos</text>
+<text x="960" y="246" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">12 sep 2026</text>
+<rect x="248" y="264" width="712" height="1" fill="#16181b"/>
+<rect x="250" y="277" width="14" height="12" rx="2" fill="none" stroke="#b9cdea"/>
+<text x="276" y="288" fill="#e9ecf1" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="600" text-anchor="start" letter-spacing="0">02_montana</text>
+<text x="790" y="288" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">39 elementos</text>
+<text x="960" y="288" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">10 sep 2026</text>
+<rect x="248" y="306" width="712" height="1" fill="#16181b"/>
+<rect x="250" y="319" width="14" height="12" rx="2" fill="none" stroke="#5b616b"/>
+<rect x="276" y="316" width="18" height="18" rx="3" fill="#21242a"/>
+<text x="302" y="330" fill="#e9ecf1" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">DSC_0431.jpg</text>
+<text x="790" y="330" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">4,2 MB</text>
+<text x="960" y="330" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">hoy 12:04</text>
+<rect x="248" y="348" width="712" height="1" fill="#16181b"/>
+<rect x="250" y="361" width="14" height="12" rx="2" fill="none" stroke="#5b616b"/>
+<rect x="276" y="358" width="18" height="18" rx="3" fill="#21242a"/>
+<text x="302" y="372" fill="#e9ecf1" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">DSC_0430.jpg</text>
+<text x="790" y="372" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">3,9 MB</text>
+<text x="960" y="372" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">hoy 11:58</text>
+<rect x="248" y="390" width="712" height="1" fill="#16181b"/>
+<rect x="250" y="403" width="14" height="12" rx="2" fill="none" stroke="#5b616b"/>
+<text x="276" y="414" fill="#e9ecf1" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">itinerario.pdf</text>
+<text x="790" y="414" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">812 KB</text>
+<text x="960" y="414" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">02 sep 2026</text>
+<rect x="248" y="432" width="712" height="1" fill="#16181b"/>
+<rect x="250" y="445" width="14" height="12" rx="2" fill="none" stroke="#5b616b"/>
+<text x="276" y="456" fill="#e9ecf1" font-family="'DM Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">llegada.mp4</text>
+<text x="790" y="456" fill="#868d99" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">1,1 GB</text>
+<text x="960" y="456" fill="#5b616b" font-family="Archivo,ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="end" letter-spacing="0">01 sep 2026</text>
+</svg>
