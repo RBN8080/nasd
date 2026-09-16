@@ -1,56 +1,56 @@
-// Package geoip resuelve una dirección IP a su país y su operador.
+// Package geoip resolves an IP address to its country and its network operator.
 //
-// # PARA QUÉ, EN UNA FRASE
+// # WHAT FOR, IN ONE SENTENCE
 //
-// «203.0.113.7» no le dice nada a nadie. «DIGITALOCEAN-ASN · DE» sí: quien
-// mira el panel puede juzgar si un origen tiene sentido sin saber de redes.
-// Es lo que el responsable pidió al ver la primera versión —«me faltará
-// conocimiento técnico adicional para interpretar la información»— y por eso
-// esta pieza existe.
+// "203.0.113.7" tells nobody anything. "DIGITALOCEAN-ASN - DE" does: whoever
+// looks at the panel can judge whether an origin makes sense without knowing
+// about networks. It is what the owner asked for on seeing the first version -
+// "I would lack the additional technical knowledge to interpret the
+// information" - and that is why this piece exists.
 //
-// # DE DÓNDE SALEN LOS DATOS, Y POR QUÉ NO DE MAXMIND
+// # WHERE THE DATA COMES FROM, AND WHY NOT FROM MAXMIND
 //
-// De IPtoASN (iptoasn.com), publicado bajo Public Domain Dedication and
-// License v1.0, en TSV y con actualización horaria. **No exige cuenta, ni
-// clave, ni aceptar un contrato.**
+// From IPtoASN (iptoasn.com), published under the Public Domain Dedication and
+// License v1.0, as TSV and updated hourly. **It requires no account, no key,
+// and no contract to accept.**
 //
-// Se estudió GeoLite2 de MaxMind, que es la opción habitual, y se descartó —
-// NO por dinero, que es gratis, sino por tres cosas que en este proyecto
-// pesan más:
+// GeoLite2 from MaxMind, which is the usual option, was studied and discarded -
+// NOT over money, since it is free, but over three things that weigh more in
+// this project:
 //
-//  1. Exige cuenta y una clave de licencia que CADUCA cada 90 días si no se
-//     reconfirma. Una credencial que expira sola es un modo de fallo nuevo en
-//     un servicio que hoy no tiene ninguno.
-//  2. Su EULA obliga a borrar la base dentro de los 30 días de cada versión
-//     nueva. Es una obligación contractual sobre un NAS doméstico.
-//  3. Su formato .mmdb exige una biblioteca externa, y go.mod de este
-//     proyecto dice literalmente «Sin dependencias externas — ADR-0013 (P8)».
-//     La alternativa era escribir un intérprete de formato binario ajeno.
+//  1. It requires an account and a licence key that EXPIRES every 90 days if
+//     not reconfirmed. A credential that expires on its own is a new failure
+//     mode in a service that has none today.
+//  2. Its EULA obliges deleting the database within 30 days of each new
+//     release. That is a contractual obligation on a home NAS.
+//  3. Its .mmdb format requires an external library, and this project's go.mod
+//     literally says "No external dependencies - ADR-0013 (P8)". The
+//     alternative was writing an interpreter for somebody else's binary format.
 //
-// El TSV de IPtoASN no tiene ninguno de los tres problemas y trae país Y
-// operador en el mismo archivo.
+// The IPtoASN TSV has none of the three problems and carries country AND
+// operator in the same file.
 //
-// # POR QUÉ UN ARCHIVO DE ANCHO FIJO Y NO EL TSV DIRECTAMENTE
+// # WHY A FIXED-WIDTH FILE AND NOT THE TSV DIRECTLY
 //
-// Se consideró buscar por bisección sobre el propio TSV, que evitaría el paso
-// de conversión. Se descartó: las líneas son de ancho variable, así que cada
-// sonda obliga a rastrear hasta el siguiente salto de línea, y esa búsqueda
-// tiene casos límite —la última línea del archivo, entre otros— fáciles de
-// escribir mal y MUY difíciles de notar: devolvería el operador equivocado de
-// vez en cuando, sin fallar.
+// Binary searching over the TSV itself was considered, which would avoid the
+// conversion step. It was discarded: the lines are variable width, so every
+// probe has to scan to the next newline, and that search has edge cases - the
+// last line of the file, among others - that are easy to get wrong and VERY
+// hard to notice: it would return the wrong operator now and then, without
+// failing.
 //
-// Con ancho fijo, el registro i está en `cabecera + i*tamañoRegistro`. La
-// búsqueda es sort.Search sobre un índice, sin rastreo y sin casos límite.
-// Se paga una conversión —«nasd --preparar-geoip»— a cambio de que la parte
-// que corre a diario sea trivialmente correcta.
+// With fixed width, record i sits at `header + i*recordSize`. The lookup is a
+// sort.Search over an index, with no scanning and no edge cases. One conversion
+// ("nasd --preparar-geoip") is paid so that the part running daily is trivially
+// correct.
 //
-// # CUÁNTA MEMORIA CUESTA: NINGUNA
+// # HOW MUCH MEMORY IT COSTS: NONE
 //
-// No se carga nada. La búsqueda son ~20 lecturas de 16 bytes con ReadAt sobre
-// un archivo abierto, que el caché de página del núcleo sirve de RAM sin que
-// este proceso las cuente como suyas. En un nodo de 592 MB (RES-01) donde
-// nasd ocupa 8 MB de RSS, cargar 47 MB de tablas habría sido la misma
-// desproporción que D-05 rechazó con Docker.
+// Nothing is loaded. A lookup is ~20 reads of 16 bytes with ReadAt over an open
+// file, which the kernel page cache serves from RAM without this process
+// counting them as its own. On a 592 MB node (RES-01) where nasd holds 8 MB of
+// RSS, loading 47 MB of tables would have been the same disproportion that D-05
+// rejected with Docker.
 package geoip
 
 import (

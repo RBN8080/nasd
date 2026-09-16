@@ -1,38 +1,40 @@
 #!/bin/bash
-# Avisos externos y testigo de disponibilidad — ADR-0073 y ADR-0074.
+# External alerts and availability witness - ADR-0073 and ADR-0074.
 #
-#   05_OPERACION.md §1   la fila «nadie se entera solo» deja de ser verdad aquí
-#   04_SEGURIDAD.md §6.septies   qué sale del nodo y qué no
-#   P4                   los secretos NUNCA entran en el repositorio
-#   P8                   sin demonio nuevo: el latido lo emite nasd
+#   05_OPERACION.md §1           the row "nobody finds out on their own" stops
+#                                being true here
+#   04_SEGURIDAD.md §6.septies   what leaves the node and what does not
+#   P4                           secrets NEVER enter the repository
+#   P8                           no new daemon: nasd emits the heartbeat
 #
-# QUÉ INSTALA ESTO, Y POR QUÉ SON DOS COSAS Y NO UNA:
+# WHAT THIS INSTALLS, AND WHY IT IS TWO THINGS AND NOT ONE:
 #
-#   1. EL CANAL — nasd manda 🟢🟡🔴 a un chat de Telegram.
-#   2. EL TESTIGO — nasd late cada 5 min a Healthchecks.io, y si DEJA de latir
-#      es @HealthchecksBot quien escribe el 🟠 en ESE MISMO chat.
+#   1. THE CHANNEL - nasd sends green/amber/red to a Telegram chat.
+#   2. THE WITNESS - nasd beats every 5 min to Healthchecks.io, and if it STOPS
+#      beating it is @HealthchecksBot that writes the alert in THAT SAME chat.
 #
-# Telegram no puede ser el testigo, y no es una limitación de este diseño: es
-# un buzón, recibe lo que le mandan. No hay nada en él que diga «este nodo tenía
-# que escribirme cada 5 minutos y lleva 95 sin hacerlo». Si la Raspberry se
-# apaga no manda nada, y un chat callado es indistinguible de una noche
-# tranquila. Sin testigo, el 🟠 sencillamente no existe.
+# Telegram cannot be the witness, and that is not a limitation of this design:
+# it is a mailbox, it receives what it is sent. There is nothing in it that says
+# "this node was supposed to write to me every 5 minutes and it has been 95
+# without doing so". If the node powers off it sends nothing, and a silent chat
+# is indistinguishable from a quiet night. Without a witness, that alert simply
+# does not exist.
 #
-# POR QUÉ UN DROP-IN Y NO UNA LÍNEA EN 05_instalar_servicio.sh:
+# WHY A DROP-IN AND NOT A LINE IN 05_instalar_servicio.sh:
 #
-#   LoadCredential= con un archivo que NO EXISTE hace que la unidad NO ARRANQUE.
-#   Metiendo la línea en el script principal, cualquier nodo al que se le
-#   ejecutara sin haber configurado antes los avisos se quedaría SIN SERVICIO —
-#   se cambiaría un NAS que funciona por un canal de notificaciones. Con el
-#   drop-in, la credencial se declara SOLO cuando ya existe, y retirar la capa
-#   es borrar un archivo.
+#   LoadCredential= with a file that DOES NOT EXIST makes the unit FAIL TO
+#   START. Putting the line in the main script would leave any node it ran on,
+#   without alerts configured first, WITHOUT SERVICE - trading a working NAS for
+#   a notification channel. With the drop-in, the credential is declared ONLY
+#   once it exists, and removing the layer is deleting one file.
 #
-# LOS SECRETOS NO SE PASAN POR ARGUMENTO NI POR MENSAJE. Se escriben a mano en
-# el nodo, una vez. Si el archivo no existe, este script explica cómo y para.
+# THE SECRETS ARE NOT PASSED AS ARGUMENTS OR IN A MESSAGE. They are written by
+# hand on the node, once. If the file does not exist, this script explains how
+# and stops.
 #
-# Idempotente. P1: si un cambio no está en un script, no existe.
+# Idempotent. P1: if a change is not in a script, it does not exist.
 #
-# Uso: sudo ./20_avisos.sh
+# Usage: sudo ./20_avisos.sh
 
 set -euo pipefail
 

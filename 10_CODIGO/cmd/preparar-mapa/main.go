@@ -1,16 +1,16 @@
-// Comando preparar-mapa — convierte el GeoJSON de países de Natural Earth
-// 110m en el SVG del mundo que /seguridad pinta en «Procedencia».
+// Command preparar-mapa - turns the Natural Earth 110m country GeoJSON into
+// the world SVG that /seguridad paints under "Procedencia".
 //
-// NO CORRE EN EL NODO. Es un binario de host, invocado por «make mapa»
-// cuando hace falta regenerar mundo.svg — algo que no debería pasar casi
-// nunca, porque las fronteras no cambian al ritmo del país/operador de
-// geoip. El resultado se compromete en el repositorio y viaja incrustado en
-// nasd como cualquier otro recurso estático (ADR-0017, ADR-0089): este
-// comando es el paso de preparación, no una pieza del servicio.
+// IT DOES NOT RUN ON THE NODE. It is a host binary, invoked by "make mapa"
+// when mundo.svg has to be regenerated - which should almost never happen,
+// because borders do not change at the rate the geoip country and network data
+// does. The result is committed to the repository and travels embedded in nasd
+// like any other static asset (ADR-0017, ADR-0089): this command is the
+// preparation step, not a part of the service.
 //
-// Uso:
+// Usage:
 //
-//	go run ./cmd/preparar-mapa <ne_110m_admin_0_countries.geojson> <salida.svg>
+//	go run ./cmd/preparar-mapa <ne_110m_admin_0_countries.geojson> <output.svg>
 package main
 
 import (

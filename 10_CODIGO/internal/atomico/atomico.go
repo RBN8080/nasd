@@ -1,35 +1,33 @@
-// Package atomico publica un archivo entero sin dejarlo nunca a medias — los
-// cuatro pasos de ADR-0024.
+// Package atomico publishes a whole file without ever leaving it half written -
+// the four steps of ADR-0024.
 //
-// # POR QUÉ EXISTE ESTE PAQUETE, Y POR QUÉ NO EXISTÍA ANTES
+// # WHY THIS PACKAGE EXISTS, AND WHY IT DID NOT BEFORE
 //
-// La danza es siempre la misma: temporal en el MISMO directorio, fsync del
-// contenido, rename, fsync del DIRECTORIO. El cuarto paso es el que todo el
-// mundo olvida, y sin él un corte de corriente puede dejar el archivo escrito
-// y su entrada de directorio no — que es exactamente el fallo contra el que
-// ADR-0024 se escribió, en un nodo al que ya se le fue la luz diez veces en
-// nueve días.
+// The dance is always the same: temporary file in the SAME directory, fsync of
+// the contents, rename, fsync of the DIRECTORY. The fourth step is the one
+// everybody forgets, and without it a power cut can leave the file written and
+// its directory entry not - which is exactly the failure ADR-0024 was written
+// against, on a node that had already lost power ten times in nine days.
 //
-// Hasta el 2026-08-25 vivía DUPLICADA en dos sitios: internal/seguridad
-// (compartida por sus cuatro historiales) y internal/metricas (escrita a
-// mano dentro de guardar). El comentario de seguridad/anillo.go dejó dicho
-// por qué se toleraba y qué la sacaría de ahí:
+// Until 2026-08-25 it lived DUPLICATED in two places: internal/seguridad
+// (shared by its four histories) and internal/metricas (written by hand inside
+// guardar). The comment in seguridad/anillo.go recorded why that was tolerated
+// and what would move it out:
 //
-//	«unificarla obligaría a un paquete común que solo tendría esta función
-//	dentro, y ese paquete no existe todavía porque una tercera copia no basta
-//	para justificarlo.»
+//	"unifying it would force a common package whose only content would be this
+//	function, and that package does not exist yet because a third copy is not
+//	enough to justify it."
 //
-// internal/aviso es el TERCER llamador. Se extrae ahora, antes de escribir la
-// tercera copia y no después: con tres, arreglar un paso en una dejaría las
-// otras dos rotas y nadie se enteraría hasta el siguiente apagón.
+// internal/aviso is the THIRD caller. It is extracted now, before writing that
+// third copy and not after: with three, fixing one step in one would leave the
+// other two broken and nobody would find out until the next outage.
 //
-// # LO QUE ESTE PAQUETE NO HACE
+// # WHAT THIS PACKAGE DOES NOT DO
 //
-// No conoce ningún formato. Quien llama escribe lo que quiera en el io.Writer
-// que recibe —JSON Lines, texto con dos puntos, lo que sea— y este paquete
-// solo se ocupa de que ese contenido aparezca entero o no aparezca. Es la
-// única forma de que sirva a cuatro historiales distintos sin saber de
-// ninguno.
+// It knows no format. The caller writes whatever it likes to the io.Writer it
+// receives - JSON Lines, colon-separated text, anything - and this package only
+// ensures that content appears whole or does not appear. It is the only way it
+// can serve four different histories without knowing any of them.
 package atomico
 
 import (

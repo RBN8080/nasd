@@ -1,21 +1,21 @@
 #!/bin/bash
-# Fase de mantenimiento — instala nas-sensor, el sensor pasivo de toques.
+# Maintenance phase - installs nas-sensor, the passive touch sensor.
 #
-#   RF-33 / ADR-0066   el toque como hecho propio
-#   Charter §7.1.3     NO se toca: esto no abre ningún puerto
+#   RF-33 / ADR-0066   the touch as a fact of its own
+#   Charter §7.1.3     NOT touched: this opens no port
 #
-# QUÉ HACE Y QUÉ NO TOCA, que es la mitad del encargo del responsable:
+# WHAT IT DOES AND WHAT IT DOES NOT TOUCH, which is half of the owner's brief:
 #
-#   NO toca 03_cortafuegos.sh. El sensor escucha en paralelo al cortafuegos, no
-#   dentro de él. La regla de nftables que llegó a proponerse quedó descartada
-#   con medición —ver el ADR—, no aplazada.
+#   It does NOT touch 03_cortafuegos.sh. The sensor listens alongside the
+#   firewall, not inside it. The nftables rule that was once proposed was
+#   discarded with measurement - see the ADR - not deferred.
 #
-#   NO toca nasd.service. Su endurecimiento se queda exactamente como está.
-#   nasd solo LEE el archivo que deja este servicio, y puede hacerlo sin
-#   permisos nuevos porque ProtectSystem=strict deja el sistema en solo
-#   lectura, no inaccesible.
+#   It does NOT touch nasd.service. Its hardening stays exactly as it is. nasd
+#   only READS the file this service leaves behind, and it can do so with no new
+#   permissions because ProtectSystem=strict leaves the system read-only, not
+#   unreachable.
 #
-# Uso: sudo ./19_sensor.sh
+# Usage: sudo ./19_sensor.sh
 
 set -euo pipefail
 

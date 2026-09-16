@@ -1,20 +1,20 @@
-// Package metricas guarda, bajo demanda, el último uso de disco medido de
-// cada cuenta — P-4, etapa 3 (00_RECTOR.md §7.quinquies).
+// Package metricas stores, on demand, the last measured disk usage of each
+// account - P-4, stage 3 (00_RECTOR.md §7.quinquies).
 //
-// # POR QUÉ NO ES COMO internal/autenticacion
+// # WHY IT IS NOT LIKE internal/autenticacion
 //
-// autenticacion.Registro se relee por huella (Refrescar) porque «nasd
-// --crear-usuario» lo escribe desde OTRO PROCESO mientras el servicio sigue
-// arriba. Aquí no existe ese segundo escritor: la única puerta para tocar
-// este archivo es el botón «Refrescar métricas», servido por este mismo
-// proceso. La copia en memoria no puede quedarse vieja respecto de nadie
-// más, así que no hace falta releer nunca después de arrancar.
+// autenticacion.Registro is re-read by fingerprint (Refrescar) because "nasd
+// --crear-usuario" writes it from ANOTHER PROCESS while the service stays up.
+// There is no such second writer here: the only door to touch this file is the
+// "Refrescar métricas" button, served by this very process. The in-memory copy
+// cannot go stale with respect to anyone else, so it never needs re-reading
+// after startup.
 //
-// Por el mismo motivo se omite heredarDuenoDe (comparar con
-// autenticacion/sincronizar_unix.go): ese paso existe para el caso en que el
-// registro se escribe con «sudo» —como root— y lo lee el servicio —como
-// nas—. Aquí no hay «sudo nasd --algo» que escriba este archivo: el dueño ya
-// es correcto siempre, porque quien escribe es siempre el servicio.
+// For the same reason heredarDuenoDe is omitted (compare with
+// autenticacion/sincronizar_unix.go): that step exists for the case where the
+// registry is written with "sudo" - as root - and read by the service - as nas.
+// There is no "sudo nasd --something" that writes this file: the owner is
+// always already correct, because the writer is always the service.
 package metricas
 
 import (

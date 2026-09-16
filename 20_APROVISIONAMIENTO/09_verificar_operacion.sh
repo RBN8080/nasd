@@ -1,18 +1,18 @@
 #!/bin/bash
-# Fase 4, paso 2 — verificar la operación CONTRA EL NODO REAL.
+# Phase 4, step 2 - verify operation AGAINST THE REAL NODE.
 #
-# Comprueba lo que exige el charter §8: métricas, extremo de estado, diario
-# rotado con límite, watchdog —de servicio y de hardware— y que los SLI de
-# 05_OPERACION.md se estén midiendo de verdad.
+# It checks what charter §8 requires: metrics, the status endpoint, a rotated
+# journal with a limit, the watchdog - service and hardware - and that the SLIs
+# of 05_OPERACION.md are really being measured.
 #
-# REGLA DE ESTE SCRIPT, y de todos los de este proyecto:
-#   «no se pudo comprobar» NO es «correcto». Este proyecto lleva cuatro
-#   defectos corregidos por confundir las dos cosas (00_RECTOR.md §12.5). Aquí
-#   lo no verificable se reporta como AUSENTE y cuenta como fallo.
+# THE RULE OF THIS SCRIPT, and of every script in this project:
+#   "could not be checked" is NOT "correct". This project carries four defects
+#   fixed after confusing the two (00_RECTOR.md §12.5). Here, whatever cannot be
+#   verified is reported as ABSENT and counts as a failure.
 #
-# RES-09: no ejecutar con VSCode Remote-SSH conectado.
+# RES-09: do not run with VSCode Remote-SSH connected.
 #
-# Uso: sudo ./09_verificar_operacion.sh
+# Usage: sudo ./09_verificar_operacion.sh
 
 set -uo pipefail
 

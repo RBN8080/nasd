@@ -1,12 +1,12 @@
 #!/bin/bash
-# Fase 2, paso 2 — verificar el servicio web CONTRA EL NODO REAL.
+# Phase 2, step 2 - verify the web service AGAINST THE REAL NODE.
 #
-# Lo que se probó en Linux de escritorio no vale aquí: RNF-01 existe por los
-# 592 MB del nodo (RES-01), y solo se demuestra en el nodo.
+# What was tested on desktop Linux does not count here: RNF-01 exists because of
+# the node's 592 MB (RES-01), and it is only demonstrated on the node.
 #
-# RES-09: no ejecutar con VSCode Remote-SSH conectado.
+# RES-09: do not run with VSCode Remote-SSH connected.
 #
-# Uso: sudo ./06_verificar_web.sh
+# Usage: sudo ./06_verificar_web.sh
 
 set -uo pipefail
 

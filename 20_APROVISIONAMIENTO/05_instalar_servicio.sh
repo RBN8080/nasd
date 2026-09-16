@@ -1,17 +1,22 @@
 #!/bin/bash
-# Fase 2, paso 1 — instalar el servicio web nasd en el nodo.
+# Phase 2, step 1 - install the nasd web service on the node.
 #
-#   D-05 / ADR-0005   sin Docker: un binario y una unidad systemd
-#   D-06 / ADR-0006   el binario se compila en el host y llega por scp
-#   ADR-0018          escucha en la IP de la LAN, puerto 8080
-#   ADR-0019          volumen en /srv/nas
-#   ADR-0020          corre como el usuario nas, el mismo que escribe por SMB
+#   D-05 / ADR-0005   no Docker: one binary and one systemd unit
+#   D-06 / ADR-0006   the binary is built on the host and arrives by scp
+#   ADR-0032          it listens on port 80, so the address alone is enough
+#   ADR-0018          it binds to the LAN address, not to 0.0.0.0
+#   ADR-0019          volume at /srv/nas
+#   ADR-0020          it runs as the nas user, the same one that writes over SMB
 #
-# NO compila nada aquí: el binario debe haberse copiado antes a /tmp/nasd
-# desde el host con «make desplegar» o scp. Compilar en la Pi competiría con
-# el propio servicio que se está probando.
+# IT COMPILES NOTHING HERE: the binary must have been copied to /tmp/nasd
+# beforehand, from the host with "make desplegar" or scp. Building on the node
+# would compete with the very service being tested.
 #
-# Uso: sudo ./05_instalar_servicio.sh [ruta-del-binario]
+# ADR-0096 relaxes that for the FIRST install only: instalar.sh will build on
+# the node if it can, because at that moment nasd is not running yet and there
+# is nothing to compete with. For an existing node, "make desplegar" still rules.
+#
+# Usage: sudo ./05_instalar_servicio.sh [binary-path]
 
 set -euo pipefail
 

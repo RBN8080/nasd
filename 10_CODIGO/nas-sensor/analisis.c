@@ -1,21 +1,21 @@
-// analisis -- ver analisis.h para por que esta mitad va separada.
+// analisis -- see analisis.h for why this half is kept separate.
 //
-// SEGURIDAD -- LEASE ANTES DE TOCAR ESTE ARCHIVO
+// SECURITY -- READ BEFORE TOUCHING THIS FILE
 //
-// Esto analiza bytes que escribio quien envio el paquete, en un proceso que
-// corre con CAP_NET_RAW. Todo desplazamiento sale de un campo que puso un
-// extrano. Reglas, sin excepcion, y son las mismas que gobiernan
+// This parses bytes written by whoever sent the packet, in a process running
+// with CAP_NET_RAW. Every offset comes from a field a stranger put there.
+// Rules, without exception, and they are the same ones that govern
 // nas-miniatura:
 //
-//   1. Un UNICO PUNTO lee bytes crudos: u8_en(). Toda lectura multi-byte esta
-//      construida encima. Ningun otro sitio de este archivo hace b[i].
-//   2. Cero asignacion dinamica. No hay malloc, calloc ni realloc, y no debe
-//      haberlos: todos los buferes son de tamano fijo en tiempo de compilacion.
-//   3. Cero recursion.
-//   4. La longitud de cabecera IP la escribe el emisor: se comprueba contra el
-//      minimo del protocolo Y contra lo que de verdad se recibio ANTES de
-//      usarla como desplazamiento.
-//   5. Solo se leen cabeceras. El cuerpo del paquete no se toca nunca.
+//   1. A SINGLE POINT reads raw bytes: u8_en(). Every multi-byte read is built
+//      on top of it. Nowhere else in this file indexes b[i].
+//   2. Zero dynamic allocation. There is no malloc, calloc or realloc, and
+//      there must not be: every buffer is of fixed compile-time size.
+//   3. Zero recursion.
+//   4. The IP header length is written by the sender: it is checked against the
+//      protocol minimum AND against what was actually received BEFORE being
+//      used as an offset.
+//   5. Only headers are read. The packet body is never touched.
 
 #include "analisis.h"
 

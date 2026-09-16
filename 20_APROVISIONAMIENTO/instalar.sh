@@ -1,41 +1,38 @@
 #!/bin/bash
-# instalar.sh — levantar el nodo entero desde un clon del repositorio. ADR-0095.
+# instalar.sh - bring the whole node up from a clone of the repository. ADR-0095.
 #
-# ESTE GUION NO INSTALA NADA POR SI MISMO. Llama a los scripts numerados de
-# esta carpeta, en orden, y se detiene en cuanto uno falla. Todo lo que hace
-# de verdad sigue estando en ellos, que es donde P1 exige que este: «si un
-# cambio no esta en un script, no existe».
+# THIS SCRIPT INSTALLS NOTHING BY ITSELF. It calls the numbered scripts in this
+# folder, in order, and stops the moment one fails. Everything it really does
+# still lives in them, which is where P1 requires it: "if a change is not in a
+# script, it does not exist".
 #
-# LO QUE APORTA, Y ES LO QUE FALTABA:
+# WHAT IT ADDS, AND IT IS WHAT WAS MISSING:
 #
-#   1. EL ORDEN. Hasta hoy vivia en los prefijos numericos y en veinte mensajes
-#      de error repartidos («Ejecute antes 01_preparar_disco.sh»). Quien lo
-#      reconstruia tenia que leerse las cabeceras enteras para descubrir, por
-#      ejemplo, que 07 va antes que 06, o que 15 obliga a repetir 05 y 03.
-#   2. LA COMPROBACION PREVIA. Antes de tocar nada se miran las condiciones
-#      que, de fallar a mitad, dejarian el nodo con el disco ya formateado y
-#      el servicio a medias. Fallan TODAS a la vez, no de una en una.
-#   3. EL BINARIO. 05_instalar_servicio.sh espera encontrarlo en /tmp/nasd y
-#      no dice como ponerlo ahi. Aqui se compila si el nodo puede, y si no se
-#      para y escribe el comando exacto.
+#   1. THE ORDER. Until now it lived in the numeric prefixes and in twenty error
+#      messages scattered about ("run 01_preparar_disco.sh first"). Whoever
+#      rebuilt the node had to read whole headers to discover, for instance,
+#      that 07 goes before 06, or that 15 forces repeating 05 and 03.
+#   2. THE PRE-FLIGHT CHECK. Before touching anything it looks at the conditions
+#      that, on failing halfway, would leave the node with the disk already
+#      formatted and the service half installed. They ALL fail at once, not one
+#      per attempt.
+#   3. THE BINARY. 05_instalar_servicio.sh expects it at /tmp/nasd and does not
+#      say how to put it there. Here it is built if the node can, and if not it
+#      stops and writes the exact command.
 #
-# Uso:
-#   sudo ./instalar.sh                el NAS de casa: disco, Samba, cortafuegos,
-#                                     servicio, credencial, diario y resiliencia
-#   sudo ./instalar.sh --remoto       acceso desde fuera: DDNS, WireGuard, NAT y
-#                                     TLS. Exige una cuenta de DuckDNS ya creada
-#   sudo ./instalar.sh --desde 08     retoma en ese paso, sin repetir los previos
+# Usage:
+#   sudo ./instalar.sh                the home NAS: disk, Samba, firewall,
+#                                     service, credential, journal, resilience
+#   sudo ./instalar.sh --remoto       access from outside: DDNS, WireGuard, NAT
+#                                     and TLS. Requires an existing DuckDNS account
+#   sudo ./instalar.sh --desde 08     resume at that step, without repeating the
+#                                     previous ones
 #
-# ANTES DE LA PRIMERA VEZ, una sola vez:
+# BEFORE THE FIRST TIME, once:
 #   sudo install -d -m 0755 /etc/nas
 #   sudo cp ajustes.conf.ejemplo /etc/nas/ajustes.conf
 #   sudo nano /etc/nas/ajustes.conf
 
-# SIN «-e», A PROPOSITO Y AL CONTRARIO QUE LOS SCRIPTS QUE LLAMA. Los tres
-# verificadores (04, 06, 09) devuelven su NUMERO DE FALLOS como codigo de
-# salida —convencion del proyecto, «exit $mal»—, asi que con «-e» un solo
-# fallo esperado abortaria la instalacion entera. La diferencia entre un
-# instalador que falla y un verificador que cuenta se trata abajo, a mano.
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
@@ -137,7 +134,10 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     -h|--ayuda|--help)
-      sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+      # SE IMPRIME LA CABECERA ENTERA, sea cual sea su largo. Antes iba un
+      # rango fijo de lineas y se quedo corto en cuanto la cabecera crecio: la
+      # ayuda salia cortada a media frase y nada lo delataba.
+      awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"
       exit 0
       ;;
     *)

@@ -1,16 +1,16 @@
 #!/bin/bash
-# Fase 3, paso 1 — fijar LA credencial del NAS. Web y SMB, la misma.
+# Phase 3, step 1 - set THE credential of the NAS. Web and SMB, the same one.
 #
-#   RF-15     la web exige autenticación
-#   ADR-0047  UNA SOLA contraseña — supersede a ADR-0021 y relaja D-14
-#   ADR-0046  con TLS desaparece el motivo por el que estaban separadas
-#   P4        cero secretos en el repositorio
+#   RF-15     the web requires authentication
+#   ADR-0047  ONE SINGLE password - supersedes ADR-0021 and relaxes D-14
+#   ADR-0046  with TLS, the reason they were separate disappears
+#   P4        zero secrets in the repository
 #
-# La contraseña se teclea aquí y no viaja por ningún otro sitio: no se pasa
-# como argumento —quedaría en el historial y en la lista de procesos— ni se
-# escribe en el TOML versionado. Solo se guardan sus derivaciones.
+# The password is typed here and travels nowhere else: it is not passed as an
+# argument - it would stay in the shell history and in the process list - nor
+# written into the versioned TOML. Only its derivations are stored.
 #
-# Uso: sudo ./07_credencial_web.sh
+# Usage: sudo ./07_credencial_web.sh
 
 set -euo pipefail
 

@@ -1,35 +1,35 @@
 #!/bin/bash
-# Fase 4, paso 1 — diario persistente y acotado, y watchdog de hardware.
+# Phase 4, step 1 - a persistent, bounded journal, and the hardware watchdog.
 #
-#   Charter §8   «Logs: journald con límite de tamaño (P9). Sin logs no rotados»
-#   Charter §8   «Salud: endpoint de estado y watchdog de hardware (bcm2835_wdt)»
-#   RNF-13       registros estructurados y ROTADOS
-#   ADR-0037     las decisiones de este script; supersede a ADR-0035
+#   Charter §8   "Logs: journald with a size limit (P9). No unrotated logs"
+#   Charter §8   "Health: status endpoint and hardware watchdog (bcm2835_wdt)"
+#   RNF-13       structured and ROTATED logs
+#   ADR-0037     the decisions in this script; supersedes ADR-0035
 #
-# DOS COSAS QUE SE MIDIERON EN EL NODO Y CAMBIARON EL PLAN:
+# THREE THINGS MEASURED ON THE NODE THAT CHANGED THE PLAN:
 #
-#  1. El diario era VOLÁTIL. Raspberry Pi OS trae
-#     /usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf, así que
-#     el diario vivía en /run —es decir, en RAM— y **se perdía en cada
-#     reinicio**. Con ello se perdían los BORRADOS de RF-19, que sin papelera
-#     (D-15) ni segunda copia (D-12) son el único rastro de lo destruido.
-#     Comprobado: «journalctl --list-boots» mostraba UN solo arranque.
+#  1. The journal was VOLATILE. Raspberry Pi OS ships
+#     /usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf, so the
+#     journal lived in /run - that is, in RAM - and **was lost on every
+#     reboot**. With it went the DELETIONS of RF-19, which with no recycle bin
+#     (D-15) and no second copy (D-12) are the only trace of what was destroyed.
+#     Verified: "journalctl --list-boots" showed ONE single boot.
 #
-#  2. El watchdog de hardware YA ESTABA ACTIVO, a 1min, por omisión de este
-#     systemd. ADR-0035 afirmaba que «no existía» y era FALSO. Este script no
-#     lo activa: lo APRIETA a 30s y comprueba que sigue en pie.
+#  2. The hardware watchdog WAS ALREADY ACTIVE, at 1 min, by this systemd's
+#     default. ADR-0035 claimed it "did not exist" and that was FALSE. This
+#     script does not enable it: it TIGB2NS it to 30 s and checks it is still up.
 #
-#  3. AÑADIDO tras el primer reinicio real (ADR-0039). Poner Storage=persistent
-#     NO bastaba: en el arranque, systemd-journal-flush corría 4 SEGUNDOS ANTES
-#     de montar /srv/nas, así que el enlace /var/log/journal colgaba en el vacío
-#     y journald se quedaba en /run —RAM— TODO el arranque. El diario sobrevivía
-#     una vez, el del aprovisionamiento, y a partir de ahí cada reinicio se
-#     llevaba el arranque entero. Se ordena el volcado DESPUÉS del montaje.
+#  3. ADDED after the first real reboot (ADR-0039). Setting Storage=persistent
+#     was NOT enough: at boot, systemd-journal-flush ran 4 SECONDS BEFORE
+#     /srv/nas was mounted, so the /var/log/journal link dangled and journald
+#     stayed in /run - RAM - for the WHOLE boot. The journal survived once, the
+#     provisioning one, and from then on every reboot took the entire boot with
+#     it. The flush is now ordered AFTER the mount.
 #
-# Idempotente: se puede volver a ejecutar. P1: si un cambio no está en un
-# script, no existe.
+# Idempotent: it can be run again. P1: if a change is not in a script, it does
+# not exist.
 #
-# Uso: sudo ./08_observabilidad.sh
+# Usage: sudo ./08_observabilidad.sh
 
 set -euo pipefail
 

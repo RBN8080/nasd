@@ -1,7 +1,7 @@
-// Comando nasd — servidor de archivos del proyecto NAS.
+// Command nasd - the file server of the NAS project.
 //
-// Composición: lee la configuración, arma los adaptadores y arranca.
-// Toda la lógica vive en internal/; aquí solo se enchufan las piezas.
+// Composition root: it reads the configuration, wires the adapters and starts.
+// All the logic lives under internal/; this only plugs the pieces together.
 package main
 
 import (

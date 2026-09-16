@@ -1,29 +1,30 @@
 #!/bin/bash
-# Fase 5, paso 1 — nombre estable para una IP que cambia (DDNS).
+# Phase 5, step 1 - a stable name for an address that changes (DDNS).
 #
-#   06_ACCESO_REMOTO.md §4   la decisión y su motivo
-#   ADR-0042                 la Fase 6 exige TLS; DuckDNS admite TXT
-#   P4                       el testigo NUNCA entra en el repositorio
-#   P8                       sin demonio: temporizador y curl
+#   06_ACCESO_REMOTO.md §4   the decision and its reason
+#   ADR-0042                 phase 6 requires TLS; DuckDNS supports TXT
+#   P4                       the token NEVER enters the repository
+#   P8                       no daemon: a timer and curl
 #
-# POR QUÉ DUCKDNS Y NO OTRO, y el motivo determinante NO es el precio:
+# WHY DUCKDNS AND NOT ANOTHER, and the deciding reason is NOT the price:
 #
-#   La Fase 6 necesita un certificado, y ADR-0042 prohíbe exponer nada sin
-#   TLS. Con el método HTTP-01 haría falta el puerto 80 ABIERTO para poder
-#   obtener el certificado — es decir, exponer sin TLS para conseguir TLS.
-#   Círculo cerrado. DuckDNS admite registros TXT, así que el certificado
-#   podrá pedirse por DNS-01 SIN ABRIR NI UN PUERTO. Se elige hoy para no
-#   tener que rehacerlo mañana.
+#   Phase 6 needs a certificate, and ADR-0042 forbids exposing anything without
+#   TLS. With the HTTP-01 method, port 80 would have to be OPEN in order to get
+#   the certificate - that is, expose without TLS in order to obtain TLS. A
+#   closed circle. DuckDNS supports TXT records, so the certificate can be
+#   requested over DNS-01 WITHOUT OPENING A SINGLE PORT. It is chosen today so
+#   it does not have to be redone tomorrow.
 #
-#   No-IP gratuito se descartó por exigir confirmar la cuenta cada 30 días:
-#   un olvido y el acceso remoto muere sin aviso.
+#   Free No-IP was discarded for requiring the account to be reconfirmed every
+#   30 days: one lapse and remote access dies with no warning.
 #
-# EL TESTIGO NO SE PASA POR ARGUMENTO NI POR MENSAJE. Se escribe a mano en el
-# nodo, una sola vez. Si el archivo no existe, este script explica cómo y para.
+# THE TOKEN IS NOT PASSED AS AN ARGUMENT OR IN A MESSAGE. It is written by hand
+# on the node, once. If the file does not exist, this script explains how and
+# stops.
 #
-# Idempotente. P1: si un cambio no está en un script, no existe.
+# Idempotent. P1: if a change is not in a script, it does not exist.
 #
-# Uso: sudo ./11_ddns.sh
+# Usage: sudo ./11_ddns.sh
 
 set -euo pipefail
 

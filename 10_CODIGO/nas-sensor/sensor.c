@@ -1,62 +1,64 @@
-// nas-sensor -- anota quien TOCA el nodo, aunque el cortafuegos lo descarte.
+// nas-sensor -- records who TOUCHES the node, even when the firewall drops it.
 //
-// POR QUE EXISTE: el panel de seguridad ve las peticiones HTTP rechazadas
-// (ADR-0061) y las conexiones TCP aceptadas (ADR-0064). Las dos viven DENTRO
-// de nasd, asi que solo existen si el paquete llego hasta el 80 o el 443. Todo
-// lo que el cortafuegos tira -- un escaner recorriendo puertos cerrados -- no
-// lo ve nadie.
+// WHY IT EXISTS: the security panel sees rejected HTTP requests (ADR-0061) and
+// accepted TCP connections (ADR-0064). Both live INSIDE nasd, so they only
+// exist if the packet reached port 80 or 443. Everything the firewall drops --
+// a scanner sweeping closed ports -- nobody sees.
 //
-// POR QUE NO ES UN «counter» EN nftables, QUE ERA EL PLAN (IDEAS §22.2).
-// Medido contra el nodo el 2026-08-18, y las tres razones son independientes:
+// WHY IT IS NOT AN nftables "counter", WHICH WAS THE PLAN (IDEAS §22.2).
+// Measured against the node on 2026-08-18, and the three reasons are
+// independent:
 //
-//   1. 15 arranques en 14 dias. Un contador del nucleo muere en cada uno,
-//      porque nftables.service recarga un archivo que empieza por «flush
-//      ruleset». Una semana de cuenta seria «desde el ultimo corte de luz», y
-//      sin avisar de que se reinicio.
-//   2. ~57 000 paquetes/dia de difusion de la casa contra 0 de radiacion IPv6
-//      en la ventana medida. La cifra que decidia la linea de investigacion
-//      habria sido una medicion de los cacharros del salon.
-//   3. Los dos barridos de DRIFTNET entraron por el 443, que esta en «accept».
-//      Un contador en el camino del «drop» NO habria visto el unico trafico
-//      externo real que este nodo ha recibido.
+//   1. 15 boots in 14 days. A kernel counter dies on each one, because
+//      nftables.service reloads a file starting with "flush ruleset". A week of
+//      counting would have been "since the last power cut", with no warning
+//      that it had restarted.
+//   2. ~57,000 packets/day of household broadcast against 0 of IPv6 radiation
+//      in the measured window. The figure driving the line of investigation
+//      would have been a measurement of the devices in the living room.
+//   3. Both DRIFTNET sweeps came in over 443, which is in "accept". A counter
+//      on the "drop" path would NOT have seen the only real external traffic
+//      this node has ever received.
 //
-// Ademas, el responsable pidio que esto no tocara lo que ya funciona. Este
-// programa no toca el cortafuegos ni la unidad de nasd: escucha en paralelo.
+// Besides, the owner asked that this not touch what already works. This program
+// touches neither the firewall nor the nasd unit: it listens in parallel.
 //
-// QUE ANOTA: ver analisis.h. Resumido, un TOQUE es alguien INICIANDO algo --
-// un TCP SYN sin ACK, o un echo request. UDP no se anota, y es un punto ciego
-// DECLARADO: sin conntrack no se distingue un sondeo de la respuesta a una
-// consulta que hizo el propio nodo.
+// WHAT IT RECORDS: see analisis.h. In short, a TOUCH is someone INITIATING
+// something -- a TCP SYN without ACK, or an echo request. UDP is not recorded,
+// and that is a DECLARED blind spot: without conntrack a probe cannot be told
+// apart from the answer to a query the node itself made.
 //
-// QUE NO DECIDE ESTE PROGRAMA, Y ES DELIBERADO
+// WHAT THIS PROGRAM DOES NOT DECIDE, AND IT IS DELIBERATE
 //
-// No sabe que es «Internet» y no le hace falta. Anota TODO lo que captura,
-// venga de donde venga; quien descarta lo de casa es nasd al pintar, con
-// seguridad.ClasificarRed -- la misma funcion que ya corrigio dos fallos
-// reales (el IPv6 de casa contado como extrano, y fe80::…%2 por culpa de la
-// zona). Tener esa logica en UN solo sitio vale mas que ahorrar lineas en el
-// archivo: aqui habria que reimplementarla, y con ella su historial de fallos.
-// Consecuencia asumida: el archivo contiene alguna fila de casa.
+// It does not know what "the internet" is and does not need to. It records
+// EVERYTHING it captures, wherever it comes from; what discards local traffic
+// is nasd when painting, with seguridad.ClasificarRed -- the same function that
+// already fixed two real defects (the household IPv6 counted as a stranger, and
+// fe80::...%2 because of the zone). Having that logic in ONE place is worth
+// more than saving lines in this file: here it would have to be reimplemented,
+// and with it its history of defects. Accepted consequence: the file contains
+// the odd local row.
 //
-// INTERFAZ
+// INTERFACE
 //
-//   nas-sensor <archivo-de-salida>
+//   nas-sensor <output-file>
 //
-//   Captura hasta recibir SIGTERM o SIGINT. Vuelca cada 60 s y al salir.
-//   Codigo de salida: 0 si termino bien, 2 si no pudo trabajar.
+//   Captures until SIGTERM or SIGINT. Flushes every 60 s and on exit.
+//   Exit code: 0 if it finished cleanly, 2 if it could not work.
 //
-// Para analizar un paquete suelto a mano esta pruebas/arnes.c, que enlaza el
-// MISMO analisis.c. Aqui no hay un modo «--analizar» porque seria ese mismo
-// codigo escrito dos veces.
+// To analyse a single packet by hand there is pruebas/arnes.c, which links the
+// SAME analisis.c. There is no "--analizar" mode here because it would be that
+// same code written twice.
 //
-// LO QUE ESTE PROGRAMA NO HACE: no escribe en la red, no abre mas socket que
-// el de captura, no ejecuta nada, no reserva memoria dinamica en ningun
-// momento, y no enlaza ninguna libreria mas alla de la estandar de C.
+// WHAT THIS PROGRAM DOES NOT DO: it does not write to the network, opens no
+// socket beyond the capture one, executes nothing, allocates no dynamic memory
+// at any point, and links no library beyond the C standard one.
 
-// -std=c11 es modo ISO ESTRICTO: sin esta macro, sigaction, gmtime_r y fileno
-// quedan escondidas y el compilador las da por implicitas -- que con -Werror es
-// un error, y sin el seria un fallo silencioso en tiempo de enlazado. Va antes
-// de cualquier include, que es lo unico que la hace efectiva.
+// -std=c11 is STRICT ISO mode: without this macro, sigaction, gmtime_r and
+// fileno stay hidden and the compiler treats them as implicit -- which with
+// -Werror is an error, and without it would be a silent link-time failure. It
+// goes before any include, which is the only thing that makes it effective.
+
 #define _POSIX_C_SOURCE 200809L
 
 #include "analisis.h"

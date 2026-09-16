@@ -1,11 +1,11 @@
-// Package autenticacion guarda y comprueba la credencial de la web.
+// Package autenticacion stores and checks the web credential.
 //
-// NO es parte del dominio del almacén: autenticar no es una operación sobre
-// archivos. Vive en su propio paquete, y el adaptador web lo usa.
+// It is NOT part of the store's domain: authenticating is not an operation on
+// files. It lives in its own package, and the web adapter uses it.
 //
-// D-14 / ADR-0021: esta credencial es SOLO de la web y es distinta de la de
-// Samba. Un compromiso de una no da acceso a la otra, lo que importa
-// especialmente porque ADR-0018 deja la v1 SIN TLS.
+// D-14 / ADR-0021: this credential belongs to the web ONLY and is different
+// from the Samba one. Compromising one grants no access to the other, which
+// matters especially because ADR-0018 leaves v1 WITHOUT TLS.
 package autenticacion
 
 import (

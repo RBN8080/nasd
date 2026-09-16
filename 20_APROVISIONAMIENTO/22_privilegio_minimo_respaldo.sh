@@ -2,65 +2,65 @@
 # =============================================================================
 #  22_privilegio_minimo_respaldo.sh
 #
-#  CAPA 4 de 30_CLIENTE_RESPALDO.md seccion 7: privilegio minimo en el recurso.
+#  LAYER 4 of 30_CLIENTE_RESPALDO.md section 7: least privilege on the share.
 #
-#  EL PROBLEMA QUE RESUELVE, medido en el nodo el 2026-09-02:
+#  THE PROBLEM IT SOLVES, measured on the node on 2026-09-02:
 #
-#    /etc/samba/smb.conf tiene UNA SOLA comparticion, [datos], con
-#    "valid users = nas" y "path = /srv/nas/datos". El cliente de respaldo entra
-#    con esa credencial, asi que HOY PUEDE ESCRIBIR Y BORRAR EN TODO EL NAS:
-#    homeUsers/ de la familia, _HISTORICO con sus 141 GB, y el respaldo del HTC.
+#    /etc/samba/smb.conf has ONE SINGLE share, [datos], with
+#    "valid users = nas" and "path = /srv/nas/datos". The backup client signs in
+#    with that credential, so TODAY IT CAN WRITE AND DELETE ACROSS THE WHOLE
+#    NAS: everyone's home directories, _HISTORICO with its 141 GB, and the
+#    phone backup.
 #
-#    La seccion 7 lo dice sin rodeos: "el respaldo automatico ES un privilegio.
-#    Si el equipo puede escribir y borrar en el nodo sin intervencion, cualquier
-#    cosa que controle el equipo tambien puede". Eso es lo que se acota aqui.
+#    Section 7 says it plainly: "automatic backup IS a privilege. If the
+#    workstation can write and delete on the node unattended, anything that
+#    controls the workstation can too." That is what is bounded here.
 #
-#  QUE HACE: anade una SEGUNDA comparticion, [respaldo], enraizada en
-#  01_BACKUP/EQUIPO-01 y accesible solo por un usuario propio. El cliente pasa
-#  a usar esa, y deja de tener alcance sobre el resto del arbol.
+#  WHAT IT DOES: it adds a SECOND share, [respaldo], rooted at
+#  01_BACKUP/EQUIPO-01 and reachable only by a user of its own. The client
+#  moves to that one, and stops having reach over the rest of the tree.
 #
 #  ------------------------------------------------------------------------
-#  ESTE GUION NO SE EJECUTA SOLO, Y HAY UNA RAZON QUE NO ES PRUDENCIA GENERICA:
+#  THIS SCRIPT DOES NOT RUN ON ITS OWN, AND THE REASON IS NOT GENERIC CAUTION:
 #
-#    1. EXIGE DAR DE ALTA UN USUARIO CON CONTRASENA, y eso es del responsable.
-#       No es una regla nueva de este documento: es como se ha hecho siempre en
-#       este proyecto. Un agente no crea credenciales.
+#    1. IT REQUIRES CREATING A USER WITH A PASSWORD, and that belongs to the
+#       owner. This is not a new rule of this document: it is how it has always
+#       been done in this project. An agent does not create credentials.
 #
-#    2. TOCA SAMBA EN UN NAS QUE LA FAMILIA USA A DIARIO. Recargar el servicio
-#       corta las sesiones abiertas. Se hace cuando el responsable quiera, no a
-#       mitad de una sesion de desarrollo.
+#    2. IT TOUCHES SAMBA ON A NAS USED DAILY. Reloading the service cuts open
+#       sessions. It is done when the owner wants, not mid development session.
 #
-#    3. LA COMPROBACION QUE DE VERDAD IMPORTA NO SE PUEDE HACER DESDE EL NODO.
-#       "smbclient desde el propio nodo no exige firma" es la leccion que la
-#       nota de ADR-0031/0038 dejo escrita: una propiedad que solo se manifiesta
-#       con un cliente Windows real NO esta verificada hasta que se ejecuta con
-#       un cliente Windows real.
+#    3. THE CHECK THAT REALLY MATTERS CANNOT BE DONE FROM THE NODE.
+#       "smbclient from the node itself does not require signing" is the lesson
+#       the ADR-0031/0038 note left written: a property that only shows up with
+#       a real Windows client is NOT verified until it is run with a real
+#       Windows client.
 #
-#  COMO SE USA, en este orden:
+#  HOW IT IS USED, in this order:
 #
-#      # 1. El responsable crea el usuario y su contrasena, en el nodo:
+#      # 1. The owner creates the user and its password, on the node:
 #      sudo useradd -r -s /usr/sbin/nologin -M respaldo
-#      sudo smbpasswd -a respaldo          # <- pide la contrasena, es suya
+#      sudo smbpasswd -a respaldo          # <- asks for the password, it is theirs
 #
-#      # 2. Este guion, en seco primero:
+#      # 2. This script, dry run first:
 #      sudo ./22_privilegio_minimo_respaldo.sh --simular
 #
-#      # 3. Y despues de leer lo que haria:
+#      # 3. And after reading what it would do:
 #      sudo ./22_privilegio_minimo_respaldo.sh --aplicar
 #
-#      # 4. En el equipo, guardar la credencial y apuntar el cliente:
+#      # 4. On the workstation, save the credential and point the client at it:
 #      cmdkey /add:192.168.1.38 /user:respaldo /pass
-#      #    y cambiar en 3-Config/respaldo.jsonc:
+#      #    and change in 3-Config/respaldo.jsonc:
 #      #      "unc": "\\\\192.168.1.38\\respaldo"
-#      #      "raiz": ""            <- la comparticion YA enraiza en 01_BACKUP
+#      #      "raiz": ""            <- the share ALREADY roots at 01_BACKUP
 #      #      "prefijoEquipo": "EQUIPO-01"
 #
-#      # 5. Comprobar lo que de verdad hay que comprobar, desde Windows:
-#      #      - que el cliente SIGUE pudiendo escribir en su arbol
-#      #      - que YA NO puede llegar a \\192.168.1.38\datos\homeUsers
+#      # 5. Check what really has to be checked, from Windows:
+#      #      - that the client CAN STILL write in its own tree
+#      #      - that it can NO LONGER reach \\192.168.1.38\datos\homeUsers
 #
-#  REVERSION: se guarda una copia fechada de smb.conf antes de tocarlo, y
-#  --revertir la restaura.
+#  ROLLBACK: a dated copy of smb.conf is kept before touching it, and
+#  --revertir restores it.
 # =============================================================================
 
 set -euo pipefail

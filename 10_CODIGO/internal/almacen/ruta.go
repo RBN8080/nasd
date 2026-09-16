@@ -1,8 +1,8 @@
-// Package almacen es el NÚCLEO del dominio (ADR-0014).
+// Package almacen is the CORE of the domain (ADR-0014).
 //
-// REGLA DE DEPENDENCIA: este paquete no importa net/http, os, ni ninguna
-// infraestructura. Solo la biblioteca estándar sin efectos de E/S.
-// Hay una prueba que lo verifica: no es una buena intención.
+// DEPENDENCY RULE: this package imports neither net/http nor os nor any
+// infrastructure. Only the standard library, with no I/O side effects.
+// There is a test that verifies it: it is not a good intention.
 package almacen
 
 import (

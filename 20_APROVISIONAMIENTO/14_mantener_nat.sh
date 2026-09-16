@@ -1,13 +1,13 @@
 #!/bin/bash
-# Fase 5, paso 8 — mantener viva la ruta de entrada del túnel.
+# Phase 5, step 8 - keep the tunnel's inbound path alive.
 #
-#   06_ACCESO_REMOTO §10   por qué hace falta, con la medición que lo sostiene
-#   ADR-0057               puerto 443/udp (supersede ADR-0043)
-#   Charter §7.1.3         no abre ningún puerto: solo emite tráfico saliente
+#   06_ACCESO_REMOTO §10   why it is needed, with the measurement behind it
+#   ADR-0057               port 443/udp (supersedes ADR-0043)
+#   Charter §7.1.3         it opens no port: it only emits outbound traffic
 #
-# Instala 14_mantener_nat.py como servicio de systemd. Idempotente.
+# Installs 14_mantener_nat.py as a systemd service. Idempotent.
 #
-# Uso: sudo ./14_mantener_nat.sh
+# Usage: sudo ./14_mantener_nat.sh
 
 set -euo pipefail
 

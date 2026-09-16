@@ -1,9 +1,9 @@
-// Package config lee la configuración del servicio.
+// Package config reads the service configuration.
 //
-// P4 del charter: la configuración que varía entre entornos vive en el
-// entorno, nunca en el árbol de fuentes. Cero secretos en el repositorio.
-// P3: nada de magic numbers — toda constante operativa se nombra aquí, con
-// su unidad y su razón.
+// Charter P4: configuration that varies between environments lives in the
+// environment, never in the source tree. Zero secrets in the repository.
+// P3: no magic numbers - every operational constant is named here, with its
+// unit and its reason.
 package config
 
 import (

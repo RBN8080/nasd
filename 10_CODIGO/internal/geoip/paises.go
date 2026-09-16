@@ -1,20 +1,19 @@
-// nombresDePais traduce el código ISO 3166-1 alfa-2 al nombre del país en
-// español, para el mapa de «Procedencia» y su lista de al lado.
+// nombresDePais maps the ISO 3166-1 alpha-2 code to the country name in
+// Spanish, for the "Procedencia" map and the list beside it.
 //
-// SOLO SE USA AHÍ. La tabla de orígenes de la página de seguridad sigue
-// enseñando el código —geoip.go ya explica por qué: el operador es lo que de
-// verdad hace interpretable una fila, y traducir 250 nombres para repetirlos
-// junto al código no añadía nada—. Lo que sí cambió es que ahora hay un
-// sitio donde vive esa traducción, prometido por el propio comentario de
-// Info.Pais: «si algún día el responsable quiere los nombres en español, la
-// tabla entra aquí y no cambia nada más».
+// IT IS USED ONLY THERE. The origins table on the security page still shows the
+// code - geoip.go already explains why: the operator is what really makes a row
+// interpretable, and translating 250 names to repeat them next to the code
+// added nothing. What did change is that there is now one place where that
+// translation lives, as Info.Pais promised in its own comment: "if one day the
+// owner wants the names in Spanish, the table goes here and nothing else
+// changes".
 //
-// LA FUENTE es el campo NAME_ES de Natural Earth 110m —el mismo conjunto de
-// datos con el que cmd/preparar-mapa dibuja el mapa, así que un país que
-// aparece en el mapa tiene, con altísima probabilidad, una entrada aquí. Un
-// código que esta tabla no conoce —una micronación nueva, un territorio que
-// Natural Earth no nombra— se resuelve a sí mismo: NombreDePais nunca
-// devuelve una cadena vacía ni un guion.
+// THE SOURCE is the NAME_ES field of Natural Earth 110m - the same dataset
+// cmd/preparar-mapa draws the map from, so a country that appears on the map
+// has, with very high probability, an entry here. A code this table does not
+// know - a new micronation, a territory Natural Earth does not name - resolves
+// to itself: NombreDePais never returns an empty string or a dash.
 package geoip
 
 var nombresDePais = map[string]string{

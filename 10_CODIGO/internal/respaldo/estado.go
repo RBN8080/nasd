@@ -1,31 +1,31 @@
-// Package respaldo lee lo que el cliente de respaldo de Windows deja escrito
-// en este nodo, y nada más.
+// Package respaldo reads what the Windows backup client leaves written on this
+// node, and nothing else.
 //
-// # POR QUÉ EL NODO MIRA ESTO, SI EL EQUIPO YA TIENE SU PROPIO INDICADOR
+// # WHY THE NODE LOOKS AT THIS, IF THE WORKSTATION ALREADY HAS ITS OWN INDICATOR
 //
-// Porque el icono de la barra del equipo vive DENTRO del equipo, y el modo de
-// fallo que más importa —que el equipo se apague, se cuelgue o deje de correr—
-// se lleva por delante al testigo junto con lo vigilado. 30_CLIENTE_RESPALDO
-// §10.2 lo dice de su propio icono: «el silencio del icono nunca es prueba de
-// nada».
+// Because the tray icon on the workstation lives INSIDE the workstation, and
+// the failure mode that matters most - that the machine shuts down, hangs or
+// stops running - takes the witness down along with what it was watching.
+// 30_CLIENTE_RESPALDO §10.2 says it of its own icon: "the icon's silence is
+// never proof of anything".
 //
-// El nodo está encendido siempre y ya recibe el archivo, así que puede afirmar
-// una cosa que el equipo apagado no puede afirmar de sí mismo: que lo último
-// que llegó aquí es viejo.
+// The node is always on and already receives the file, so it can assert
+// something a powered-off machine cannot assert about itself: that the last
+// thing to arrive here is old.
 //
-// # ESTE PAQUETE NO DECIDE NADA
+// # THIS PACKAGE DECIDES NOTHING
 //
-// Convierte texto en valores y dice qué pudo leer. El veredicto lo emite
-// evaluarRespaldo() en el adaptador web, con la MISMA función evaluar() que
-// pinta /estado y que alimenta el ciclo de avisos — igual que todos los demás
-// indicadores. No hay un segundo criterio.
+// It turns text into values and says what it could read. The verdict is issued
+// by evaluarRespaldo() in the web adapter, with the SAME evaluar() function
+// that paints /estado and feeds the alerting cycle - like every other
+// indicator. There is no second criterion.
 //
-// # LO QUE LEE ES TEXTO AJENO, Y SE TRATA COMO TAL
+// # WHAT IT READS IS SOMEBODY ELSE'S TEXT, AND IS TREATED AS SUCH
 //
-// El archivo lo escribe un cliente Windows sobre SMB. Todo lo que entra por
-// aquí está acotado: número de líneas, longitud de clave y de valor. Un archivo
-// gigante o con basura tiene que producir «no se pudo leer», nunca un consumo
-// de memoria proporcional a lo que alguien decida escribir.
+// The file is written by a Windows client over SMB. Everything coming in here
+// is bounded: number of lines, key length and value length. A huge or garbage
+// file has to produce "could not be read", never memory consumption
+// proportional to whatever someone decides to write.
 package respaldo
 
 import (

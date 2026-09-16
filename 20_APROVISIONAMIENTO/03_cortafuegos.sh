@@ -1,11 +1,11 @@
 #!/bin/bash
-# Fase 1, paso 3 — abrir 445 y 8080 SOLO a la LAN.
+# Phase 1, step 3 - open SMB and the web port to the local network only.
 #
-#   Charter §7.1.3   política DENY por defecto; apertura justificada en ADR
-#   ADR-0018         puerto web 8080
-#   RN-04 / RNF-07   solo 192.168.1.0/24
+#   Charter §7.1.3   default DENY policy; every opening justified in a decision
+#   ADR-0032         the web is served on port 80, so the address alone is enough
+#   RN-04 / RNF-07   the configured LAN only, read from /etc/nas/ajustes.conf
 #
-# Uso: sudo ./03_cortafuegos.sh
+# Usage: sudo ./03_cortafuegos.sh
 
 set -euo pipefail
 

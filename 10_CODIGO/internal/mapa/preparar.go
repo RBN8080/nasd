@@ -1,44 +1,44 @@
-// Package mapa prepara el mapa base de «Procedencia» en /seguridad: un SVG
-// del mundo, un país por elemento, listo para que el adaptador web lo pinte
-// de encima con los colores que digan los datos del anillo.
+// Package mapa prepares the base map for "Procedencia" in /seguridad: a world
+// SVG, one country per element, ready for the web adapter to paint over with
+// whatever colours the ring data dictates.
 //
-// # QUÉ ES ESTO Y QUÉ NO ES
+// # WHAT THIS IS AND WHAT IT IS NOT
 //
-// Este paquete NO corre dentro de nasd. Lo usa un único binario de host,
-// cmd/preparar-mapa, disparado a mano con «make mapa» cuando hace falta
-// regenerar el mapa —lo que no debería pasar casi nunca: las fronteras no
-// cambian al ritmo del país/operador de geoip, que sí se refresca cada mes.
-// El resultado, internal/adaptadores/web/estatico/mundo.svg, SE COMPROMETE en
-// el repositorio y viaja incrustado en el binario como cualquier otro
-// recurso estático (ADR-0017): «make mapa» es un paso de preparación, igual
-// que «nasd --preparar-geoip», pero uno que se ejecuta en el host y una vez,
-// no un temporizador en el nodo.
+// This package does NOT run inside nasd. It is used by a single host binary,
+// cmd/preparar-mapa, triggered by hand with "make mapa" when the map needs
+// regenerating - which should almost never happen: borders do not change at the
+// rate of the geoip country and operator data, which is refreshed monthly. The
+// result, internal/adaptadores/web/estatico/mundo.svg, IS COMMITTED to the
+// repository and travels embedded in the binary like any other static asset
+// (ADR-0017): "make mapa" is a preparation step, just like "nasd
+// --preparar-geoip", but one that runs on the host and once, not a timer on the
+// node.
 //
-// # DE DÓNDE SALE LA FORMA DE LOS PAÍSES
+// # WHERE THE COUNTRY SHAPES COME FROM
 //
-// De Natural Earth 110m (naturalearthdata.com), de dominio público y sin
-// cuenta ni clave que gestionar — el mismo criterio con el que geoip.go
-// descartó GeoLite2. El archivo de entrada es su GeoJSON de países
-// («ne_110m_admin_0_countries.geojson»); no se descarga aquí, lo trae quien
-// invoca el preparador, igual que 18_geoip.sh trae los TSV de IPtoASN antes
-// de llamar a «nasd --preparar-geoip».
+// From Natural Earth 110m (naturalearthdata.com), public domain and with no
+// account or key to manage - the same criterion by which geoip.go discarded
+// GeoLite2. The input is its countries GeoJSON
+// ("ne_110m_admin_0_countries.geojson"); it is not downloaded here, the caller
+// brings it, just as 18_geoip.sh brings the IPtoASN TSVs before calling "nasd
+// --preparar-geoip".
 //
-// # LA PROYECCIÓN, Y POR QUÉ MILLER Y NO OTRA
+// # THE PROJECTION, AND WHY MILLER AND NOT ANOTHER
 //
-// Miller cilíndrica: exagera menos los polos que Mercator sin la distorsión
-// de área de una acimutal, y es una fórmula cerrada de dos líneas — no hace
-// falta traer una biblioteca de proyecciones cartográficas para dibujar seis
-// cubos de color sobre un mapamundi de fondo.
+// Miller cylindrical: it exaggerates the poles less than Mercator without the
+// area distortion of an azimuthal one, and it is a closed formula of two lines
+// - no cartographic projection library is needed to draw six colour buckets
+// over a world background.
 //
-// # LA SIMPLIFICACIÓN, Y POR QUÉ HACE FALTA
+// # THE SIMPLIFICATION, AND WHY IT IS NEEDED
 //
-// El GeoJSON de origen trae miles de vértices por país para imprimirse en
-// papel a escala 1:110 000 000. Esta gráfica mide 1000×501 unidades de
-// viewBox: un vértice por debajo de la tolerancia de Douglas-Peucker no
-// cambia ni un píxel del resultado y sí infla el peso del archivo que viaja
-// en cada carga de /seguridad. Los anillos que sobreviven a la simplificación
-// y aun así no llegan al área mínima —islotes que a esta escala son un punto
-// sin superficie que rellenar— se descartan enteros.
+// The source GeoJSON carries thousands of vertices per country so it can be
+// printed on paper at 1:110,000,000. This graphic is 1000x501 viewBox units: a
+// vertex below the Douglas-Peucker tolerance changes not one pixel of the
+// result and does inflate the weight of the file shipped on every load of
+// /seguridad. Rings that survive simplification and still fall below the
+// minimum area - islets that at this scale are a dot with no surface to fill -
+// are discarded whole.
 package mapa
 
 import (
