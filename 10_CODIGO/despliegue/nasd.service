@@ -73,9 +73,20 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 #
 # SI SE RETIRAN, el servicio no se rompe: degrada a la alarma de subtensión
 # del hwmon y lo DICE en /estado. Pero RNF-11 deja de medirse.
+#
+# EL GUION DE «BindPaths=-» NO ES UN DESCUIDO, y es lo que hace cierta la
+# frase de arriba. Sin él, systemd se NIEGA A ARRANCAR LA UNIDAD ENTERA
+# cuando /dev/vcio_gencmd no existe — y no existe en ningún equipo que no sea
+# una Raspberry Pi. Es decir: la degradación que este comentario prometía era
+# en realidad un servicio que no levanta, y el nodo entero se quedaba sin web
+# por una medición opcional. Con el guion delante, systemd ignora el montaje
+# ausente (systemd.exec(5)) y la degradación es la que aquí se declara.
+#
+# DeviceAllow sobre un dispositivo que no existe no molesta, y el grupo
+# «video» existe en cualquier Debian: esas dos líneas no necesitan guardia.
 SupplementaryGroups=video
 DeviceAllow=/dev/vcio_gencmd rw
-BindPaths=/dev/vcio_gencmd
+BindPaths=-/dev/vcio_gencmd
 
 # Tercera capa de contención de rutas (04_SEGURIDAD.md §2): aunque
 # RutaSegura y os.Root fallaran, el proceso no puede escribir fuera de aquí.

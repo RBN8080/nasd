@@ -272,10 +272,15 @@ func (n *Nodo) medirThrottled(ctx context.Context) {
 	}
 
 	// 2. vcgencmd. ADR-0036 lo autoriza con SupplementaryGroups=video,
-	//    DeviceAllow=/dev/vcio_gencmd y BindPaths=/dev/vcio_gencmd. Si falta
+	//    DeviceAllow=/dev/vcio_gencmd y BindPaths=-/dev/vcio_gencmd. Si falta
 	//    cualquiera de las tres, esto falla con «Can't open device file», que
 	//    es exactamente lo que hay que ver en el registro si alguien las
 	//    retira creyendo que endurece gratis.
+	//
+	//    EL GUION DE «BindPaths=-» ES LO QUE HACE QUE ESTA RAMA SE ALCANCE
+	//    fuera de una Raspberry Pi: sin él, systemd no arranca la unidad
+	//    cuando el dispositivo no existe, así que no había registro que leer
+	//    —no había servicio—. Con él, esto falla, se anota y el nodo sigue.
 	if t, err := throttledPorVcgencmd(ctx); err == nil {
 		n.Throttled = t
 		return
