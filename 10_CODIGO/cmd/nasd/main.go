@@ -109,6 +109,24 @@ func ejecutar() error {
 		return err
 	}
 
+	// LAS DOS REDES IPv4 DE CASA, antes que nada de lo que las use.
+	//
+	// Van aquí por lo mismo que AprenderRedesPropias justo debajo: al cargar
+	// el historial se reclasifica cada evento guardado, así que configurarlas
+	// después dejaría todo lo ya escrito recuperado con la red equivocada.
+	lan, tunel := seguridad.ConfigurarRedes(cfg.RedLAN, cfg.RedTunel)
+	reg.Info("redes de casa", "lan", lan.String(), "tunel", tunel.String())
+
+	// Y SE COMPRUEBA LO ÚNICO QUE SE PUEDE COMPROBAR SIN SALIR DEL PROCESO:
+	// que el servicio escucha dentro de la red que dice ser su casa. Si no,
+	// nada falla —esa es la desgracia— pero el nodo cuenta como extraño a
+	// todo el mundo, empezando por sí mismo. Es barato y ataja el único modo
+	// de fallo silencioso que queda tras ADR-0095.
+	if propia, err := netip.ParseAddr(cfg.Direccion); err == nil && lan.IsValid() && !lan.Contains(propia) {
+		reg.Warn("la red declarada NO contiene la dirección de escucha: la casa entera se contará como Internet",
+			"lan", lan.String(), "direccion", cfg.Direccion, "arreglo", "corrija red.lan en el TOML")
+	}
+
 	// QUÉ ES «DE CASA» EN IPv6 SE LE PREGUNTA AL SISTEMA, no se escribe aquí.
 	//
 	// Lo destapó el historial real la primera tarde: el iPhone del

@@ -8,6 +8,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,6 +26,28 @@ type Config struct {
 	// fuera de ella. El cortafuegos es el segundo control, no el único.
 	Direccion string
 	Puerto    int
+
+	// RedLAN y RedTunel son las dos redes que el nodo cuenta como «de casa»
+	// al clasificar de dónde viene cada petición (internal/seguridad).
+	// ADR-0095.
+	//
+	// HASTA EL 2026-09-15 ESTO NO ERA CONFIGURABLE: los dos prefijos estaban
+	// escritos como literales en internal/seguridad/evento.go, con el
+	// argumento de que «una opción que nadie va a cambiar es un por si
+	// acaso». El argumento valía mientras hubiera un solo nodo en una sola
+	// casa. En otra LAN el literal deja de ser verdad EN SILENCIO y la casa
+	// entera se cuenta como Internet: el superusuario pierde borrar, mover y
+	// dar de alta desde su propio salón, y el panel cuenta a la familia como
+	// extraños. Es el fallo más caro que puede tener este paquete, porque no
+	// se rompe nada — solo miente.
+	//
+	// RedLAN VACÍA SE DERIVA DE Direccion, y esa es la parte que importa: el
+	// valor por omisión pasa a ser el /24 de la dirección en la que el
+	// servicio escucha, así que acierta solo en cualquier red. En el nodo de
+	// producción (192.168.1.38) eso da 192.168.1.0/24, exactamente lo que ya
+	// estaba escrito: la producción no cambia de comportamiento.
+	RedLAN   netip.Prefix
+	RedTunel netip.Prefix
 
 	// --- Fase 6 · TLS (ADR-0046) -----------------------------------------
 	//
@@ -305,9 +328,13 @@ func (c Config) RutaMiniaturas() string {
 // Se sustituyen por medición cuando exista.
 func porDefecto() Config {
 	return Config{
-		Volumen:          "/srv/nas",
-		Direccion:        "127.0.0.1",
-		Puerto:           8080,
+		Volumen:   "/srv/nas",
+		Direccion: "127.0.0.1",
+		Puerto:    8080,
+		// La red del túnel SÍ se puede escribir aquí: no se deriva de nada y
+		// la elige 12_wireguard.sh, no el operador de la casa. RedLAN no
+		// aparece: se deriva de Direccion al final de Cargar.
+		RedTunel:         netip.MustParsePrefix("10.77.0.0/24"),
 		DireccionTLS:     "::",
 		PuertoTLS:        443,
 		PlazoCabeceras:   10 * time.Second,
@@ -354,6 +381,20 @@ func Cargar(ruta string) (Config, error) {
 				return c, fmt.Errorf("red.puerto: %w", err)
 			}
 			c.Puerto = n
+		}
+		if s, ok := v["red.lan"]; ok {
+			p, err := netip.ParsePrefix(s)
+			if err != nil {
+				return c, fmt.Errorf("red.lan: %w", err)
+			}
+			c.RedLAN = p.Masked()
+		}
+		if s, ok := v["red.tunel"]; ok {
+			p, err := netip.ParsePrefix(s)
+			if err != nil {
+				return c, fmt.Errorf("red.tunel: %w", err)
+			}
+			c.RedTunel = p.Masked()
 		}
 		if s, ok := v["red.direccion_tls"]; ok {
 			c.DireccionTLS = s
@@ -449,7 +490,47 @@ func Cargar(ruta string) (Config, error) {
 		c.DirectorioEstado = primera
 	}
 
+	// LA DERIVACIÓN VA AQUÍ Y NO ANTES, y no es indiferente: NASD_DIRECCION
+	// puede haber cambiado la dirección de escucha tres líneas más arriba, y
+	// derivar de la anterior daría una red que no es la de este nodo.
+	if !c.RedLAN.IsValid() {
+		c.RedLAN = lanDe(c.Direccion)
+	}
+
 	return c, c.validar()
+}
+
+// lanDe devuelve el /24 de una dirección de escucha, o un prefijo inválido si
+// no se puede afirmar nada con honestidad.
+//
+// EL /24 ES UN SUPUESTO, y conviene decirlo en vez de disimularlo: es el
+// tamaño que reparte por omisión prácticamente todo router doméstico, y es
+// además el mismo supuesto que el literal anterior ya hacía — solo que
+// aplicado a la red correcta en lugar de a una fija. Quien tenga otra máscara
+// escribe «red.lan» en el TOML y esta función no llega a usarse.
+//
+// SE NIEGA A ADIVINAR EN TRES CASOS, y en los tres callarse es lo correcto:
+//
+//	IPv6            un /24 no significa nada ahí; de eso ya se encarga
+//	                AprenderRedesPropias, que pregunta al sistema
+//	bucle local     127.0.0.1 es el valor por omisión de desarrollo, y
+//	                derivar 127.0.0.0/24 haría que el propio nodo se
+//	                clasificara como LAN en vez de como nodo
+//	dirección pública  escuchar en una dirección pública no convierte a su
+//	                /24 en «la casa»: eso daría por familiares a 253 equipos
+//	                ajenos, que es el fallo contrario al que esto arregla
+//
+// Con un prefijo inválido, internal/seguridad conserva el suyo: nada cambia.
+func lanDe(direccion string) netip.Prefix {
+	ip, err := netip.ParseAddr(direccion)
+	if err != nil || !ip.Is4() || ip.IsLoopback() || !ip.IsPrivate() {
+		return netip.Prefix{}
+	}
+	p, err := ip.Prefix(24)
+	if err != nil {
+		return netip.Prefix{}
+	}
+	return p
 }
 
 // validar falla ruidosamente y temprano (P5). Un servicio mal configurado no
@@ -472,6 +553,15 @@ func (c Config) validar() error {
 	// fallo aparecería mucho más tarde, al intentarlo (P5).
 	if c.DirectorioEstado == "" {
 		return fmt.Errorf("estado.directorio: no puede estar vacío (ADR-0055)")
+	}
+
+	// Dos redes que se solapan no son dos redes: ClasificarRed comprueba la
+	// LAN primero, así que el túnel entero quedaría contado como LAN y el
+	// panel diría «Red local» de todo lo que entra por WireGuard. No rompe
+	// nada — miente, que es peor, y es el mismo modo de fallo que estas dos
+	// claves existen para cerrar.
+	if c.RedLAN.IsValid() && c.RedTunel.IsValid() && c.RedLAN.Overlaps(c.RedTunel) {
+		return fmt.Errorf("red.lan %s y red.tunel %s se solapan: el túnel se contaría como red local", c.RedLAN, c.RedTunel)
 	}
 
 	// TLS: o están las dos rutas o no está ninguna. Media configuración es la

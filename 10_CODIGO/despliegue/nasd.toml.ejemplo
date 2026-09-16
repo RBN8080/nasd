@@ -20,6 +20,29 @@ direccion = "192.168.1.38"
 # CAP_NET_BIND_SERVICE por AmbientCapabilities; el proceso NO se eleva.
 puerto = 80
 
+# --- Qué cuenta como «de casa» (ADR-0095) -----------------------------------
+#
+# De esto depende quién puede borrar, mover y dar de alta, y también qué
+# cuenta el panel como visita de fuera. No es cosmético.
+#
+# LAS DOS SON OPCIONALES, Y NO SE COMPORTAN IGUAL AL FALTAR:
+#
+#   lan     ausente ⇒ se toma el /24 de «direccion», aquí arriba. Con
+#           192.168.1.38 eso da 192.168.1.0/24. Escríbala solo si su red NO
+#           es un /24, o si el nodo escucha en una red distinta de la que
+#           sirve. El /24 es un supuesto declarado, no una medición.
+#   tunel   ausente ⇒ 10.77.0.0/24, que es lo que reparte 12_wireguard.sh.
+#           Cámbiela solo si cambió RED_TUNEL en /etc/nas/ajustes.conf.
+#
+# NO PUEDEN SOLAPARSE: nasd comprueba la LAN primero, así que un túnel dentro
+# de la LAN se contaría entero como red local. Si se solapan, no arranca.
+#
+# LO QUE NO SE ESCRIBE AQUÍ ES IPv6: esos prefijos se le preguntan al sistema
+# al arrancar (AprenderRedesPropias), porque el operador puede rotar la
+# delegación y un literal dejaría de ser verdad sin avisar.
+# lan   = "192.168.1.0/24"
+# tunel = "10.77.0.0/24"
+
 # --- Fase 6 · TLS (ADR-0046 y ADR-0048) -------------------------------------
 #
 # «::» y NO «0.0.0.0»: en Go, enlazar a 0.0.0.0 abre SOLO IPv4, y la unica via
