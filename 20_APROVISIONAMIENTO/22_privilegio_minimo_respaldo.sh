@@ -78,6 +78,17 @@ uso() {
 [ $# -eq 1 ] || uso
 [ "$(id -u)" -eq 0 ] || { echo "Hay que ser root." >&2; exit 1; }
 
+# Los seis valores de esta red — ADR-0095. Aquí solo hace falta NODO_IP, y no
+# para configurar nada: para que las dos rutas UNC que este script imprime al
+# final sean las de ESTE nodo. Son instrucciones que alguien teclea tal cual
+# en otra máquina, así que una dirección equivocada ahí manda a comprobar el
+# recurso de un equipo que no es.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { echo "Falta $AJUSTES. Copielo de ajustes.conf.ejemplo y editelo (ver LEEME.md)." >&2; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${NODO_IP:?falta NODO_IP en $AJUSTES}"
+
 case "$1" in
     --simular)  MODO=simular ;;
     --aplicar)  MODO=aplicar ;;
@@ -177,7 +188,7 @@ echo "Comparticion [respaldo] anadida y smbd recargado."
 echo
 echo "FALTA LO QUE NO SE PUEDE COMPROBAR DESDE AQUI, y es lo que de verdad importa:"
 printf "%s
-" "  desde Windows, comprobar que el cliente SI escribe en \\\\192.168.1.38\\respaldo"
+" "  desde Windows, comprobar que el cliente SI escribe en \\\\$NODO_IP\\respaldo"
 printf "%s
-" "  y que YA NO alcanza \\\\192.168.1.38\\datos\\homeUsers"
+" "  y que YA NO alcanza \\\\$NODO_IP\\datos\\homeUsers"
 echo "  (smbclient desde el propio nodo no prueba esto: ver la nota de ADR-0031/0038)"

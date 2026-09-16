@@ -72,6 +72,16 @@ AYUDA
   exit 1
 fi
 
+# Los seis valores de esta red — ADR-0095. De aquí salen la interfaz y, por
+# derivación, el sufijo de la dirección IPv6 fija.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${INTERFAZ:?falta INTERFAZ en $AJUSTES}"
+: "${NODO_IP:?falta NODO_IP en $AJUSTES}"
+SUFIJO="${NODO_IP##*.}"
+
 chmod 0600 "$CONF"
 chown root:root "$CONF"
 # shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
@@ -95,11 +105,19 @@ CONF=/etc/nas/ddns.conf
 # shellcheck disable=SC1090
 . "$CONF"
 
+# Los ajustes del nodo (ADR-0095). Se leen AQUÍ, en cada ejecución, y no se
+# incrustan al generar este archivo: así cambiar la interfaz o la dirección en
+# /etc/nas/ajustes.conf llega al temporizador sin volver a ejecutar 11_ddns.sh.
+AJUSTES=/etc/nas/ajustes.conf
+# shellcheck disable=SC1090
+. "$AJUSTES"
+SUFIJO="${NODO_IP##*.}"
+
 # DuckDNS solo autodetecta IPv4. Cuando existe la dirección fija de la Fase 6,
 # se envían LOS DOS valores explícitos: su API deja de autodetectar «ip» al
 # recibir «ipv6». Así el AAAA no conserva una SLAAC que el router no autoriza.
-IPV6_FIJA=$(ip -6 -o addr show dev eth0 scope global 2>/dev/null \
-  | awk '$4 ~ /::38\/64$/ {sub(/\/.*/, "", $4); print $4; exit}')
+IPV6_FIJA=$(ip -6 -o addr show dev "$INTERFAZ" scope global 2>/dev/null \
+  | awk -v suf="::$SUFIJO/64" 'substr($4, length($4)-length(suf)+1) == suf {sub(/\/.*/, "", $4); print $4; exit}')
 
 if [ -n "$IPV6_FIJA" ]; then
   IPV4_PUBLICA=$(curl -4 -fsS --max-time 15 https://ifconfig.me 2>/dev/null || echo "")
@@ -178,8 +196,8 @@ verde "DuckDNS aceptó la actualización."
 sleep 3
 IP_REAL=$(curl -4 -fsS --max-time 15 https://ifconfig.me 2>/dev/null || echo "")
 IP_NOMBRE=$(getent ahostsv4 "$DOMINIO.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
-IPV6_FIJA=$(ip -6 -o addr show dev eth0 scope global 2>/dev/null \
-  | awk '$4 ~ /::38\/64$/ {sub(/\/.*/, "", $4); print $4; exit}')
+IPV6_FIJA=$(ip -6 -o addr show dev "$INTERFAZ" scope global 2>/dev/null \
+  | awk -v suf="::$SUFIJO/64" 'substr($4, length($4)-length(suf)+1) == suf {sub(/\/.*/, "", $4); print $4; exit}')
 IPV6_NOMBRE=$(getent ahostsv6 "$DOMINIO.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
 
 echo "  IP pública real:        ${IP_REAL:-no se pudo leer}"
@@ -211,7 +229,7 @@ fi
 echo
 aviso "OJO — el DDNS no abre puertos ni modifica el router:"
 aviso "  IPv4 sigue dependiendo de la red del operador; para IPv6, el router"
-aviso "  debe permitir solo TCP/443 hacia la dirección fija terminada en ::38."
+aviso "  debe permitir solo TCP/443 hacia la dirección fija terminada en ::$SUFIJO."
 aviso "  No use DMZ: D-22 exige una regla mínima y específica."
 
 echo

@@ -34,12 +34,9 @@ set -euo pipefail
 # de nasd: son sockets distintos. NO es una decisión de seguridad: WireGuard es
 # mudo sin clave en cualquier puerto, igual que ya decía ADR-0043.
 PUERTO=443
-RED_TUNEL=10.77.0
-NODO_TUNEL="$RED_TUNEL.1"
 DIR=/etc/wireguard
 CLIENTES="$DIR/clientes"
 DDNS_CONF=/etc/nas/ddns.conf
-NAS_IP=192.168.1.38          # ADR-0018: donde escucha nasd de verdad
 
 # A-4, decidido por el responsable: los tres dispositivos.
 DISPOSITIVOS=(pc iphone tableta)
@@ -47,6 +44,38 @@ DISPOSITIVOS=(pc iphone tableta)
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 aviso() { printf '\033[33m%s\033[0m\n' "$*"; }
+
+# Los seis valores de esta red — ADR-0095.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${RED_TUNEL:?falta RED_TUNEL en $AJUSTES}"
+: "${NODO_IP:?falta NODO_IP en $AJUSTES}"
+
+# LOS DOS FORMATOS DE RED_TUNEL, QUE HASTA ADR-0095 ERAN UNA TRAMPA.
+#
+# 02_instalar_samba.sh lo escribía en CIDR —«10.77.0.0/24», que es lo que pide
+# «hosts allow»— y este script lo escribía en tres octetos —«10.77.0», porque
+# concatena «.1» y «.N» para repartir direcciones—. Un comentario decía que
+# «deben coincidir», pero copiar el valor de uno al otro rompía al que lo
+# recibía. Ahora el archivo lleva UN solo formato, el CIDR, y aquí se recorta.
+BASE_TUNEL="${RED_TUNEL%/*}"    # 10.77.0.0/24 -> 10.77.0.0
+BASE_TUNEL="${BASE_TUNEL%.*}"   # 10.77.0.0    -> 10.77.0
+NODO_TUNEL="$BASE_TUNEL.1"
+
+# /24 NO ES NEGOCIABLE AQUÍ, y por eso se comprueba en vez de suponerse: el
+# reparto de direcciones de más abajo usa el último octeto y la propia línea
+# «Address = $NODO_TUNEL/24» lo da por hecho. Con otra máscara el túnel se
+# levantaría con un encaminamiento que no es el que dice el archivo.
+case "$RED_TUNEL" in
+  */24) ;;
+  *) rojo "RED_TUNEL es '$RED_TUNEL' y este script solo sabe repartir un /24."; exit 1 ;;
+esac
+
+# ADR-0018: donde escucha nasd de verdad. El túnel encamina esta dirección
+# concreta, así que tiene que ser la misma que la del nodo.
+NAS_IP="$NODO_IP"
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
 
@@ -140,7 +169,7 @@ N=1
 PARES=""
 for D in "${DISPOSITIVOS[@]}"; do
   N=$((N+1))
-  IP_D="$RED_TUNEL.$N"
+  IP_D="$BASE_TUNEL.$N"
   if [ ! -f "$CLIENTES/$D.key" ]; then
     umask 077
     wg genkey > "$CLIENTES/$D.key"
@@ -309,7 +338,7 @@ aviso "  Corregido el 2026-08-12: este aviso decía que en el router no hacía"
 aviso "  falta nada, y era FALSO — hay una redirección encendida desde el 31/07."
 aviso ""
 aviso "     Port Forwarding · NAS-WireGuard  · UDP · WAN y LAN → $PUERTO"
-aviso "     Filter Criteria · NASWGV6       · UDP · IPv6, destino ::38 → $PUERTO"
+aviso "     Filter Criteria · NASWGV6       · UDP · IPv6, destino ::${NODO_IP##*.} → $PUERTO"
 aviso ""
 aviso "  Si cambia el puerto aquí y no allí, el acceso remoto muere EN SILENCIO."
 aviso "  NO toque NASHTTPSV6: es la web, es TCP, y no tiene que ver con esto."

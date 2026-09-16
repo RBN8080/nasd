@@ -29,6 +29,18 @@ verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 aviso() { printf '\033[33m%s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
+
+# Los seis valores de esta red — ADR-0095. De aquí salen las dos redes que
+# nasd cuenta como «de casa», que es lo que decide quién puede borrar, mover y
+# dar de alta desde dentro.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${RED:?falta RED en $AJUSTES}"
+: "${RED_TUNEL:?falta RED_TUNEL en $AJUSTES}"
+: "${NODO_IP:?falta NODO_IP en $AJUSTES}"
+
 # El binario nuevo es OPCIONAL: este script también sirve para actualizar la
 # unidad o la configuración sobre una instalación que ya funciona. Exigirlo
 # siempre lo volvía inútil justo en ese caso —el mismo error que ya se
@@ -46,17 +58,57 @@ mountpoint -q "$PUNTO" || { rojo "$PUNTO no está montado. Ejecute antes 01_prep
 id -u "$USUARIO" >/dev/null 2>&1 || { rojo "Falta el usuario '$USUARIO'."; exit 1; }
 
 # P2: comprobar que el binario es para ESTA arquitectura antes de instalarlo.
+#
+# LA ARQUITECTURA SE PREGUNTA, NO SE ESCRIBE. Hasta el 2026-09-15 esta
+# comprobación exigía «aarch64» literal, y el comentario de encima ya decía
+# «ESTA arquitectura»: el código nombraba una sola. Consecuencia medida al
+# abrir la Fase 8 — en cualquier nodo que no fuera una Raspberry Pi de 64
+# bits, el paso rechazaba el binario que el propio nodo acababa de compilar.
+#
+# «file» describe la máquina con otras palabras que «uname», así que hace
+# falta la tabla: no es un «por si acaso», es la traducción entre dos
+# vocabularios. Y una arquitectura que no esté en la tabla DETIENE la
+# instalación en vez de dejarla pasar: no poder comprobar no es haber
+# comprobado (misma regla que 09_verificar_operacion.sh §7).
 if [ "$INSTALAR_BINARIO" = "1" ]; then
   ARCO=$(file -b "$ORIGEN" 2>/dev/null || echo desconocido)
+  MAQUINA=$(uname -m)
+  case "$MAQUINA" in
+    aarch64)       ESPERADO="aarch64"   ;;
+    x86_64)        ESPERADO="x86-64"    ;;
+    armv6l|armv7l) ESPERADO="ARM, EABI" ;;
+    *)
+      rojo "No sé cómo describe «file» un binario de $MAQUINA, así que NO se puede comprobar."
+      echo "       Instalar un binario sin comprobar su arquitectura es justo el fallo que"
+      echo "       esta línea existe para impedir, así que se detiene aquí."
+      echo "       El binario que se iba a instalar es:  $ARCO"
+      exit 1
+      ;;
+  esac
   case "$ARCO" in
-    *aarch64*) ;;
-    *) rojo "El binario no parece ARM64: $ARCO"; exit 1 ;;
+    *"$ESPERADO"*) ;;
+    *)
+      rojo "El binario no es para esta máquina ($MAQUINA): $ARCO"
+      echo "       Se esperaba encontrar «$ESPERADO» en esa descripción."
+      echo "       Compílelo para $MAQUINA y vuelva a copiarlo a $ORIGEN."
+      exit 1
+      ;;
   esac
 fi
 
 # La IP de la LAN, para ADR-0018: se enlaza a la interfaz declarada, no a
 # 0.0.0.0. El cortafuegos es el segundo control, no el único.
 IP=$(hostname -I | awk '{print $1}')
+
+# LA DIRECCIÓN SE MIDE, PERO NODO_IP TIENE QUE COINCIDIR, y por eso se avisa
+# en vez de elegir una en silencio: 12_wireguard.sh reparte perfiles que
+# encaminan NODO_IP concretamente, así que si el nodo escucha en otra, el
+# túnel se levanta y la web no aparece — sin que nada falle.
+if [ "$IP" != "$NODO_IP" ]; then
+  aviso "La dirección real del nodo es $IP y $AJUSTES dice $NODO_IP."
+  aviso "Se usará $IP para escuchar, pero los perfiles de WireGuard apuntarán a $NODO_IP."
+  aviso "Fije la IP en el router o corrija NODO_IP antes de repartir perfiles."
+fi
 [ -n "$IP" ] || { rojo "No se pudo determinar la IP de la LAN."; exit 1; }
 
 if [ "$INSTALAR_BINARIO" = "1" ]; then
@@ -93,6 +145,16 @@ volumen = "$PUNTO"
 [red]
 direccion = "$IP"
 puerto = $PUERTO
+
+# Qué cuenta como «de casa» — ADR-0095. Salen de /etc/nas/ajustes.conf, que es
+# el mismo archivo del que 02_instalar_samba.sh y 03_cortafuegos.sh sacan la
+# suya: una red declarada una vez, no tres copias que hay que recordar.
+#
+# Se escriben aquí aunque el binario sepa derivar la LAN del /24 de
+# «direccion»: la derivación es la red de seguridad para un nodo que ya
+# existía, no la forma de configurar uno nuevo.
+lan = "$RED"
+tunel = "$RED_TUNEL"
 
 [sesion]
 # Tope deslizante de inactividad — ADR-0059, con el valor de ADR-0082. NO es

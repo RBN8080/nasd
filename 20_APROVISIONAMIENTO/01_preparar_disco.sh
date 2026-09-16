@@ -11,23 +11,35 @@
 # #  Léalo entero antes de ejecutarlo. Exige confirmación escrita.           #
 # ############################################################################
 #
-# Uso:   sudo ./01_preparar_disco.sh /dev/sdb
+# Uso:   sudo ./01_preparar_disco.sh            (toma DISCO de /etc/nas/ajustes.conf)
+#        sudo ./01_preparar_disco.sh /dev/sdb   (el argumento gana al archivo)
 #
 # P1 del charter: este script ES la configuración. Si un cambio no está aquí,
 # no existe y el nodo no es reconstruible.
 
 set -euo pipefail
 
-DISCO="${1:-}"
-MODELO_ESPERADO="ST1000LM035"      # charter §3.6 [M]
 PUNTO=/srv/nas
 USUARIO=nas
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 
+# Los seis valores de esta red — ADR-0095. De aquí salen DISCO y DISCO_MODELO.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+
+# EL ARGUMENTO GANA AL ARCHIVO, y no es una concesión: este script se escribió
+# para invocarse «sudo ./01_preparar_disco.sh /dev/sdb» y quien ya lo conoce
+# lo sigue usando así. El archivo es el valor por omisión, no una sustitución.
+DISCO="${1:-${DISCO:-}}"
+: "${DISCO_MODELO:?falta DISCO_MODELO en $AJUSTES}"
+MODELO_ESPERADO="$DISCO_MODELO"
+
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
-[ -n "$DISCO" ]      || { rojo "Uso: sudo $0 /dev/sdX"; exit 1; }
+[ -n "$DISCO" ]      || { rojo "No hay disco: pase uno como argumento o escriba DISCO en $AJUSTES."; exit 1; }
 [ -b "$DISCO" ]      || { rojo "$DISCO no es un dispositivo de bloques."; exit 1; }
 
 # ---------------------------------------------------------------- seguridad
@@ -45,7 +57,7 @@ case "$MODELO" in
   "$MODELO_ESPERADO"*) ;;
   *)
     rojo "El modelo es '$MODELO' y se esperaba uno que empiece por '$MODELO_ESPERADO' (charter §3.6)."
-    rojo "Si de verdad quiere continuar, edite MODELO_ESPERADO en este script."
+    rojo "Si de verdad quiere continuar, corrija DISCO o DISCO_MODELO en $AJUSTES."
     exit 1
     ;;
 esac

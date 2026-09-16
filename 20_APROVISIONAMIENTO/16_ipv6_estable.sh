@@ -28,12 +28,26 @@
 
 set -euo pipefail
 
-SUFIJO=38          # coincide con 192.168.1.38
-IFAZ=eth0
-
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 aviso() { printf '\033[33m%s\033[0m\n' "$*"; }
+
+# Los seis valores de esta red — ADR-0095.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Copielo de ajustes.conf.ejemplo y editelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${NODO_IP:?falta NODO_IP en $AJUSTES}"
+: "${INTERFAZ:?falta INTERFAZ en $AJUSTES}"
+
+IFAZ="$INTERFAZ"
+
+# EL SUFIJO NO ES UN AJUSTE: SE DERIVA. Es el ultimo octeto de NODO_IP, y lo
+# unico que se le pide es que la direccion IPv6 termine en el mismo numero que
+# la IPv4 — asi quien lee «...::38» reconoce el mismo nodo que «192.168.1.38».
+# Escribirlo aparte creaba un septimo valor cuyo unico trabajo era coincidir
+# con otro, que es justo el acoplamiento que ADR-0095 quita.
+SUFIJO="${NODO_IP##*.}"
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
 

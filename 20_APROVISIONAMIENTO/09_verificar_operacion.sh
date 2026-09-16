@@ -34,6 +34,20 @@ trap limpiar EXIT
 [ "$(id -u)" -eq 0 ] || { echo "Ejecute con sudo."; exit 1; }
 systemctl is-active --quiet nasd || { echo "nasd no está activo."; exit 1; }
 
+# Los seis valores de esta red — ADR-0095.
+#
+# ESTE ES UN VERIFICADOR, así que su ausencia NO corta la ejecución: se anota
+# como fallo más abajo y las comprobaciones que dependen de ellos se declaran
+# AUSENTES en vez de inventar un valor. Es la regla de este script (§7): «no
+# se pudo comprobar» no es «correcto».
+AJUSTES=/etc/nas/ajustes.conf
+INTERFAZ=""; NODO_IP=""; SUFIJO=""
+if [ -f "$AJUSTES" ]; then
+  # shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+  . "$AJUSTES"
+  SUFIJO="${NODO_IP##*.}"
+fi
+
 echo "===== Fase 4 · verificación de la operación ====="
 echo
 
@@ -481,18 +495,24 @@ else
         no "$DOM.duckdns.org apunta a ${IP_DEL_NOMBRE:-nada} y la IP real es $IP_VE_INTERNET: el acceso remoto está roto"
       fi
 
-      # Fase 6: el router autoriza la dirección fija terminada en ::38. Si el
-      # AAAA conserva una SLAAC anterior, el cliente llama a otro destino y la
-      # captura del nodo autorizado queda en cero.
-      IPV6_FIJA=$(ip -6 -o addr show dev eth0 scope global 2>/dev/null \
-        | awk '$4 ~ /::38\/64$/ {sub(/\/.*/, "", $4); print $4; exit}')
-      IPV6_DEL_NOMBRE=$(getent ahostsv6 "$DOM.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
-      if [ -n "$IPV6_FIJA" ] && [ "$IPV6_FIJA" = "$IPV6_DEL_NOMBRE" ]; then
-        si "$DOM.duckdns.org publica la IPv6 fija autorizada en el router ($IPV6_FIJA)"
-      elif [ -z "$IPV6_FIJA" ]; then
-        no "el nodo no tiene la IPv6 fija ::38 que debe autorizar el router"
+      # Fase 6: el router autoriza la dirección fija terminada en el mismo
+      # número que la IPv4 del nodo (ADR-0095: el sufijo se deriva de NODO_IP,
+      # no se escribe aparte). Si el AAAA conserva una SLAAC anterior, el
+      # cliente llama a otro destino y la captura del nodo autorizado queda en
+      # cero.
+      if [ -z "$INTERFAZ" ]; then
+        no "SIN VERIFICAR: falta $AJUSTES, así que no se sabe en qué interfaz mirar la IPv6 fija"
       else
-        no "$DOM.duckdns.org publica ${IPV6_DEL_NOMBRE:-ningún AAAA}, pero el router autoriza $IPV6_FIJA"
+        IPV6_FIJA=$(ip -6 -o addr show dev "$INTERFAZ" scope global 2>/dev/null \
+          | awk -v suf="::$SUFIJO/64" 'substr($4, length($4)-length(suf)+1) == suf {sub(/\/.*/, "", $4); print $4; exit}')
+        IPV6_DEL_NOMBRE=$(getent ahostsv6 "$DOM.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
+        if [ -n "$IPV6_FIJA" ] && [ "$IPV6_FIJA" = "$IPV6_DEL_NOMBRE" ]; then
+          si "$DOM.duckdns.org publica la IPv6 fija autorizada en el router ($IPV6_FIJA)"
+        elif [ -z "$IPV6_FIJA" ]; then
+          no "el nodo no tiene la IPv6 fija ::$SUFIJO que debe autorizar el router"
+        else
+          no "$DOM.duckdns.org publica ${IPV6_DEL_NOMBRE:-ningún AAAA}, pero el router autoriza $IPV6_FIJA"
+        fi
       fi
     fi
   else

@@ -9,7 +9,6 @@
 
 set -euo pipefail
 
-RED=192.168.1.0/24
 PUERTO_WEB=80   # ADR-0032
 PUERTO_WG=443   # ADR-0057 (supersede ADR-0043). UDP: no choca con PUERTO_TLS, que es TCP
 PUERTO_TLS=443  # ADR-0048
@@ -67,6 +66,15 @@ fi
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
+
+# Los seis valores de esta red — ADR-0095. RED estaba escrito aquí y otra vez
+# en 02_instalar_samba.sh, sin nada que atara las dos copias: cambiar una y
+# olvidar la otra dejaba Samba y el cortafuegos sirviendo a redes distintas.
+AJUSTES=/etc/nas/ajustes.conf
+[ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
+# shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria
+. "$AJUSTES"
+: "${RED:?falta RED en $AJUSTES}"
 
 [ "$(id -u)" -eq 0 ] || { rojo "Ejecute con sudo."; exit 1; }
 command -v nft >/dev/null || { echo "Instalando nftables..."; apt-get install -y nftables; }
