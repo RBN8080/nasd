@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 720" width="900" height="720" role="img" aria-label="Services running on the node: three ways in, one firewall, three listeners, six scheduled units and one disk">
+<title>nasd — what runs on the node</title>
+<!-- Generated drawing. This is the DARK variant; the other one is the same geometry with a different palette. Edit the generator, not this file. -->
+<defs><marker id="punta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7681"/></marker></defs>
+<rect width="900" height="720" fill="#0d1117"/>
+<text x="30" y="36" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" text-anchor="start" letter-spacing="0">What runs on the node</text>
+<text x="30" y="57" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">One static binary, one firewall, six small scheduled units. No containers, no daemons in between.</text>
+<text x="30" y="92" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" text-anchor="start" letter-spacing="1.2">WAYS IN</text>
+<rect x="30" y="104" width="260" height="62" rx="8" fill="#111c15" stroke="#3fb950" stroke-width="1"/>
+<rect x="30" y="104" width="4" height="62" rx="2" fill="#3fb950"/>
+<text x="46" y="128" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" text-anchor="start" letter-spacing="0">Local network</text>
+<text x="46" y="147" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">Phones, laptops, the backup client</text>
+<path d="M 160 172 L 160 196" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<rect x="320" y="104" width="260" height="62" rx="8" fill="#121d2f" stroke="#58a6ff" stroke-width="1"/>
+<rect x="320" y="104" width="4" height="62" rx="2" fill="#58a6ff"/>
+<text x="336" y="128" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" text-anchor="start" letter-spacing="0">WireGuard peer</text>
+<text x="336" y="147" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">One key per device, issued on the node</text>
+<path d="M 450 172 L 450 196" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<rect x="610" y="104" width="260" height="62" rx="8" fill="#2d1618" stroke="#ff7b72" stroke-width="1"/>
+<rect x="610" y="104" width="4" height="62" rx="2" fill="#ff7b72"/>
+<text x="626" y="128" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" text-anchor="start" letter-spacing="0">The internet</text>
+<text x="626" y="147" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">Everything else. Assumed hostile</text>
+<path d="M 740 172 L 740 196" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<rect x="30" y="200" width="840" height="330" rx="12" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+<text x="50" y="226" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" text-anchor="start" letter-spacing="1.2">THE NODE  ·  RASPBERRY PI OS OR PLAIN DEBIAN</text>
+<rect x="50" y="240" width="800" height="46" rx="8" fill="#0d1117" stroke="#ff7b72" stroke-width="1"/>
+<text x="68" y="262" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">nftables</text>
+<text x="140" y="262" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">default DENY. Each open port is justified in a decision record.</text>
+<path d="M 170 292 L 170 314" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<path d="M 450 292 L 450 314" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<path d="M 730 292 L 730 314" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<rect x="50" y="318" width="240" height="76" rx="8" fill="#0d1117" stroke="#484f58" stroke-width="1"/>
+<rect x="58" y="318" width="224" height="3" rx="1.5" fill="#58a6ff"/>
+<text x="66" y="344" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">nasd.service</text>
+<text x="66" y="362" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">:80 on the LAN address</text>
+<text x="66" y="378" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">:443 TLS on every interface</text>
+<rect x="330" y="318" width="240" height="76" rx="8" fill="#0d1117" stroke="#484f58" stroke-width="1"/>
+<rect x="338" y="318" width="224" height="3" rx="1.5" fill="#3fb950"/>
+<text x="346" y="344" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">smbd</text>
+<text x="346" y="362" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">:445, LAN and tunnel only</text>
+<text x="346" y="378" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">One user, no anonymous shares</text>
+<rect x="610" y="318" width="240" height="76" rx="8" fill="#0d1117" stroke="#484f58" stroke-width="1"/>
+<rect x="618" y="318" width="224" height="3" rx="1.5" fill="#58a6ff"/>
+<text x="626" y="344" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">wg-quick@wg0</text>
+<text x="626" y="362" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">:443/UDP — no clash: TLS is TCP</text>
+<text x="626" y="378" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">Silent without a valid key</text>
+<rect x="50" y="410" width="800" height="104" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="68" y="432" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" text-anchor="start" letter-spacing="1.1">SCHEDULED UNITS  ·  each one does a single thing, and says so in the journal</text>
+<text x="68" y="456" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-ddns</text>
+<text x="244" y="456" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">every 5 min</text>
+<text x="468" y="456" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-vigilar-disco</text>
+<text x="644" y="456" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">every 60 s</text>
+<text x="68" y="479" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-sensor</text>
+<text x="244" y="479" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">AF_PACKET, own user</text>
+<text x="468" y="479" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-mantener-nat</text>
+<text x="644" y="479" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">keeps the tunnel path alive</text>
+<text x="68" y="502" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-respaldo-identidad</text>
+<text x="244" y="502" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">weekly</text>
+<text x="468" y="502" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11.5" font-weight="500" text-anchor="start" letter-spacing="0">nas-geoip</text>
+<text x="644" y="502" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">monthly</text>
+<path d="M 450 536 L 450 570" stroke="#6e7681" stroke-width="1.5" fill="none" marker-end="url(#punta)"/>
+<text x="462" y="558" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" text-anchor="start" letter-spacing="0">the only place anything is written</text>
+<rect x="230" y="574" width="440" height="118" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="1"/>
+<rect x="240" y="574" width="420" height="3" rx="1.5" fill="#bc8cff"/>
+<text x="252" y="604" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="14" font-weight="600" text-anchor="start" letter-spacing="0">/srv/nas</text>
+<text x="330" y="604" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">external disk, ext4, mounted by UUID</text>
+<text x="252" y="630" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0">datos/</text>
+<text x="330" y="630" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">what the SMB share serves</text>
+<text x="252" y="652" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0">estado/</text>
+<text x="330" y="652" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">sessions, security log, geo database, thumbnails</text>
+<text x="252" y="676" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="400" text-anchor="start" letter-spacing="0">Never /dev/sdX: the disk came back as a different letter once, and that outage is why.</text>
+</svg>
