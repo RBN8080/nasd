@@ -1,26 +1,26 @@
 #!/bin/bash
-# Fase 6, paso 1 — certificado TLS por DNS-01, sin abrir ningún puerto.
+# Phase 6, step 1 - a TLS certificate over DNS-01, without opening any port.
 #
-#   ADR-0046   TLS termina dentro de nasd, no en un proxy
-#   ADR-0042   REGLA VINCULANTE: sin TLS no se expone nada a Internet
-#   ADR-0048   el 443 solo se abre DESPUÉS, y solo si existe este certificado
-#   P4         el testigo de DuckDNS no entra en el repositorio
+#   ADR-0046   TLS terminates inside nasd, not in a proxy
+#   ADR-0042   BINDING RULE: nothing is exposed to the internet without TLS
+#   ADR-0048   443 is opened only AFTERWARDS, and only if this certificate exists
+#   P4         the DuckDNS token does not enter the repository
 #
-# POR QUÉ DNS-01 Y NO HTTP-01, que es la pregunta importante:
+# WHY DNS-01 AND NOT HTTP-01, which is the important question:
 #
-#   HTTP-01 exige que Let's Encrypt alcance el puerto 80 desde Internet para
-#   validar. Eso obligaría a abrir el puerto ANTES de tener certificado, que
-#   es exactamente el círculo que ADR-0042 prohíbe: «sin TLS no se expone
-#   nada, ni de prueba». DNS-01 valida poniendo un registro TXT, así que el
-#   certificado se emite con el nodo todavía cerrado.
+#   HTTP-01 requires Let's Encrypt to reach port 80 from the internet in order
+#   to validate. That would force opening the port BEFORE having a certificate,
+#   which is exactly the circle ADR-0042 forbids: "nothing is exposed without
+#   TLS, not even for a test". DNS-01 validates by placing a TXT record, so the
+#   certificate is issued with the node still closed.
 #
-#   Esa es la razón real por la que la v1.25.0 eligió DuckDNS: admite TXT.
-#   No fue por el precio.
+#   That is the real reason v1.25.0 chose DuckDNS: it supports TXT. It was not
+#   the price.
 #
-# Y por qué el nodo está detrás de CGNAT (ADR-0044) esto es todavía más
-# necesario: HTTP-01 no funcionaría aunque quisiéramos.
+# And because the node sits behind CGNAT (ADR-0044) this is even more necessary:
+# HTTP-01 would not work even if we wanted it.
 #
-# Uso: sudo ./15_tls.sh
+# Usage: sudo ./15_tls.sh
 
 set -euo pipefail
 

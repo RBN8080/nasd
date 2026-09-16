@@ -1,29 +1,29 @@
 #!/bin/bash
-# Respaldo de la identidad del nodo — ADR-0050.
+# Backup of the node's identity - ADR-0050.
 #
-#   D-04     el sistema y los datos van en medios distintos, a propósito
-#   P9       el charter asume que el medio FALLARÁ, no que puede fallar
-#   P8       sin demonio: temporizador de systemd, como el DDNS de ADR-0043
+#   D-04   system and data live on different media, on purpose
+#   P9     the charter assumes the medium WILL fail, not that it may
+#   P8     no daemon: a systemd timer, like the DDNS one of ADR-0043
 #
-# QUÉ PROBLEMA RESUELVE, y no es el que parece:
+# WHAT PROBLEM IT SOLVES, and it is not the obvious one:
 #
-#   Si muere la placa, las FOTOS sobreviven — están en el disco USB, separado
-#   por D-04. Lo que NO sobrevive es la identidad: la clave privada del
-#   servidor WireGuard vive solo en el medio de arranque, y perderla obliga a
-#   dar de alta OTRA VEZ los tres dispositivos, escaneando un QR nuevo en
-#   cada uno. Los scripts de 20_APROVISIONAMIENTO/ reconstruyen la
-#   configuración; NO reconstruyen la identidad.
+#   If the board dies, the PHOTOS survive - they are on the USB disk, separated
+#   by D-04. What does NOT survive is the identity: the WireGuard server private
+#   key lives only on the boot medium, and losing it forces enrolling all three
+#   devices AGAIN, scanning a new QR on each. The scripts in
+#   20_APROVISIONAMIENTO/ rebuild the configuration; they do NOT rebuild the
+#   identity.
 #
-# LA CLAVE PRIVADA DE TLS NO SE RESPALDA, Y ES DELIBERADO: se reemite con
-# 15_tls.sh por DNS-01 en minutos, y es el ÚNICO elemento cuyo robo permite
-# suplantar el sitio. Excluirla no cuesta nada en la recuperación y reduce
-# el daño si la copia se pierde.
+# THE TLS PRIVATE KEY IS NOT BACKED UP, AND THAT IS DELIBERATE: it is reissued
+# with 15_tls.sh over DNS-01 in minutes, and it is the ONLY element whose theft
+# allows impersonating the site. Excluding it costs nothing in recovery and
+# reduces the damage if the copy is lost.
 #
-# El destino es el DISCO DE DATOS porque es justo lo que sobrevive a la
-# placa, y FUERA de datos/ porque eso es lo que Samba publica.
+# The destination is the DATA DISK because that is exactly what survives the
+# board, and OUTSIDE datos/ because that is what Samba publishes.
 #
-# Idempotente. Uso:  sudo ./17_respaldar_identidad.sh
-#                    sudo ./17_respaldar_identidad.sh --solo-copia   (temporizador)
+# Idempotent. Usage:  sudo ./17_respaldar_identidad.sh
+#                     sudo ./17_respaldar_identidad.sh --solo-copia   (timer)
 
 set -euo pipefail
 

@@ -1,36 +1,36 @@
-// Package aviso decide QUÉ merece salir del nodo, con qué urgencia y con qué
-// palabras. Es la capa que va DETRÁS del enforcement, nunca delante.
+// Package aviso decides WHAT deserves to leave the node, with what urgency and
+// in what words. It is the layer BEHIND enforcement, never in front of it.
 //
-// # LA REGLA QUE GOBIERNA ESTE PAQUETE
+// # THE RULE THAT GOVERNS THIS PACKAGE
 //
-// El proyecto entero se ordena así (ADR-0071):
+// The whole project is ordered like this (ADR-0071):
 //
-//	HECHO -> INFERENCIA -> DECISIÓN -> ENFORCEMENT
+//	FACT -> INFERENCE -> DECISION -> ENFORCEMENT
 //
-// Esto se añade al final de esa cadena y no la toca:
+// This is appended at the end of that chain and does not touch it:
 //
-//	... -> ENFORCEMENT -> NOTIFICACIÓN
+//	... -> ENFORCEMENT -> NOTIFICATION
 //
-// Nunca al revés. Ninguna decisión de seguridad puede depender de que un aviso
-// se haya entregado, y ninguna función de este paquete se llama desde el
-// camino de una petición. Si el proveedor externo está caído, el nodo detecta,
-// aparta, bloquea y registra exactamente igual: lo único que se pierde es que
-// alguien se entere hoy en vez de mañana.
+// Never the other way round. No security decision may depend on an alert having
+// been delivered, and no function in this package is called from a request
+// path. If the external provider is down, the node still detects, quarantines,
+// blocks and records exactly the same: all that is lost is someone finding out
+// today instead of tomorrow.
 //
-// # TELEMETRÍA COMPLETA NO ES NOTIFICACIÓN COMPLETA
+// # COMPLETE TELEMETRY IS NOT COMPLETE NOTIFICATION
 //
-// El panel conserva TODO —los cuatro historiales de internal/seguridad siguen
-// siendo la fuente de la verdad— y este paquete es deliberadamente selectivo.
-// Puede haber 500 hechos guardados y UN aviso agrupado. Confundir las dos
-// cosas es lo que produce un canal que nadie lee, y entonces el aviso que sí
-// importaba llega al mismo sitio que los otros 499.
+// The panel keeps EVERYTHING - the four histories in internal/seguridad remain
+// the source of truth - and this package is deliberately selective. There can
+// be 500 recorded facts and ONE grouped alert. Confusing the two is what
+// produces a channel nobody reads, and then the alert that did matter arrives
+// in the same place as the other 499.
 //
-// # ESTE PAQUETE NO SABE DE RED NI DE DISCO (salvo su propia marca)
+// # THIS PACKAGE KNOWS NOTHING OF NETWORK OR DISK (beyond its own marker)
 //
-// No importa net/http ni internal/geoip, por el mismo motivo por el que
-// internal/seguridad tampoco lo hace: modela decisiones sobre hechos, no
-// protocolo. Quien habla con un proveedor es internal/adaptadores/aviso; quien
-// resuelve el país es el adaptador web. Aquí solo entran valores ya resueltos.
+// It imports neither net/http nor internal/geoip, for the same reason
+// internal/seguridad does not: it models decisions over facts, not protocol.
+// Talking to a provider is internal/adaptadores/aviso; resolving the country is
+// the web adapter. Only already-resolved values come in here.
 package aviso
 
 import (

@@ -1,39 +1,39 @@
 #!/bin/bash
-# Fase 4, paso 3 — resiliencia del disco de datos frente a caídas del bus USB.
+# Phase 4, step 3 - resilience of the data disk against USB bus drops.
 #
-#   ADR-0040     las decisiones de este script
-#   Charter §3.6 el bus USB 2.0 y la alimentación compartida del 3B+
-#   Charter P9   el medio FALLARÁ, no «puede fallar»
-#   RNF-10       montaje por UUID — lo que permitió recuperar el incidente
-#   D-12         copia única: no hay de dónde recuperar lo que se pierda aquí
+#   ADR-0040      the decisions in this script
+#   Charter §3.6  the USB 2.0 bus and the shared power rail of the 3B+
+#   Charter P9    the medium WILL fail, not "may fail"
+#   RNF-10        mount by UUID - what made recovering the incident possible
+#   D-12          single copy: there is nowhere to recover what is lost here
 #
-# EL INCIDENTE QUE LO ORIGINA — 2026-07-31 17:12:31, medido, no supuesto:
+# THE INCIDENT THAT CAUSED IT - 2026-07-31 17:12:31, measured, not assumed:
 #
-#   17:12:31  el puente USB-SATA deja de responder
+#   17:12:31  the USB-SATA bridge stops responding
 #             (Synchronize Cache failed, hostbyte=0x01 = DID_NO_CONNECT)
-#   17:12:31  JBD2: I/O error -> diario abortado -> EXT4 remonta solo-lectura
-#             -> «shut down requested (2)»: toda E/S devuelve EIO
-#   17:12:34  el disco REAPARECE, pero como /dev/sdc (era /dev/sdb)
+#   17:12:31  JBD2: I/O error -> journal aborted -> EXT4 remounts read-only
+#             -> "shut down requested (2)": every I/O returns EIO
+#   17:12:34  the disk REAPPEARS, but as /dev/sdc (it was /dev/sdb)
 #
-# El montaje seguía apuntando a sdb1, que ya no existía. Windows devolvía
-# 0x8007045D (ERROR_IO_DEVICE), nasd moría y la web no respondía: UN SOLO
-# fallo explicaba los tres síntomas.
+# The mount still pointed at sdb1, which no longer existed. Windows returned
+# 0x8007045D (ERROR_IO_DEVICE), nasd died and the web stopped answering: ONE
+# single fault explained all three symptoms.
 #
-# LO QUE SE DESCARTÓ MIDIENDO, para que nadie lo vuelva a proponer:
-#   - subtensión del SoC:  throttled=0x80000, bits 0 y 16 LIMPIOS
-#   - autosuspend de USB:  el dispositivo tenía power/control = on
-#   - cable interno SATA:  UDMA_CRC_Error_Count = 0
-#   - disco muriéndose:    0 sectores reasignados, 0 pendientes, SMART PASSED
-#   - UAS:                 el kernel YA usaba usb-storage, no UAS
+# WHAT WAS RULED OUT BY MEASURING, so nobody proposes it again:
+#   - SoC undervoltage:   throttled=0x80000, bits 0 and 16 CLEAN
+#   - USB autosuspend:    the device had power/control = on
+#   - internal SATA cable: UDMA_CRC_Error_Count = 0
+#   - dying disk:         0 reallocated sectors, 0 pending, SMART PASSED
+#   - UAS:                the kernel was ALREADY using usb-storage, not UAS
 #
-# LO QUE NO SE PUEDE DESCARTAR y este script NO arregla: la alimentación del
-# raíl USB de 5 V. get_throttled mide el SoC, NO lo que llega al disco. El
-# charter §3.6 ya recomendaba hub o carcasa alimentada. Esto es hardware y el
-# responsable decide; aquí solo se reduce la probabilidad y se acota el daño.
+# WHAT CANNOT BE RULED OUT and this script does NOT fix: the 5 V USB power
+# rail. get_throttled measures the SoC, NOT what reaches the disk. Charter §3.6
+# already recommended a powered hub or enclosure. That is hardware and the owner
+# decides; here the probability is reduced and the damage bounded.
 #
-# Idempotente. P1: si un cambio no está en un script, no existe.
+# Idempotent. P1: if a change is not in a script, it does not exist.
 #
-# Uso: sudo ./10_resiliencia_disco.sh
+# Usage: sudo ./10_resiliencia_disco.sh
 
 set -euo pipefail
 

@@ -1,8 +1,8 @@
-// Package web es el adaptador primario HTTP.
+// Package web is the primary HTTP adapter.
 //
-// No toca el disco directamente: todo pasa por el puerto almacen.Almacen.
-// Jamás construye una ruta concatenando cadenas: la única puerta es
-// almacen.NuevaRuta (ADR-0014, 04_SEGURIDAD.md §2).
+// It never touches the disk directly: everything goes through the
+// almacen.Almacen port. It never builds a path by concatenating strings: the
+// only door is almacen.NuevaRuta (ADR-0014, 04_SEGURIDAD.md §2).
 package web
 
 import (

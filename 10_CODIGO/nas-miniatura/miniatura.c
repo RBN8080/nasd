@@ -1,71 +1,70 @@
-// nas-miniatura -- extrae la miniatura EXIF incrustada de un JPEG y sus
-// metadatos basicos, sin decodificar la imagen.
+// nas-miniatura -- extracts the embedded EXIF thumbnail of a JPEG and its
+// basic metadata, without decoding the image.
 //
-// POR QUE EXISTE: 10_CODIGO/cmd/nasd es Go sin dependencias (ADR-0013,
-// ADR-0017) y el servicio corre con MemoryMax=192M
-// (20_APROVISIONAMIENTO/05_instalar_servicio.sh) -- ese techo es del cgroup
-// ENTERO, hijos incluidos, con GOMEMLIMIT=160MiB para el propio nasd. Quedan
-// ~32 MB para un subproceso. Decodificar una foto de iPhone de 12 MP entera
-// para fabricar una miniatura ocupa ~36 MB de memoria de trabajo: no cabe.
+// WHY IT EXISTS: 10_CODIGO/cmd/nasd is Go with no dependencies (ADR-0013,
+// ADR-0017) and the service runs with MemoryMax=192M
+// (20_APROVISIONAMIENTO/05_instalar_servicio.sh) -- that ceiling belongs to the
+// WHOLE cgroup, children included, with GOMEMLIMIT=160MiB for nasd itself. That
+// leaves ~32 MB for a subprocess. Decoding a 12 MP iPhone photo whole to build
+// a thumbnail takes ~36 MB of working memory: it does not fit.
 //
-// Las fotos de iPhone YA TRAEN una miniatura de 160x120 dentro del bloque
-// EXIF -- medido en el nodo el 2026-08-15 sobre una foto real: bytes
-// 3160-12862 del archivo. Extraerla es leer y copiar unos pocos miles de
-// bytes; no decodifica nada. Es lo unico que hace este programa.
+// iPhone photos ALREADY CARRY a 160x120 thumbnail inside the EXIF block --
+// measured on the node on 2026-08-15 over a real photo: bytes 3160-12862 of the
+// file. Extracting it is reading and copying a few thousand bytes; it decodes
+// nothing. That is all this program does.
 //
-// INTERFAZ
+// INTERFACE
 //
-//   nas-miniatura <archivo-entrada> <archivo-salida>
+//   nas-miniatura <input-file> <output-file>
 //
-//   Salida estandar: los metadatos EXIF que se encontraron, uno por linea,
-//   "clave=valor". Ningun campo es obligatorio; solo se imprime lo que
-//   realmente estaba en el archivo:
+//   Standard output: the EXIF metadata that was found, one per line,
+//   "key=value". No field is mandatory; only what was really in the file is
+//   printed:
 //
-//     fecha=2025-04-02T14:33:07   (DateTimeOriginal, 0x9003, a ISO 8601)
-//     orientacion=1                (0x0112, valor crudo 1-8)
+//     fecha=2025-04-02T14:33:07   (DateTimeOriginal, 0x9003, as ISO 8601)
+//     orientacion=1                (0x0112, raw value 1-8)
 //     marca=Apple                  (0x010F, Make)
 //     modelo=Modelo X1             (0x0110, Model)
 //
-//   Codigo de salida:
-//     0  la miniatura se escribio en <archivo-salida>
-//     1  no hay miniatura EXIF aprovechable -- JPEG valido, caso LEGITIMO,
-//        no es un error. El llamador cae a su propio icono generico
-//     2  no se pudo completar el trabajo: argumentos invalidos, el archivo
-//        de entrada no abre, no es un JPEG (no empieza por FFD8), o fallo
-//        al escribir la salida
+//   Exit code:
+//     0  the thumbnail was written to <output-file>
+//     1  no usable EXIF thumbnail -- valid JPEG, LEGITIMATE case, not an
+//        error. The caller falls back to its own generic icon
+//     2  the work could not be completed: invalid arguments, the input file
+//        does not open, it is not a JPEG (does not start with FFD8), or
+//        writing the output failed
 //
-// SEGURIDAD -- LEASE ANTES DE TOCAR ESTE ARCHIVO
+// SECURITY -- READ BEFORE TOUCHING THIS FILE
 //
-// Este programa procesa archivos que llegan de torrents y de telefonos, en
-// un nodo con superficie expuesta a Internet (06_ACCESO_REMOTO.md). Todo
-// desplazamiento dentro del archivo es un numero que escribio quien genero
-// ESE archivo, nunca un dato de confianza. Reglas, sin excepcion:
+// This program processes files that arrive from torrents and phones, on a node
+// with surface exposed to the internet (06_ACCESO_REMOTO.md). Every offset
+// inside the file is a number written by whoever produced THAT file, never
+// trusted data. Rules, without exception:
 //
-//   1. Un UNICO PUNTO lee bytes crudos del buffer: u8_en(). Toda lectura
-//      multi-byte (u16_en/u32_en) esta construida ENCIMA de u8_en; ningun
-//      otro sitio del archivo hace buf[i] directamente. Un campo nuevo se
-//      compone con estas tres funciones, no se anade un cuarto acceso.
-//   2. Los bucles sobre entradas de un IFD estan acotados a
-//      MAX_ENTRADAS_IFD, un tope FIJO en tiempo de compilacion, sin
-//      importar lo que diga el propio archivo.
-//   3. La cadena de IFDs NO se sigue de forma dinamica. Se llama a
-//      analizar_ifd() EXACTAMENTE TRES VECES, escritas a mano en main():
-//      IFD0, el sub-IFD de Exif si IFD0 dice que existe, e IFD1 si IFD0
-//      señala uno. Un archivo cuyo "siguiente IFD" apunte a si mismo no
-//      puede producir un bucle, porque no hay bucle que seguir esa cadena.
-//   4. Cero recursion en todo el archivo.
-//   5. Toda suma de desplazamientos de 32 bits del archivo se hace en
-//      uint64_t antes de compararla con el tamaño disponible, para que
-//      ningun offset mas una base pueda desbordar un tipo mas estrecho.
-//   6. La miniatura tiene un tope de MINIATURA_MAX (256 KiB); si el
-//      archivo declara mas, se rechaza sin leerla.
-//   7. Antes de escribirla se comprueba que empieza en FFD8 y termina en
-//      FFD9 -- lo que sale de aqui debe tener, como minimo, forma de JPEG.
+//   1. A SINGLE POINT reads raw bytes from the buffer: u8_en(). Every
+//      multi-byte read (u16_en/u32_en) is built ON TOP of u8_en; nowhere else
+//      in the file indexes buf[i] directly. A new field is composed from these
+//      three functions, not by adding a fourth accessor.
+//   2. Loops over the entries of an IFD are bounded by MAX_ENTRADAS_IFD, a
+//      FIXED compile-time cap, regardless of what the file itself says.
+//   3. The IFD chain is NOT followed dynamically. analizar_ifd() is called
+//      EXACTLY THREE TIMES, written out by hand in main(): IFD0, the Exif
+//      sub-IFD if IFD0 says it exists, and IFD1 if IFD0 points at one. A file
+//      whose "next IFD" points at itself cannot produce a loop, because there
+//      is no loop following that chain.
+//   4. Zero recursion in the whole file.
+//   5. Every sum of 32-bit file offsets is done in uint64_t before comparing it
+//      with the available size, so that no offset plus a base can overflow a
+//      narrower type.
+//   6. The thumbnail is capped at MINIATURA_MAX (256 KiB); if the file declares
+//      more, it is rejected without reading it.
+//   7. Before writing it, it is checked to start with FFD8 and end with FFD9 --
+//      what comes out of here must at least have the shape of a JPEG.
 //
-// Lo que este programa NO hace, a proposito: no decodifica un solo pixel,
-// no reserva memoria proporcional a lo que diga el archivo (todos los
-// buferes son de tamaño FIJO, conocidos en tiempo de compilacion), y no
-// enlaza ninguna libreria mas alla de la biblioteca estandar de C.
+// What this program does NOT do, on purpose: it decodes not one pixel, it
+// allocates no memory proportional to what the file says (every buffer is of
+// FIXED size, known at compile time), and it links no library beyond the C
+// standard library.
 
 #include <stdint.h>
 #include <stdio.h>

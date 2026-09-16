@@ -1,34 +1,35 @@
 #!/bin/bash
-# Asistente para escribir /etc/nasd/avisos — ADR-0073 y ADR-0074.
+# Assistant for writing /etc/nasd/avisos - ADR-0073 and ADR-0074.
 #
-#   20_avisos.sh    instala la credencial y verifica; ESTE script solo la ESCRIBE
-#   04_SEGURIDAD.md §6.septies   qué sale del nodo y qué no
-#   P4              los secretos NUNCA entran en el repositorio
+#   20_avisos.sh                 installs the credential and verifies; THIS
+#                                script only WRITES it
+#   04_SEGURIDAD.md §6.septies   what leaves the node and what does not
+#   P4                           secrets NEVER enter the repository
 #
-# POR QUÉ EXISTE ESTE SCRIPT, Y NO ES COMODIDAD:
+# WHY THIS SCRIPT EXISTS, AND IT IS NOT CONVENIENCE:
 #
-# 20_avisos.sh da por hecho que /etc/nasd/avisos ya existe, y para escribirlo a
-# mano hay que saber sacar el chat_id de un JSON. Eso convertía el último paso
-# de la capa en el único que no estaba automatizado, y encima en el que se
-# maneja el secreto — justo al revés de como debe repartirse la dificultad.
+# 20_avisos.sh assumes /etc/nasd/avisos already exists, and writing it by hand
+# means knowing how to pull the chat_id out of a JSON. That made the last step
+# of the layer the only one not automated, and on top of that the one handling
+# the secret - exactly the wrong way round to distribute the difficulty.
 #
-# EL SECRETO SE TECLEA AQUÍ Y NO SALE DE AQUÍ. Las cuatro vías por las que un
-# token se escapa quedan cerradas a propósito:
+# THE SECRET IS TYPED HERE AND DOES NOT LEAVE HERE. The four ways a token
+# escapes are closed on purpose:
 #
-#   1. La PANTALLA        «read -rs»: no se muestra al teclearlo.
-#   2. El HISTORIAL       no es un argumento de una orden, así que .bash_history
-#                         no lo ve. Escribirlo con «sudo tee» sí lo dejaría.
-#   3. La LISTA DE PROCESOS  «curl -K -» lee la URL de la entrada estándar. La
-#                         Bot API obliga a llevar el token en la RUTA de la URL,
-#                         así que un curl normal lo dejaría a la vista de
-#                         cualquier usuario del nodo con «ps». Es el defecto que
-#                         11_ddns.sh tiene hoy con el testigo de DuckDNS.
-#   4. El DIARIO          nada de lo que este script imprime lleva el token,
-#                         tampoco en los mensajes de error.
+#   1. The SCREEN         "read -rs": it is not shown while being typed.
+#   2. The HISTORY        it is not an argument to a command, so .bash_history
+#                         never sees it. Writing it with "sudo tee" would.
+#   3. The PROCESS LIST   "curl -K -" reads the URL from standard input. The Bot
+#                         API requires the token in the URL PATH, so a plain
+#                         curl would leave it visible to any user on the node
+#                         with "ps". It is the defect 11_ddns.sh still has with
+#                         the DuckDNS token.
+#   4. The JOURNAL        nothing this script prints carries the token, not even
+#                         in error messages.
 #
-# Idempotente: si el archivo ya existe, pregunta antes de sobrescribirlo.
+# Idempotent: if the file already exists, it asks before overwriting.
 #
-# Uso: sudo ./21_avisos_asistido.sh
+# Usage: sudo ./21_avisos_asistido.sh
 
 set -euo pipefail
 

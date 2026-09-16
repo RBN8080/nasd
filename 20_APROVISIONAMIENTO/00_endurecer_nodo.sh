@@ -1,14 +1,14 @@
 #!/bin/bash
-# Paso 0 — endurecimiento del nodo exigido por el charter §7.1.
+# Step 0 - node hardening required by charter §7.1.
 #
-# «Obligatorio antes de exponer el nodo». Los seis puntos se auditaron contra
-# el nodo el 2026-07-31 y cinco ya se cumplían; este script cierra el que
-# faltaba y comprueba los demás en vez de suponerlos.
+# "Mandatory before exposing the node". The six points were audited against the
+# node on 2026-07-31 and five already held; this script closes the one that did
+# not and checks the rest instead of assuming them.
 #
-# Existe porque P1 lo exige: retirar el escritorio se hizo con un comando
-# suelto, y lo que no está en un script no existe.
+# It exists because P1 demands it: removing the desktop was done with a loose
+# command, and what is not in a script does not exist.
 #
-# Uso: sudo ./00_endurecer_nodo.sh
+# Usage: sudo ./00_endurecer_nodo.sh
 
 set -euo pipefail
 

@@ -1,21 +1,21 @@
 #!/bin/bash
-# Fase 1, paso 1 — formatear el disco en ext4 y montarlo por UUID.
+# Phase 1, step 1 - format the disk as ext4 and mount it by UUID.
 #
-#   D-07  / ADR-0007  el volumen de datos va en ext4
-#   ADR-0019          disposición datos/ + estado/
-#   ADR-0020          un único UID escribe en el almacén
-#   RNF-10            montaje por UUID, jamás por /dev/sdX
+#   D-07 / ADR-0007   the data volume is ext4
+#   ADR-0019          layout: datos/ + estado/
+#   ADR-0020          a single UID writes to the store
+#   RNF-10            mount by UUID, never by /dev/sdX
 #
 # ############################################################################
-# #  ESTE SCRIPT DESTRUYE TODO EL CONTENIDO DEL DISCO QUE SE LE INDIQUE.     #
-# #  Léalo entero antes de ejecutarlo. Exige confirmación escrita.           #
+# #  THIS SCRIPT DESTROYS EVERYTHING ON THE DISK IT IS GIVEN.                #
+# #  Read it in full before running it. It requires written confirmation.    #
 # ############################################################################
 #
-# Uso:   sudo ./01_preparar_disco.sh            (toma DISCO de /etc/nas/ajustes.conf)
-#        sudo ./01_preparar_disco.sh /dev/sdb   (el argumento gana al archivo)
+# Usage: sudo ./01_preparar_disco.sh            (takes DISCO from /etc/nas/ajustes.conf)
+#        sudo ./01_preparar_disco.sh /dev/sdb   (the argument wins over the file)
 #
-# P1 del charter: este script ES la configuración. Si un cambio no está aquí,
-# no existe y el nodo no es reconstruible.
+# Charter P1: this script IS the configuration. If a change is not here, it does
+# not exist and the node is not reconstructible.
 
 set -euo pipefail
 

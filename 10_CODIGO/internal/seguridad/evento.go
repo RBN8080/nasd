@@ -1,47 +1,46 @@
-// Package seguridad registra los rechazos del servidor web con el detalle
-// suficiente para distinguir la actividad normal de un intento externo.
+// Package seguridad records the web server's rejections with enough detail to
+// tell normal activity apart from an external attempt.
 //
-// # QUÉ PROBLEMA RESUELVE, MEDIDO Y NO SUPUESTO
+// # WHAT PROBLEM IT SOLVES, MEASURED AND NOT ASSUMED
 //
-// Antes de esto, /estado publicaba una sola cifra —«N rechazadas»— que era
-// literalmente «toda respuesta 4xx» (web/contadores.go, campo cliente). En
-// ese único número caían, sin distinguirse:
+// Before this, /estado published a single figure - "N rejected" - that was
+// literally "every 4xx response" (web/contadores.go, cliente field). Into that
+// single number fell, indistinguishable:
 //
-//   - el 401 de la PRIMERA visita del día del propio responsable, que aún no
-//     tiene cookie de sesión;
-//   - el 403 de un usuario normal pulsando algo que es del superusuario;
-//   - el 403 de la raíz reservada de una cuenta (ADR-0058);
-//   - y cualquier sondeo de Internet.
+//   - the 401 of the owner's FIRST visit of the day, with no session cookie yet;
+//   - the 403 of a normal user pressing something that belongs to the superuser;
+//   - the 403 of an account's reserved root (ADR-0058);
+//   - and any probe from the internet.
 //
-// Peor: la ruta comodín «/» iba envuelta en la guarda de sesión, así que una
-// petición a /wp-login.php SIN sesión nunca llegaba al mux interno y NO
-// producía 404 sino el MISMO 401 que la visita legítima. «Ruta inexistente» y
-// «sin sesión» eran el mismo suceso indistinguible, y son la mayoría del
-// contador.
+// Worse: the wildcard route "/" was wrapped in the session guard, so a request
+// to /wp-login.php WITHOUT a session never reached the internal mux and produced
+// NOT a 404 but the SAME 401 as the legitimate visit. "Route does not exist" and
+// "no session" were one indistinguishable event, and they are most of the count.
 //
-// (Desde ADR-0072 el comodín ya no existe y la respuesta exterior es un 404
-// opaco para las dos, pero el motivo interior las sigue separando: es
-// justamente lo que aquel ADR conserva de este.)
+// (Since ADR-0072 the wildcard no longer exists and the outward response is an
+// opaque 404 for both, but the internal reason still separates them: that is
+// precisely what that ADR keeps of this one.)
 //
-// Y el contador se pone a cero en cada reinicio del servicio, que con P-11
-// vivo ocurre solo por las tardes: no cubría ni un día.
+// And the counter reset on every service restart, which with P-11 alive happens
+// only in the afternoons: it did not cover a single day.
 //
-// # QUÉ SE GUARDA Y QUÉ NO
+// # WHAT IS RECORDED AND WHAT IS NOT
 //
-// Se guarda el HECHO —qué pasó, quién lo pidió, qué se respondió y qué regla
-// lo decidió—, nunca una interpretación. «Fuerza bruta» o «escaneo» son
-// INFERENCIAS sobre un conjunto de hechos, no propiedades de un suceso
-// suelto, y por eso no existen como Motivo: se derivan al mirar y se
-// presentan como lo que son. Fue una condición explícita del responsable —
-// «no clasifiques automáticamente todo rechazo como ataque»— y el modelo la
-// hace cumplible en lugar de confiarla a la disciplina de quien lea.
+// The FACT is recorded - what happened, who asked, what was answered and which
+// rule decided it - never an interpretation. "Brute force" or "scanning" are
+// INFERENCES over a set of facts, not properties of a single event, and that is
+// why they do not exist as a Motivo: they are derived when looking and
+// presented as what they are. It was an explicit condition from the owner - "do
+// not automatically classify every rejection as an attack" - and the model
+// makes it enforceable instead of entrusting it to the discipline of whoever
+// reads.
 //
-// 04_SEGURIDAD.md §6 gobierna lo que NUNCA entra aquí: contraseñas, cookies,
-// cabeceras Authorization, cuerpos de petición. La regla de sesion.go sobre
-// el nombre tecleado se hereda tal cual y por el mismo motivo: se anota SOLO
-// si la cuenta existe, porque con dos casillas alguien acaba tecleando su
-// contraseña en la del nombre y anotar lo que llegue metería ese secreto
-// aquí.
+// 04_SEGURIDAD.md §6 governs what NEVER comes in here: passwords, cookies,
+// Authorization headers, request bodies. The sesion.go rule about the typed
+// name is inherited as is and for the same reason: it is recorded ONLY if the
+// account exists, because with two fields someone eventually types their
+// password into the name one, and recording whatever arrives would put that
+// secret here.
 package seguridad
 
 import (

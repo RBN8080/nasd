@@ -1,8 +1,8 @@
-// Package operacion habla con systemd: notificación de arranque y watchdog.
+// Package operacion talks to systemd: startup notification and watchdog.
 //
-// Charter §6.2 exige WatchdogSec en las unidades, y WatchdogSec sin latido
-// desde el código reinicia el servicio cada intervalo. Se implementa con
-// net.Dial sobre el socket de NOTIFY_SOCKET: sin dependencias (P8).
+// Charter §6.2 requires WatchdogSec in the units, and WatchdogSec without a
+// heartbeat from the code restarts the service every interval. It is
+// implemented with net.Dial over the NOTIFY_SOCKET socket: no dependencies (P8).
 package operacion
 
 import (

@@ -1,14 +1,14 @@
 #!/bin/bash
-# Fase 1, paso 4 — verificar lo hecho y MEDIR los supuestos abiertos.
+# Phase 1, step 4 - verify what was done and MEASURE the open assumptions.
 #
-# P2 del charter: la evidencia precede a la conclusión. Este script no
-# "comprueba que todo está bien": recoge datos, incluidos los de los supuestos
-# S-01 a S-04 de 03_ESTUDIO_TECNICO.md §10, que están sin verificar.
+# Charter P2: evidence precedes conclusion. This script does not "check that
+# everything is fine": it gathers data, including that of assumptions S-01 to
+# S-04 of 03_ESTUDIO_TECNICO.md §10, which are unverified.
 #
-# RES-09: NO ejecute esto con VSCode Remote-SSH conectado. Consume 200–400 MB
-# de los 592 disponibles e invalida cualquier medición.
+# RES-09: do NOT run this with VSCode Remote-SSH connected. It consumes
+# 200-400 MB of the 592 available and invalidates any measurement.
 #
-# Uso: ./04_verificar.sh   (algunas comprobaciones piden sudo)
+# Usage: ./04_verificar.sh   (some checks ask for sudo)
 
 PUNTO=/srv/nas
 USUARIO=nas

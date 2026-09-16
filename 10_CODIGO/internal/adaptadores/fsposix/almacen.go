@@ -1,7 +1,7 @@
-// Package fsposix es el adaptador secundario: traduce el puerto almacen.Almacen
-// a llamadas al sistema sobre ext4 (ADR-0007, ADR-0014).
+// Package fsposix is the secondary adapter: it translates the almacen.Almacen
+// port into system calls over ext4 (ADR-0007, ADR-0014).
 //
-// No interpreta reglas de producto. Solo semántica de sistema de archivos.
+// It interprets no product rules. Filesystem semantics only.
 package fsposix
 
 import (

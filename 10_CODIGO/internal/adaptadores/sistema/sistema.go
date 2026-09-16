@@ -1,55 +1,55 @@
-// Package sistema lee la salud del NODO: CPU, temperatura, RAM, E/S,
-// limitación térmica y desgaste del medio de arranque.
+// Package sistema reads the health of the NODE: CPU, temperature, RAM, I/O,
+// thermal throttling and wear of the boot medium.
 //
-// Es la mitad de hardware de lo que exige el charter §8. La otra mitad —los
-// indicadores del propio servicio— vive en el adaptador web, porque son cosas
-// distintas: aquí se mide la máquina, allí se mide el producto.
+// It is the hardware half of what charter §8 requires. The other half - the
+// service's own indicators - lives in the web adapter, because they are
+// different things: here the machine is measured, there the product is.
 //
-// # CÓMO SE LEE LA LIMITACIÓN DEL SoC — corregido contra el nodo real
+// # HOW SoC THROTTLING IS READ - corrected against the real node
 //
-// ADR-0034 apostó por sysfs y se equivocó. MEDIDO en el nodo el 2026-07-31:
-// ninguna de las tres rutas candidatas existe, y «find /sys -name '*throttled*'»
-// no devuelve nada. Este kernel simplemente no lo publica.
+// ADR-0034 bet on sysfs and got it wrong. MEASURED on the node on 2026-07-31:
+// none of the three candidate paths exists, and "find /sys -name '*throttled*'"
+// returns nothing. This kernel simply does not publish it.
 //
-// ADR-0036 rehace la decisión y permite «vcgencmd», con el coste medido y no
-// supuesto. También corrige de qué dispositivo se trata: strace sobre el
-// binario real muestra que abre
+// ADR-0036 remakes the decision and allows "vcgencmd", with the cost measured
+// rather than assumed. It also corrects which device is involved: strace on the
+// real binary shows it opens
 //
 //	/dev/vcio_gencmd   0660 root:video
 //
-// y NO /dev/vcio (0600 root:root, inalcanzable), que es lo que suponía
-// ADR-0034. La distribución ya abre ese nodo al grupo «video» con su propia
-// regla de udev, así que no hace falta ninguna nueva.
+// and NOT /dev/vcio (0600 root:root, unreachable), which is what ADR-0034
+// assumed. The distribution already opens that node to the "video" group with
+// its own udev rule, so no new rule is needed.
 //
-// En la unidad hacen falta TRES líneas, y cada una hace algo distinto —se
-// probó quitando cada una y falla—: SupplementaryGroups=video da el permiso
-// de grupo, DeviceAllow abre la política de cgroup que PrivateDevices cierra,
-// y BindPaths HACE APARECER el nodo dentro del /dev privado. DeviceAllow por
-// sí solo NO lo crea.
+// The unit needs THREE lines, and each one does something different - it was
+// tested by removing each in turn and it fails: SupplementaryGroups=video grants
+// the group permission, DeviceAllow opens the cgroup policy that PrivateDevices
+// closes, and BindPaths MAKES THE NODE APPEAR inside the private /dev.
+// DeviceAllow on its own does NOT create it.
 //
-// PrivateDevices=yes SE MANTIENE: verificado que el /dev del servicio queda
-// con los nodos mínimos más vcio_gencmd, y nada más.
+// PrivateDevices=yes IS KEPT: verified that the service's /dev ends up with the
+// minimal nodes plus vcio_gencmd, and nothing else.
 //
-// Orden de intentos, de mejor a peor:
+// Order of attempts, best to worst:
 //
-//  1. sysfs — se conserva aunque hoy no exista: no cuesta nada y un kernel
-//     futuro podría traerlo. Es la única fuente que no lanza procesos.
-//  2. vcgencmd — completo, y lo que ADR-0036 autoriza.
-//  3. hwmon «in0_lcrit_alarm» del driver rpi_volt — PARCIAL: solo dice si hay
-//     subtensión, que es el único bit de nivel «fallo». Existe como red de
-//     seguridad para que, si alguien vuelve a endurecer la unidad y quita el
-//     grupo video, el servicio NO se quede ciego ante lo más grave.
+//  1. sysfs - kept even though it does not exist today: it costs nothing and a
+//     future kernel could bring it. It is the only source that spawns no process.
+//  2. vcgencmd - complete, and what ADR-0036 authorises.
+//  3. hwmon "in0_lcrit_alarm" from the rpi_volt driver - PARTIAL: it only says
+//     whether there is undervoltage, which is the one bit at failure level. It
+//     exists as a safety net so that, if someone hardens the unit again and
+//     removes the video group, the service is NOT left blind to the worst case.
 //
-// Si no hay ninguna, SE DICE. Ver Throttled.Disponible y Throttled.Parcial:
-// este paquete nunca inventa un cero. Un indicador que miente es peor que no
-// tenerlo (00_RECTOR.md §12.5).
+// If there is none, IT SAYS SO. See Throttled.Disponible and Throttled.Parcial:
+// this package never invents a zero. An indicator that lies is worse than not
+// having one (00_RECTOR.md §12.5).
 //
-// # QUÉ ES PORTABLE Y QUÉ NO
+// # WHAT IS PORTABLE AND WHAT IS NOT
 //
-// Este archivo contiene los TIPOS y los ANALIZADORES, que son funciones puras
-// de cadena a valor y compilan en cualquier sistema. La lectura real de
-// archivos vive en lector_linux.go. Esa separación no es estética: permite
-// probar el análisis en el host (D-06) sin un /proc de Raspberry delante.
+// This file holds the TYPES and the PARSERS, which are pure string-to-value
+// functions and compile anywhere. The actual file reading lives in
+// lector_linux.go. That split is not cosmetic: it allows the parsing to be
+// tested on the host (D-06) without a Raspberry /proc in front of it.
 package sistema
 
 import (

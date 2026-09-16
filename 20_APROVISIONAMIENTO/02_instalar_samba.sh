@@ -1,13 +1,13 @@
 #!/bin/bash
-# Fase 1, paso 2 — instalar y endurecer Samba.
+# Phase 1, step 2 - install and harden Samba.
 #
-#   D-08 / ADR-0008   un único usuario con credencial, sin recursos anónimos
-#   ADR-0019          se comparte /srv/nas/datos, NO la raíz del volumen
-#   ADR-0020          un único UID escribe en el almacén
-#   RNF-09            SMB1 deshabilitado
-#   04_SEGURIDAD §5   configuración de endurecimiento
+#   D-08 / ADR-0008   a single credentialed user, no anonymous shares
+#   ADR-0019          /srv/nas/datos is shared, NOT the root of the volume
+#   ADR-0020          a single UID writes to the store
+#   RNF-09            SMB1 disabled
+#   04_SEGURIDAD §5   hardening settings
 #
-# Uso: sudo ./02_instalar_samba.sh
+# Usage: sudo ./02_instalar_samba.sh
 
 set -euo pipefail
 

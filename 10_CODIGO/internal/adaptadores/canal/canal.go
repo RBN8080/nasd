@@ -1,26 +1,26 @@
-// Package canal entrega avisos fuera del nodo — la PRIMERA salida de red que
-// ha tenido nunca este programa.
+// Package canal delivers alerts off the node - the FIRST outbound network path
+// this program has ever had.
 //
-// # LA PROPIEDAD QUE ESTE PAQUETE NO PUEDE ROMPER
+// # THE PROPERTY THIS PACKAGE MUST NOT BREAK
 //
-// Nada de aquí se llama desde el camino de una petición. Ni desde conRegistro,
-// ni desde el ConnState, ni desde un manejador. Se llama desde el ciclo de
-// mantenimiento, que es una goroutine propia con su temporizador.
+// Nothing here is called from a request path. Not from conRegistro, not from
+// ConnState, not from a handler. It is called from the maintenance cycle, which
+// is a goroutine of its own with its own timer.
 //
-// El motivo está medido: el ConnState corre en el BUCLE DE ACEPTACIÓN, antes de
-// que la conexión tenga hilo propio, y quien lo dispara es alguien de fuera. Un
-// POST a un tercero ahí dentro convertiría un barrido de veinte conexiones en
-// veinte llamadas externas encoladas delante de todo el que estuviera entrando
-// — es decir, le regalaría al escáner una forma de dejar el NAS sin puerta. Es
-// el mismo argumento que ya impide que el anillo de rechazos haga fsync por
-// evento, aplicado a algo mucho más caro que un fsync.
+// The reason is measured: ConnState runs in the ACCEPT LOOP, before the
+// connection has a thread of its own, and what triggers it is someone outside.
+// A POST to a third party in there would turn a sweep of twenty connections
+// into twenty external calls queued ahead of everyone coming in - that is, it
+// would hand a scanner a way to leave the NAS with no door. It is the same
+// argument that already stops the rejection ring from calling fsync per event,
+// applied to something far more expensive than an fsync.
 //
-// # SI ESTO FALLA, NO PASA NADA IMPORTANTE
+// # IF THIS FAILS, NOTHING IMPORTANT HAPPENS
 //
-// El nodo detecta, infiere, decide, aparta, bloquea y registra exactamente
-// igual con el proveedor caído. Lo único que se pierde es que alguien se entere
-// hoy en vez de mañana, y el panel conserva todo. Ninguna función de este
-// paquete devuelve un error que alguien de arriba deba tratar como fatal.
+// The node still detects, infers, decides, quarantines, blocks and records
+// exactly the same with the provider down. All that is lost is someone finding
+// out today instead of tomorrow, and the panel keeps everything. No function in
+// this package returns an error a caller should treat as fatal.
 package canal
 
 import (

@@ -1,27 +1,28 @@
 #!/bin/bash
-# Panel de seguridad, etapa 4 — la base de país y operador.
+# Security panel, stage 4 - the country and operator database.
 #
-#   00_RECTOR.md §7        el panel de seguridad y sus etapas
-#   internal/geoip         el lector y el formato; ahí está el porqué de todo
-#   ADR-0019 / ADR-0037    por qué esto vive en estado/ y no en datos/
-#   P9                     por qué NO vive en el medio de arranque
+#   00_RECTOR.md §7        the security panel and its stages
+#   internal/geoip         the reader and the format; the reasoning is all there
+#   ADR-0019 / ADR-0037    why this lives in estado/ and not in datos/
+#   P9                     why it does NOT live on the boot medium
 #
-# QUÉ RESUELVE. El panel enseñaba «203.0.113.7», que no le dice nada a nadie.
-# Con esto enseña «DIGITALOCEAN-ASN · DE», que sí se puede juzgar sin saber de
-# redes. Fue la petición explícita del responsable al ver la primera versión.
+# WHAT IT SOLVES. The panel showed "203.0.113.7", which tells nobody anything.
+# With this it shows "DIGITALOCEAN-ASN - DE", which can be judged without
+# knowing about networks. It was the owner's explicit request on seeing the
+# first version.
 #
-# POR QUÉ IPtoASN Y NO MAXMIND. IPtoASN se publica en dominio público (PDDL
-# v1.0), en TSV, sin cuenta y sin clave. GeoLite2 es gratis TAMBIÉN, pero
-# exige cuenta, una clave de licencia que CADUCA cada 90 días, obliga por EULA
-# a borrar la base a los 30 días de cada versión nueva, y su formato .mmdb
-# necesita una biblioteca externa que go.mod prohíbe por escrito. Tres
-# problemas nuevos a cambio de nada.
+# WHY IPtoASN AND NOT MAXMIND. IPtoASN is published in the public domain (PDDL
+# v1.0), as TSV, with no account and no key. GeoLite2 is free TOO, but it
+# requires an account, a licence key that EXPIRES every 90 days, obliges by EULA
+# to delete the database within 30 days of each new release, and its .mmdb
+# format needs an external library that go.mod forbids in writing. Three new
+# problems in exchange for nothing.
 #
-# IDEMPOTENTE: se puede ejecutar tantas veces como se quiera. Cada ejecución
-# reemplaza la base entera de forma atómica; si algo falla a mitad, la base
-# anterior sigue en su sitio y el servicio ni se entera.
+# IDEMPOTENT: it can be run as many times as wanted. Each run replaces the whole
+# database atomically; if something fails halfway, the previous database stays
+# in place and the service never notices.
 #
-# Uso: sudo ./18_geoip.sh
+# Usage: sudo ./18_geoip.sh
 
 set -euo pipefail
 

@@ -1,30 +1,31 @@
 #!/bin/bash
-# Fase 6, paso 2 — dirección IPv6 fija y previsible para el nodo.
+# Phase 6, step 2 - a fixed, predictable IPv6 address for the node.
 #
-#   ADR-0048   el 443 se publica; con CGNAT (ADR-0044) la via viable es IPv6
-#   charter §7.1.3  la apertura la hace el router, apuntando a ESTA direccion
+#   ADR-0048        443 is published; with CGNAT (ADR-0044) the viable path is IPv6
+#   charter §7.1.3  the opening is done by the router, pointing at THIS address
 #
-# POR QUE HACE FALTA UNA FIJA, y por que se retiro antes:
+# WHY A FIXED ONE IS NEEDED, and why it was removed before:
 #
-#   El 2026-08-01 se puso una estatica, se comprobo que la causa real de «la
-#   Pi no toma IPv6» era el cortafuegos del propio nodo, y se RETIRO por no
-#   usarse: era configuracion sin proposito. Fue correcto con lo que se sabia.
+#   On 2026-08-01 a static one was set, it was found that the real cause of "the
+#   node does not take IPv6" was the node's own firewall, and it was REMOVED for
+#   being unused: configuration without a purpose. That was correct with what
+#   was known then.
 #
-#   La premisa cambio horas despues: el router permite abrir la entrada IPv6
-#   apuntando a UN HOST CONCRETO, y esa pantalla guarda una direccion literal.
-#   Con SLAAC la direccion depende del prefijo que delegue el proveedor, asi
-#   que el dia que el operador lo cambie la regla del router apuntaria a nadie y el
-#   acceso moriria EN SILENCIO — el mismo modo de fallo que el DDNS resuelve
-#   para IPv4.
+#   The premise changed hours later: the router allows opening IPv6 inbound
+#   pointing at ONE SPECIFIC HOST, and that screen stores a literal address.
+#   With SLAAC the address depends on the prefix the ISP delegates, so the day
+#   the operator changes it the router rule would point at nobody and access
+#   would die IN SILENCE - the same failure mode DDNS solves for IPv4.
 #
-#   Se elige el sufijo ::38 para que coincida con el ultimo octeto de la IPv4
-#   del nodo (192.168.1.38): un numero que ya esta en la cabeza de quien opera.
+#   The suffix is derived from the last octet of the node's IPv4 address
+#   (NODO_IP in /etc/nas/ajustes.conf, ADR-0095), so that the IPv6 address ends
+#   in a number already in the operator's head.
 #
-# LIMITE DECLARADO: si el proveedor cambia el PREFIJO, esta direccion cambia
-# igual y hay que repetir dos cosas — este script y el campo del router. No es
-# evitable sin un prefijo delegado estable, que el operador no garantiza.
+# DECLARED LIMIT: if the ISP changes the PREFIX, this address changes too and
+# two things must be repeated - this script and the router field. That is not
+# avoidable without a stable delegated prefix, which the ISP does not guarantee.
 #
-# Uso: sudo ./16_ipv6_estable.sh
+# Usage: sudo ./16_ipv6_estable.sh
 
 set -euo pipefail
 

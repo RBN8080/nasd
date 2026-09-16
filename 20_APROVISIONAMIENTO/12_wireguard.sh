@@ -1,31 +1,34 @@
 #!/bin/bash
-# Fase 5, paso 2 — el túnel WireGuard.
+# Phase 5, step 2 - the WireGuard tunnel.
 #
-#   06_ACCESO_REMOTO.md §3   el diseño y por qué el túnel llega al NAS y no a la red
-#   ADR-0042                 la Fase 5 da acceso completo: web Y SMB
-#   ADR-0057                 puerto 443/udp (supersede ADR-0043), con su justificación
-#   P4                       las claves NUNCA entran en el repositorio
+#   06_ACCESO_REMOTO.md §3   the design, and why the tunnel reaches the NAS and
+#                            not the network
+#   ADR-0042                 phase 5 grants full access: web AND SMB
+#   ADR-0057                 port 443/udp (supersedes ADR-0043), with its reasoning
+#   P4                       the keys NEVER enter the repository
 #
-# LA DECISIÓN QUE SOSTIENE TODO ESTO, y conviene entenderla antes de tocar nada:
+# THE DECISION THAT HOLDS ALL OF THIS UP, worth understanding before touching
+# anything:
 #
-#   nasd enlaza SOLO a 192.168.1.38:80 (medido; ADR-0018 fija la dirección).
-#   Si el cliente hablara con la IP del túnel, NO habría web.
+#   nasd binds ONLY to the node address on port 80 (measured; ADR-0018 fixes the
+#   address, and ADR-0095 moves which address it is into /etc/nas/ajustes.conf).
+#   If the client talked to the tunnel address, there would be NO web.
 #
-#   La salida NO es enlazar nasd a 0.0.0.0 —eso supersedería ADR-0018— ni
-#   encaminar la red doméstica —eso exige reenvío y NAT—. Es que el cliente
-#   encamine 192.168.1.38/32 POR EL TÚNEL: el paquete entra por wg0 con destino
-#   a una dirección LOCAL del propio nodo, el kernel lo entrega localmente y
-#   nasd responde donde ya escucha.
+#   The way out is NOT binding nasd to 0.0.0.0 - that would supersede ADR-0018 -
+#   nor routing the home network - that requires forwarding and NAT. It is that
+#   the client routes the node address as a single /32 THROUGH THE TUNNEL: the
+#   packet arrives on wg0 addressed to a LOCAL address of the node itself, the
+#   kernel delivers it locally, and nasd answers where it already listens.
 #
-#   Consecuencia: cero cambios en nasd, cero en Samba, sin reenvío, sin NAT,
-#   y el túnel NO alcanza ningún otro equipo de la casa.
+#   Consequence: zero changes in nasd, zero in Samba, no forwarding, no NAT, and
+#   the tunnel reaches NO other machine on the network.
 #
-# IDEMPOTENTE, Y AQUÍ IMPORTA MÁS QUE DE COSTUMBRE: si las claves ya existen NO
-# se regeneran. Regenerarlas dejaría fuera a todos los dispositivos ya
-# configurados sin decir nada — el mismo cuidado que 02_instalar_samba.sh tiene
-# con la contraseña.
+# IDEMPOTENT, AND HERE IT MATTERS MORE THAN USUAL: if the keys already exist
+# they are NOT regenerated. Regenerating them would lock out every already
+# configured device without saying anything - the same care 02_instalar_samba.sh
+# takes with the password.
 #
-# Uso: sudo ./12_wireguard.sh
+# Usage: sudo ./12_wireguard.sh
 
 set -euo pipefail
 
