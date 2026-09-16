@@ -2036,6 +2036,17 @@ $cfgReal = Join-Path (Split-Path $PSScriptRoot -Parent) '3-Config\respaldo.jsonc
 $cfgCaja = Join-Path $caja.Raiz 'respaldo-copia.jsonc'
 Copy-Item -LiteralPath $cfgReal -Destination $cfgCaja -Force
 
+# LA CADENCIA REAL, ANOTADA ANTES DE QUE ESTE BLOQUE ESCRIBA NADA.
+#
+# Se guarda en vez de escribirse como literal mas abajo, y el motivo es que la
+# afirmacion del final no habla del horario: habla de que ESTAS PRUEBAS NO
+# TOCARON EL ARCHIVO REAL. Comparar contra un horario escrito a mano probaba
+# dos cosas a la vez y solo una era la que interesaba, asi que la prueba
+# fallaba en cualquier equipo cuyo horario fuera otro -- es decir, en todos
+# menos en el que se escribio. Comparando el archivo consigo mismo, la
+# afirmacion dice exactamente lo que dice su nombre y vale en cualquier PC.
+$cadenciaRealAntes = (Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo -Ruta $cfgReal)).Resumen
+
 $textoAntes = Get-Content -LiteralPath $cfgCaja -Raw -Encoding UTF8
 $comentariosAntes = @($textoAntes -split "`n" | Where-Object { $_ -match '^\s*//' }).Count
 $centinelasAntes = @((Get-ConfiguracionRespaldo -Ruta $cfgCaja).centinelas).Count
@@ -2121,7 +2132,7 @@ Test-Afirmacion -Nombre 'Y el archivo lo confirma' `
 # escriben horarios; hacerlo sobre el archivo real cambiaria cuando corre el
 # respaldo del responsable como efecto secundario de correr las pruebas.
 Test-Afirmacion -Nombre 'El respaldo.jsonc REAL no lo tocaron las pruebas' `
-    -Esperado '04:00-07:00, 12:00-15:00, 19:00-22:00' `
+    -Esperado $cadenciaRealAntes `
     -Obtenido (Get-CadenciaDeCorrida -Configuracion (Get-ConfiguracionRespaldo -Ruta $cfgReal)).Resumen
 
 # ---------------------------------------------------------------------------
