@@ -831,7 +831,16 @@ func TestUnEscaneoAPuertosCerradosApareceAunqueNoHablara(t *testing.T) {
 	// que el responsable llamó «esto solo tú lo entiendes». Donde sí aparece es
 	// en el estado VACÍO, que es donde distingue «no ha tocado nadie» de «el
 	// sensor está muerto». Esa mitad la cubre TestElVacioDeToquesDiceQueElSensorSigueVivo.
-	if strings.Contains(panel, "913") {
+	//
+	// SE COMPRUEBA CON SU MARCADO Y NO CON EL NUMERO SUELTO, y la diferencia
+	// no es estetica: el pie de la pagina lleva la huella SHA-256 del binario
+	// (version.go), doce caracteres HEXADECIMALES que cambian con CUALQUIER
+	// edicion del codigo -- un comentario basta. Buscar "913" a secas hacia
+	// que esta prueba fallara el dia que esa huella contuviera esos tres
+	// digitos, sin que nada estuviera roto. Paso el 2026-09-16, traduciendo
+	// cabeceras al ingles: cuatro pasadas en rojo, y la puerta senalando a un
+	// defecto que no existia.
+	if strings.Contains(panel, "<b>913</b>") || strings.Contains(panel, "El sensor sigue mirando") {
 		t.Error("se pinta el total de paquetes junto a la tabla, donde no contesta nada")
 	}
 }
@@ -1304,7 +1313,10 @@ func TestElVacioDeToquesDiceQueElSensorSigueVivo(t *testing.T) {
 	if !strings.Contains(panel, "El sensor sigue mirando") {
 		t.Fatal("la tabla de toques vacía no dice que el sensor siga vivo")
 	}
-	if !strings.Contains(panel, "42") {
+	// Con su marcado, por lo mismo que el hermano de arriba: buscar "42" suelto
+	// podria darse por bueno por la huella del pie, y entonces esta prueba
+	// pasaria sin comprobar lo que dice comprobar.
+	if !strings.Contains(panel, "<b>42</b>") {
 		t.Error("no se pinta la cifra de paquetes vistos, que es la prueba de vida")
 	}
 }
