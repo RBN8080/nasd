@@ -94,7 +94,7 @@ En la estación de trabajo Windows, para el cliente de respaldo:
 
 ```powershell
 cd 30_CLIENTE_RESPALDO
-.\Instalar.ps1 -Nodo 192.168.1.38
+.\Instalar.ps1 -Nodo [IPv4-LAN]
 ```
 
 `instalar.sh` invoca los 22 guiones en orden y se detiene en cuanto uno falla.
