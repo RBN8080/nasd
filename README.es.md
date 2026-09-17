@@ -15,8 +15,7 @@ En producción desde julio de 2026.
   <img alt="Lo que corre en el nodo: tres vías de entrada, un cortafuegos, tres servicios que escuchan, seis unidades programadas y un disco" src="imagenes/nodo-light.svg">
 </picture>
 
-<!-- Los diagramas los emite 40_PUBLICACION/generar_imagenes.py en sus dos
-     variantes. No los edite a mano: edite el generador y vuelva a correrlo. -->
+<!-- Los diagramas se generan. No los edite a mano. -->
 
 ## Componentes
 
@@ -155,4 +154,4 @@ La interfaz web incrusta dos tipografías, **Archivo** y **DM Mono**, como
 subconjuntos `.woff2` en `internal/adaptadores/web/estatico/`. No son mías y la
 línea de arriba no las cubre: provienen de Google Fonts bajo la **SIL Open Font
 License 1.1**, que es la que rige su uso, y su copyright pertenece a sus
-autores.
+autores. El texto de la licencia está en [`OFL.txt`](OFL.txt).

@@ -8,7 +8,7 @@
 #
 # VERIFICADO 2026-07-30: «ssh usuario@192.168.1.38» FALLA con
 # «Permission denied (publickey)», porque la clave del nodo es
-# id_ed25519_rpi y solo se selecciona a traves del alias, que ademas
+# id_ed25519_nodo y solo se selecciona a traves del alias, que ademas
 # lleva IdentitiesOnly=yes. Usar la IP directa rompe el despliegue.
 NODO    ?= rpi
 BINARIO := nasd
@@ -89,7 +89,7 @@ else
 GO_TEST := go test
 endif
 
-.PHONY: todo verificar verificar-c verificar-limpio carreras prueba compilar compilar-miniatura compilar-sensor desplegar volver registro limpiar publicar
+.PHONY: todo verificar verificar-c verificar-limpio carreras prueba compilar compilar-miniatura compilar-sensor desplegar volver registro limpiar
 
 todo: verificar compilar
 
@@ -351,21 +351,6 @@ volver:
 
 registro:
 	ssh $(NODO) 'journalctl -u nasd -n 50 --no-pager -o cat'
-
-# Publicar al repositorio publico (ADR-0091 a ADR-0094).
-#
-# NO HACE FALTA EJECUTARLO A MANO: el gancho pre-push del repositorio privado
-# ya lo corre, asi que lo que sube al privado pasa al publico en el mismo
-# acto. Este objetivo esta para las dos veces en que si hace falta: publicar
-# sin empujar el privado, y mirar que saldria antes de que salga.
-#
-#     make publicar          construye, comprueba y empuja
-#     make publicar SECO=1   construye y comprueba, sin empujar
-#
-# La puerta de fugas corre DENTRO, commit a commit y antes de crearlos: si
-# acierta, no se publica nada y dice donde.
-publicar:
-	bash ../40_PUBLICACION/publicar.sh $(if $(SECO),--seco,)
 
 limpiar:
 	rm -f $(BINARIO) $(BIN_MINIATURA) $(BIN_SENSOR)

@@ -1,6 +1,6 @@
 [Unit]
 Description=nasd — servidor de archivos del proyecto NAS
-Documentation=file:///home/usuario/01_NAS/00_RECTOR.md
+Documentation=https://github.com/RBN8080/nasd
 # Sin volumen no hay nada que servir. Ajustar al UUID real tras la Fase 1.
 RequiresMountsFor=/srv/nas
 After=network-online.target

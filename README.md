@@ -14,8 +14,7 @@ In production since July 2026.
   <img alt="What runs on the node: three ways in, one firewall, three listeners, six scheduled units, one disk" src="imagenes/nodo-light.svg">
 </picture>
 
-<!-- The diagrams are emitted by 40_PUBLICACION/generar_imagenes.py in both
-     variants. Do not edit them by hand: edit the generator and re-run it. -->
+<!-- The diagrams are generated. Do not edit them by hand. -->
 
 ## Components
 
@@ -151,4 +150,4 @@ The web interface embeds two typefaces, **Archivo** and **DM Mono**, as
 `.woff2` subsets under `internal/adaptadores/web/estatico/`. They are not mine
 and the line above does not cover them: they come from Google Fonts under the
 **SIL Open Font License 1.1**, which governs their use, and their copyright
-belongs to their authors.
+belongs to their authors. The license text is in [`OFL.txt`](OFL.txt).

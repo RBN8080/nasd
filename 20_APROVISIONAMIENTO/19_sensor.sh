@@ -52,7 +52,7 @@ cat > "$UNIDAD" <<EOF
 [Unit]
 # Generado por 20_APROVISIONAMIENTO/19_sensor.sh — proyecto NAS.
 Description=Sensor pasivo de toques del NAS (RF-33, ADR-0066)
-Documentation=file:///home/usuario/01_NAS/ADR/0066_el_sensor_de_toques.md
+Documentation=https://github.com/RBN8080/nasd
 After=network-online.target
 Wants=network-online.target
 

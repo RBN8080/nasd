@@ -383,7 +383,7 @@ chmod 0755 "$MARCA_SH"
 cat > "$MARCA_UNIDAD" <<'EOF'
 [Unit]
 Description=Marcar el buffer de ramoops para distinguir un corte de un cuelgue
-Documentation=file:///home/usuario/nas-aprovisionamiento/08_observabilidad.sh
+Documentation=https://github.com/RBN8080/nasd
 # DESPUES de systemd-pstore: ese servicio mueve la captura anterior y al
 # desenlazarla BORRA la zona. Escribir antes seria escribir en algo que se
 # va a borrar. Un systemd-pstore SALTADO tambien ordena, asi que esto vale
