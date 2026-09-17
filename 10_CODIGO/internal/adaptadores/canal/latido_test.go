@@ -53,9 +53,8 @@ func TestElLatidoMandaElDiagnosticoYCuenta(t *testing.T) {
 }
 
 func TestElCuerpoDelLatidoNoLlevaDireccionesNiRutas(t *testing.T) {
-	// El latido dice «estoy», no «esto ha pasado». Se manda 288 veces al día,
-	// así que todo lo que entre se le entrega al proveedor 288 veces diarias
-	// para siempre. El tope existe porque el cuerpo lo compone otro paquete a
+	// El latido dice «estoy», no «esto ha pasado». 
+	// El tope existe porque el cuerpo lo compone otro paquete a
 	// través de una función, y lo que cruza esa frontera se acota igual que se
 	// acota todo lo que entra de fuera.
 	var recibido string
@@ -76,7 +75,7 @@ func TestElCuerpoDelLatidoNoLlevaDireccionesNiRutas(t *testing.T) {
 
 func TestElLatidoNoReintenta(t *testing.T) {
 	// El siguiente sale solo dentro de un intervalo y el testigo tiene margen
-	// de sobra para varios perdidos (Period 5 min contra Grace 90 min,
+	// de sobra para varios perdidos (Period 5 min contra Grace 25 min,
 	// ADR-0074). Reintentar aquí solo serviría para amontonar peticiones justo
 	// cuando la red no está.
 	var intentos atomic.Int32
