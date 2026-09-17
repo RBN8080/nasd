@@ -30,7 +30,7 @@ import (
 // falsa —el 67 % de ese archivo son comentarios, y las reglas son 14 KB— y la
 // segunda era cierta pero se curaba aquí, no recortando hojas de estilo.
 //
-// # SE PRECALCULA AL ARRANCAR, NO POR PETICIÓN
+// # SE PRECALCULA AL ARRANCAR
 //
 // Los recursos van incrustados con //go:embed: no cambian en toda la vida del
 // proceso. Así que comprimir en cada petición sería pagar CPU una y otra vez
@@ -92,7 +92,7 @@ func comprimible(tipo string) bool {
 //
 // # POR QUÉ NO ES EL SUBÁRBOL ENTERO
 //
-// Porque /acceso necesita dos archivos y el directorio tiene más. Los demás
+// Porque se necesita dos archivos y el directorio tiene más. Los demás
 // —subida.js, cuentas.js, estado.js, seguridad.js, menus.js, visor.js— solo
 // existen para páginas que un desconocido no puede abrir, y publicarlos entrega
 // gratis la huella del programa: qué funciones tiene, qué versión es y qué
@@ -101,13 +101,6 @@ func comprimible(tipo string) bool {
 // principal se acaba de cerrar.
 //
 // # DE DÓNDE SALE LA LISTA
-//
-// De acceso.html —que a través de la plantilla «cabeza» pide el icono y la
-// hoja de estilos, y ningún script— Y DE LA PROPIA HOJA, que pide las seis
-// tipografías con url(). No se escribe aquí «por si acaso» ni se deja de
-// más: TestSoloSonPublicosLosAssetsQueElFormularioNecesita lee las plantillas
-// del formulario Y el CSS, extrae sus referencias y exige que este conjunto
-// sea exactamente ese.
 //
 // LAS FUENTES ENTRAN POR EL CSS Y NO POR EL HTML, y por eso la prueba tuvo
 // que aprender a seguir un url(): una @font-face referenciada solo desde la
