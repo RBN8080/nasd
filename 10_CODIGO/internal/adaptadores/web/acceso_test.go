@@ -17,16 +17,6 @@ import (
 	"nasd/internal/autenticacion"
 )
 
-// Pruebas del acceso con varios usuarios — ADR-0055, etapa 1b.
-//
-// LO QUE SE COMPRUEBA AQUÍ es el REPARTO: quién resulta ser quien pide, y qué
-// almacén acaba recibiendo el manejador que le atiende. El aislamiento en sí
-// —que la carpeta de uno no alcance la de otro— se mide contra disco de verdad
-// en fsposix/aislamiento_test.go, y no se repite aquí con un simulacro: una
-// prueba de contención contra un doble solo demuestra que el doble contiene.
-
-// almacenMarcado sabe de quién es. Es lo que permite afirmar QUIÉN recibió el
-// almacén, en lugar de suponerlo porque la petición respondió 200.
 type almacenMarcado struct {
 	almacenVacio
 	dueno string
@@ -39,11 +29,6 @@ func (a *almacenMarcado) Listar(context.Context, almacen.RutaSegura) iter.Seq2[a
 	}
 }
 
-// reparto registra a quién se le pidió un almacén y con cuál se le respondió.
-//
-// TAMBIÉN registra las promociones (P-4, etapa 2): qué cuentas se pidió
-// promover al darlas de baja, y permite simular que promover falla, para
-// probar que la baja se aborta entera y no solo a medias.
 type reparto struct {
 	mu            sync.Mutex
 	pedidos       []string
@@ -83,8 +68,7 @@ func (rp *reparto) promovidosHechos() []string {
 
 const claveDeJuan = "clave-de-juan-bastante-larga"
 
-// servidorMultiusuario deja un nodo con el superusuario y una cuenta dada de
-// alta de verdad, pasando por el registro y su derivación.
+
 func servidorMultiusuario(t *testing.T) (*Servidor, *reparto) {
 	t.Helper()
 	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
@@ -144,22 +128,6 @@ func cookieLlamada(cookies []*http.Cookie, nombre string) *http.Cookie {
 	return nil
 }
 
-// listadoCon pide el listado con esas cookies y devuelve el cuerpo.
-// desdeCasa fija el origen de una petición de prueba en la LAN.
-//
-// httptest.NewRequest deja RemoteAddr en 192.0.2.1 —TEST-NET-1, RFC 5737—,
-// que ClasificarRed lee, correctamente, como INTERNET. Desde que existe
-// soloDesdeDentro (sesion.go) eso cambia el significado de media batería: una
-// prueba que solo quería decir «el responsable borra un archivo» estaría
-// diciendo «el responsable borra desde un hotel», que es un caso DISTINTO y
-// que hoy se niega a propósito.
-//
-// Sin esto, además, algunas pruebas seguirían en verde por el motivo
-// equivocado: las de CSRF esperan 403, y lo recibirían de la regla nueva sin
-// que el testigo llegara a comprobarse nunca.
-//
-// Las pruebas de la regla EN SÍ no usan este ayudante: fijan el origen a mano,
-// porque el origen es justo lo que están comprobando.
 func desdeCasa(r *http.Request) *http.Request {
 	r.RemoteAddr = "192.168.1.18:5000"
 	return r
@@ -220,8 +188,6 @@ func TestCadaUsuarioRecibeElAlmacenDeSuCarpeta(t *testing.T) {
 	}
 }
 
-// El superusuario NO pasa por ParaUsuario: su almacén es la raíz, sin prefijo,
-// y por eso su comportamiento no cambia respecto de antes de existir esto.
 func TestElSuperusuarioSigueViendoLaRaiz(t *testing.T) {
 	s, rp := servidorMultiusuario(t)
 	h := s.Rutas()
@@ -237,12 +203,6 @@ func TestElSuperusuarioSigueViendoLaRaiz(t *testing.T) {
 	}
 }
 
-// EL INTENTO OBVIO DE ESCALADA: quien entra como juan cambia a mano la cookie
-// que recuerda el nombre y pide el listado como si fuera el administrador.
-//
-// No funciona, y el motivo es de diseño: esa cookie solo evita teclear el
-// nombre en el formulario. Quién eres lo dice la sesión, que vive en el
-// servidor y se fija al verificar la contraseña.
 func TestCambiarLaCookieDelNombreNoCambiaQuienEres(t *testing.T) {
 	s, _ := servidorMultiusuario(t)
 	h := s.Rutas()
@@ -262,8 +222,6 @@ func TestCambiarLaCookieDelNombreNoCambiaQuienEres(t *testing.T) {
 	}
 }
 
-// La cookie de sesión no puede llevar el nombre dentro: si lo llevara, sería
-// el cliente quien dice quién es.
 func TestLaCookieDeSesionNoLlevaElNombreDentro(t *testing.T) {
 	s, _ := servidorMultiusuario(t)
 	h := s.Rutas()
@@ -299,16 +257,6 @@ func TestSinNombreNoSeEntra(t *testing.T) {
 	}
 }
 
-// CWE-208 y enumeración de cuentas: que la cuenta exista o no NO puede
-// cambiar la respuesta. Si la cambiara, el formulario sería un listador de
-// cuentas: se prueban nombres y se lee lo que contesta.
-//
-// EL EXPERIMENTO ESTÁ MONTADO PARA AISLAR ESA ÚNICA VARIABLE. Se teclea
-// SIEMPRE el mismo nombre y la misma contraseña equivocada, y lo único que
-// cambia entre las dos mitades es si esa cuenta está dada de alta. Comparar en
-// cambio dos nombres distintos no probaría nada: los cuerpos diferirían porque
-// el formulario devuelve escrito lo que el propio cliente tecleó, que es algo
-// que el atacante ya sabe.
 func TestQueLaCuentaExistaNoCambiaLaRespuesta(t *testing.T) {
 	intentar := func(t *testing.T, conCuenta bool) (int, string) {
 		t.Helper()
@@ -393,8 +341,7 @@ func TestTrasEntrarSoloSePideLaContrasenaYSeEnsenaLaInicial(t *testing.T) {
 	if !strings.Contains(cuerpo, "¿No eres J?, cambiar de usuario") {
 		t.Errorf("falta el aviso con la inicial; cuerpo: %q", cuerpo)
 	}
-	// El nombre completo NO se enseña: la inicial basta para reconocerse y no
-	// delata de quién es la cuenta a quien mire la pantalla.
+	
 	if strings.Contains(cuerpo, "juan") {
 		t.Error("el formulario enseña el nombre completo, no solo la inicial")
 	}
@@ -486,25 +433,12 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 	}
 }
 
-// El estado del nodo es solo del superusuario — decisión del responsable,
-// 2026-08-06. Publica temperatura, capacidad y ritmo de uso de TODO el nodo:
-// a un usuario normal no le informa de nada suyo y le entrega reconocimiento
-// del sistema entero.
-//
-// SE COMPRUEBAN LAS DOS VÍAS POR SEPARADO, no una y por inspección la otra:
-// /estado/flujo publica exactamente lo mismo y de forma continua, así que
-// cerrar solo la página dejaría abierta la puerta de al lado. Es lo que D-21
-// obliga a verificar vía por vía.
+
 func TestSoloElSuperusuarioAlcanzaElEstado(t *testing.T) {
 	s, _ := servidorMultiusuario(t)
 	h := s.Rutas()
 
-	// EL CONTEXTO CANCELADO NO ES UN TRUCO: /estado/flujo es un flujo de
-	// eventos que por diseño no termina hasta que el cliente se va (ADR-0051),
-	// así que pedirlo sin nada que lo corte cuelga la prueba — pasó al
-	// escribirla. Cancelar el contexto es exactamente lo que hace un navegador
-	// al cerrar la pestaña, y no altera lo que se está midiendo: el rechazo
-	// ocurre ANTES, en la envoltura.
+
 	pedir := func(ruta string, sesion *http.Cookie) int {
 		ctx, cancelar := context.WithCancel(context.Background())
 		cancelar()
@@ -551,11 +485,6 @@ func TestLaBarraSoloOfreceEstadoAlSuperusuario(t *testing.T) {
 	}
 }
 
-// El atajo «Usuarios» a homeUsers/ es cortesía, igual que «Estado»: NO abre
-// ninguna puerta nueva —esa carpeta ya era navegable desde la raíz— y por eso
-// no necesita su propia envoltura en el servidor. Solo se ofrece a quien de
-// verdad puede sacarle algo: para un usuario normal, /ver/homeUsers cae dentro
-// de SU carpeta, no de la casa, y no encontraría nada al pulsarlo.
 func TestLaBarraSoloOfreceUsuariosAlSuperusuario(t *testing.T) {
 	s, _ := servidorMultiusuario(t)
 	h := s.Rutas()
@@ -595,13 +524,6 @@ func (a almacenConEntradas) Listar(context.Context, almacen.RutaSegura) iter.Seq
 	}
 }
 
-// homeUsers/ SE ESCONDE DEL LISTADO — corrección del 06/08: con el atajo
-// «Usuarios» ya en la barra, verla también en la raíz es una segunda ruta a
-// lo mismo. Pero SOLO para el superusuario y SOLO en su raíz: un usuario
-// normal puede tener su PROPIA subcarpeta llamada igual dentro de su
-// espacio —fsposix no se lo impide, esReservado no mira su prefijo—, y esa
-// no es la especial. Ocultársela sería el mismo defecto que esta misma
-// versión corrige en la baja.
 func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
 	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
 	if err != nil {
@@ -638,10 +560,6 @@ func TestHomeUsersSeEscondeSoloParaElSuperusuarioYSoloEnLaRaiz(t *testing.T) {
 	}
 	h := s.Rutas()
 
-	// El nombre de cada entrada se pinta dentro de «<span class="txt">»
-	// (ADR-0075). Antes llevaba una barra final —«{{.Nombre}}/»— que el icono
-	// de carpeta de la consola dice mejor; lo que esta prueba vigila no es esa
-	// barra sino A QUIÉN se le esconde homeUsers, así que se ancla al nombre.
 	entrada := func(n string) string { return ">" + n + "</span>" }
 	cuerpoAdmin := listadoCon(t, h, cookieLlamada(
 		entrar(t, h, autenticacion.NombreSuperusuario, claveDePrueba), nombreCookie))
