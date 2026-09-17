@@ -74,14 +74,6 @@ var ErrNoDisponible = errors.New("métricas del nodo: solo disponibles en Linux"
 // cada 250 ms en un A53 de 1.4 GHz, y el muestreo continuo pasaría a costar
 // más que el servicio al que vigila.
 //
-// LO QUE NO ESTÁ AQUÍ ESTÁ FUERA A PROPÓSITO, y cada ausencia tiene motivo:
-//
-//   - Throttled: solo se obtiene lanzando vcgencmd (ADR-0036). Ver arriba.
-//   - Datos y Arranque: statfs, /proc/diskstats y /sys/fs/ext4. Además de
-//     costar más, no tendría sentido: un disco no cambia de ocupación en
-//     250 ms, y sondearlo a ese ritmo gastaría el bus USB 2.0 que RES-02 ya
-//     señala como el recurso escaso, para volver a leer el mismo número.
-//
 // Ningún campo es de fiar sin su bandera de disponibilidad al lado.
 type Vivo struct {
 	Momento time.Time
