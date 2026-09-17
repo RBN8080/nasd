@@ -12,15 +12,7 @@ import (
 	"nasd/internal/almacen"
 )
 
-// RNF-06, capa 2 — la mitad no obvia de la seguridad de rutas.
-//
-// Un enlace simbólico dentro de datos/ apuntando a /etc convierte un control
-// de rutas por cadenas, correcto en todo lo demás, en una fuga: la ruta
-// "fuga" no tiene ningún "..", así que la capa 1 la acepta sin objeción.
-// Solo el kernel puede verlo, y por eso 04_SEGURIDAD.md §2 eligió os.Root
-// (RESOLVE_BENEATH) en lugar de canonicalizar a mano.
-//
-// Solo Unix: crear enlaces simbólicos en Windows exige privilegios.
+// RNF-06, capa 2 
 func TestEnlaceFueraDelVolumenNoSeSirve(t *testing.T) {
 	a := nuevoVolumen(t)
 	ctx := context.Background()
