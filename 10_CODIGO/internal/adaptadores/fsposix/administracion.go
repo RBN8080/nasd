@@ -28,9 +28,7 @@ func (a *Almacen) Renombrar(ctx context.Context, origen, destino almacen.RutaSeg
 	if origen.EsRaiz() || destino.EsRaiz() {
 		return almacen.ErrRutaInvalida
 	}
-	// ADR-0058: solo el CONTENEDOR de usuarios se protege aquí, para no
-	// romper el MkdirAll de ParaUsuario. La regla vive en el servidor, no
-	// en la interfaz: esconder un botón no impide la petición.
+	// ADR-0058
 	if a.esReservado(origen) || a.esReservado(destino) {
 		return almacen.ErrReservado
 	}
