@@ -14,42 +14,12 @@ import (
 	"nasd/internal/aviso"
 )
 
-// Telegram — el canal elegido, y las tres cosas que obliga a hacer con cuidado.
 //
-// # 1. EL TOKEN VA EN LA RUTA DE LA URL, Y ESO GOBIERNA TODO ESTE ARCHIVO
-//
-// La Bot API no admite autenticación por cabecera: el secreto forma parte del
-// camino, «/bot<token>/sendMessage». Con http.Client eso nunca llega a argv
-// —al contrario que el «curl "…&token=…"» de nas-ddns.sh, donde el testigo sí
-// queda a la vista de cualquier usuario del nodo en un «ps»—, pero deja una
-// regla que hay que cumplir a mano:
-//
-//	LA URL NO SE REGISTRA NUNCA. Ni en un Info, ni en un Warn, ni envuelta en
-//	un error que alguien de arriba vaya a imprimir.
-//
-// Por eso este archivo NUNCA envuelve el error de http.Client tal cual: los
-// errores de net/http incluyen la URL completa. Se traduce a un texto propio
-// que dice qué pasó sin decir a dónde se llamó. Lo comprueba
-// TestElTokenNoApareceEnNingunaLineaDelDiario.
-//
-// # 2. LOS FALLOS NO SON TODOS IGUALES
-//
-// Un 429 hay que esperarlo, un 5xx hay que reintentarlo y un 401 NO: el token
-// no vale y reintentar solo gasta el nodo y la cuota. Distinguirlos es lo que
-// separa un cliente que se recupera de uno que insiste contra una puerta
-// cerrada — la misma lección que umbralAccionFuerzaBruta aprendió mirando a un
-// atacante.
-//
-// # 3. EL MENSAJE PUEDE LLEVAR TEXTO DE UN EXTRAÑO
-//
-// Las rutas las elige quien sondea. El escapado ya lo hizo internal/aviso
-// (mensaje.go, función esc) y aquí NO se vuelve a tocar el texto: retocarlo
-// después de escapar es como se rompe un escapado.
 
 const (
 	// plazoPorIntento acota UN intento, no la entrega entera.
 	//
-	// Diez segundos: la API responde en menos de uno desde una red doméstica, y
+	// Diez segundos: la API responde en menos de uno desde una red, y
 	// este plazo no está para el caso normal sino para el TCP que se queda
 	// colgado sin cerrar. RNF-12 exige plazo declarado en toda E/S y aquí se
 	// declara explícitamente en vez de heredar el de http.DefaultClient, que
@@ -68,8 +38,8 @@ const (
 	// esperaBase es el primer descanso entre intentos; se dobla y se acota.
 	//
 	// LA FÓRMULA ES LA MISMA QUE LA DE nas-mantener-nat —min(base·2ⁿ, 300 s)—
-	// y no una propia: aquel proceso lleva un año haciendo exactamente esto
-	// contra una red doméstica que se cae, y copiar su comportamiento vale más
+	// y no una propia: aquel proceso lleva dos semanas haciendo exactamente esto
+	// contra una red que se cae, y copiar su comportamiento vale más
 	// que inventar otro que habría que volver a calibrar.
 	esperaBase = 2 * time.Second
 	esperaTope = 300 * time.Second
