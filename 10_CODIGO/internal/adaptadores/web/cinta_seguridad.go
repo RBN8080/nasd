@@ -2,8 +2,6 @@ package web
 
 // cinta_seguridad.go — la banda en vivo de la fila de órdenes de /seguridad.
 //
-// # QUÉ ES Y QUÉ SUSTITUYE
-//
 // Es una marquesina anclada en `.ordenes`, es decir DENTRO de `.top`, que es
 // una fila de la rejilla del cromo y vive FUERA de `.cuerpo` —el único
 // elemento con `overflow-y:auto`—. Por eso es persistente al desplazamiento
@@ -44,7 +42,7 @@ package web
 //     cuelga antes de que hable HTTP y por eso desaparece de las tablas; sin
 //     esta línea su silencio se lee como que se fue.
 //
-// # LO QUE SE DEJÓ FUERA, Y POR QUÉ
+// # LO QUE SE DEJÓ FUERA
 //
 //   - Las cinco cifras de «Volumen observado»: están a cien píxeles, dependen
 //     del filtro y YA se refrescan con este mismo flujo. Meterlas obligaría a
