@@ -17,11 +17,7 @@ import (
 //     el disco de datos (ADR-0037) con unos veinte días reales de profundidad
 //     medidos, y responde a un «journalctl -u nasd -g AVISO».
 //
-//  2. HACE FALSABLE LA ENTREGA. Si el responsable dice «no me llegó nada» y el
-//     diario tiene la línea, el fallo está en el camino y no en la detección.
-//     Sin la copia local, las dos hipótesis serían indistinguibles.
-//
-//  3. UN FALLO DEL CANAL EXTERIOR NO BORRA EL AVISO. La constancia queda
+//  2.  UN FALLO DEL CANAL EXTERIOR NO BORRA EL AVISO. La constancia queda
 //     igualmente, que es lo que convierte una caída del proveedor en una
 //     molestia en vez de en una pérdida.
 //
