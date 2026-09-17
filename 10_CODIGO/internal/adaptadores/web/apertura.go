@@ -137,16 +137,7 @@ func urlDeAbrirCon(r almacen.RutaSegura, c criterio) string {
 	return u + "?orden=" + string(c)
 }
 
-// urlDeListadoCon es urlDeListado llevándose el orden puesto.
-//
-// El responsable pidió que ordenar valga «también dentro de todas las
-// subcarpetas». Como el orden vive en la URL y no en el servidor (regla R1,
-// ADR-0015: el listado ES el sistema de archivos y no guarda estado), la
-// única forma de que sobreviva a un clic es que cada enlace de navegación lo
-// lleve consigo. Por eso lo usan las migas, las filas de carpeta y «subir».
-//
-// El orden por nombre no se escribe: es el de por omisión, y así los enlaces
-// del uso normal quedan limpios.
+
 func urlDeListadoCon(r almacen.RutaSegura, c criterio) string {
 	u := urlDeListado(r)
 	if c == porNombre {
@@ -390,18 +381,7 @@ func (s *Servidor) renderVisor(w http.ResponseWriter, v vistaVisor, estado int) 
 	}
 }
 
-// pdfPlausible mira la cabecera, y existe por un motivo de INTERFAZ, no de
-// seguridad.
-//
-// <object type="application/pdf"> no emite ningún evento de error
-// interoperable cuando el visor nativo no consigue abrir el documento: la
-// página no tiene forma de enterarse. Si el servidor no descarta aquí lo que
-// evidentemente no es un PDF, RF-25 se incumple con un recuadro en blanco en
-// lugar del mensaje acordado.
-//
-// ISO 32000-1 §7.5.2 prescribe «%PDF-» al principio del archivo. Se admite un
-// prefijo corto porque los visores aceptan documentos heredados que lo llevan,
-// y esta comprobación no es un validador: solo separa un PDF de algo que no
+no es un validador: solo separa un PDF de algo que no
 // lo es en absoluto.
 func pdfPlausible(lector io.ReadSeeker) (bool, error) {
 	var cabecera [1024]byte
