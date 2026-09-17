@@ -25,17 +25,6 @@ import (
 // recuperación— vive ALLÍ, no aquí. Es lo que permite además ajustar el umbral
 // sin redesplegar el binario.
 //
-// # LO QUE UN LATIDO NO DEMUESTRA, DICHO ANTES DE QUE NADIE LO SUPONGA
-//
-// NO es una prueba criptográfica de integridad ni una attestation. Un atacante
-// con privilegios suficientes en el nodo puede seguir emitiéndolo
-// indefinidamente con el servicio comprometido debajo, y el testigo lo vería
-// verde. Lo que este mecanismo detecta es AUSENCIA, no compromiso, y las dos
-// cosas no son lo mismo.
-//
-// Se dice aquí, en el código, y no solo en el ADR, porque es exactamente la
-// clase de garantía que alguien da por hecha seis meses después.
-//
 // # POR QUÉ VIVE DENTRO DE nasd Y NO EN UN PROCESO APARTE
 //
 // Se estudió el modelo de fallos antes de decidirlo, y sale al revés de la
@@ -53,9 +42,6 @@ import (
 // regresión: convertiría «el servicio está muerto» en un latido verde. Un
 // binario más sin justificación es además lo que este proyecto no hace.
 //
-// Lo que un proceso aparte SÍ compraría —resistir un compromiso limitado al
-// usuario nas— queda como riesgo aceptado y escrito: si alguien toma el proceso
-// nasd, puede callar el latido, y eso se ve desde fuera como una ausencia.
 
 const (
 	// plazoLatido acota UN latido. Corto a propósito: si no responde en cinco
@@ -100,8 +86,8 @@ func NuevoLatido(destino string, intervalo time.Duration, cuerpo func() string, 
 	if destino == "" {
 		return nil, errors.New("el latido necesita la URL del testigo externo")
 	}
-	// SOLO https, y el «http://» se rechaza a propósito.
-	//
+	// SOLO https, y el «http://» se rechaza
+	
 	// La primera versión de esta comprobación aceptaba los dos y el mensaje de
 	// error decía «debe empezar por https://»: el código y el texto se
 	// contradecían, que es exactamente la clase de defecto silencioso que este
