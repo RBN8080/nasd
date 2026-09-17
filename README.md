@@ -93,7 +93,7 @@ On the Windows workstation, for the backup client:
 
 ```powershell
 cd 30_CLIENTE_RESPALDO
-.\Instalar.ps1 -Nodo 192.168.1.38
+.\Instalar.ps1 -Nodo [IPv4-LAN]
 ```
 
 `instalar.sh` invokes the 22 scripts in order and stops the moment one fails.
