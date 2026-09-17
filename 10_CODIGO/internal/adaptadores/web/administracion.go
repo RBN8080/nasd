@@ -10,26 +10,7 @@ import (
 )
 
 // Administración desde la web — RF-16, RF-17, RF-18, RF-19.
-//
-// Llega DESPUÉS de la autenticación, y no por casualidad: RN-06 lo exige.
-// Entregar el borrado antes habría dejado el disco entero administrable por
-// cualquiera en la LAN durante todo el intervalo.
 
-// csrfRecibido saca el testigo de donde venga: cabecera o campo del
-// formulario.
-//
-// NO se usa r.PostFormValue, y el motivo importa: esa función llama por
-// dentro a ParseMultipartForm si el formulario no está parseado —justo lo
-// que ADR-0025 prohíbe, porque vuelca a os.TempDir(), que con PrivateTmp=yes
-// es RAM—. Hoy no ocurre porque todos los manejadores llaman antes a
-// ParseForm, pero eso es una trampa esperando a que alguien añada uno nuevo
-// sin acordarse.
-//
-// r.PostForm.Get() lee lo ya parseado y NUNCA dispara el análisis multipart.
-//
-// La cabecera «Nas-Csrf» además aporta protección por sí misma: un
-// formulario de otro sitio no puede fijar cabeceras propias, así que las
-// peticiones del cliente JavaScript quedan cubiertas dos veces.
 func csrfRecibido(r *http.Request) string {
 	if v := r.Header.Get("Nas-Csrf"); v != "" {
 		return v
@@ -71,20 +52,8 @@ func (s *Servidor) exigirCSRF(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// RF-16 — renombrar, y SOLO renombrar.
-//
-// HASTA EL 2026-08-06 ESTE MANEJADOR HACÍA TAMBIÉN DE MOVER, distinguiendo
-// una intención de la otra por si el texto recibido llevaba una barra. Bajo
-// el capó las dos son un rename(2), y de ahí venía la tentación de unirlas;
-// pero para QUIEN USA EL PRODUCTO son gestos distintos, y la interfaz no
-// enseñaba en ninguna parte la regla de la barra. El resultado, reportado en
-// uso real: se escribía el nombre de la carpeta destino, el servidor lo leía
-// como un nombre nuevo, chocaba con esa carpeta y respondía «ya existe un
-// elemento con ese nombre». Correcto y desconcertante a la vez.
-//
-// Mover vive ahora en mover.go, con su propia vista. Aquí el destino es
-// SIEMPRE un nombre dentro del mismo directorio: no queda nada que adivinar.
-// ADR-0054.
+// RF-16 — renombrar
+
 func (s *Servidor) renombrar(w http.ResponseWriter, r *http.Request, alm almacen.Almacen) {
 	if err := r.ParseForm(); err != nil {
 		s.fallo(w, r, err)
