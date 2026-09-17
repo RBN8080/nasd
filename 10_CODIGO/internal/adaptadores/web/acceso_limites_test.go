@@ -24,10 +24,6 @@ import (
 //
 //	Antes de hacer trabajo caro, la petición tiene que demostrar que merece
 //	llegar a él.
-//
-// Y su contraria, que es igual de importante y por eso también está probada:
-// las peticiones que SÍ lo merecen siguen costando lo mismo existan o no, para
-// que la defensa de enumeración de usuarios no se pierda por el camino.
 
 // postAcceso manda el formulario tal como lo mandaría un navegador. tipo vacío
 // significa «el que usa el formulario de verdad».
@@ -87,7 +83,6 @@ func TestElAccesoValidoSigueFuncionando(t *testing.T) {
 	}
 }
 
-// L2, L5, L6, L7, L8, L10 — LOS OCHO FALLOS SON EL MISMO FALLO DESDE FUERA.
 //
 // Cada fila es un camino distinto por dentro. Lo que se comprueba es que
 // ninguno se pueda separar de los demás mirando la respuesta: ni por el
@@ -286,16 +281,6 @@ func cabecerasDe(w *httptest.ResponseRecorder) string {
 	return strings.Join(lineas, "\n")
 }
 
-// L3 — LA DEFENSA DE ENUMERACIÓN NO SE PERDIÓ POR EL CAMINO.
-//
-// Es la propiedad que más fácil habría sido romper al reordenar los controles:
-// bastaba con adelantar un «¿existe esta cuenta?» barato antes del KDF y el
-// formulario volvería a ser un listador de cuentas medible con un cronómetro.
-//
-// Se comprueba por el CONTADOR DE DERIVACIONES y no por el reloj: cronometrar
-// en una máquina de desarrollo con otras pruebas en paralelo produce una
-// prueba que falla sola. Lo que importa es que las dos ramas hagan el mismo
-// trabajo, y eso se cuenta.
 func TestUnUsuarioValidoQueNoExisteCuestaLoMismoQueUnoQueSi(t *testing.T) {
 	s := servidorConAuth(t)
 	reg := registroDePrueba(t)
@@ -342,10 +327,7 @@ func TestUnUsuarioValidoQueNoExisteCuestaLoMismoQueUnoQueSi(t *testing.T) {
 //
 // Y no filtra nada: las reglas del nombre son públicas y cualquiera las
 // comprueba sin preguntarle al servidor.
-//
-// Se demuestra ocupando el presupuesto criptográfico ENTERO —el activo y la
-// sala— y comprobando que la petición pasa por delante sin quedarse esperando:
-// si tocara el KDF, se quedaría sin capacidad y el motivo sería otro.
+
 func TestUnNombreImposibleNiSiquieraPideTurnoParaElKDF(t *testing.T) {
 	s := servidorConAuth(t)
 	s.limitador.espera = time.Hour // si alguien esperase, se notaría
@@ -456,9 +438,6 @@ func TestLaAdmisionAlKDFNiPasaDeUnaNiFormaColaSinFin(t *testing.T) {
 	}
 }
 
-// La espera está ACOTADA, y por eso se puede medir: con el presupuesto ocupado
-// y la sala con sitio, admitir vuelve al vencer el plazo y no cuando le
-// apetece a quien tiene el turno.
 func TestLaEsperaPorElKDFVenceSola(t *testing.T) {
 	l := nuevoLimitador()
 	l.espera = 30 * time.Millisecond
@@ -510,12 +489,6 @@ func TestSiElClienteSeVaSeDejaDeEsperarTurno(t *testing.T) {
 	}
 }
 
-// L10 — EL RECHAZO POR CAPACIDAD NO ES UNA CONTRASEÑA INCORRECTA.
-//
-// Es la afirmación de ADR-0071 aplicada aquí: describir lo que pasó. Si esto
-// se contara como credencial fallida, el nodo acabaría apartando gente por
-// estar él ocupado — y el apartado lo dispara SenalFuerzaBruta, que cuenta
-// exactamente ese motivo.
 func TestElRechazoPorCapacidadNoCuentaComoContrasenaIncorrecta(t *testing.T) {
 	s := servidorConAuth(t)
 	s.limitador.espera = time.Millisecond
@@ -556,11 +529,7 @@ func TestElRechazoPorCapacidadNoCuentaComoContrasenaIncorrecta(t *testing.T) {
 const umbralFuerzaBrutaDePrueba = 8
 
 // L12 — NADA DE LO QUE SE MANDA AL FORMULARIO ACABA REGISTRADO.
-//
-// La contraseña, el cuerpo, la cookie y el testigo. Es la regla de
-// 04_SEGURIDAD §6, y este trabajo añadió caminos nuevos por los que podría
-// haberse escapado: el cuerpo rechazado por tamaño y el rechazado por formato
-// son cuerpos que alguien podría querer «anotar para depurar».
+
 func TestNiLaContrasenaNiElCuerpoNiElTestigoLleganAlHistorial(t *testing.T) {
 	s := servidorConAuth(t)
 	cookie, _ := sesionAbierta(t, s)
