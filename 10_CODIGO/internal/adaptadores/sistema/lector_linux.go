@@ -14,12 +14,6 @@ import (
 
 // rutasThrottled son los sitios donde ALGUNOS kernels de Raspberry publican el
 // estado de limitación.
-//
-// MEDIDO EN EL NODO el 2026-07-31: **ninguna de las tres existe aquí**, y una
-// búsqueda amplia por /sys no encuentra nada. Se conservan porque probarlas no
-// cuesta nada y un kernel futuro podría traerlas; la fuente real hoy es
-// vcgencmd (ADR-0036). Si fallan todas las vías, se dice que no se sabe: no se
-// devuelve 0x0, que se leería como «el nodo nunca se ha limitado».
 var rutasThrottled = []string{
 	"/sys/devices/platform/soc/soc:firmware/get_throttled",
 	"/sys/devices/platform/soc/soc:firmware/get_throttled/get_throttled",
