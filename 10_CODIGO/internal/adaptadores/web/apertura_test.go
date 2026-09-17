@@ -193,17 +193,12 @@ func TestSoloLasImagenesAbrenEnPestanaNuevaSobreHTTPS(t *testing.T) {
 	}
 }
 
-// EL ARREGLO DEL 2026-08-06, convertido en prueba: sobre HTTP en la LAN
-// ninguna imagen abre en pestaña nueva, ni siquiera ella. Es la mitad del
-// defecto que encontró el diario del nodo —cero peticiones de imagen lo
-// alcanzaban mientras target=_blank apuntaba a una URL http:// en Safari en
-// iOS— y ADR-0053 lo documenta con la evidencia completa. Degradado a la
-// misma pestaña, igual que el resto; no roto.
+
 func TestNingunaImagenAbreEnPestanaNuevaSobreHTTP(t *testing.T) {
 	s, a := servidorDeApertura(t)
 	a.agregar(t, "foto.png", []byte("\x89PNG\r\n\x1a\n"))
 
-	// SE MIRA EL ATRIBUTO Y NO LA VECINDAD DEL TEXTO. Desde ADR-0075, entre
+	// Desde ADR-0075, entre
 	// el «>» del enlace y el nombre va la miniatura —o el cuadradito de la
 	// extensión—, así que buscar «href=…>foto.png» comprobaba la maquetación
 	// y no la regla. Lo que ADR-0053 gobierna es si ESE enlace lleva target.
