@@ -15,15 +15,8 @@ import (
 	"nasd/internal/autenticacion"
 )
 
-// P-9, ADR-0058: una negativa DELIBERADA del dominio —el contenedor de
-// usuarios no se toca por la vía normal (fsposix.esReservado)— salía por la
-// web como 500 «error interno», indistinguible de un fallo real. Esta prueba
-// fija que ErrReservado se traduce en 403, y no en el default de fallo().
-//
-// No se prueba contra fsposix real: lo que se afirma aquí es el MAPEO en la
-// capa web, no la regla de aislamiento en sí —esa vive, contra disco de
-// verdad, en fsposix/aislamiento_test.go (mismo criterio que acceso_test.go
-// declara para el reparto).
+// P-9, ADR-0058
+
 type almacenReservado struct{ almacenVacio }
 
 func (almacenReservado) Resumen(context.Context, almacen.RutaSegura) (almacen.Conteo, error) {
