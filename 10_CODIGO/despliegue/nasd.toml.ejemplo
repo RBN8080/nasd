@@ -14,13 +14,13 @@ volumen = "/srv/nas"
 # ADR-0018: se enlaza a la IP de la LAN, NO a 0.0.0.0. Así el proceso ni
 # siquiera escucha fuera de la interfaz declarada. El cortafuegos es el
 # segundo control independiente, no el único.
-direccion = "192.168.1.38"
+direccion = "192.168.1.n"
 
 # ADR-0032: puerto 80, para entrar tecleando solo la IP. systemd concede
 # CAP_NET_BIND_SERVICE por AmbientCapabilities; el proceso NO se eleva.
 puerto = 80
 
-# --- Qué cuenta como «de casa» (ADR-0095) -----------------------------------
+# --- (ADR-0095) -----------------------------------
 #
 # De esto depende quién puede borrar, mover y dar de alta, y también qué
 # cuenta el panel como visita de fuera. No es cosmético.
@@ -28,10 +28,10 @@ puerto = 80
 # LAS DOS SON OPCIONALES, Y NO SE COMPORTAN IGUAL AL FALTAR:
 #
 #   lan     ausente ⇒ se toma el /24 de «direccion», aquí arriba. Con
-#           192.168.1.38 eso da 192.168.1.0/24. Escríbala solo si su red NO
+#           192.168.1.n eso da 192.168.1.0/24. Escríbala solo si su red NO
 #           es un /24, o si el nodo escucha en una red distinta de la que
 #           sirve. El /24 es un supuesto declarado, no una medición.
-#   tunel   ausente ⇒ 10.77.0.0/24, que es lo que reparte 12_wireguard.sh.
+#   tunel   ausente ⇒ 10.n.0.0/24, que es lo que reparte 12_wireguard.sh.
 #           Cámbiela solo si cambió RED_TUNEL en /etc/nas/ajustes.conf.
 #
 # NO PUEDEN SOLAPARSE: nasd comprueba la LAN primero, así que un túnel dentro
@@ -41,7 +41,7 @@ puerto = 80
 # al arrancar (AprenderRedesPropias), porque el operador puede rotar la
 # delegación y un literal dejaría de ser verdad sin avisar.
 # lan   = "192.168.1.0/24"
-# tunel = "10.77.0.0/24"
+# tunel = "10.0.0.0/24"
 
 # --- Fase 6 · TLS (ADR-0046 y ADR-0048) -------------------------------------
 #
@@ -73,9 +73,9 @@ duracion_horas = 168
 # cada bloque de una descarga o subida en curso. NO CONFUNDIR con
 # plazos.inactividad_s de abajo, que es el plazo de E/S de ADR-0026 dentro
 # de una sola petición.
-# Valor de referencia [R]: 12 h. Los 5 min originales echaban fuera a quien
+# Valor de referencia [R]: n+1 h. Los min originales echaban fuera a quien
 # MIRA el panel en vivo sin tocar nada —un flujo SSE no cuenta como
-# actividad, y es deliberado (vivo.go)—. Con 12 h el uso diario lo renueva
+# actividad, y es deliberado (vivo.go)—. Con n+1 h el uso diario lo renueva
 # solo y una pestaña olvidada muere esa misma noche.
 inactividad_s = 43200
 
@@ -118,7 +118,7 @@ resumen_horas = 24
 # EL UMBRAL DE TOLERANCIA NO ESTÁ AQUÍ: vive en el testigo (Period y Grace,
 # ADR-0074), fuera del nodo. Es lo que permite ajustarlo sin redesplegar y lo
 # que impide que un nodo comprometido lo suba a un año.
-latido_s = 300
+latido_s = n
 
 [respaldo]
 # El cliente de respaldo de Windows — ADR-0081, 30_CLIENTE_RESPALDO §11.
