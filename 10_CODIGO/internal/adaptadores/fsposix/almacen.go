@@ -20,13 +20,7 @@ import (
 	"nasd/internal/almacen"
 )
 
-// Disposición del volumen — ADR-0019. La raíz de os.Root es el punto de
-// montaje completo, NO datos/, porque rename() solo es atómico dentro del
-// mismo árbol de os.Root y el temporal vive en estado/parciales/.
-//
-// La contención a datos/ la da almacen.RutaSegura (capa 1); os.Root cierra
-// el volumen entero e incluye los enlaces simbólicos (capa 2).
-// 04_SEGURIDAD.md §2.
+// Disposición del volumen — ADR-0019.
 const (
 	subDatos     = "datos"
 	subParciales = "estado/parciales"
@@ -42,30 +36,6 @@ const (
 	SubHomeUsers = "homeUsers"
 )
 
-// esReservado decide si una ruta es intocable por la vía normal: SOLO el
-// contenedor de usuarios en sí (ADR-0058, supersede en esto a ADR-0055).
-//
-// LA RAÍZ DE UN USUARIO YA NO ESTÁ AQUÍ. Hasta el 2026-08-12 esReservado
-// también bloqueaba «homeUsers/<quien>», y ese bloqueo era indistinguible
-// —para quien lo sufría— de un fallo real: la capa web lo traducía en 500
-// «error interno» (P-9), cuando era una negativa deliberada. El responsable
-// decidió que el superusuario puede administrar la carpeta de un usuario
-// igual que ya podía por SMB, que nunca conoció esta regla.
-//
-// EL CONTENEDOR SÍ SE QUEDA, y no por restringir al superusuario sino por
-// protegerlo A ÉL: ParaUsuario hace MkdirAll(homeUsers/<nombre>) en cada
-// entrada de sesión. Si «homeUsers» se borra o se sustituye por un archivo,
-// ESE MkdirAll falla y nadie puede volver a entrar — no es «no te dejo», es
-// «esto rompe el arranque de sesión de todos».
-//
-// SOLO APLICA AL ALMACÉN SIN PREFIJO, es decir, al del superusuario. Un
-// usuario nunca puede nombrar esas rutas —su prefijo lo mete dentro de su
-// propia carpeta—, así que comprobarlo para él sería prohibirle una carpeta
-// suya que se llamara igual.
-//
-// Se compara por COMPONENTES y no con strings.HasPrefix: una carpeta llamada
-// «homeUsersXYZ» empieza igual y es un nombre perfectamente legítimo del
-// superusuario. Confundirlas la dejaría bloqueada sin motivo.
 func (a *Almacen) esReservado(r almacen.RutaSegura) bool {
 	if a.prefijo != "" || r.EsRaiz() {
 		return false
@@ -136,12 +106,6 @@ func AbrirVolumen(puntoDeMontaje string) (*Almacen, error) {
 func (a *Almacen) Close() error { return a.raiz.Close() }
 
 // real traduce una RutaSegura a la ruta relativa dentro de os.Root.
-//
-// ES EL ÚNICO SITIO DONDE UNA RUTA DEL DOMINIO SE CONVIERTE EN UNA RUTA DEL
-// DISCO, y por tanto el único punto donde se aplica el aislamiento por
-// usuario. Si alguna vez hace falta otra traducción, se añade AQUÍ; una
-// segunda función que haga esto mismo sería una segunda oportunidad de
-// olvidarse del prefijo.
 //
 // POR QUÉ ESTO CONTIENE, y no hace falta creerlo por fe: almacen.RutaSegura
 // garantiza que Rel() es relativa, sin «..» y sin barra inicial (04_SEGURIDAD
@@ -331,9 +295,7 @@ func (a *Almacen) CrearDirectorio(ctx context.Context, r almacen.RutaSegura) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// ADR-0058: solo el CONTENEDOR de usuarios se protege aquí, para no
-	// romper el MkdirAll de ParaUsuario. La regla vive en el servidor, no
-	// en la interfaz: esconder un botón no impide la petición.
+	// ADR-0058
 	if a.esReservado(r) {
 		return almacen.ErrReservado
 	}
@@ -410,9 +372,7 @@ func (e *escritura) Escrito() int64 { return e.escrito }
 //
 // El paso 4 —fsync del DIRECTORIO destino— es el que se olvida. Sin él, tras
 // un corte de corriente el archivo puede estar escrito y la entrada de
-// directorio no, con lo que el archivo simplemente no aparece. Eso degrada al
-// lado seguro (RNF-05 se cumpliría igual), pero si vamos a responder 200 hay
-// que haber cumplido la promesa.
+// directorio no, con lo que el archivo simplemente no aparece.
 func (e *escritura) Confirmar() error {
 	if e.cerrada {
 		return errors.New("escritura ya cerrada")
