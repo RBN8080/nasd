@@ -14,7 +14,7 @@ import (
 	"nasd/internal/seguridad"
 )
 
-// EL BLOQUEO MANUAL, DE PUNTA A PUNTA.
+// EL BLOQUEO MANUAL
 //
 // Los datos de la base son los REALES que el responsable midió el 19/08
 // (IDEAS §28.2): AS44382 no anuncia un bloque sino dos, separados por tramos
