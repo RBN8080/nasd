@@ -13,11 +13,6 @@ import (
 )
 
 // AISLAMIENTO POR USUARIO — ADR-0055.
-//
-// Estas son las pruebas que más importan de todo el proyecto: si una falla,
-// un usuario puede leer o destruir archivos de otro. Se prueban CONTRA EL
-// DISCO de verdad, no contra un talón, porque lo que se afirma es dónde
-// acaban los bytes.
 
 func escribir(t *testing.T, a *Almacen, nombre, contenido string) {
 	t.Helper()
