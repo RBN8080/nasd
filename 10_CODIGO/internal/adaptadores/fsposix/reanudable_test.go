@@ -10,11 +10,6 @@ import (
 )
 
 // Cierra la divergencia con ADR-0027 encontrada el 2026-07-31.
-//
-// El escenario es EXACTAMENTE el que fallaba: se sube media cosa, el
-// servicio se reinicia —aquí se simula abriendo un Almacen nuevo sobre el
-// mismo volumen, que es lo que hace un reinicio— y la subida debe poder
-// continuar desde donde iba, no desde cero.
 func TestSubidaSobreviveAlReinicioDelServicio(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
