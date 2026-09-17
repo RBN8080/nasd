@@ -59,13 +59,6 @@ function olvidar(clave) {
   } catch (e) { /* ignorado */ }
 }
 
-// Estado de la sesión de subida en curso.
-//
-// EL DEFECTO QUE ESTO CORRIGE (reportado en uso real el 2026-07-31): pulsar
-// «Subir» otra vez mientras ya estaba subiendo arrancaba un SEGUNDO bucle
-// sobre los mismos archivos. No corrompía nada —el servidor rechaza los
-// desplazamientos que no cuadran con un 409— pero duplicaba la transferencia
-// y mostraba dos progresos.
 let subiendoAhora = false;
 
 function fila(nombre) {
