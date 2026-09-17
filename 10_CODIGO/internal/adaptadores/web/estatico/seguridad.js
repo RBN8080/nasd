@@ -1,33 +1,3 @@
-// Flujo en vivo del panel de seguridad — /seguridad/flujo.
-//
-// MEJORA PROGRESIVA ESTRICTA, como estado.js y cuentas.js: sin este archivo la
-// página funciona entera y solo deja de refrescarse sola. Nada de lo que se ve
-// depende de que esto llegue a ejecutarse.
-//
-// EventSource y nada más: sin dependencias, sin CDN, sin marco. Reconecta solo
-// ante un corte, que es el comportamiento correcto para un panel que se queda
-// abierto.
-//
-// LO QUE REFRESCA Y LO QUE NO. Refresca las cinco cifras de «Volumen
-// observado» y los segmentos de la cinta. NO toca las tablas: mover filas bajo
-// el cursor mientras alguien va a pulsar «Soltar» es peor que no moverlas, y
-// esa decisión ya se tomó en /administracion. De la contención solo se compara
-// el RECUENTO, para descubrir un aviso y dejar que sea la persona quien
-// recargue.
-//
-// # EL PILOTO SUSTITUYE A «#latido», Y AFIRMA MÁS QUE ÉL
-//
-// Aquella pastilla decía «en línea» y nada más, y NACÍA OCULTA: sin JavaScript
-// la página era una foto fija y no lo decía en ninguna parte. El piloto nace
-// diciendo de cuándo es la foto —lo escribe el servidor— y, con el flujo vivo,
-// lleva la HORA DEL ÚLTIMO MARCO avanzando de segundo en segundo.
-//
-// Eso cierra un agujero que la pastilla tenía abierto: un EventSource puede
-// quedarse en una conexión medio abierta sin disparar «onerror» nunca, y
-// entonces el rótulo seguiría diciendo «en línea» encima de datos congelados —
-// exactamente el modo de fallo que ADR-0083 y 00_RECTOR.md §12.5 persiguen.
-// Aquí hay un vigilante que no espera a que el navegador avise: si pasan más
-// de PLAZO_SIN_DATOS sin un marco, el reloj SE PARA y el piloto vira a ámbar.
 (() => {
   'use strict';
 
