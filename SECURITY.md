@@ -29,7 +29,7 @@ Declared here so nobody spends an afternoon on something already written down:
   different network some checks misclassify traffic — see the "honest status"
   section of the README. Known, scoped, not yet fixed.
 - **There is no multi-user model yet.** Accounts exist, but the design assumes
-  everyone with an account lives in the same network.
+  everyone with an account are in the same network.
 - **The service is reachable from the internet on purpose**, over TLS and
   through a tunnel, and the access-control panel is the compensating control.
   That it *can* be reached is a decision, not an oversight.
