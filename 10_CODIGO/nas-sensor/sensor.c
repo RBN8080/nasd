@@ -82,29 +82,11 @@
 #define RUTA_MAX 512u
 #define SEGUNDOS_VOLCADO 60
 
-// EL ANILLO ES ESTATICO Y DE TAMANO FIJO. Un escaner de 65 535 puertos lo llena
-// y sigue costando exactamente lo mismo, porque no hay nada que reservar.
 static struct toque anillo[CAPACIDAD];
 static unsigned siguiente;
 
-// poblados son las entradas del anillo que de verdad tienen algo escrito.
-//
-// EXISTE PORQUE «total» DEJO DE PODER DEDUCIRLO. Mientras el anillo empezaba
-// siempre vacio, las entradas ocupadas eran min(total, CAPACIDAD) y volcar lo
-// calculaba asi. Al releer el archivo eso deja de valer: un historial truncado
-// -- o con lineas ilegibles que se saltan -- trae MENOS lineas de las que su
-// cabecera dice haber visto, y con la cuenta vieja volcar habria escrito
-// entradas del anillo en las que no se ha escrito nada.
-//
-// Separarlos es ademas lo que el propio archivo ya distinguia: cuantos toques
-// se conservan y cuantos se han visto desde siempre son dos cifras distintas.
 static unsigned poblados;
 
-// total son los toques CAPTURADOS desde siempre, antes de que nadie clasifique
-// nada. Se publica en la cabecera del archivo por dos motivos: un anillo lleno
-// no debe leerse como «esto es todo lo que ha pasado», y es la unica forma de
-// comprobar que la captura funciona SIN necesitar trafico de Internet -- un SYN
-// desde la LAN lo incrementa aunque el panel despues no lo ensene.
 static unsigned long long total;
 
 static volatile sig_atomic_t hay_que_salir;
@@ -123,17 +105,6 @@ static void anotar(const struct toque *t) {
   total++;
 }
 
-// volcar escribe el anillo entero, del mas antiguo al mas reciente.
-//
-// ESCRITURA ATOMICA (ADR-0024): temporal en el MISMO directorio y rename. Un
-// corte de luz a media escritura -- que en este nodo pasa casi a diario -- deja
-// el archivo anterior intacto, nunca uno a medias.
-//
-// TEXTO PLANO Y NO JSON, a proposito: quien escribe es C sin librerias, y
-// componer JSON a mano es un riesgo gratuito cuando los cuatro campos no pueden
-// contener un espacio -- la direccion la produce analisis.c, el puerto es un
-// entero y el tipo es uno de dos literales. Ademas asi se lee con «cat» en el
-// nodo, que importa en operacion.
 static int volcar(const char *ruta) {
   char temporal[RUTA_MAX];
   int escritos = snprintf(temporal, sizeof(temporal), "%s.tmp", ruta);
@@ -152,8 +123,7 @@ static int volcar(const char *ruta) {
 
   unsigned cuantos = poblados;
   for (unsigned i = 0; i < cuantos; i++) {
-    // «siguiente» apunta al hueco que viene, asi que el mas antiguo esta
-    // justo ahi en cuanto el anillo ha dado la vuelta.
+    
     unsigned pos = (siguiente + CAPACIDAD - cuantos + i) % CAPACIDAD;
     const struct toque *t = &anillo[pos];
     time_t cuando = (time_t)t->momento;
@@ -177,34 +147,12 @@ static int volcar(const char *ruta) {
   return rename(temporal, ruta);
 }
 
-// releer restaura el anillo y la cuenta desde el archivo, si lo hay.
-//
-// POR QUE ESTO NO EXISTIA, que es el defecto que arregla: el anillo es estatico
-// y arrancaba a cero, asi que el primer volcado -- 60 s despues de arrancar --
-// pisaba el historial entero con uno vacio. Pasaba en cada reinicio del nodo Y
-// en cada «make desplegar», que reinicia esta unidad: 31 arranques contados en
-// el diario son 31 borrones. Era la UNICA capa del sistema sin su lector; las
-// nueve de nasd -- usuarios, anillo, conexiones, cuarentena, lista, novedades,
-// hallazgos, avisos y uso de disco -- llevan su Cargar* desde siempre.
-//
-// El sintoma que lo delato: el panel enseñaba «Nadie ha tocado el nodo en esta
-// ventana» tras cada arranque, y esa frase se lee igual que «no ha pasado
-// nada». La plantilla incluso lo avisaba -- «nas-sensor reinicia su historial
-// al arrancar» --, pero solo cuando habia datos que enseñar, es decir nunca
-// cuando hacia falta.
-//
-// QUE EL ARCHIVO NO EXISTA NO ES UN ERROR, igual que en CargarAnillo: un nodo
-// que arranca por primera vez no tiene historial, y eso es normal. Una linea
-// ilegible tampoco aborta nada -- se salta y el resto se conserva.
 static void releer(const char *ruta) {
   FILE *f = fopen(ruta, "r");
   if (f == NULL) {
     return;
   }
-  // Una linea legitima no pasa de 79 caracteres: 20 del instante, 45 de la
-  // direccion mas larga posible, 5 del puerto, 4 del tipo y sus separadores.
-  // Con este bufer una mas larga se parte en dos, y los dos trozos fallan al
-  // analizarse -- que es lo correcto, porque no la escribimos nosotros.
+
   char linea[128];
   unsigned long long visto = 0;
   while (fgets(linea, sizeof(linea), f) != NULL) {
@@ -219,30 +167,11 @@ static void releer(const char *ruta) {
   }
   fclose(f);
 
-  // anotar dejo «total» en las lineas que se pudieron leer; la cabecera sabe
-  // cuantas se han visto DESDE SIEMPRE, que es mas en cuanto el anillo da la
-  // vuelta. Se toma la mayor: una cabecera que dijera menos que las lineas de
-  // debajo estaria mintiendo, y entonces mandan las lineas, que son el hecho.
   if (visto > total) {
     total = visto;
   }
 }
 
-// EL FILTRO DEL NUCLEO ES UNA OPTIMIZACION, NO UN CONTROL. Su unico trabajo es
-// no despertar al espacio de usuario por cada paquete: una copia por SMB son
-// decenas de miles por segundo en este nodo, y todos son de datos.
-//
-// Se filtra POR LONGITUD y por nada mas. Un SYN con opciones son ~80 bytes, y
-// con IPv6 ~100; un paquete de datos ronda los 1500. Cuatro instrucciones que
-// se leen de un vistazo valen mas aqui que un programa preciso de veinte cuyos
-// saltos relativos no se pueden comprobar sin ejecutarlo.
-//
-// La asimetria es deliberada y es lo que lo hace seguro: analizar_paquete
-// vuelve a comprobarlo TODO en el espacio de usuario, asi que un fallo de este
-// filtro solo puede PERDER un paquete, jamas inventar un dato falso.
-//
-// Limite conocido: un ping con carga grande («ping -s») pasa de 128 bytes y no
-// se anota. Un ping gigante no es un escaneo.
 static struct sock_filter programa_bpf[] = {
     {0x80, 0, 0, 0x00000000},  // A = longitud del paquete
     {0x35, 1, 0, 0x00000080},  // si A > 128 -> saltar a descartar
@@ -251,9 +180,7 @@ static struct sock_filter programa_bpf[] = {
 };
 
 static int abrir_captura(void) {
-  // SOCK_DGRAM y no SOCK_RAW: el nucleo entrega el paquete ya SIN cabecera de
-  // enlace, asi que desaparece toda una capa de analisis -- Ethernet, VLAN -- y
-  // con ella su clase entera de fallos. sll_protocol dice de que familia es.
+
   int s = socket(AF_PACKET, SOCK_DGRAM, (int)htons(ETH_P_ALL));
   if (s < 0) {
     return -1;
@@ -269,8 +196,7 @@ static int abrir_captura(void) {
 }
 
 static int capturar(const char *ruta) {
-  // LO PRIMERO, ANTES DE ABRIR NADA: si el primer volcado llegara antes que
-  // esto, habria pisado el historial que venimos a recuperar.
+
   releer(ruta);
 
   int s = abrir_captura();
@@ -301,9 +227,8 @@ static int capturar(const char *ruta) {
       if (n > 0) {
         // MSG_TRUNC devuelve la longitud REAL, que puede pasar del bufer.
         size_t leidos = ((size_t)n > sizeof(buf)) ? sizeof(buf) : (size_t)n;
-        // LO SALIENTE NO SE ANOTA. Sin esto anotariamos nuestras propias
-        // respuestas y el nodo saldria tocandose a si mismo -- que es
-        // exactamente el defecto que ya tuvo el panel el 14/08, cuando una
+   
+        tuvo el panel el 14/08, cuando una
         // senal salto sobre el propio nodo.
         if (desde.sll_pkttype != PACKET_OUTGOING) {
           struct toque t;
