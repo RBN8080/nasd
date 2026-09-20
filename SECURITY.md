@@ -25,11 +25,11 @@ project, answered as soon as it is read.
 
 Declared here so nobody spends an afternoon on something already written down:
 
-- **The code assumes one specific home network** in roughly 15 places. On a
+- **The code assumes one specific network** in roughly 15 places. On a
   different network some checks misclassify traffic — see the "honest status"
   section of the README. Known, scoped, not yet fixed.
-- **There is no multi-user model.** Accounts exist, but the design assumes
-  everyone with an account lives in the same house.
+- **There is no multi-user model yet.** Accounts exist, but the design assumes
+  everyone with an account lives in the same network.
 - **The service is reachable from the internet on purpose**, over TLS and
   through a tunnel, and the access-control panel is the compensating control.
   That it *can* be reached is a decision, not an oversight.
