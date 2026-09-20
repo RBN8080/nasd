@@ -22,15 +22,6 @@ func ev(t time.Time, ip string, m Motivo, ruta string) Evento {
 	return e
 }
 
-// LA PRUEBA MÁS IMPORTANTE DE ESTE ARCHIVO, y existe por una instrucción
-// explícita del responsable: «no clasifiques automáticamente todo rechazo
-// como ataque».
-//
-// El caso que la motiva es real y frecuente: un móvil que reconecta y pide
-// varias veces la misma página sin cookie produce un puñado de 401. Si eso
-// disparara una señal, el panel gritaría todos los días y en un mes nadie lo
-// miraría — que es el modo de fallo que 00_RECTOR.md §12.5 lleva persiguiendo
-// en los verificadores de este proyecto.
 func TestElUsoNormalNoLevantaNingunaSenal(t *testing.T) {
 	base := time.Now()
 	var eventos []Evento
@@ -88,10 +79,6 @@ func TestReintentarLaMismaRutaNoEsExploracion(t *testing.T) {
 	}
 }
 
-// El umbral de fuerza bruta es el MISMO que el del limitador que de verdad
-// bloquea (maxIntentosFallidos = 5 en web/sesion.go). Si divergieran, el
-// panel avisaría antes o después de lo que el servidor hace, y habría que
-// explicar cuál de las dos cifras manda.
 func TestElUmbralDeFuerzaBrutaCoincideConElLimitadorReal(t *testing.T) {
 	if umbralFuerzaBruta != 5 {
 		t.Fatalf("umbralFuerzaBruta = %d y el limitador de web/sesion.go bloquea a los 5",
@@ -122,9 +109,6 @@ func TestSoftwareAjenoSeDecidePorLoQueElNodoNoEjecuta(t *testing.T) {
 		}
 	}
 
-	// Y LO QUE NO PUEDE MARCARSE, que es la mitad que evita el falso
-	// positivo: son nombres de archivo perfectamente legítimos en un NAS
-	// doméstico, y marcarlos convertiría subir un PDF en una alarma.
 	propias := []string{
 		"/", "/ver/fotos", "/descargar/informe.pdf", "/abrir/musica.mp3",
 		"/estado", "/administracion", "/estatico/estilo.css",
@@ -202,15 +186,6 @@ func TestFiltrosAcotanLoQueSeMira(t *testing.T) {
 	}
 }
 
-// Filtrar por «desconocido» tiene que poder distinguirse de «no filtrar», y por
-// eso el campo es un puntero: MotivoDesconocido es el valor cero de Motivo.
-//
-// Esta prueba defendía la misma propiedad sobre Gravedad, que era el otro campo
-// con valor cero legítimo. Al retirarse aquel filtro (ADR-0065) la propiedad no
-// desaparece —sigue habiendo un puntero que la necesita—, así que la prueba se
-// muda al campo que la conserva en vez de borrarse. Un motivo desconocido no es
-// una rareza: conRegistro anota así todo 4xx que ninguna guarda clasificó, y
-// verlo en el panel es lo que hace que se le ponga nombre.
 func TestFiltrarPorDesconocidoNoEsLoMismoQueNoFiltrar(t *testing.T) {
 	base := time.Now()
 	a := &Anillo{buf: make([]Evento, Capacidad)}
@@ -246,9 +221,7 @@ func TestElResumenDiceCuantoNoEstaMostrando(t *testing.T) {
 func ptr[T any](v T) *T { return &v }
 
 // NINGUNA SEÑAL PUEDE AFIRMAR UN ATAQUE, ni en su etiqueta ni en su
-// explicación. Es la instrucción del responsable convertida en invariante
-// comprobable, y vive aquí —sobre los textos del dominio— y no sobre el HTML
-// del panel.
+// explicación. 
 //
 // El aviso de cabecera que decía «rechazos, no ataques» se retiró del panel el
 // 2026-08-24 por decisión del responsable. Esta prueba no dependía de él y
@@ -280,15 +253,6 @@ func TestNingunaSenalAfirmaUnAtaque(t *testing.T) {
 	}
 }
 
-// LAS SEÑALES NO SE DISPARAN DESDE CASA, y esta prueba existe por un defecto
-// visto en la PRIMERA captura del panel en producción: «Sondeo de software que
-// aquí no existe» saltó sobre el propio nodo, porque la verificación del
-// despliegue había probado /wp-login.php con curl. Una alarma roja sobre uno
-// mismo, en la primera pantalla que vio el responsable.
-//
-// Desde la LAN, el túnel o el propio nodo, quien pide ya tiene la casa o la
-// clave. Una sospecha de intrusión desde ahí no informa y gasta la
-// credibilidad de las que sí importan.
 func TestLasSenalesSoloSeDisparanDesdeInternet(t *testing.T) {
 	base := time.Now()
 	// El mismo comportamiento —claramente de sondeo— desde cada red.
@@ -332,12 +296,6 @@ func TestLasSenalesSoloSeDisparanDesdeInternet(t *testing.T) {
 	}
 }
 
-// EL RUIDO QUE TAPA LO QUE IMPORTA, visto en la segunda captura del panel en
-// producción: casi toda la tabla salía en naranja porque RutaInexistente es
-// «aviso» y la producían los favicon.ico del propio iPhone. Destacar() separa
-// «esto es un hecho de gravedad aviso» —que Motivo.Gravedad() sigue diciendo
-// igual, y el filtro por gravedad lo sigue usando entero— de «esto merece
-// llamar la atención en la tabla».
 func TestDestacarSoloResaltaLoQueMereceAtencion(t *testing.T) {
 	base := time.Now()
 
