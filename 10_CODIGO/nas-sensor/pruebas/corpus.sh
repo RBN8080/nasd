@@ -1,47 +1,10 @@
 #!/bin/bash
-# Corpus de paquetes hostiles para nas-sensor, construido AQUI con printf en
-# vez de comprometido como binarios: son unas decenas de bytes cada uno y no
-# hace falta versionar archivos ilegibles en un diff para algo que se
-# reconstruye en microsegundos. Mismo criterio que el corpus de nas-miniatura.
-#
-# Uso:  bash corpus.sh <ruta-al-arnes>
-#
-# Sale con el numero de casos fallidos (0 = todo bien).
-#
-# HAY DOS CLASES DE COMPROBACION, Y LA SEGUNDA ES LA QUE DE VERDAD IMPORTA:
-#
-#   comprobar  el programa no revienta -- ni senal, ni cuelgue, ni texto de un
-#              desinfectante. Es lo que cubre la entrada malformada.
-#   esperar    ademas, el veredicto es EXACTAMENTE el que debe ser. Sin esto,
-#              un analisis que devolviera «no es un toque» siempre pasaria el
-#              corpus entero sin analizar nada.
-#
-# VARIOS CASOS DE «esperar» LOS PIDIO LA PRUEBA DE MUTACION, no la imaginacion:
-# se rompio a proposito cada comprobacion de analisis.c y se anadio un caso por
-# cada rotura que el corpus dejaba pasar. Ver ADR-0066.
 set -u
 BIN="${1:?uso: corpus.sh <ruta-al-arnes>}"
 DIR=$(mktemp -d)
 trap 'rm -rf "$DIR"' EXIT
 
 ok=0; mal=0
-
-# EL BINARIO RECIEN COMPILADO NO SIEMPRE SE PUEDE EJECUTAR TODAVIA (Windows).
-#
-# Reproducido el 2026-08-19: de doce vueltas seguidas a «make verificar-c»,
-# tres fallaron ENTERAS con codigo 126 -«existe pero no es ejecutable»- en
-# todos los casos a la vez, y las otras nueve pasaron limpias. No es el codigo:
-# es que el antivirus abre el .exe en cuanto zig lo escribe y lo retiene unas
-# decimas. En este mismo arbol hay otra prueba del mismo bloqueo -Go deja un
-# «.exe~» cuando no puede reemplazar el binario en uso-.
-#
-# IMPORTA porque «desplegar» depende de «verificar»: una puerta que se niega al
-# azar ensena a repetirla hasta que pase, y asi es como un fallo de verdad
-# acaba colandose. El fallo era seguro -126 nunca aprueba nada- pero el habito
-# que crea no lo es.
-#
-# Se espera a que ARRANQUE, no un «sleep» fijo: sin argumentos el arnes sale
-# con error de uso, y eso ya demuestra que el sistema lo deja correr.
 esperar_ejecutable() {
   local intento
   for intento in 1 2 3 4 5 6 7 8 9 10; do
@@ -171,15 +134,6 @@ esperar "IPv6 que dice ser version 5" "$DIR/v5_6" 6 "no-es-un-toque"
 printf "${IP4_TCP}${TCP_SYN}" > "$DIR/mentira"
 esperar "IPv4 anunciado como IPv6" "$DIR/mentira" 6 "no-es-un-toque"
 
-# UNA IHL ILEGAL QUE AUN ASI ALINEA UN FALSO SYN, y es el caso mas retorcido del
-# corpus a proposito. La IHL dice 4 (16 bytes, por debajo del minimo de 20), y el
-# paquete esta construido para que, si se aceptara esa longitud, la lectura
-# desplazada cayera sobre un 0x02 -- es decir, el analisis INVENTARIA un SYN al
-# puerto 28935, que no existe en ningun sitio del paquete.
-#
-# Lo pidio la prueba de mutacion: sin este caso se podia quitar la cota inferior
-# de la IHL y el corpus entero seguia en verde, porque los demas paquetes cortos
-# morian antes en u8_en. Un dato inventado es peor que un dato perdido.
 printf '\x44\x00\x00\x3c\x1c\x46\x40\x00\x40\x06\x00\x00\xc0\xa8\x01\x17\xcb\x00\x71\x07' > "$DIR/ihl4"
 printf '\xd4\x31\x00\x50\x00\x00\x00\x00\x00\x02\x00\x00\x50\x02\x72\x10\x00\x00\x00\x00' >> "$DIR/ihl4"
 esperar "IHL ilegal que alinearia un falso SYN" "$DIR/ihl4" 4 "no-es-un-toque"
@@ -221,15 +175,6 @@ comprobar "texto plano, como IPv6" "$DIR/texto" 6
 
 echo
 echo "== El historial que el sensor relee al arrancar =="
-# ESTA SECCION EXISTE POR UN DEFECTO MEDIDO, no por completitud: el anillo del
-# sensor vivia SOLO en memoria, asi que el primer volcado tras arrancar pisaba
-# el archivo con uno vacio -- en cada reinicio del nodo Y en cada despliegue.
-# Al releerlo, estas lineas pasan a ser bytes que hay que analizar con la misma
-# desconfianza que un paquete: un corte de luz pudo dejar el archivo a medias.
-#
-# LOS INSTANTES ESPERADOS SE CALCULARON CON date(1), NO con este codigo. Si
-# salieran de la propia implementacion, la prueba solo diria que hace lo que
-# hace.   date -u -d 2026-09-04T03:36:51Z +%s   ->   1788493011
 
 printf '%s\n' \
   '# Historial de toques -- anillo de 2000, del mas antiguo al mas reciente.' \
