@@ -6,8 +6,7 @@ This repository holds the source of a NAS service that runs on a single
 private network. There is no hosted instance, no public endpoint and no
 user base: nothing here is a service you can reach... :p 
 
-So a vulnerability found in this code affects **whoever chooses to run it**,
-which today is one household.
+So a vulnerability found in this code affects **whoever chooses to run it**
 
 ## Reporting
 
