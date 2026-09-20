@@ -3,7 +3,7 @@
 ## Scope
 
 This repository holds the source of a NAS service that runs on a single
-private home network. There is no hosted instance, no public endpoint and no
+private network. There is no hosted instance, no public endpoint and no
 user base: nothing here is a service you can reach.
 
 So a vulnerability found in this code affects **whoever chooses to run it**,
