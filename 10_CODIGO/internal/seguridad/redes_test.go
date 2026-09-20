@@ -15,15 +15,6 @@ func enOtraCasa(t *testing.T, lan, tunel string) {
 	ConfigurarRedes(netip.MustParsePrefix(lan), netip.MustParsePrefix(tunel))
 }
 
-// EL DEFECTO QUE ESTA PRUEBA REPRODUCE, y que no se veía porque no rompe nada.
-//
-// Hasta ADR-0095 las dos redes eran literales. En cualquier casa que no fuera
-// 192.168.1.0/24 —es decir, en todas menos una— el nodo clasificaba a la
-// familia entera como INTERNET. Consecuencias, todas silenciosas: el
-// superusuario pierde borrar, mover y dar de alta desde su propio salón
-// (sesion.go), el panel cuenta a los de casa como extraños, y la cuarentena
-// puede apartar equipos domésticos.
-//
 // La primera mitad de la prueba es el control positivo: sin configurar, el
 // fallo se reproduce. Sin esa mitad, la segunda no demuestra nada.
 func TestOtraCasaDejaDeContarseComoInternet(t *testing.T) {
