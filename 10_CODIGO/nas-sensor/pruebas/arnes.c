@@ -25,16 +25,6 @@
 #define PAQUETE_MAX 256u
 #define LINEA_MAX 128u
 
-// historial recorre el archivo como lo hace el sensor al arrancar.
-//
-// EL BUCLE ESTA REPETIDO AQUI A PROPOSITO, y no es un descuido que haya que
-// unificar: lo que hay que probar con desinfectantes es leer_toque y
-// leer_total, que analizan bytes que un corte de luz pudo dejar a medias. El
-// bucle de fgets del sensor no se puede compartir porque el suyo llama a
-// anotar(), que toca el anillo estatico -- y traerse ese anillo aqui seria
-// meter en analisis.c el estado que lo haria dejar de ser portable. Se comparte
-// lo peligroso y se repiten seis lineas triviales, que es el mismo reparto que
-// ya gobierna analisis.c frente a sensor.c.
 static int historial(const char *ruta) {
   FILE *f = fopen(ruta, "r");
   if (f == NULL) {
