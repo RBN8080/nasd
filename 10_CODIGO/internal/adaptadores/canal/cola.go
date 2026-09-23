@@ -27,22 +27,10 @@ import (
 
 const (
 	// topeCola es cuántos avisos caben esperando.
-	//
-	// SESENTA Y CUATRO, que es enorme para lo que este nodo produce —entre uno
-	// y tres avisos al día, con 8 peticiones de Internet en 21 días medidos—.
-	// Está dimensionado así a propósito: con este margen, que la cola se llene
-	// no es «hay mucho tráfico», es «el canal lleva horas roto», y entonces lo
-	// que hay que mirar es el indicador de /estado, no la cola.
 	topeCola = 64
 
 	// umbralCanalCaido es cuánto tiene que durar una racha de fallos para que,
 	// al recuperarse, se avise de que hubo un hueco.
-	//
-	// QUINCE MINUTOS, y sale de la aritmética del reintento, no del gusto: con
-	// tres intentos y la espera acotada en 300 s, un aviso tarda como mucho
-	// unos diez minutos en darse por perdido. Que la racha pase de quince
-	// significa que al menos un aviso entero se agotó y el siguiente ciclo
-	// también falló — o sea, una caída de verdad y no un 429 suelto.
 	//
 	// Por debajo de eso no se dice nada: un aviso de «el canal parpadeó» sería
 	// justo el ruido que toda esta capa existe para quitar.

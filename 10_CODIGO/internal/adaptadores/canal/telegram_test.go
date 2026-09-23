@@ -15,10 +15,6 @@ import (
 	"nasd/internal/aviso"
 )
 
-// Las pruebas del canal van contra un httptest.Server y NUNCA contra Internet:
-// una prueba que necesita red no se ejecuta en la puerta de «make verificar», y
-// una que no se ejecuta no prueba nada.
-//
 // El campo destino es privado y estas pruebas viven en el MISMO paquete, así
 // que apuntan al servidor local sin que el código de producción necesite una
 // variable global ni un constructor «para pruebas» — que sería código escrito
@@ -279,11 +275,6 @@ func TestCancelarElContextoAbortaLaEntrega(t *testing.T) {
 }
 
 func TestElTokenNoApareceEnNingunErrorNiEnElDiario(t *testing.T) {
-	// LA REGLA QUE GOBIERNA telegram.go: Telegram obliga a llevar el token en la
-	// RUTA de la URL, y los errores de net/http incluyen la URL completa. Si
-	// alguien envolviera esos errores con %w, el token acabaría en el diario del
-	// nodo — y el diario vive en el disco de datos, que viaja.
-	//
 	// Se comprueba sobre el ERROR y sobre el DIARIO, que es donde acabaría.
 	const token = "123456789:AAsecretoQUEnoDEBEsalirJAMAS"
 

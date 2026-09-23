@@ -13,20 +13,7 @@ import (
 	"nasd/internal/almacen"
 )
 
-// Persistencia de subidas reanudables — cierra la divergencia con ADR-0027.
-//
-// EL PROBLEMA QUE RESUELVE: el registro de subidas vivía SOLO EN MEMORIA. Un
-// reinicio del servicio —una actualización, un corte de luz, un
-// Restart=on-failure— dejaba el archivo parcial en disco con todos sus bytes
-// intactos y a nadie que supiera adónde iba.
-//
-// ADR-0027 ya lo preveía: «Lo único que sí necesita metadato es el nombre
-// original y la ruta de destino, que no se deducen del tamaño». Aquí se
-// implementa.
-//
-// LO QUE SIGUE SIN GUARDARSE, Y ES DELIBERADO: el desplazamiento. Ese ES el
-// tamaño del archivo parcial, y por eso no puede desincronizarse de los datos
-// ni perderse en un corte. El .meta guarda solo lo que no se deduce.
+// Persistencia de subidas reanudables
 
 const sufijoMeta = ".meta"
 

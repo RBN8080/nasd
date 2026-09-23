@@ -70,7 +70,7 @@ El detector de carreras. Va aparte porque tarda bastante más, pero no es
 opcional al cerrar un bloque de trabajo: dos de los peores defectos que ha
 tenido este programa fueron carreras.
 
-**En Windows las dos cosas corren dentro de WSL**, y no por gusto: Smart App
+**En Windows las dos cosas corren dentro de WSL**: Smart App
 Control rechaza los binarios sin firmar que Go enlaza para cada paquete de
 pruebas. El Makefile lo resuelve solo.
 
@@ -92,7 +92,7 @@ Dos cosas que conviene saber antes de tocarlo:
   qué contabiliza el panel como acceso externo. Si no se declara, se toma el
   `/24` de la dirección de escucha. Si su red no es un `/24`, declárelo.
 
-**Aquí no hay ningún secreto, y es una regla del proyecto.** La contraseña de
+**Aquí no hay ningún secreto.** La contraseña de
 la web no está en el TOML: systemd se la entrega al proceso desde un archivo
 aparte. El testigo del DDNS y el del canal de avisos, igual.
 
@@ -129,5 +129,4 @@ de diseño que no se publican. No va a poder abrirlas.
 
 La mayoría son redundantes: la decisión suele estar narrada **en el propio
 archivo donde se aplica**, justo al lado de la cita, y con la medición que la
-motivó. Esa densidad de comentario es deliberada y es lo que hace que el código
-se pueda leer sin el catálogo.
+motivó.

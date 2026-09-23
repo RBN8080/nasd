@@ -23,13 +23,6 @@ func archivoDeToques(t *testing.T, lineas ...string) string {
 	return ruta
 }
 
-// LA PRUEBA QUE MÁS IMPORTA DE ESTE ARCHIVO. El sensor anota todo lo que
-// captura y no sabe qué es Internet; si el descarte de aquí fallara, el panel
-// enseñaría el móvil del responsable, su PC y cada aparato de la casa como si
-// fueran extraños tocando el nodo.
-//
-// Es el mismo defecto que este panel YA cometió dos veces: el IPv6 de casa
-// contado como Internet, y una señal disparando sobre el propio nodo.
 func TestSoloSeLeenLosToquesDeInternet(t *testing.T) {
 	AprenderRedesPropias(nil) // sin /64 propio aprendido: el caso más simple
 	ahora := time.Now().UTC().Truncate(time.Second)
@@ -62,9 +55,6 @@ func TestSoloSeLeenLosToquesDeInternet(t *testing.T) {
 	}
 }
 
-// El /64 de casa se aprende al arrancar y puede rotar. Un aparato del
-// responsable hablando IPv6 nativo NO es un extraño, y esta prueba lo fija:
-// es literalmente el fallo que tuvo la primera versión del panel.
 func TestElIPv6DeCasaNoEsUnToqueDeInternet(t *testing.T) {
 	casa := netip.MustParseAddr("3fff:2a0:101e:3d82:1111:2222:3333:4444")
 	AprenderRedesPropias([]netip.Addr{netip.MustParseAddr("3fff:2a0:101e:3d82::38")})
@@ -88,9 +78,6 @@ func TestElIPv6DeCasaNoEsUnToqueDeInternet(t *testing.T) {
 	}
 }
 
-// Sin sensor instalado el archivo no existe. Eso NO es un error: es un nodo al
-// que todavía no se le ha puesto esta pieza, y el panel tiene que poder
-// esconder las columnas en vez de pintar ceros.
 func TestSinSensorInstaladoNoEsUnError(t *testing.T) {
 	h, err := LeerToques(filepath.Join(t.TempDir(), "no-existe"), time.Time{})
 	if err != nil {
@@ -174,9 +161,6 @@ func TestPorOrigenTocadoAgrupaYOrdena(t *testing.T) {
 	}
 }
 
-// Un escaneo completo son 65 535 puertos. La CUENTA tiene que seguir siendo
-// exacta aunque la lista se acote: si se acotaran las dos, el panel diría que
-// alguien tocó doce puertos cuando recorrió el nodo entero.
 func TestUnEscaneoNoFalseaLaCuentaAunqueAcorteLosPuertos(t *testing.T) {
 	base := time.Now()
 	ip := netip.MustParseAddr("203.0.113.7")
@@ -201,14 +185,6 @@ func TestUnEscaneoNoFalseaLaCuentaAunqueAcorteLosPuertos(t *testing.T) {
 	}
 }
 
-// Desde es la PROFUNDIDAD REAL de la capa de paquetes, y se mide antes de
-// descartar lo de casa.
-//
-// Existe porque nas-sensor no relee su archivo al arrancar: su historial se
-// vacia en cada reinicio suyo mientras los dos anillos de Go recuperan el suyo
-// del disco. Sin esta cifra el panel ensena una fila con conexiones y cero
-// paquetes, que se lee como que la escalera paquete -> conexion -> rechazo esta
-// rota. Ver el comentario de Historial.
 func TestDesdeEsLaLineaMasAntiguaAunqueSeaDeCasa(t *testing.T) {
 	ruta := archivoDeToques(t,
 		"2026-08-19T04:39:55Z 192.168.1.18 22 syn",

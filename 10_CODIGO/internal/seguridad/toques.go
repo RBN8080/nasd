@@ -12,51 +12,6 @@ import (
 	"time"
 )
 
-// Toques: la capa que faltaba debajo de todo lo demás — RF-33, ADR-0066.
-//
-// # LAS TRES CAPAS, Y POR QUÉ HACÍA FALTA UNA TERCERA
-//
-// El panel ya conocía dos hechos, y los dos nacen DENTRO de nasd:
-//
-//	Petición rechazada  → anillo de rechazos (ADR-0061). Exige que alguien
-//	                      llegara a pedir algo por HTTP.
-//	Conexión aceptada   → anillo de conexiones (ADR-0064). Exige que el saludo
-//	                      TCP llegara al 80 o al 443.
-//
-// Falta lo de más abajo: un paquete que el cortafuegos descarta no llega a
-// nasd, así que un escáner recorriendo puertos cerrados era INVISIBLE. Ese
-// hecho lo captura nas-sensor, un proceso aparte con CAP_NET_RAW, y este
-// archivo es la puerta por la que entra.
-//
-// Cada capa es superconjunto de la siguiente: todo rechazo tuvo una conexión, y
-// toda conexión empezó por un paquete. Por eso el panel las enseña en columnas
-// de la misma fila y no en tres tablas.
-//
-// # NO HAY ESTADO COMPARTIDO AQUÍ, Y ES DELIBERADO
-//
-// A diferencia de Anillo y Conexiones, esto NO guarda nada en memoria: nasd no
-// es quien escribe, así que no tiene nada que mantener. Se lee el archivo cada
-// vez que se pinta la página — son como mucho Capacidad líneas cortas y la
-// abre una persona, no un bucle. Consecuencia buscada: este paquete no estrena
-// un sexto punto de estado compartido bajo ADR-0013, y nasd no cambia ni una
-// de sus garantías de concurrencia por tener sensor.
-//
-// # EL FILTRO «SOLO INTERNET» VIVE AQUÍ, Y EN NINGÚN OTRO SITIO
-//
-// nas-sensor anota TODO lo que captura, venga de donde venga: no sabe qué es
-// Internet y no le hace falta saberlo. Quien descarta lo de casa es LeerToques,
-// con la misma ClasificarRed que usa el resto del panel — la que ya corrigió
-// dos fallos reales (el IPv6 de casa contado como extraño, y fe80::…%2 por la
-// zona). Reimplementar eso en C habría duplicado la lógica Y su historial de
-// fallos; es el mismo argumento que Conexiones.Anotar lleva escrito, aplicado
-// al otro lado de la frontera.
-
-// Toque es un paquete que alguien envió al nodo para INICIAR algo: un TCP SYN
-// sin ACK, o un echo request.
-//
-// Solo lleva cuatro campos porque son los únicos que se saben con certeza al
-// ver pasar un paquete suelto. No hay ruta, ni código de respuesta, ni
-// User-Agent: nada de eso ha llegado todavía y puede que no llegue nunca.
 type Toque struct {
 	Momento time.Time
 	Origen  netip.Addr
@@ -84,66 +39,17 @@ type OrigenTocado struct {
 	Ultima  time.Time
 }
 
-// topeLineas acota lo que se lee de un archivo que escribe OTRO programa.
-//
-// El sensor no escribe más de Capacidad líneas, así que esto no debería
-// dispararse nunca. Existe porque «no debería» no es una garantía cuando el
-// escritor es un proceso distinto: sin tope, un archivo corrupto o de otra
-// versión decidiría cuánta memoria reserva nasd.
 const topeLineas = Capacidad * 4
 
-// Historial es lo que hay del sensor: si está, qué trae y cuánto ha visto.
-//
-// HAY ES UN CAMPO Y NO SE DEDUCE DE QUE LA LISTA ESTÉ VACÍA, y la distinción no
-// es teórica: «cero toques» y «sin sensor» significan lo contrario. Lo primero
-// es una buena noticia que el panel debe enseñar; lo segundo es que no estamos
-// mirando, y pintarlo como un cero sería afirmar algo que nadie ha comprobado.
-// Es el mismo criterio con el que HayGeo decide si existe la columna de
-// operador (RF-30, criterio 1).
 type Historial struct {
 	Hay    bool
 	Toques []Toque
-	// Total son los toques CAPTURADOS desde siempre, tal como el sensor los
-	// publica en su cabecera.
-	//
-	// «DESDE SIEMPRE» ES DE VERDAD DESDE SIEMPRE DESDE QUE EL SENSOR RELEE.
-	//
-	// Hasta entonces era «desde que arrancó el sensor», y la diferencia no era
-	// teórica: nas-sensor abría su archivo en modo escritura y nunca lo releía,
-	// así que cada arranque suyo —y cada despliegue, que reinicia la unidad—
-	// devolvía esta cifra a cero. Medido el 18/08: reinicio a las 22:59:49 y
-	// total-visto de 22 a 8. Las tres columnas del panel no tenían la misma
-	// memoria y había que decirlo para que nadie las restara.
-	//
-	// Ahora las tres releen (nas-sensor/analisis.c: leer_toque y leer_total),
-	// así que esta cifra sí es acumulada y sí se puede enseñar. Desde SIGUE
-	// haciendo falta por otro motivo, que es el de siempre: el anillo del
-	// sensor son 2000 líneas y se llena antes que los otros dos.
+
 	Total int64
-	// Desde es el instante de la línea MÁS ANTIGUA del archivo, contada antes
-	// de descartar lo de casa.
-	//
-	// Es la profundidad real de la capa de paquetes. Sin ella el panel puede
-	// enseñar una fila con conexiones y CERO paquetes —porque el sensor se
-	// reinició después de aquella visita— y eso se lee como que la escalera
-	// paquete → conexión → rechazo está rota, cuando lo que pasa es que la
-	// hoja de abajo empieza más tarde.
+
 	Desde time.Time
 }
 
-// EnVentana recorta lo ya leído a lo posterior a «desde». El cero no acota
-// nada, igual que en LeerToques.
-//
-// EXISTE PORQUE LA PÁGINA PIDE MÁS HONDO DE LO QUE ENSEÑA EN LA TABLA: la
-// gráfica dibuja doce días y la tabla obedece a la ventana del filtro, que
-// abre en veinticuatro horas. Se lee el archivo UNA vez por lo más hondo de las
-// dos y se recorta aquí; con dos lecturas serían dos fotos distintas del mismo
-// archivo —lo reescribe otro proceso cada minuto— y la fila de un origen
-// podría no cuadrar con la columna de su día.
-//
-// No supone que la lista venga ordenada, por lo mismo que LeerToques calcula
-// Desde con un mínimo en vez de fiarse de la primera línea: el orden lo
-// garantiza otro programa.
 func (h Historial) EnVentana(desde time.Time) []Toque {
 	if desde.IsZero() {
 		return h.Toques

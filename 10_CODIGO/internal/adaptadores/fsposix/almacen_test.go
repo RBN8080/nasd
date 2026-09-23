@@ -112,8 +112,7 @@ func TestNoSobrescribe(t *testing.T) {
 	}
 }
 
-// ADR-0028, capa 2: si el destino aparece por SMB MIENTRAS subimos, tampoco
-// se sobrescribe. La comprobación se repite justo antes de publicar.
+// ADR-0028, capa 2
 func TestNoSobrescribeSiApareceDurante(t *testing.T) {
 	a := nuevoVolumen(t)
 	ctx := context.Background()

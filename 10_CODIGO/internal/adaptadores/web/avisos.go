@@ -10,7 +10,7 @@ import (
 	"nasd/internal/seguridad"
 )
 
-// El enganche de la capa de avisos — ADR-0073.
+// ADR-0073.
 //
 // # POR QUÉ ESTE ARCHIVO ESTÁ EN EL ADAPTADOR WEB Y NO EN internal/aviso
 //
@@ -29,7 +29,7 @@ import (
 // y allí se decide: es el mismo reparto con el que la raíz de composición une
 // fsposix y web sin que ninguno conozca al otro (ADR-0014).
 //
-// # LO QUE ESTE ARCHIVO NO HACE, Y ES LO MÁS IMPORTANTE
+// # LO QUE ESTE ARCHIVO NO HACE
 //
 // No se llama desde ningún manejador, ni desde conRegistro, ni desde el
 // ConnState. Lo llama la goroutine de seguridad.Vigilar, una vez por minuto.

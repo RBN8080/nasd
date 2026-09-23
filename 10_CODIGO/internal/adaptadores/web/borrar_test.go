@@ -5,14 +5,6 @@ import (
 	"testing"
 )
 
-// La pantalla de confirmación de RF-18 no tenía NINGUNA prueba hasta el
-// 2026-08-06, y es la única barrera del sistema: sin papelera (D-15) y con
-// copia única (D-12), lo que pase de aquí no se recupera.
-//
-// Se prueba lo que RF-18 EXIGE —que se vea qué se destruye y que el paso
-// destructivo lleve la confirmación explícita—, no la redacción exacta de
-// los rótulos, que es cosa de estilo y el responsable puede cambiar sin que
-// ninguna prueba se ponga en rojo por ello.
 func TestLaConfirmacionDeBorradoEnsenaQueSeVaADestruir(t *testing.T) {
 	s, a := servidorDeMover(t)
 	a.agregar(t, "IMG_7539.MOV", false)

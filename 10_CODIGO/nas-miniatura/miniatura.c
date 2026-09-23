@@ -127,13 +127,6 @@ typedef struct {
     int tiene_miniatura_len;
 } datos_exif;
 
-// Copia una cadena TIFF (tipo ASCII, 2) de como maximo ASCII_MAX-1 bytes en
-// 'destino'. 'off_campo' es donde empiezan los 4 bytes de "valor u offset"
-// de la entrada. Si count<=4 la cadena vive DENTRO de esos 4 bytes, en el
-// mismo orden en que aparecen en el archivo -- el orden de bytes del TIFF
-// (mayor_primero) no aplica aqui, solo afecta a NUMEROS multibyte, no a
-// secuencias de caracteres. Si count>4, esos 4 bytes son un desplazamiento
-// (ese si, un numero) hacia donde vive la cadena de verdad.
 static int copiar_ascii(const uint8_t *buf, size_t len, int mayor_primero,
                          size_t tiff_base, uint32_t count, size_t off_campo,
                          char *destino) {
@@ -163,12 +156,6 @@ static int copiar_ascii(const uint8_t *buf, size_t len, int mayor_primero,
     return 1;
 }
 
-// Lee un IFD completo situado en 'ifd_off_rel', relativo al inicio del
-// bloque TIFF ('tiff_base', un desplazamiento ABSOLUTO dentro de 'buf').
-// Rellena en 'datos' los campos reconocidos que encuentre. Devuelve en
-// '*siguiente_rel' el desplazamiente del siguiente IFD en la cadena (0 si
-// no hay) -- el LLAMADOR decide si lo sigue; esta funcion nunca se llama a
-// si misma, y main() la invoca a mano un maximo de tres veces (regla 3).
 static void analizar_ifd(const uint8_t *buf, size_t len, int mayor_primero,
                           size_t tiff_base, uint32_t ifd_off_rel, datos_exif *datos,
                           uint32_t *siguiente_rel) {
@@ -259,16 +246,6 @@ static void analizar_ifd(const uint8_t *buf, size_t len, int mayor_primero,
     if (u32_en(buf, len, pos, mayor_primero, &sig)) *siguiente_rel = sig;
 }
 
-// Recorre los segmentos JPEG desde justo despues del SOI buscando un APP1
-// que contenga un bloque Exif. La longitud de un segmento JPEG SIEMPRE va
-// en big-endian -- es una regla del formato JPEG en si, independiente del
-// orden de bytes que el TIFF de dentro declare mas adelante.
-//
-// Devuelve 1 y, en '*tiff_base', el desplazamiento ABSOLUTO donde arranca
-// la cabecera TIFF (justo tras "Exif\0\0") si lo encuentra. Devuelve 0 si
-// el archivo no tiene Exif (JPEG valido sin metadatos: no es un error) o si
-// la estructura de segmentos se sale de 'len' antes de encontrarlo (tampoco
-// es un error: simplemente no se pudo seguir leyendo).
 static int buscar_app1_exif(const uint8_t *buf, size_t len, size_t *tiff_base) {
     size_t pos = 2;  // justo despues de FFD8
     for (;;) {
@@ -310,10 +287,6 @@ static int buscar_app1_exif(const uint8_t *buf, size_t len, size_t *tiff_base) {
     }
 }
 
-// Convierte "YYYY:MM:DD HH:MM:SS" (formato EXIF, 19 caracteres exactos) a
-// "YYYY-MM-DDTHH:MM:SS" (ISO 8601). No corrige ni adivina: si la cadena no
-// tiene exactamente esta forma, se rechaza -- una fecha mal formada no
-// merece arriesgarse a malinterpretarla.
 static int convertir_fecha(const char *cruda, char *salida /* min. 20 bytes */) {
     size_t n = strlen(cruda);
     if (n != 19) return 0;

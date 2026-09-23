@@ -6,13 +6,7 @@ import (
 	"testing"
 )
 
-// PROMOCIÓN DE LA CARPETA AL DAR DE BAJA — corrección del 06/08 sobre P-4,
-// etapa 2. Reportado en uso real: la cuenta desaparecía del registro pero su
-// carpeta seguía viviendo dentro de homeUsers/, un sitio que el panel deja de
-// mostrar. Se prueba contra disco real, como el resto del aislamiento.
-
-// Lo central: el contenido sobrevive y cambia de sitio, de homeUsers/juan/ a
-// la raíz común, con el mismo nombre.
+// PROMOCIÓN DE LA CARPETA AL DAR DE BAJA
 func TestPromoverCarpetaDeUsuarioLaSacaDeHomeUsers(t *testing.T) {
 	dir := t.TempDir()
 	base, err := AbrirVolumen(dir)

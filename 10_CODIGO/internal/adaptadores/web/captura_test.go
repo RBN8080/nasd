@@ -11,8 +11,6 @@ import (
 
 // EL ESTADO QUE SE REGISTRA TIENE QUE SER EL QUE RECIBIÓ EL CLIENTE.
 //
-// # POR QUÉ ESTA BATERÍA CORRE CONTRA UN SERVIDOR DE VERDAD
-//
 // Lo que hay que demostrar no es que capturaDeEstado siga una regla que
 // alguien escribió en un comentario: es que coincide con net/http. Una prueba
 // con httptest.NewRecorder compararía el envoltorio contra otro simulacro y

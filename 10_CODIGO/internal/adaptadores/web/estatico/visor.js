@@ -1,15 +1,3 @@
-// Decidir si ESTE navegador puede con ESTE archivo — RF-25.
-//
-// NUNCA POR «User-Agent», Y ESA ES LA REGLA ENTERA DE ESTE ARCHIVO.
-//
-// La cadena de agente dice qué navegador dice ser, no qué códecs trae: cambia
-// con la versión, con el sistema y con la configuración del usuario, y en
-// Brave se falsea a propósito. Aquí se pregunta a las APIs que responden por
-// la capacidad REAL —canPlayType, navigator.pdfViewerEnabled— y al propio
-// decodificador, por su evento de error. Es la diferencia entre saber y
-// suponer, y es lo que hace que un HEIC del iPhone se abra en Safari y caiga
-// al mensaje en Brave sin que el servidor tenga que conocer a ninguno de los
-// dos (WHATWG HTML §4.8.11 y §8.9).
 'use strict';
 
 // Las flechas del teclado repiten lo que ya hacen los dos enlaces de la

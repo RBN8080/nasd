@@ -70,16 +70,6 @@ static size_t escribir_u8(char *dst, uint8_t v) {
   return n;
 }
 
-// Las dos funciones de formato se escriben a mano en vez de usar inet_ntop
-// POR PORTABILIDAD, que es lo que permite ejercitar este archivo con
-// desinfectantes en el PC del responsable: inet_ntop vive en <arpa/inet.h> y
-// ahi no existe.
-//
-// La forma IPv6 sale LARGA, sin la abreviatura "::". Es deliberado: quien la
-// lee es netip.ParseAddr en Go, que la acepta igual, y ahorrarse las reglas de
-// compresion ahorra tambien sus casos borde. El panel la ensena ya canonica,
-// porque netip.Addr.String() la vuelve a componer al pintar.
-
 static int formatear_ipv4(const uint8_t *b, size_t n, size_t base, char *dst) {
   int ok = 1;
   uint8_t o[4];
@@ -148,16 +138,7 @@ int analizar_paquete(const uint8_t *b, size_t n, uint16_t familia,
     if (!ok || (v_ihl >> 4) != 4u) {
       return 0;
     }
-    // LA LONGITUD DE CABECERA LA ESCRIBE EL EMISOR. Se comprueba contra el
-    // minimo del protocolo Y contra lo recibido antes de usarla para nada.
-    //
-    // «ihl > n» es DEFENSA EN PROFUNDIDAD, y conviene decirlo en vez de
-    // presumir: es demostrablemente redundante con u8_en, porque ihl > n
-    // implica ihl+13 > n y el accesor acotado ya rechaza esa lectura. La
-    // prueba de mutacion lo confirma -- quitarlo no rompe ni un caso del
-    // corpus. Se queda porque rechazar temprano y de forma explicita vale mas
-    // que ahorrar una comparacion en un analizador de entrada hostil, pero
-    // quien lo lea debe saber que el guardia de verdad es u8_en.
+
     size_t ihl = (size_t)(v_ihl & 0x0fu) * 4u;
     if (ihl < 20u || ihl > n) {
       return 0;
@@ -217,23 +198,6 @@ int analizar_paquete(const uint8_t *b, size_t n, uint16_t familia,
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// LECTURA DEL HISTORIAL -- ver analisis.h para por que vive en este archivo.
-//
-// Esto analiza el archivo que ESTE MISMO programa escribio, y aun asi se trata
-// como hostil. ADR-0024 garantiza que un volcado a medias no deja el archivo
-// corrupto -- se escribe un temporal y se renombra --, pero no puede garantizar
-// nada de un sistema de archivos al que le quitaron la luz, que en este nodo
-// pasa casi a diario. Las cinco reglas de arriba se aplican sin excepcion.
-//
-// LA SEGURIDAD DE LOS INDICES ES POSICIONAL, y conviene leerla una vez: el
-// instante es de ancho fijo, asi que cada comprobacion se encadena con && y
-// solo se llega a mirar linea[k] cuando linea[k-1] ya resulto ser el caracter
-// esperado. Una linea mas corta termina en el nulo, que no es digito ni
-// separador, asi que la cadena se corta ahi sola. No hace falta medir la
-// longitud por adelantado y no se mide: seria una segunda verdad que mantener.
-// ---------------------------------------------------------------------------
-
 #include <limits.h>
 
 // LARGO_INSTANTE es lo que ocupa «2026-09-04T03:36:51Z», que es lo que escribe
@@ -266,13 +230,6 @@ static unsigned dias_del_mes(unsigned a, unsigned m) {
   return tabla[m - 1u];
 }
 
-// dias_desde_epoca convierte una fecha de calendario a dias desde 1970-01-01.
-//
-// SE HACE LA CUENTA A MANO Y NO CON timegm(), que seria una linea: timegm no es
-// ISO C -- es una extension -- y traerla obligaria a este archivo a depender del
-// sistema, que es justo lo que le quitaria la propiedad de compilar y correr
-// con desinfectantes en el PC del responsable. El algoritmo es el de
-// dias-desde-la-era: sin tablas, sin bucles y sin bibliotecas.
 static int64_t dias_desde_epoca(unsigned a, unsigned m, unsigned d) {
   int64_t y = (int64_t)a - (m <= 2u ? 1 : 0);
   int64_t era = (y >= 0 ? y : y - 399) / 400;
