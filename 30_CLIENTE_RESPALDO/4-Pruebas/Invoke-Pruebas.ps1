@@ -1312,6 +1312,17 @@ catch { $rechazado = $true }
 Test-Afirmacion -Nombre 'El tipo "restauracion" se rechaza: comprobar la semilla no es haber restaurado' `
     -Esperado $true -Obtenido $rechazado
 
+# EL MUESTREO SEMANAL TIENE FECHA PROPIA (seccion 9). Si el cotejo de cada
+# corrida la pisara, el muestreo de la raiz entera no volveria a tocar nunca.
+$huellasAntes = '' + (Read-EstadoRespaldo -Carpeta $cajaEstado)['huellas_momento']
+Write-EstadoDeComprobacion -Tipo 'muestreo' -Correcto $true -Detalle '80 leidos' -Carpeta $cajaEstado -Confirm:$false
+$trasMuestreo = Read-EstadoRespaldo -Carpeta $cajaEstado
+Test-Afirmacion -Nombre 'El muestreo semanal anota su fecha sin pisar la de las huellas' `
+    -Esperado $true -Obtenido ([bool]$trasMuestreo['muestreo_momento'] -and ('' + $trasMuestreo['huellas_momento']) -eq $huellasAntes)
+Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto $true -Detalle 'cotejo de lo recien copiado' -Carpeta $cajaEstado -Confirm:$false
+Test-Afirmacion -Nombre 'Y el cotejo de cada corrida no borra la fecha del muestreo' `
+    -Esperado ('' + $trasMuestreo['muestreo_momento']) -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaEstado)['muestreo_momento'])
+
 # ===========================================================================
 Write-Titulo 'La presentacion: que la ventana no mienta ni se rompa'
 # ===========================================================================
@@ -1447,6 +1458,116 @@ Test-Afirmacion -Nombre 'Clase A: un FALTANTE si es diferencia -- el parche no c
     -Esperado $false -Obtenido $h9c.Coincide
 Test-Afirmacion -Nombre 'Y se dice cuantos faltan, que es lo accionable' `
     -Esperado 1 -Obtenido $h9c.Faltan
+
+# ---------------------------------------------------------------------------
+#  H10: EL COTEJO DE CADA CORRIDA LEE LO RECIEN COPIADO (seccion 9)
+#
+#  Releer diez archivos al azar de cada raiz en cada corrida costaba 8 min de
+#  lectura por la red para confirmar lo ya confirmado (medido el 2026-09-23).
+#  La raiz entera queda para el muestreo semanal.
+# ---------------------------------------------------------------------------
+Write-Titulo 'H10: el cotejo de cada corrida lee lo recien copiado'
+
+foreach ($nombreFn in @('Test-HuellaPorMuestreo', 'Get-AlcanceDelMuestreo')) {
+    $fnH10 = $astVerificar.FindAll({
+        $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $args[0].Name -eq $nombreFn }, $true)
+    Test-Afirmacion -Nombre "$nombreFn existe en verificar.ps1" -Esperado 1 -Obtenido @($fnH10).Count
+    . ([scriptblock]::Create(@($fnH10)[0].Extent.Text))
+}
+
+$cajaH10    = Join-Path $CarpetaCaja 'cotejo-h10'
+$origenH10  = Join-Path $cajaH10 'origen'
+$destinoH10 = Join-Path $cajaH10 'destino'
+$vecinaH10  = Join-Path $cajaH10 'origen2'
+New-Item -ItemType Directory -Path $origenH10, $destinoH10, $vecinaH10 -Force | Out-Null
+1..15 | ForEach-Object { "archivo $_" | Set-Content -LiteralPath (Join-Path $origenH10 "a$_.txt") -Encoding UTF8 }
+# Copy-Item conserva la fecha de escritura, igual que robocopy.
+Get-ChildItem -LiteralPath $origenH10 -File | Copy-Item -Destination $destinoH10
+# Una raiz VECINA cuyo nombre empieza igual. Si el filtro no exigiera la barra,
+# su archivo se colaria como de esta raiz y saldria "NO ESTA EN EL DESTINO".
+'de otra raiz' | Set-Content -LiteralPath (Join-Path $vecinaH10 'a1.txt') -Encoding UTF8
+$raizH10 = [pscustomobject]@{ Ruta = $origenH10; Clase = 'A' }
+
+$h10a = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 10 `
+    -Candidatos @((Join-Path $origenH10 'a1.txt'), (Join-Path $origenH10 'a2.txt'))
+Test-Afirmacion -Nombre 'Con lo recien copiado lee SOLO eso: 2 de 15, no 10 al azar' `
+    -Esperado 2 -Obtenido $h10a.Comprobados
+Test-Afirmacion -Nombre 'Y dice de donde salio la muestra' -Esperado 'recientes' -Obtenido $h10a.Alcance
+
+$h10b = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 10 `
+    -Candidatos @((Join-Path $vecinaH10 'a1.txt'), ((Join-Path $origenH10 'a3.txt') + '   '))
+Test-Afirmacion -Nombre 'Lo de una raiz vecina no se cuela, y los espacios de robocopy no estorban' `
+    -Esperado '1|0' -Obtenido ('{0}|{1}' -f $h10b.Comprobados, $h10b.Ausentes)
+
+$h10c = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 10 -Candidatos @()
+Test-Afirmacion -Nombre 'Si la raiz no copio nada, lee UN archivo pequeno: el testigo exige haber leido algo' `
+    -Esperado '1|pequeno' -Obtenido ('{0}|{1}' -f $h10c.Comprobados, $h10c.Alcance)
+
+$grandeH10 = Join-Path $cajaH10 'solo-grande'
+New-Item -ItemType Directory -Path (Join-Path $grandeH10 'o'), (Join-Path $grandeH10 'd') -Force | Out-Null
+('x' * 2048) | Set-Content -LiteralPath (Join-Path $grandeH10 'o\g.bin') -Encoding ASCII
+Copy-Item -LiteralPath (Join-Path $grandeH10 'o\g.bin') -Destination (Join-Path $grandeH10 'd')
+$h10g = Test-HuellaPorMuestreo -Raiz ([pscustomobject]@{ Ruta = (Join-Path $grandeH10 'o'); Clase = 'A' }) `
+    -Destino (Join-Path $grandeH10 'd') -Cuantos 10 -Candidatos @() -TopePequeno 1024
+Test-Afirmacion -Nombre 'Y ese archivo es pequeno de verdad: por encima del tope no se lee' `
+    -Esperado 0 -Obtenido $h10g.Comprobados
+
+# EDITADO DESPUES DE COPIARSE: esa version no la llevo ninguna corrida.
+'editado despues de copiar' | Set-Content -LiteralPath (Join-Path $origenH10 'a1.txt') -Encoding UTF8
+(Get-Item -LiteralPath (Join-Path $origenH10 'a1.txt')).LastWriteTime = (Get-Date).AddMinutes(5)
+$h10d = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 10 `
+    -Candidatos @((Join-Path $origenH10 'a1.txt'), (Join-Path $origenH10 'a2.txt'))
+Test-Afirmacion -Nombre 'Un archivo editado DESPUES de copiarse no se compara, y no tumba el cotejo' `
+    -Esperado '1|1|True' -Obtenido ('{0}|{1}|{2}' -f $h10d.Posteriores, $h10d.Comprobados, $h10d.Correcto)
+
+# LO CONTRARIO SI SE VE: misma fecha y contenido podrido en el destino.
+$fechaA2 = (Get-Item -LiteralPath (Join-Path $origenH10 'a2.txt')).LastWriteTime
+'contenido podrido' | Set-Content -LiteralPath (Join-Path $destinoH10 'a2.txt') -Encoding UTF8
+(Get-Item -LiteralPath (Join-Path $destinoH10 'a2.txt')).LastWriteTime = $fechaA2
+$h10e = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 10 `
+    -Candidatos @((Join-Path $origenH10 'a2.txt'))
+Test-Afirmacion -Nombre 'Un contenido podrido en lo recien copiado SI sale: saltar lo posterior no ciega el nivel 3' `
+    -Esperado 1 -Obtenido @($h10e.Diferencias | Where-Object { $_.Motivo -eq 'HUELLA DISTINTA' }).Count
+
+'recien creado' | Set-Content -LiteralPath (Join-Path $origenH10 'nuevo.txt') -Encoding UTF8
+$h10f = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 10 `
+    -Candidatos @((Join-Path $origenH10 'nuevo.txt'))
+Test-Afirmacion -Nombre 'Lo que la corrida dijo copiar y NO esta en el destino SI es un fallo' `
+    -Esperado '1|False' -Obtenido ('{0}|{1}' -f `
+        @($h10f.Diferencias | Where-Object { $_.Motivo -eq 'NO ESTA EN EL DESTINO' }).Count, $h10f.Correcto)
+
+$h10h = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 3
+Test-Afirmacion -Nombre 'Sin lista, la muestra sale de la raiz entera, como en la opcion [3]' `
+    -Esperado 'completo|3' -Obtenido ('{0}|{1}' -f $h10h.Alcance, $h10h.Comprobados)
+
+# EN LA RAIZ ENTERA, LO QUE AUN NO LLEGO ES UN PENDIENTE, NO UNA HUELLA DISTINTA.
+# Medido el 2026-09-23: las 3 "diferencias" de un muestreo eran capturas hechas
+# despues de la ultima copia. Lo podrido de verdad -a2- sigue saliendo.
+$h10i = Test-HuellaPorMuestreo -Raiz $raizH10 -Destino $destinoH10 -Cuantos 50
+Test-Afirmacion -Nombre 'En el muestreo, lo que aun no llego se anota pero no es una diferencia; lo podrido si' `
+    -Esperado '1|0|1' -Obtenido ('{0}|{1}|{2}' -f $h10i.Ausentes,
+        @($h10i.Diferencias | Where-Object { $_.Motivo -eq 'NO ESTA EN EL DESTINO' }).Count,
+        @($h10i.Diferencias | Where-Object { $_.Motivo -eq 'HUELLA DISTINTA' }).Count)
+
+$informeRecientes = [pscustomobject]@{ TodoCoincide = $false; Coincidencias = @(); Huellas = @($h10a, $h10c) }
+Test-Afirmacion -Nombre 'El cotejo de lo recien copiado basta para el verde del testigo (ADR-0079)' `
+    -Esperado $true -Obtenido (Test-CotejoLimpio -Informe $informeRecientes).Limpio
+
+$ahoraH10 = [datetime]'2026-09-23T12:00:00'
+Test-Afirmacion -Nombre 'Sin muestreo previo, toca el de la raiz entera' -Esperado 'completo' `
+    -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '' -HayRecientes -Ahora $ahoraH10)
+Test-Afirmacion -Nombre 'Con el ultimo hace 2 dias, basta lo recien copiado' -Esperado 'recientes' `
+    -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '2026-09-21T12:00:00' -HayRecientes -Ahora $ahoraH10)
+Test-Afirmacion -Nombre 'Con el ultimo hace 8 dias, toca el semanal' -Esperado 'completo' `
+    -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '2026-09-15T12:00:00' -HayRecientes -Ahora $ahoraH10)
+Test-Afirmacion -Nombre 'Sin lista de lo recien copiado -la opcion [3]- siempre la raiz entera' -Esperado 'completo' `
+    -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '2026-09-22T12:00:00' -Ahora $ahoraH10)
+Test-Afirmacion -Nombre 'Una fecha del futuro no aplaza el semanal' -Esperado 'completo' `
+    -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '2026-10-30T12:00:00' -HayRecientes -Ahora $ahoraH10)
+
+Test-Afirmacion -Nombre 'Y el motor le pasa al cotejo lo que acaba de copiar' `
+    -Esperado $true -Obtenido ($fuenteMotor -match "\`$argsCotejo\['Recientes'\] = ")
 
 # ---------------------------------------------------------------------------
 #  EL VEREDICTO SE PARTE, NO SE CORTA A MEDIA FRASE (04/09/2026)

@@ -258,8 +258,12 @@ function Measure-CambioDeRaiz {
     $porcentaje = if ($totalOrigen -gt 0) { [math]::Round(100.0 * $afectados / $totalOrigen, 2) } else { 0 }
     # Un destino vacio contra un origen con archivos no es un cifrado: es la
     # primera siembra. Se marca aparte para que el mensaje no mienta.
+    #
+    # Basta el PRIMER archivo para saber que no esta vacio: contarlos todos
+    # recorria el destino entero por la red en cada corrida y por cada raiz.
     $primeraSiembra = (-not (Test-Path -LiteralPath $Destino)) -or
-                      (@(Get-ChildItem -LiteralPath $Destino -File -Force -Recurse -ErrorAction SilentlyContinue).Count -eq 0)
+                      (@(Get-ChildItem -LiteralPath $Destino -File -Force -Recurse -ErrorAction SilentlyContinue |
+                            Select-Object -First 1).Count -eq 0)
 
     return [pscustomobject]@{
         Raiz           = $Raiz.Ruta
@@ -315,7 +319,9 @@ function Test-OrigenUtilizable {
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'guarda' -Mensaje "El origen no existe: $($Raiz.Ruta). No se copia ni se borra nada."
         return $false
     }
-    $n = @(Get-ChildItem -LiteralPath $Raiz.Ruta -File -Force -Recurse -ErrorAction SilentlyContinue).Count
+    # Para saber que no esta vacio basta el primer archivo.
+    $n = @(Get-ChildItem -LiteralPath $Raiz.Ruta -File -Force -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1).Count
     if ($n -eq 0) {
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'guarda' -Mensaje "El origen esta VACIO: $($Raiz.Ruta). Con clase $($Raiz.Clase) eso seria una orden de vaciar el destino. Abortado."
         return $false
@@ -979,6 +985,15 @@ function Invoke-CorridaConEstado {
             try {
                 $argsCotejo = @{ EmitirLatido = $true }
                 if ($RutaConfiguracion) { $argsCotejo['RutaConfiguracion'] = $RutaConfiguracion }
+                # LO QUE ESTA CORRIDA COPIO VIAJA AL COTEJO, y es lo que se lee
+                # entero: releer lo que ya estaba lo deja al muestreo semanal
+                # (seccion 9). Va aunque este vacio: vacio es "no copie nada",
+                # que no es lo mismo que no decirlo.
+                $recientes = New-Object System.Collections.Generic.List[string]
+                foreach ($c in @($resultado.Copias)) {
+                    foreach ($ruta in @($c.ACopiar)) { $recientes.Add(('' + $ruta).Trim()) }
+                }
+                $argsCotejo['Recientes'] = $recientes.ToArray()
                 & "$PSScriptRoot\verificar.ps1" @argsCotejo | Out-Null
             }
             catch {
