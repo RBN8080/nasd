@@ -34,6 +34,10 @@ $ErrorActionPreference = 'Stop'
 # correctamente" (pendiente 22 del contrato).
 $script:RobocopyMaximoCorrecto = 7
 
+# El muestreo de huellas sobre la raiz ENTERA es semanal (seccion 9). Entre uno y
+# otro, el cotejo de cada corrida lee solo lo que esa corrida acaba de copiar.
+$script:DiasEntreMuestreos = 7
+
 function ConvertFrom-Jsonc {
     <#
         .SYNOPSIS
@@ -2677,7 +2681,8 @@ function Write-EstadoDeComprobacion {
 
             Se funde con lo que hubiera: las claves de copia se conservan.
         .PARAMETER Tipo
-            'huellas' -la verificacion- o 'restauracion' -la prueba de leer.
+            'huellas' -la verificacion-, 'muestreo' -el pase semanal sobre la
+            raiz entera- o 'semilla' -la prueba de leer el kit de arranque-.
         .PARAMETER Correcto
             Si salio limpio.
         .PARAMETER Detalle
@@ -2693,8 +2698,12 @@ function Write-EstadoDeComprobacion {
         # -restaurar de verdad en una maquina limpia- es otra cosa y sigue
         # abierto. Llamarlas igual convertiria el tablero en el semaforo que
         # miente: verde en "restauracion" sin haber restaurado nada.
+        # 'muestreo' NO ES 'huellas'. Las huellas se anotan tras cualquier
+        # cotejo; el muestreo, solo tras el que leyo de la raiz ENTERA. De su
+        # fecha depende cuando toca el siguiente (seccion 9), y si el cotejo de
+        # lo recien copiado la pisara, el pase semanal no llegaria nunca.
         [Parameter(Mandatory)]
-        [ValidateSet('huellas', 'semilla')]
+        [ValidateSet('huellas', 'muestreo', 'semilla')]
         [string] $Tipo,
 
         [Parameter(Mandatory)]
