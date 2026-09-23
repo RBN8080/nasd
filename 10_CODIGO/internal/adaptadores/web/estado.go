@@ -151,9 +151,9 @@ func evaluar(n sistema.Nodo, i Instantanea) []indicador {
 // suyo.
 //
 // 22 h, y sale de la cadencia medida del cliente (30_CLIENTE_RESPALDO
-// §12.quindecies): tres ventanas al día dejan un hueco recibol de n h, y el
+// §12.quindecies): tres ventanas al día dejan un hueco recibol de 12 h, y el
 // peor hueco medido entre corridas buenas sobre 200 meses simulados fue de
-// n h. Es el MISMO número que el icono de la barra del equipo.
+// 18.4 h. Es el MISMO número que el icono de la barra del equipo.
 //
 // ES UN VALOR DE REPUESTO, NO EL CRITERIO. El criterio lo publica el cliente en
 // su propio ESTADO.txt, porque el umbral vive en un archivo del equipo que este

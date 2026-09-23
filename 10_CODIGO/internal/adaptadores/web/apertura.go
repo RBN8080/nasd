@@ -137,7 +137,6 @@ func urlDeAbrirCon(r almacen.RutaSegura, c criterio) string {
 	return u + "?orden=" + string(c)
 }
 
-
 func urlDeListadoCon(r almacen.RutaSegura, c criterio) string {
 	u := urlDeListado(r)
 	if c == porNombre {
@@ -381,7 +380,7 @@ func (s *Servidor) renderVisor(w http.ResponseWriter, v vistaVisor, estado int) 
 	}
 }
 
-no es un validador: solo separa un PDF de algo que no
+// no es un validador: solo separa un PDF de algo que no
 // lo es en absoluto.
 func pdfPlausible(lector io.ReadSeeker) (bool, error) {
 	var cabecera [1024]byte

@@ -102,7 +102,8 @@ if (Test-Path -LiteralPath $config) {
 if (-not (Test-Path -LiteralPath $plantilla)) {
     Alto "falta $plantilla." @(
         'La plantilla es lo que este guion rellena, y no esta.',
-        'Tiene que vivir en 3-Config, junto a este instalador.',
+        'La plantilla tiene que estar',
+        'en 3-Config, junto a este instalador.',
         'El clon esta incompleto: clone el repositorio entero.'
     )
 }

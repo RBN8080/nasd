@@ -12,7 +12,7 @@ import (
 	"nasd/internal/almacen"
 )
 
-// RNF-06, capa 2 
+// RNF-06, capa 2
 func TestEnlaceFueraDelVolumenNoSeSirve(t *testing.T) {
 	a := nuevoVolumen(t)
 	ctx := context.Background()

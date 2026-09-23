@@ -193,7 +193,6 @@ func TestSoloLasImagenesAbrenEnPestanaNuevaSobreHTTPS(t *testing.T) {
 	}
 }
 
-
 func TestNingunaImagenAbreEnPestanaNuevaSobreHTTP(t *testing.T) {
 	s, a := servidorDeApertura(t)
 	a.agregar(t, "foto.png", []byte("\x89PNG\r\n\x1a\n"))

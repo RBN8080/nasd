@@ -221,7 +221,7 @@ func TestElResumenDiceCuantoNoEstaMostrando(t *testing.T) {
 func ptr[T any](v T) *T { return &v }
 
 // NINGUNA SEÑAL PUEDE AFIRMAR UN ATAQUE, ni en su etiqueta ni en su
-// explicación. 
+// explicación.
 //
 // El aviso de cabecera que decía «rechazos, no ataques» se retiró del panel el
 // 2026-08-24 por decisión del responsable. Esta prueba no dependía de él y

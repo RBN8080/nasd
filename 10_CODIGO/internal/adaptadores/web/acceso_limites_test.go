@@ -83,7 +83,6 @@ func TestElAccesoValidoSigueFuncionando(t *testing.T) {
 	}
 }
 
-//
 // Cada fila es un camino distinto por dentro. Lo que se comprueba es que
 // ninguno se pueda separar de los demás mirando la respuesta: ni por el
 // estado, ni por las cabeceras, ni por el cuerpo.

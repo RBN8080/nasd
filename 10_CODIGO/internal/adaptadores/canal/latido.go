@@ -87,7 +87,7 @@ func NuevoLatido(destino string, intervalo time.Duration, cuerpo func() string, 
 		return nil, errors.New("el latido necesita la URL del testigo externo")
 	}
 	// SOLO https, y el «http://» se rechaza
-	
+
 	// La primera versión de esta comprobación aceptaba los dos y el mensaje de
 	// error decía «debe empezar por https://»: el código y el texto se
 	// contradecían, que es exactamente la clase de defecto silencioso que este

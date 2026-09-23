@@ -17,7 +17,7 @@ import (
 //     el disco de datos (ADR-0037) con unos veinte días reales de profundidad
 //     medidos, y responde a un «journalctl -u nasd -g AVISO».
 //
-//  2.  UN FALLO DEL CANAL EXTERIOR NO BORRA EL AVISO. La constancia queda
+//  2. UN FALLO DEL CANAL EXTERIOR NO BORRA EL AVISO. La constancia queda
 //     igualmente, que es lo que convierte una caída del proveedor en una
 //     molestia en vez de en una pérdida.
 //

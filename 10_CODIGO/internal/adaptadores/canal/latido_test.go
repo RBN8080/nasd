@@ -53,7 +53,7 @@ func TestElLatidoMandaElDiagnosticoYCuenta(t *testing.T) {
 }
 
 func TestElCuerpoDelLatidoNoLlevaDireccionesNiRutas(t *testing.T) {
-	// El latido dice «estoy», no «esto ha pasado». 
+	// El latido dice «estoy», no «esto ha pasado».
 	// El tope existe porque el cuerpo lo compone otro paquete a
 	// través de una función, y lo que cruza esa frontera se acota igual que se
 	// acota todo lo que entra de fuera.

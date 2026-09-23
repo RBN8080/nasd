@@ -28,13 +28,12 @@ import (
 type Senal uint8
 
 const (
-
 	SenalExploracion Senal = iota
 
 	SenalFuerzaBruta
 
 	SenalSoftwareAjeno
-	
+
 	SenalOperadorDesconocido
 )
 
@@ -182,11 +181,11 @@ type claveSonda struct {
 
 // Origen agrupa lo que hizo una misma dirección.
 type Origen struct {
-	IP  netip.Addr
-	Red Red
-	Eventos int
-	Primera time.Time
-	Ultima  time.Time
+	IP        netip.Addr
+	Red       Red
+	Eventos   int
+	Primera   time.Time
+	Ultima    time.Time
 	PorMotivo map[Motivo]int
 	Cuentas   []string
 	Senales   []Senal
@@ -207,7 +206,7 @@ func PorOrigen(eventos []Evento) []Origen {
 		ajenas  int
 
 		sinRutaOK map[string]bool
-	
+
 		sondas map[claveSonda]*Sonda
 	}
 	porIP := make(map[netip.Addr]*acumulado)
@@ -247,7 +246,7 @@ func PorOrigen(eventos []Evento) []Origen {
 		if RutaDeSoftwareAjeno(e.Ruta) {
 			a.ajenas++
 		}
-		
+
 		k := claveSonda{metodo: e.Metodo, ruta: e.Ruta, estado: e.Estado}
 		sd, ok := a.sondas[k]
 		if !ok {
@@ -322,7 +321,7 @@ type Resumen struct {
 	IPsUnicas  int
 	DesdeFuera int
 
-	RutasMasPedidas []Cuenta
+	RutasMasPedidas      []Cuenta
 	RutasVistas          int
 	AutenticacionFallida int
 	// OrigenesConSenal son los que alguna inferencia marcó. Es una CUENTA de
@@ -428,4 +427,3 @@ func (o Origen) Destacar() bool {
 func (e Evento) Destacar() bool {
 	return e.Motivo.Gravedad() == Atencion || e.Red.DeFuera()
 }
-end (0); 

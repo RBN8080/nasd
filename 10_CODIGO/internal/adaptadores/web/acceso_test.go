@@ -68,7 +68,6 @@ func (rp *reparto) promovidosHechos() []string {
 
 const claveDeJuan = "clave-de-juan-bastante-larga"
 
-
 func servidorMultiusuario(t *testing.T) (*Servidor, *reparto) {
 	t.Helper()
 	linea, err := autenticacion.Derivar(claveDePrueba, iteracionesDePrueba)
@@ -341,7 +340,7 @@ func TestTrasEntrarSoloSePideLaContrasenaYSeEnsenaLaInicial(t *testing.T) {
 	if !strings.Contains(cuerpo, "¿No eres J?, cambiar de usuario") {
 		t.Errorf("falta el aviso con la inicial; cuerpo: %q", cuerpo)
 	}
-	
+
 	if strings.Contains(cuerpo, "juan") {
 		t.Error("el formulario enseña el nombre completo, no solo la inicial")
 	}
@@ -433,11 +432,9 @@ func TestSinLasPiezasDelAccesoPorUsuarioNoArranca(t *testing.T) {
 	}
 }
 
-
 func TestSoloElSuperusuarioAlcanzaElEstado(t *testing.T) {
 	s, _ := servidorMultiusuario(t)
 	h := s.Rutas()
-
 
 	pedir := func(ruta string, sesion *http.Cookie) int {
 		ctx, cancelar := context.WithCancel(context.Background())
