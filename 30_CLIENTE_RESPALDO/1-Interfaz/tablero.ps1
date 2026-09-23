@@ -69,6 +69,10 @@
     .PARAMETER RutaConfiguracion
         Configuracion a usar. Por omision la de 3-Config.
 
+    .PARAMETER Opcion
+        Ejecuta esa opcion del menu y sale, sin pintar la ventana. Lo usa el
+        tablero de PowerShell 7 para correr cada opcion en 5.1 (ADR-0097).
+
     .EXAMPLE
         .\tablero.ps1
 #>
@@ -76,7 +80,10 @@
 [OutputType([void])]
 param(
     [ValidateNotNullOrEmpty()]
-    [string] $RutaConfiguracion
+    [string] $RutaConfiguracion,
+
+    [ValidatePattern('^[0-9A-Za-z]$')]
+    [string] $Opcion
 )
 
 Set-StrictMode -Version Latest
@@ -93,6 +100,11 @@ $script:NombreIndicador = 'NasRespaldo-Indicador'
 $script:Capacidades = Initialize-Consola
 $script:Paleta      = Get-Paleta -Capacidades $script:Capacidades
 $script:Regla       = Get-ReglaDeAviso -Unicode $script:Capacidades.Unicode
+
+# EL PANEL CON SPECTRE ES OPCIONAL (ADR-0097): PowerShell 7.4 y el modulo
+# PwshSpectreConsole. Sin ellos se pinta la ventana de siempre.
+. "$PSScriptRoot\panel.ps1"
+$script:PanelRico = Initialize-PanelRico
 
 function Show-Texto {
     <#
@@ -301,8 +313,53 @@ function Format-EtiquetaDeRaiz {
 function Write-CuerpoDeTabla {
     <#
         .SYNOPSIS
-            Las filas de la tabla por raiz, una por raiz y con las dos columnas.
+            Las filas de la tabla por raiz, pintadas con la paleta de siempre.
         .DESCRIPTION
+            Que dice cada celda y de que tono lo decide Get-FilasDeTabla; aqui
+            solo se traduce el tono a color.
+        .PARAMETER Filas
+            Lo que devolvio Read-EstadoPorRaiz.
+        .PARAMETER Paleta
+            Los colores.
+        .PARAMETER HorasParaAmbar
+            Ver Get-FilasDeTabla.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
+        [Parameter(Mandatory)][hashtable] $Paleta,
+        [ValidateRange(1, 720)][double] $HorasParaAmbar = 12
+    )
+
+    $modelo = @(Get-FilasDeTabla -Filas $Filas -HorasParaAmbar $HorasParaAmbar)
+    if ($modelo.Count -eq 0) {
+        Write-Linea ('  {0}Todavia no hay tabla: la escribe el motor al copiar. Corre [1].{2}{1}' -f `
+                $Paleta.Tenue, $Paleta.Fin, '')
+        return
+    }
+
+    foreach ($m in $modelo) {
+        Write-Linea ('  {0}{1}{2}{3}{4}' -f `
+            (Format-Celda -Texto $m.Etiqueta -Ancho 30 -Paleta $Paleta -Color $Paleta.Valor), `
+            (Format-Celda -Texto $m.Clase -Ancho 4 -Paleta $Paleta -Color $Paleta.Tenue), `
+            (Format-Celda -Texto ('{0} arch. ' -f $m.Movidos) -Ancho 11 -Paleta $Paleta -Derecha `
+                    -Color $Paleta.Tenue), `
+            (Format-Celda -Texto $m.Nodo.Texto -Ancho 13 -Paleta $Paleta -Color $Paleta[$m.Nodo.Tono]), `
+            (Format-Celda -Texto $m.Disco.Texto -Ancho 13 -Paleta $Paleta -Color $Paleta[$m.Disco.Tono]))
+    }
+}
+
+function Get-FilasDeTabla {
+    <#
+        .SYNOPSIS
+            La tabla por raiz YA DECIDIDA: el texto y el tono de cada celda.
+        .DESCRIPTION
+            LAS DOS VENTANAS BEBEN DE AQUI (ADR-0097), la de siempre y la de
+            Spectre, asi que cada regla de color vive en un solo sitio. El tono
+            es un nombre -Verde, Ambar, Rojo, Gris- que cada ventana traduce a
+            su paleta.
+
             SE UNEN LOS DOS DESTINOS POR LA ETIQUETA DE LA RAIZ. Una raiz puede
             estar en el nodo y no en el disco -es lo normal, el disco se conecta
             a peticion- y otra puede estar solo en el disco, porque la copia
@@ -314,8 +371,6 @@ function Write-CuerpoDeTabla {
             no se dibujan igual.
         .PARAMETER Filas
             Lo que devolvio Read-EstadoPorRaiz.
-        .PARAMETER Paleta
-            Los colores.
         .PARAMETER HorasParaAmbar
             A partir de cuantas horas una copia buena deja de pintarse verde.
 
@@ -334,18 +389,14 @@ function Write-CuerpoDeTabla {
             como lo lee una persona; lo que cambia es quien decide el color.
     #>
     [CmdletBinding()]
-    [OutputType([void])]
+    [OutputType([psobject[]])]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
-        [Parameter(Mandatory)][hashtable] $Paleta,
         [ValidateRange(1, 720)][double] $HorasParaAmbar = 12
     )
 
-    if (@($Filas).Count -eq 0) {
-        Write-Linea ('  {0}Todavia no hay tabla: la escribe el motor al copiar. Corre [1].{2}{1}' -f `
-                $Paleta.Tenue, $Paleta.Fin, '')
-        return
-    }
+    $resultado = New-Object System.Collections.Generic.List[psobject]
+    if (@($Filas).Count -eq 0) { return $resultado.ToArray() }
 
     $porDestino = @{}
     foreach ($f in $Filas) {
@@ -421,11 +472,11 @@ function Write-CuerpoDeTabla {
                 # una raiz del nodo si es un hueco de verdad.
                 $texto = '--'
                 if ($columna -eq 1 -and $raiz -notmatch '^[A-Za-z]:') { $texto = 'es el origen' }
-                $celdas += (Format-Celda -Texto $texto -Ancho 13 -Paleta $Paleta -Color $Paleta.Gris)
+                $celdas += [pscustomobject]@{ Texto = $texto; Tono = 'Gris' }
                 continue
             }
             if ($lado.Estado -ne 'AlDia') {
-                $celdas += (Format-Celda -Texto 'FALLO' -Ancho 13 -Paleta $Paleta -Color $Paleta.Rojo)
+                $celdas += [pscustomobject]@{ Texto = 'FALLO'; Tono = 'Rojo' }
                 continue
             }
             # AL DIA A SECAS CUANDO ESTA DENTRO DEL HUECO QUE PROMETE LA
@@ -445,20 +496,22 @@ function Write-CuerpoDeTabla {
                 $reciente = (((Get-Date) - $cuando).TotalHours -le $HorasParaAmbar)
             }
             if ($reciente) {
-                $celdas += (Format-Celda -Texto 'AL DIA' -Ancho 13 -Paleta $Paleta -Color $Paleta.Verde)
+                $celdas += [pscustomobject]@{ Texto = 'AL DIA'; Tono = 'Verde' }
             }
             else {
-                $celdas += (Format-Celda -Texto $edad -Ancho 13 -Paleta $Paleta -Color $Paleta.Ambar)
+                $celdas += [pscustomobject]@{ Texto = $edad; Tono = 'Ambar' }
             }
         }
 
-        Write-Linea ('  {0}{1}{2}{3}{4}' -f `
-            (Format-Celda -Texto (Format-EtiquetaDeRaiz -Raiz $raiz) -Ancho 30 -Paleta $Paleta -Color $Paleta.Valor), `
-            (Format-Celda -Texto $claseCelda -Ancho 4 -Paleta $Paleta -Color $Paleta.Tenue), `
-            (Format-Celda -Texto ('{0} arch. ' -f $movidos) -Ancho 11 -Paleta $Paleta -Derecha `
-                    -Color $Paleta.Tenue), `
-                $celdas[0], $celdas[1])
+        $resultado.Add([pscustomobject]@{
+            Etiqueta = (Format-EtiquetaDeRaiz -Raiz $raiz)
+            Clase    = $claseCelda
+            Movidos  = $movidos
+            Nodo     = $celdas[0]
+            Disco    = $celdas[1]
+        })
     }
+    return $resultado.ToArray()
 }
 
 function Get-EstadoDeTarea {
@@ -573,9 +626,7 @@ function Show-Ventana {
             Se separa con REGLAS a todo lo ancho y no con un marco cerrado: es
             lo que dibuja la maqueta y lo que hace el panel del nodo.
 
-            NO ESCANEA NADA PARA PINTARSE. La tabla sale de RAICES.tsv, que
-            escribio el motor cuando de verdad midio. Un tablero que tarda
-            minutos en abrirse no se abre nunca.
+            Que se ensena lo decide Get-DatosDeVentana; aqui solo se pinta.
         .PARAMETER Configuracion
             El objeto de configuracion completo.
     #>
@@ -585,18 +636,16 @@ function Show-Ventana {
         [Parameter(Mandatory)][psobject] $Configuracion
     )
 
-    $v       = Get-EstadoDelIndicador
-    $estado  = Read-EstadoRespaldo
-    $filas   = @(Read-EstadoPorRaiz)
+    $d       = Get-DatosDeVentana -Configuracion $Configuracion
     $p       = $script:Paleta
     $u       = $script:Capacidades.Unicode
-    $colorEs = Get-ColorDeEstado -Estado $v.Estado -Paleta $p
-    $simbolo = Get-Simbolo -Estado $v.Estado -Unicode $u
+    $colorEs = Get-ColorDeEstado -Estado $d.Estado -Paleta $p
+    $simbolo = Get-Simbolo -Estado $d.Estado -Unicode $u
     $ancho   = $script:AnchoTablero
 
     # --- Cabecera: quien soy, y el veredicto pegado a la derecha ------------
-    $izq = 'RESPALDO {0}' -f $Configuracion.destinos.nodo.prefijoEquipo
-    $der = 'VEREDICTO:{0}{1}' -f $simbolo, $v.Estado.ToUpperInvariant()
+    $izq = 'RESPALDO {0}' -f $d.Equipo
+    $der = 'VEREDICTO:{0}{1}' -f $simbolo, $d.Estado.ToUpperInvariant()
     $hueco = $ancho - $izq.Length - $der.Length
     if ($hueco -lt 1) { $hueco = 1 }
     Write-Linea ('  {0}{1}{2}{3}{4}{5}{6}' -f `
@@ -608,16 +657,87 @@ function Show-Ventana {
     # leer entera. Limit-Texto sigue valiendo para las CELDAS, donde recortar es
     # la alternativa a romper el marco; para esto hacia falta un partidor, y no
     # existia hasta hoy.
-    foreach ($trozo in @(Split-TextoEnLineas -Texto ('' + $v.Detalle) -Ancho $ancho)) {
+    foreach ($trozo in @(Split-TextoEnLineas -Texto $d.Detalle -Ancho $ancho)) {
         Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $trozo, $p.Fin)
     }
     Write-Linea ' '
 
     # --- Los dos destinos ---------------------------------------------------
+    foreach ($destino in @($d.Nodo, $d.Disco)) {
+        Write-Linea ('  {0}{1}{2}{3}' -f `
+            (Format-Celda -Texto $destino.Nombre -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
+            (Format-Celda -Texto $destino.Situacion -Ancho 14 -Paleta $p -Color $p[$destino.TonoSituacion]), `
+            (Format-Celda -Texto $destino.Libres -Ancho 16 -Paleta $p -Color $p.Tenue), `
+            (Format-Celda -Texto ('ult. copia {0}' -f $destino.UltimaCopia) `
+                    -Ancho 26 -Paleta $p -Color $p[$destino.TonoCopia]))
+    }
+    Write-Linea ' '
+
+    # --- La tabla por raiz: la pieza central de la maqueta -------------------
+    Write-Linea ('  {0}{1}{2}{3}{4}' -f `
+        (Format-Celda -Texto 'RAIZ' -Ancho 30 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'CL' -Ancho 4 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'COPIADO ' -Ancho 11 -Paleta $p -Color $p.Etiqueta -Derecha), `
+        (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+    Write-CuerpoDeTabla -Filas $d.Filas -Paleta $p -HorasParaAmbar $d.HorasVerde
+    Write-Linea ' '
+
+    # --- Las lineas de resumen que pide la maqueta ---------------------------
+    Write-LineaDeSumario -Etiqueta 'SEGURIDAD' -Paleta $p -Partes $d.Seguridad
+    Write-LineaDeSumario -Etiqueta 'COMPROBADO' -Paleta $p -Partes $d.Comprobado
+    Write-LineaDeSumario -Etiqueta 'AUTOMATISMO' -Paleta $p -Partes $d.Automatismo
+    if (@($d.Pendiente).Count -gt 0) {
+        Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $p -Partes $d.Pendiente -Color $p.Ambar -Avisar
+    }
+
+    # --- Menu ----------------------------------------------------------------
+    $menu = Get-MenuDelTablero
+    Write-Linea ' '
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+    Write-Linea ('  {0}{1}{2}{3}{4}' -f ($p.Fuerte + $p.Titulo), `
+            $menu.Columnas[0].PadRight(26), $menu.Columnas[1].PadRight(28), $menu.Columnas[2], $p.Fin)
+    foreach ($fila in $menu.Filas) {
+        Write-Linea ('  {0}{1}{2}' -f `
+            (Format-Celda -Texto $fila[0] -Ancho 26 -Paleta $p -Color $p.Valor), `
+            (Format-Celda -Texto $fila[1] -Ancho 28 -Paleta $p -Color $p.Valor), `
+            (Format-Celda -Texto $fila[2] -Ancho 24 -Paleta $p -Color $p.Valor))
+    }
+    Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $menu.Nota, $p.Fin)
+    Write-Linea ' '
+}
+
+function Get-DatosDeVentana {
+    <#
+        .SYNOPSIS
+            Todo lo que ensena la ventana de estado, ya decidido. No pinta nada.
+        .DESCRIPTION
+            LAS DOS VENTANAS BEBEN DE AQUI (ADR-0097): la de siempre y la de
+            Spectre (panel.ps1). Cada regla -de que color va la ultima copia,
+            que cuenta como pendiente- vive en un solo sitio, y las dos formas
+            de pintar solo traducen TONOS a su paleta.
+
+            NO ESCANEA NADA. La tabla sale de RAICES.tsv, que escribio el motor
+            cuando de verdad midio. Un tablero que tarda minutos en abrirse no
+            se abre nunca.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    $v      = Get-EstadoDelIndicador
+    $estado = Read-EstadoRespaldo
+    $filas  = @(Read-EstadoPorRaiz)
+
     $unc = '' + $Configuracion.destinos.nodo.unc
     # Test-Path directo y no Test-DestinoNodo: pintar la ventana no debe escribir
     # lineas de ERROR en el registro ni esperar reintentos de medio minuto.
-    $nodoVivo = Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue
+    $nodoVivo = [bool](Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue)
     $libresNodo = $null
     if ($nodoVivo) { $libresNodo = Get-EspacioLibre -Ruta $unc }
 
@@ -633,43 +753,20 @@ function Show-Ventana {
     # afirmar una copia que nadie puede sostener. Que diga "nunca" y se corrija
     # sola en la primera corrida buena es preferible a que mienta hoy.
     $ultimaCopia = 'nunca'
-    $colorCopia  = $p.Ambar
+    $tonoCopia   = 'Ambar'
     if ($estado.ContainsKey('copia_momento')) {
         $ultimaCopia = Format-Antiguedad -Momento ('' + $estado['copia_momento'])
-        if ($ultimaCopia -ne 'nunca') { $colorCopia = $p.Valor }
+        if ($ultimaCopia -ne 'nunca') { $tonoCopia = 'Valor' }
     }
-    Write-Linea ('  {0}{1}{2}{3}' -f `
-        (Format-Celda -Texto 'NODO' -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto $(if ($nodoVivo) { 'responde' } else { 'NO RESPONDE' }) -Ancho 14 -Paleta $p `
-                -Color $(if ($nodoVivo) { $p.Verde } else { $p.Rojo })), `
-        (Format-Celda -Texto (Format-Espacio -Bytes $libresNodo) -Ancho 16 -Paleta $p -Color $p.Tenue), `
-        (Format-Celda -Texto ('ult. copia {0}' -f $ultimaCopia) `
-                -Ancho 26 -Paleta $p -Color $colorCopia))
 
     # El disco se conecta A PETICION (seccion 6.3): no hay calendario y es
     # deliberado. Que no este no es una falla, asi que no se pinta en rojo.
     $disco = Get-DiscoFrio -Configuracion $Configuracion 2>$null
     $libresDisco = $null
     if ($disco) { $libresDisco = Get-EspacioLibre -Ruta $disco.Raiz }
-    $colorDisco = $p.Valor
-    if (('' + $estado['disco_estado']) -eq 'Atencion') { $colorDisco = $p.Ambar }
-    Write-Linea ('  {0}{1}{2}{3}' -f `
-        (Format-Celda -Texto 'DISCO FRIO' -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto $(if ($disco) { 'conectado' } else { 'no conectado' }) -Ancho 14 -Paleta $p `
-                -Color $(if ($disco) { $p.Verde } else { $p.Gris })), `
-        (Format-Celda -Texto (Format-Espacio -Bytes $libresDisco) -Ancho 16 -Paleta $p -Color $p.Tenue), `
-        (Format-Celda -Texto ('ult. copia {0}' -f (Format-Antiguedad -Momento ('' + $estado['disco_momento']))) `
-                -Ancho 26 -Paleta $p -Color $colorDisco))
-    Write-Linea ' '
+    $tonoDisco = 'Valor'
+    if (('' + $estado['disco_estado']) -eq 'Atencion') { $tonoDisco = 'Ambar' }
 
-    # --- La tabla por raiz: la pieza central de la maqueta -------------------
-    Write-Linea ('  {0}{1}{2}{3}{4}' -f `
-        (Format-Celda -Texto 'RAIZ' -Ancho 30 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'CL' -Ancho 4 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'COPIADO ' -Ancho 11 -Paleta $p -Color $p.Etiqueta -Derecha), `
-        (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))
-    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
     # EL CORTE DEL VERDE SALE DE LA CADENCIA, no de un numero escrito aqui: es el
     # hueco que el propio reparto de ventanas promete. Si no se puede leer, 12 h,
     # que es el hueco de la cadencia de hoy -pintar de mas no es la falla grave;
@@ -677,70 +774,94 @@ function Show-Ventana {
     $horasVerde = 12
     try { $horasVerde = (Get-CadenciaDeCorrida -Configuracion $Configuracion).HuecoNominalMaximoHoras }
     catch { Write-Verbose "Cadencia ilegible; el corte del verde se queda en $horasVerde h: $($_.Exception.Message)" }
-    Write-CuerpoDeTabla -Filas $filas -Paleta $p -HorasParaAmbar $horasVerde
-    Write-Linea ' '
 
-    # --- Las lineas de resumen que pide la maqueta ---------------------------
     $centinelas = '{0} declarados' -f @($Configuracion.centinelas).Count
     if ($estado.ContainsKey('centinelas')) { $centinelas = '' + $estado['centinelas'] }
     $cambio = '?'
     if ($estado.ContainsKey('cambio')) { $cambio = '' + $estado['cambio'] }
-    Write-LineaDeSumario -Etiqueta 'SEGURIDAD' -Paleta $p -Partes @(
-        ('centinelas {0}' -f $centinelas),
-        ('cambio {0} % en la ultima corrida' -f $cambio))
 
     $huellas = 'huellas {0}' -f (Format-Antiguedad -Momento ('' + $estado['huellas_momento']))
     if ($estado.ContainsKey('huellas_detalle')) { $huellas += ' ' + $estado['huellas_detalle'] }
-    # TRES COMPROBACIONES DISTINTAS Y NINGUNA VALE POR OTRA: las huellas dicen
-    # que lo copiado coincide, la semilla dice que el kit de arranque se lee, y
-    # la restauracion real -criterio 11- dice que de verdad se puede volver.
-    Write-LineaDeSumario -Etiqueta 'COMPROBADO' -Paleta $p -Partes @(
-        $huellas,
-        ('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))),
-        ('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
+    # EL MUESTREO VA APARTE (seccion 9): las huellas de cada corrida leen lo
+    # recien copiado, y solo el muestreo semanal relee la raiz entera. Una fecha
+    # vieja aqui dice que hace mas de una semana que nadie relee lo que ya estaba.
+    $muestreo = 'muestreo {0}' -f (Format-Antiguedad -Momento ('' + $estado['muestreo_momento']))
+    if (('' + $estado['muestreo_estado']) -eq 'Falla') { $muestreo += ' con diferencias' }
 
-    Write-LineaDeSumario -Etiqueta 'AUTOMATISMO' -Paleta $p -Partes (Get-EstadoDeTarea)
-
-    $pendiente = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas)
-    if ($pendiente.Count -gt 0) {
-        Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $p -Partes $pendiente -Color $p.Ambar -Avisar
+    return [pscustomobject]@{
+        Equipo      = '' + $Configuracion.destinos.nodo.prefijoEquipo
+        Estado      = '' + $v.Estado
+        Detalle     = '' + $v.Detalle
+        Nodo        = [pscustomobject]@{
+            Nombre        = 'NODO'
+            Situacion     = $(if ($nodoVivo) { 'responde' } else { 'NO RESPONDE' })
+            TonoSituacion = $(if ($nodoVivo) { 'Verde' } else { 'Rojo' })
+            Libres        = (Format-Espacio -Bytes $libresNodo)
+            UltimaCopia   = $ultimaCopia
+            TonoCopia     = $tonoCopia
+        }
+        Disco       = [pscustomobject]@{
+            Nombre        = 'DISCO FRIO'
+            Situacion     = $(if ($disco) { 'conectado' } else { 'no conectado' })
+            TonoSituacion = $(if ($disco) { 'Verde' } else { 'Gris' })
+            Libres        = (Format-Espacio -Bytes $libresDisco)
+            UltimaCopia   = (Format-Antiguedad -Momento ('' + $estado['disco_momento']))
+            TonoCopia     = $tonoDisco
+        }
+        Filas       = $filas
+        HorasVerde  = $horasVerde
+        Seguridad   = @(('centinelas {0}' -f $centinelas), ('cambio {0} % en la ultima corrida' -f $cambio))
+        # LAS COMPROBACIONES NO VALEN UNA POR OTRA: las huellas dicen que lo
+        # copiado coincide, el muestreo que lo que ya estaba se sigue leyendo,
+        # la semilla que el kit de arranque se lee, y la restauracion real
+        # -criterio 11- que de verdad se puede volver.
+        Comprobado  = @(
+            $huellas,
+            $muestreo,
+            ('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))),
+            ('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
+        Automatismo = @(Get-EstadoDeTarea)
+        Pendiente   = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas)
     }
+}
 
-    # --- Menu ----------------------------------------------------------------
-    # Los parametros de proteccion NO estan aqui, y no es un olvido (seccion
-    # 10.1): los centinelas y las clases se cambian
-    # editando el archivo, porque subir un umbral desde una pantalla bonita
-    # desarma la defensa con dos pulsaciones y sin dejar rastro.
-    #
-    # EL NOMBRE DE CADA OPCION ES UNA PALABRA QUE SE ENTIENDE SOLA, y el "contra
-    # que" lo dice el ANUNCIO al abrirla, no el menu. Se pidio asi mirando la
-    # pantalla el 2026-09-03: "no quiero ahi poner todo, sino una palabra que
-    # pueda ser entendible a la primera".
-    #
-    # "vista previa" VA SANGRADA bajo la copia que previsualiza, y esa sangria
-    # responde "simular QUE" sin gastar una palabra: [2] cuelga de [1] y [8] de
-    # [7]. Antes las dos decian "simular" a secas, cada una en una fila suelta,
-    # y no se sabia de que copia hablaban.
-    #
-    # "cotejar" y no "verificar": en Mexico una copia cotejada es la que se
-    # comparo contra su original, asi que la palabra ya lleva dentro el "contra
-    # que" que faltaba. "Verificar el nodo" no decia contra que se verificaba.
-    Write-Linea ' '
-    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
-    Write-Linea ('  {0}{1}{2}{3}{4}' -f ($p.Fuerte + $p.Titulo), `
-            'COPIAR                    ', 'COMPROBAR                   ', 'SISTEMA', $p.Fin)
-    foreach ($fila in @(
+function Get-MenuDelTablero {
+    <#
+        .SYNOPSIS
+            Las opciones del menu, en tres columnas. Las pintan las dos ventanas.
+        .DESCRIPTION
+            Los parametros de proteccion NO estan aqui, y no es un olvido
+            (seccion 10.1): los centinelas y las clases se cambian editando el
+            archivo, porque subir un umbral desde una pantalla bonita desarma la
+            defensa con dos pulsaciones y sin dejar rastro.
+
+            EL NOMBRE DE CADA OPCION ES UNA PALABRA QUE SE ENTIENDE SOLA, y el
+            "contra que" lo dice el ANUNCIO al abrirla, no el menu. Se pidio asi
+            mirando la pantalla el 2026-09-03: "no quiero ahi poner todo, sino
+            una palabra que pueda ser entendible a la primera".
+
+            "vista previa" VA SANGRADA bajo la copia que previsualiza, y esa
+            sangria responde "simular QUE" sin gastar una palabra: [2] cuelga de
+            [1] y [8] de [7]. Antes las dos decian "simular" a secas, cada una en
+            una fila suelta, y no se sabia de que copia hablaban.
+
+            "cotejar" y no "verificar": en Mexico una copia cotejada es la que se
+            comparo contra su original, asi que la palabra ya lleva dentro el
+            "contra que" que faltaba.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param()
+
+    return [pscustomobject]@{
+        Columnas = @('COPIAR', 'COMPROBAR', 'SISTEMA')
+        Filas    = @(
             , @('[1] al nodo', '[3] cotejar el nodo', '[5] semilla de arranque')
             , @('[2]    vista previa', '[4] estado completo', '[6] automatismo')
             , @('[7] al disco frio', '[9] cotejar el disco frio', '[A] ajustes')
-            , @('[8]    vista previa', '[R] ensayo de restauracion', '[S] salir'))) {
-        Write-Linea ('  {0}{1}{2}' -f `
-            (Format-Celda -Texto $fila[0] -Ancho 26 -Paleta $p -Color $p.Valor), `
-            (Format-Celda -Texto $fila[1] -Ancho 28 -Paleta $p -Color $p.Valor), `
-            (Format-Celda -Texto $fila[2] -Ancho 24 -Paleta $p -Color $p.Valor))
+            , @('[8]    vista previa', '[R] ensayo de restauracion', '[S] salir'))
+        Nota     = 'centinelas y clases: se cambian en 3-Config/respaldo.jsonc'
     }
-    Write-Linea ('  {0}centinelas y clases: se cambian en 3-Config/respaldo.jsonc{1}' -f $p.Tenue, $p.Fin)
-    Write-Linea ' '
 }
 
 # ---------------------------------------------------------------------------
@@ -1746,44 +1867,48 @@ function Test-HayCorridaEnCurso {
     }
 }
 
-# CARGADO CON PUNTO SE EXPONEN LAS FUNCIONES Y NO SE ABRE NADA. Es la misma
-# puerta que ya tienen verificar.ps1 y disco.ps1, y aqui hacia falta por una
-# razon concreta: sin ella, la unica forma de comprobar como QUEDA PINTADA la
-# ventana era abrirla a mano y mirarla, que es exactamente el "declarar hecho
-# sin verlo" que este proyecto tiene prohibido.
-if ($MyInvocation.InvocationName -eq '.') {
-    Write-Verbose 'tablero.ps1 cargado con punto: se exponen las funciones y no se abre el menu.'
-    return
-}
+function Invoke-OpcionDelTablero {
+    <#
+        .SYNOPSIS
+            Ejecuta una opcion del menu.
+        .DESCRIPTION
+            ES UNA FUNCION, Y NO EL CUERPO DEL BUCLE, POR POWERSHELL 7 (ADR-0097).
+            El tablero de 7 solo pinta: cada opcion la corre un PowerShell 5.1
+            aparte con -Opcion, que llega aqui. El motor esta escrito y probado
+            contra 5.1, y en 7 no se comporta igual -- medido el 2026-09-23:
+            Write-LineaDeRegistro abre el archivo con un constructor de
+            FileStream que solo existe en .NET Framework, y en 7 el registro del
+            dia no se escribe, en silencio.
 
-$parametros = @{}
-if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametros['Ruta'] = $RutaConfiguracion }
-$configuracion = Get-ConfiguracionRespaldo @parametros
-$rutaConfig = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaConfiguracion } else { $null }
+            UN FALLO DENTRO DE UNA OPCION NO PUEDE CERRAR LA VENTANA. Se cuenta y
+            se vuelve al menu: el dia que algo va mal es justo el dia que hace
+            falta el tablero.
+        .PARAMETER Opcion
+            Lo que se tecleo, ya en mayusculas.
+        .PARAMETER Configuracion
+            El objeto de configuracion vigente.
+        .PARAMETER RutaConfiguracion
+            La ruta, si se paso una; vacia para la de 3-Config.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Opcion,
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
 
-$seguir = $true
-while ($seguir) {
-    Show-Ventana -Configuracion $configuracion
-    # SE PIDE UNA "opcion", NO UNA "tecla". Lo pidio el responsable el
-    # 2026-09-03: "no quiero ver tecla, se ve vibecodeado con esos terminos".
-    # Y ademas es lo cierto -- lo que se elige es una operacion, y el teclado es
-    # solo por donde entra.
-    $opcion = Read-Host '  opcion'
     $comunes = @{}
-    if ($rutaConfig) { $comunes['RutaConfiguracion'] = $rutaConfig }
+    if ($RutaConfiguracion) { $comunes['RutaConfiguracion'] = $RutaConfiguracion }
 
-    # UN FALLO DENTRO DE UNA OPCION NO PUEDE CERRAR LA VENTANA. Se cuenta y se
-    # vuelve al menu: el dia que algo va mal es justo el dia que hace falta el
-    # tablero.
     try {
-        switch ($opcion.Trim().ToUpperInvariant()) {
+        switch ($Opcion) {
             '1' {
                 # NO HAY NADA QUE AUTORIZAR DESDE AQUI (ADR-0085). Cuando
                 # existia el freno, autorizarlo estaba deliberadamente fuera
                 # del menu para que no fuera un clic. Retirada la capa 2, los
                 # abortos que quedan -centinela, origen inutilizable, deuda- no
                 # se autorizan de ninguna manera, ni aqui ni en la consola.
-                $puerta = Test-HayCorridaEnCurso -Configuracion $configuracion
+                $puerta = Test-HayCorridaEnCurso -Configuracion $Configuracion
                 if ($puerta.EnCurso) { Write-Warning $puerta.Detalle }
                 else {
                     Write-Linea '   Copiando al nodo...'
@@ -1796,7 +1921,7 @@ while ($seguir) {
                 Write-Anuncio -Que 'Simulacion de la copia al NODO' `
                     -Detalle 'NO escribe nada. Mide que cambiaria en las 8 raices. ~1 min.'
                 $r2 = & "$nucleo\respaldo.ps1" @comunes -SoloSimular -Confirm:$false
-                Show-VeredictoDeSimulacion -Resultado $r2 -Configuracion $configuracion
+                Show-VeredictoDeSimulacion -Resultado $r2 -Configuracion $Configuracion
             }
             '3' {
                 Write-Anuncio -Que 'Cotejar lo guardado en el NODO contra el original de este equipo' `
@@ -1806,9 +1931,9 @@ while ($seguir) {
             '4' { Show-Texto -Objeto (Read-EstadoRespaldo) -Vacio 'No hay estado escrito todavia.' }
             '5' {
                 $destino = '{0}\{1}\{2}\_SEMILLA' -f `
-                    $configuracion.destinos.nodo.unc.TrimEnd('\'),
-                    $configuracion.destinos.nodo.raiz,
-                    $configuracion.destinos.nodo.prefijoEquipo
+                    $Configuracion.destinos.nodo.unc.TrimEnd('\'),
+                    $Configuracion.destinos.nodo.raiz,
+                    $Configuracion.destinos.nodo.prefijoEquipo
                 Show-Texto -Objeto (& "$nucleo\semilla.ps1" -Destino $destino -Confirm:$false) -Lista -Vacio 'La semilla no devolvio nada.'
             }
             '6' {
@@ -1820,7 +1945,7 @@ while ($seguir) {
                 # Las DOS pasadas. Si el nodo no responde corre solo la del
                 # equipo y la copia queda declarada INCOMPLETA: nunca se dice
                 # "al dia" a una copia fria a la que le falto la mitad (6.2).
-                $puerta = Test-HayCorridaEnCurso -Configuracion $configuracion
+                $puerta = Test-HayCorridaEnCurso -Configuracion $Configuracion
                 if ($puerta.EnCurso) { Write-Warning $puerta.Detalle }
                 else {
                     Write-Linea '   Copiando al disco frio (dos pasadas)...'
@@ -1846,15 +1971,14 @@ while ($seguir) {
                 $r9 = & "$nucleo\verificar.ps1" @comunes -RevisarDisco -TamanoMuestra 0
                 Show-RevisionDelDisco -Revision $r9.DiscoEnVuelo
             }
-            'R' { Show-PruebaDeRestauracion -Configuracion $configuracion }
+            'R' { Show-PruebaDeRestauracion -Configuracion $Configuracion }
             'A' {
-                # SE RECOGE LO QUE DEVUELVE, y no es un detalle: si ahi dentro se
-                # cambio el horario, el objeto que traiamos se quedo con el viejo
-                # y la ventana seguiria pintando un horario que ya no corre.
-                $rutaParaAjustes = if ($rutaConfig) { $rutaConfig } else { '' }
-                $configuracion = Show-Reparto -Configuracion $configuracion -RutaConfiguracion $rutaParaAjustes
+                # Lo que devuelve -la configuracion releida si se cambio el
+                # horario- se descarta a proposito: el bucle relee la
+                # configuracion despues de CADA opcion, porque en PowerShell 7
+                # la opcion corre en otro proceso y no puede devolverla.
+                $null = Show-Reparto -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
             }
-            'S' { $seguir = $false }
             default { Write-Warning 'Opcion no reconocida.' }
         }
     }
@@ -1862,4 +1986,72 @@ while ($seguir) {
         Write-Warning ('La opcion fallo: {0}' -f $_.Exception.Message)
         Write-Verbose ('' + $_.ScriptStackTrace)
     }
+}
+
+# CARGADO CON PUNTO SE EXPONEN LAS FUNCIONES Y NO SE ABRE NADA. Es la misma
+# puerta que ya tienen verificar.ps1 y disco.ps1, y aqui hacia falta por una
+# razon concreta: sin ella, la unica forma de comprobar como QUEDA PINTADA la
+# ventana era abrirla a mano y mirarla, que es exactamente el "declarar hecho
+# sin verlo" que este proyecto tiene prohibido.
+if ($MyInvocation.InvocationName -eq '.') {
+    Write-Verbose 'tablero.ps1 cargado con punto: se exponen las funciones y no se abre el menu.'
+    return
+}
+
+$parametros = @{}
+if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametros['Ruta'] = $RutaConfiguracion }
+$configuracion = Get-ConfiguracionRespaldo @parametros
+$rutaConfig = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaConfiguracion } else { $null }
+
+# UNA SOLA OPCION, SIN MENU. Es como el tablero de PowerShell 7 pide cada una a
+# un PowerShell 5.1 (ver Invoke-OpcionDelTablero).
+if ($PSBoundParameters.ContainsKey('Opcion')) {
+    Invoke-OpcionDelTablero -Opcion $Opcion.ToUpperInvariant() -Configuracion $configuracion -RutaConfiguracion ('' + $rutaConfig)
+    return
+}
+
+# EN POWERSHELL 7 ESTA VENTANA SOLO PINTA (ADR-0097). Las opciones corren en un
+# PowerShell 5.1 que hereda esta misma consola: se ve y se teclea igual.
+$enCore = ($PSVersionTable.PSVersion.Major -ge 6)
+$powershell51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
+$seguir = $true
+while ($seguir) {
+    # SI EL PANEL RICO FALLA, SE VUELVE A LA VENTANA DE SIEMPRE Y SE QUEDA ASI
+    # (ADR-0097): una version nueva del modulo no puede dejar al tablero sin
+    # ventana el dia que hace falta.
+    $pintada = $false
+    if ($script:PanelRico) {
+        try {
+            Show-VentanaRica -Datos (Get-DatosDeVentana -Configuracion $configuracion)
+            $pintada = $true
+        }
+        catch {
+            Write-Warning ('El panel con Spectre fallo y se vuelve a la ventana de siempre: {0}' -f $_.Exception.Message)
+            $script:PanelRico = $false
+        }
+    }
+    if (-not $pintada) { Show-Ventana -Configuracion $configuracion }
+    # SE PIDE UNA "opcion", NO UNA "tecla". Lo pidio el responsable el
+    # 2026-09-03: "no quiero ver tecla, se ve vibecodeado con esos terminos".
+    # Y ademas es lo cierto -- lo que se elige es una operacion, y el teclado es
+    # solo por donde entra.
+    $elegida = ('' + (Read-Host '  opcion')).Trim().ToUpperInvariant()
+    if ($elegida -eq 'S') { $seguir = $false; continue }
+
+    if ($enCore) {
+        if ($elegida -notmatch '^[0-9A-Z]$') { Write-Warning 'Opcion no reconocida.'; continue }
+        $argumentos = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Opcion', $elegida)
+        if ($rutaConfig) { $argumentos += @('-RutaConfiguracion', $rutaConfig) }
+        & $powershell51 @argumentos
+    }
+    else {
+        Invoke-OpcionDelTablero -Opcion $elegida -Configuracion $configuracion -RutaConfiguracion ('' + $rutaConfig)
+    }
+
+    # SE RELEE DESPUES DE CADA OPCION. [A] puede haber cambiado el horario, y
+    # en PowerShell 7 la opcion corrio en otro proceso: el objeto que traia este
+    # seguiria pintando un horario que ya no corre.
+    try { $configuracion = Get-ConfiguracionRespaldo @parametros }
+    catch { Write-Warning ('No se pudo releer la configuracion: {0}' -f $_.Exception.Message) }
 }

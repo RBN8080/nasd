@@ -1332,6 +1332,70 @@ Write-Titulo 'La presentacion: que la ventana no mienta ni se rompa'
 . "$PSScriptRoot\..\1-Interfaz\tablero.ps1"
 $paletaSinColor = Get-Paleta -Capacidades ([pscustomobject]@{ Color = $false; Unicode = $false })
 
+# --- ADR-0097: las dos ventanas beben de la misma tabla ---------------------
+# Cada regla de color se decide una vez, en Get-FilasDeTabla; la ventana de
+# siempre y la de Spectre solo traducen el tono.
+$filasModelo = @(
+    [pscustomobject]@{ Destino = 'nodo'; Raiz = 'C:\dev'; Clase = 'B'; Pendientes = 3
+        Estado = 'AlDia'; Momento = (Get-Date).AddHours(-1).ToString('s') },
+    [pscustomobject]@{ Destino = 'disco'; Raiz = 'C:\dev'; Clase = 'A'; Pendientes = 0
+        Estado = 'AlDia'; Momento = (Get-Date).AddDays(-20).ToString('s') },
+    [pscustomobject]@{ Destino = 'nodo'; Raiz = 'D:\roto'; Clase = 'A'; Pendientes = 0
+        Estado = 'Fallo'; Momento = (Get-Date).ToString('s') },
+    [pscustomobject]@{ Destino = 'disco'; Raiz = 'homeUsers\ma'; Clase = 'A'; Pendientes = 0
+        Estado = 'AlDia'; Momento = (Get-Date).ToString('s') })
+$modelo = @(Get-FilasDeTabla -Filas $filasModelo -HorasParaAmbar 12)
+Test-Afirmacion -Nombre 'La tabla decidida da los tonos de siempre: al dia verde, viejo ambar, FALLO rojo, lo que no consta gris' `
+    -Esperado 'Verde,Ambar|Rojo,Gris|Gris,Verde' `
+    -Obtenido (($modelo | ForEach-Object { '{0},{1}' -f $_.Nodo.Tono, $_.Disco.Tono }) -join '|')
+Test-Afirmacion -Nombre 'Y el texto de cada celda: la clase de los dos destinos, y "es el origen" para lo que vive en el nodo' `
+    -Esperado 'B/A|es el origen' -Obtenido ('{0}|{1}' -f $modelo[0].Clase, $modelo[2].Nodo.Texto)
+Test-Afirmacion -Nombre 'Los colores del panel con Spectre salen de Get-Paleta: el verde es el del nodo' `
+    -Esperado '#3fb950' -Obtenido (Get-ColoresDelPanel)['Verde']
+if ($PSVersionTable.PSVersion -lt [version]'7.4') {
+    Test-Afirmacion -Nombre 'En PowerShell 5.1 no hay panel con Spectre: se pinta la ventana de siempre' `
+        -Esperado $false -Obtenido (Initialize-PanelRico)
+}
+
+# EL PANEL CON SPECTRE SOLO SE PUEDE EJERCITAR EN UN pwsh CON EL MODULO. Se pinta
+# en un proceso aparte con datos de mentira; si no hay con que, se dice en vez
+# de contarlo como una prueba pasada.
+$pwshExe = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+if (-not $pwshExe) {
+    Write-Information '   (no hay pwsh en este equipo: el panel con Spectre no se ejercita)' -InformationAction Continue
+}
+else {
+    $datosPanel = [pscustomobject]@{
+        Equipo = 'PC-PRUEBA'; Estado = 'Atencion'; Detalle = 'un detalle con [corchetes] que no son marcado'
+        Nodo   = [pscustomobject]@{ Nombre = 'NODO'; Situacion = 'responde'; TonoSituacion = 'Verde'
+            Libres = '10 GB libres'; UltimaCopia = 'hoy 06:36'; TonoCopia = 'Valor' }
+        Disco  = [pscustomobject]@{ Nombre = 'DISCO FRIO'; Situacion = 'no conectado'; TonoSituacion = 'Gris'
+            Libres = ''; UltimaCopia = 'nunca'; TonoCopia = 'Valor' }
+        Filas = $filasModelo; HorasVerde = 12
+        Seguridad = @('centinelas 8/8'); Comprobado = @('huellas hoy 06:44')
+        Automatismo = @('motor 3 ventanas Ready'); Pendiente = @('conecta el disco frio')
+    }
+    $xmlPanel = Join-Path $CarpetaCaja 'datos-panel.xml'
+    $datosPanel | Export-Clixml -LiteralPath $xmlPanel -Depth 5
+    $tableroRuta = Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\tablero.ps1'
+    $salidaPanel = @(& $pwshExe.Source -NoProfile -NonInteractive -Command (
+            ". '{0}'; if (-not `$script:PanelRico) {{ 'SIN-PANEL-RICO'; exit 0 }}; Show-VentanaRica -Datos (Import-Clixml -LiteralPath '{1}')" -f
+            $tableroRuta, $xmlPanel))
+    $codigoPanel = $LASTEXITCODE
+    $textoPanel = $salidaPanel -join "`n"
+    if ($textoPanel -match 'SIN-PANEL-RICO') {
+        Write-Information '   (pwsh sin PwshSpectreConsole: el panel con Spectre no se ejercita)' -InformationAction Continue
+    }
+    else {
+        Test-Afirmacion -Nombre 'El panel con Spectre se pinta en pwsh sin excepcion (ADR-0097)' `
+            -Esperado 0 -Obtenido $codigoPanel
+        Test-Afirmacion -Nombre 'Y ensena la tabla entera: cada raiz y el FALLO en su celda' `
+            -Esperado $true -Obtenido ($textoPanel -match 'C:\\dev' -and $textoPanel -match 'homeUsers' -and $textoPanel -match 'FALLO')
+        Test-Afirmacion -Nombre 'Los corchetes salen tal cual: el texto se escapa antes del marcado' `
+            -Esperado $true -Obtenido ($textoPanel -match '\[corchetes\]' -and $textoPanel -match '\[1\] al nodo')
+    }
+}
+
 Test-Afirmacion -Nombre 'Una celda mas larga que su columna no empuja a la de al lado' `
     -Esperado 13 -Obtenido (Format-Celda -Texto ('x' * 40) -Ancho 13 -Paleta $paletaSinColor).Length
 Test-Afirmacion -Nombre 'Y una mas corta se rellena hasta el ancho: las columnas cuadran' `
@@ -2009,8 +2073,8 @@ Test-Afirmacion -Nombre 'Hay una medida por raiz, que es lo que la opcion [2] ti
 $intacto = Test-MotorIntacto -RaizProyecto (Split-Path $PSScriptRoot -Parent) -Tareas @()
 Test-Afirmacion -Nombre 'Con el proyecto entero, el motor se declara INTACTO' `
     -Esperado $true -Obtenido $intacto.Intacto
-Test-Afirmacion -Nombre 'Y son 13 piezas, no una cuenta al vuelo de la carpeta' `
-    -Esperado 13 -Obtenido $intacto.PiezasTotal
+Test-Afirmacion -Nombre 'Y son 14 piezas, no una cuenta al vuelo de la carpeta' `
+    -Esperado 14 -Obtenido $intacto.PiezasTotal
 
 # UNA PIEZA QUE FALTA SE TIENE QUE VER. Se comprueba contra una carpeta vacia,
 # que es lo que deja un antivirus que se lleva los archivos.
@@ -2019,8 +2083,8 @@ New-Item -ItemType Directory -Path $cajaVacia -Force | Out-Null
 $roto = Test-MotorIntacto -RaizProyecto $cajaVacia -Tareas @()
 Test-Afirmacion -Nombre 'Si faltan las piezas, NO se declara intacto' `
     -Esperado $false -Obtenido $roto.Intacto
-Test-Afirmacion -Nombre 'Y se nombran las 13 que faltan, no un "algo falla"' `
-    -Esperado 13 -Obtenido @($roto.PiezasFallan).Count
+Test-Afirmacion -Nombre 'Y se nombran las 14 que faltan, no un "algo falla"' `
+    -Esperado 14 -Obtenido @($roto.PiezasFallan).Count
 
 # UN ARCHIVO DE CERO BYTES EXISTE IGUAL DE BIEN QUE UNO BUENO Y NO SIRVE PARA
 # NADA. Es la misma comprobacion que ya hace la prueba de restauracion.
@@ -2032,7 +2096,7 @@ foreach ($p in @('2-Nucleo\respaldo.ps1', '2-Nucleo\comun.ps1', '2-Nucleo\clasif
         '2-Nucleo\verificar.ps1', '2-Nucleo\disco.ps1', '2-Nucleo\semilla.ps1',
         '2-Nucleo\notificar.ps1', '2-Nucleo\testigo.ps1', '1-Interfaz\tablero.ps1',
         '1-Interfaz\indicador.ps1', '1-Interfaz\Registrar-Tarea.ps1', '1-Interfaz\estilo.ps1',
-        '3-Config\respaldo.jsonc')) {
+        '1-Interfaz\panel.ps1', '3-Config\respaldo.jsonc')) {
     'contenido' | Set-Content -LiteralPath (Join-Path $cajaVacia2 $p) -Encoding ASCII
 }
 Set-Content -LiteralPath (Join-Path $cajaVacia2 '2-Nucleo\respaldo.ps1') -Value '' -NoNewline -Encoding ASCII
@@ -2558,7 +2622,7 @@ Exit-MarcaDeCorrida -Carpeta $cajaPuerta -Confirm:$false
 # mientras se copia es legitimo.
 $fuenteTablero = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\tablero.ps1') -Raw -Encoding UTF8
 Test-Afirmacion -Nombre 'Las dos opciones que ESCRIBEN pasan por la puerta' `
-    -Esperado 2 -Obtenido ([regex]::Matches($fuenteTablero, 'Test-HayCorridaEnCurso -Configuracion \$configuracion').Count)
+    -Esperado 2 -Obtenido ([regex]::Matches($fuenteTablero, 'Test-HayCorridaEnCurso -Configuracion \$configuracion', 'IgnoreCase').Count)
 
 # --- 5. LA GUARDA DE ESPACIO ------------------------------------------------
 Test-Afirmacion -Nombre 'Sin nada que escribir no se pregunta por el espacio' `
