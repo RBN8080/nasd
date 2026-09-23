@@ -413,7 +413,12 @@ $icono.ContextMenuStrip = $menu
 
 $abrirTablero = $menu.Items.Add('Abrir el tablero')
 $abrirTablero.Add_Click({
-        Start-Process powershell.exe -ArgumentList @(
+        # EN POWERSHELL 7 SI ESTA, que es donde el tablero se pinta con Spectre
+        # (ADR-0097). Si no, en 5.1 y con la ventana de siempre. El icono sigue
+        # corriendo en 5.1: esto solo elige donde se abre la otra ventana.
+        $anfitrion = 'powershell.exe'
+        if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { $anfitrion = 'pwsh.exe' }
+        Start-Process $anfitrion -ArgumentList @(
             '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', "$PSScriptRoot\tablero.ps1")
     })
 [void]$menu.Items.Add('-')

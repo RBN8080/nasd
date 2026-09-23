@@ -960,6 +960,7 @@ function Test-MotorIntacto {
         '2-Nucleo\notificar.ps1', '2-Nucleo\testigo.ps1',
         '1-Interfaz\tablero.ps1', '1-Interfaz\indicador.ps1',
         '1-Interfaz\Registrar-Tarea.ps1', '1-Interfaz\estilo.ps1',
+        '1-Interfaz\panel.ps1',
         '3-Config\respaldo.jsonc'
     )
 

@@ -24,6 +24,7 @@
 │   │                     la tarea programada, o nada se podría automatizar
 │   ├── estado.cmd        §9    la ventana de estado
 │   ├── tablero.ps1       §10.1 el menú de opciones
+│   ├── panel.ps1         §10.1 el tablero con Spectre, si hay PowerShell 7 (ADR-0097)
 │   └── indicador.ps1     §10.2 el icono de la barra
 │
 ├── 2-Nucleo/

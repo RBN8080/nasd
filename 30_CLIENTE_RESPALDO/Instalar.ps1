@@ -265,6 +265,22 @@ Write-Host "  3. Revise que 'contenedores', 'raicesDeclaradas' y 'exclusiones'"
 Write-Host "     describen lo que usted quiere copiar. La plantilla trae un"
 Write-Host "     ejemplo, no su disco."
 Write-Host ""
+
+# EL PANEL CON SPECTRE ES OPCIONAL (ADR-0097), y por eso se dice y no se
+# instala: instalar PowerShell 7 es decision de quien usa el equipo.
+$pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+$conPanel = $false
+if ($pwsh) {
+    $conPanel = ('' + (& $pwsh.Source -NoProfile -Command '[bool](Get-Module -ListAvailable PwshSpectreConsole)')) -eq 'True'
+}
+if (-not $conPanel) {
+    Write-Host "  4. Opcional: el tablero con marco y tabla (ADR-0097) pide"
+    Write-Host "     PowerShell 7.4 y el modulo PwshSpectreConsole. Sin ellos se"
+    Write-Host "     abre el tablero de siempre, y nada mas cambia:"
+    if (-not $pwsh) { Write-Host "       winget install --id Microsoft.PowerShell -e" }
+    Write-Host "       pwsh -Command `"Install-PSResource PwshSpectreConsole -Scope CurrentUser`""
+    Write-Host ""
+}
 Write-Host "  COMPRUEBE QUE TODO ESTA BIEN:"
 Write-Host "       .\4-Pruebas\Invoke-Pruebas.ps1"
 Write-Host ""
