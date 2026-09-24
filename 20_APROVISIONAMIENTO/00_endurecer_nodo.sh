@@ -62,6 +62,34 @@ for S in bluetooth wpa_supplicant avahi-daemon; do
   fi
 done
 
+# VESTIGIOS DEL ESCRITORIO. R11 del pentest del 2026-09-23 (07_AUDITORIAS,
+# Auditoría 9 §8). multi-user.target impide que arranquen solos, pero seguían
+# habilitados, y dos estaban VIVOS: cups.socket y cups.path despiertan a cupsd
+# —que corre como root— en cuanto un proceso local toca /run/cups/cups.sock.
+# accounts-daemon, lo mismo por D-Bus. Tras comprometer nasd, eso es superficie
+# para escalar. Samba no usa CUPS: 02_instalar_samba.sh apaga la impresión.
+#
+# MASK Y NO SOLO DISABLE: disable no impide la activación por socket, por ruta
+# ni por D-Bus; mask sí. Se enmascaran y NO se purgan, por decisión del
+# responsable (2026-09-23): purgar arrastraba 142 paquetes, y entre estos no
+# hay binarios setuid, así que la superficie que se cierra es la misma.
+#
+# Reversible con: sudo systemctl unmask <unidad> && sudo systemctl enable --now <unidad>
+for U in lightdm.service wayvnc.service wayvnc-control.service \
+         cups.path cups.socket cups.service cups-browsed.service \
+         accounts-daemon.service; do
+  if systemctl list-unit-files "$U" --no-legend 2>/dev/null | grep -q .; then
+    systemctl disable --now "$U" >/dev/null 2>&1 || true
+    systemctl mask "$U" >/dev/null 2>&1 || true
+    if [ "$(systemctl is-enabled "$U" 2>/dev/null)" = "masked" ] &&
+       ! systemctl is-active --quiet "$U"; then
+      verde "  $U enmascarado y detenido (§7.1.4)"
+    else
+      rojo "  $U NO quedó enmascarado y detenido"
+    fi
+  fi
+done
+
 # --- §7.1.5 · política de actualización automática ---------------------------
 #
 # Hallazgo de 07_AUDITORIAS §5.1: unattended-upgrades instalaba las
