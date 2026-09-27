@@ -613,6 +613,12 @@ func evaluarVolumen(clave, nombre string, v sistema.Volumen, accionEspacio strin
 // entonces deja de mirarse justo cuando aparece algo de verdad. Es el mismo
 // razonamiento que D-16 aplicó a la ceguera al banner.
 //
+// ACTIVO AHORA TAMBIÉN ES VERDE, desde el 2026-09-27 (ADR-0098). El nodo
+// descansa a 61–63 °C, justo sobre los 60 °C del límite, y el bit 3 se enciende
+// y se apaga solo. Como anunciar() emite cada cambio, eran 11–16 avisos al día
+// al teléfono por un riesgo ya aceptado. Lo que §4.5 no cubre sigue avisando:
+// la limitación dura de aquí abajo y los 70/80 °C del indicador de temperatura.
+//
 // La subtensión es lo contrario: el charter §3.6 la midió a CERO, así que
 // cualquier bit encendido ahí es información nueva y accionable.
 func evaluarThrottled(t sistema.Throttled) indicador {
@@ -655,8 +661,7 @@ func evaluarThrottled(t sistema.Throttled) indicador {
 		return ind(t.Hex()+" — limitando ahora", vAtencion,
 			"El nodo está rebajando frecuencia. Bajo carga es esperable sin disipador (RES-06)")
 	case t.TermicoBlandoAhora:
-		return ind(t.Hex()+" — límite térmico blando ACTIVO", vAtencion,
-			"Está ocurriendo ahora mismo. La mitigación sigue siendo un disipador (§4.5)")
+		return ind(t.Hex()+" — límite térmico blando activo ahora", vOK, "")
 	case t.TermicoBlandoOcurrida:
 		return ind(t.Hex()+" — límite térmico blando alcanzado alguna vez", vOK, "")
 	}
