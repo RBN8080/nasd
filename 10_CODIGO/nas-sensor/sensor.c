@@ -227,9 +227,6 @@ static int capturar(const char *ruta) {
       if (n > 0) {
         // MSG_TRUNC devuelve la longitud REAL, que puede pasar del bufer.
         size_t leidos = ((size_t)n > sizeof(buf)) ? sizeof(buf) : (size_t)n;
-   
-        tuvo el panel el 14/08, cuando una
-        // senal salto sobre el propio nodo.
         if (desde.sll_pkttype != PACKET_OUTGOING) {
           struct toque t;
           if (analizar_paquete(buf, leidos, ntohs(desde.sll_protocol), &t)) {
