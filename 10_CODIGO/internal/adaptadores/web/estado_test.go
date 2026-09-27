@@ -13,6 +13,7 @@ import (
 
 	"nasd/internal/adaptadores/sistema"
 	"nasd/internal/autenticacion"
+	"nasd/internal/aviso"
 )
 
 // nodoSano es un nodo con todo medido y en orden, para partir de ahí y
@@ -67,12 +68,48 @@ func TestLimiteTermicoYaAceptadoNoDejaElPanelEnAmbarParaSiempre(t *testing.T) {
 	}
 }
 
-// Lo contrario: si está ocurriendo AHORA, sí es noticia.
-func TestLimiteTermicoActivoSiAvisa(t *testing.T) {
+// ACTIVO AHORA tampoco (ADR-0098): el nodo descansa justo en el umbral y el bit
+// va y viene solo. Se enseña, en verde.
+func TestLimiteTermicoBlandoActivoSeEnsenaSinAvisar(t *testing.T) {
 	n := nodoSano()
 	n.Throttled.TermicoBlandoAhora = true
+	ind := buscarIndicador(t, evaluar(n, Instantanea{}), "Limitación")
+	if ind.Veredicto != vOK {
+		t.Fatalf("el límite blando activo es riesgo aceptado (§4.5); dio %q", ind.Veredicto)
+	}
+	if !strings.Contains(ind.Valor, "activo ahora") {
+		t.Fatalf("el panel debe seguir diciendo que está activo: %q", ind.Valor)
+	}
+}
+
+// Medido en el nodo el 2026-09-26: 16 avisos al teléfono en un día, todos de
+// este bit entrando y saliendo. Es el camino entero, de evaluar() al canal.
+func TestElLimiteBlandoQueParpadeaNoLlegaAlCanal(t *testing.T) {
+	var entregados []aviso.Aviso
+	cap := &registroCapturado{}
+	s := servidorDePrueba()
+	s.reg = slog.New(cap)
+	s.emitir = func(a aviso.Aviso) { entregados = append(entregados, a) }
+
+	n := nodoSano()
+	for i := range 12 {
+		n.Throttled.TermicoBlandoAhora = i%2 == 0
+		s.anunciar(evaluar(n, Instantanea{}))
+	}
+	if len(entregados) != 0 || len(cap.lineas) != 0 {
+		t.Fatalf("el parpadeo del límite blando dejó %d avisos y %d líneas en el diario",
+			len(entregados), len(cap.lineas))
+	}
+}
+
+// Lo que §4.5 no cubre sigue avisando: la limitación dura (bit 2), que el
+// firmware aplica cerca de los 80 °C.
+func TestLaLimitacionDuraSiAvisa(t *testing.T) {
+	n := nodoSano()
+	n.Throttled.TermicoBlandoAhora = true
+	n.Throttled.LimitadoAhora = true
 	if got := buscarIndicador(t, evaluar(n, Instantanea{}), "Limitación").Veredicto; got != vAtencion {
-		t.Fatalf("el límite activo debería avisar, dio %q", got)
+		t.Fatalf("la limitación dura debería avisar, dio %q", got)
 	}
 }
 
