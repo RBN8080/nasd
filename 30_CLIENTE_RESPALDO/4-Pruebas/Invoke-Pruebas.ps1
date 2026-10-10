@@ -1323,6 +1323,20 @@ Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto $true -Detalle 'cotejo de l
 Test-Afirmacion -Nombre 'Y el cotejo de cada corrida no borra la fecha del muestreo' `
     -Esperado ('' + $trasMuestreo['muestreo_momento']) -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaEstado)['muestreo_momento'])
 
+# NI LA CORRIDA DEL MOTOR, QUE ERA LA QUE LA BORRABA (2026-10-09). La prueba de
+# arriba miraba al cotejo y no a Write-EstadoRespaldo, que no heredaba
+# muestreo_*: cada corrida dejaba la fecha vacia y el cotejo de despues releia
+# la raiz entera. En su propia caja, para no tocar el estado de las de abajo.
+$cajaMuestreo = Join-Path $caja.Raiz 'estado-muestreo'
+New-Item -ItemType Directory -Path $cajaMuestreo -Force | Out-Null
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'corrida' -Carpeta $cajaMuestreo -Confirm:$false
+Write-EstadoDeComprobacion -Tipo 'muestreo' -Correcto $true -Detalle '80 leidos' -Carpeta $cajaMuestreo -Confirm:$false
+$muestreoAnotado = '' + (Read-EstadoRespaldo -Carpeta $cajaMuestreo)['muestreo_momento']
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'corrida siguiente' -Carpeta $cajaMuestreo -Confirm:$false
+$muestreoTrasCorrida = '' + (Read-EstadoRespaldo -Carpeta $cajaMuestreo)['muestreo_momento']
+Test-Afirmacion -Nombre 'Y la corrida siguiente del motor tampoco la borra: el semanal sigue siendo semanal' `
+    -Esperado $muestreoAnotado -Obtenido $muestreoTrasCorrida
+
 # ===========================================================================
 Write-Titulo 'La presentacion: que la ventana no mienta ni se rompa'
 # ===========================================================================
@@ -1633,6 +1647,11 @@ Test-Afirmacion -Nombre 'Sin lista de lo recien copiado -la opcion [3]- siempre 
     -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '2026-09-22T12:00:00' -Ahora $ahoraH10)
 Test-Afirmacion -Nombre 'Una fecha del futuro no aplaza el semanal' -Esperado 'completo' `
     -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo '2026-10-30T12:00:00' -HayRecientes -Ahora $ahoraH10)
+# De punta a punta: con la fecha que sobrevive a la corrida del motor, el cotejo
+# de la corrida siguiente -8 h despues- lee solo lo recien copiado. Con el
+# defecto del 2026-10-09 la fecha llegaba vacia y salia 'completo'.
+Test-Afirmacion -Nombre 'Tras una corrida del motor, el cotejo siguiente lee solo lo recien copiado' -Esperado 'recientes' `
+    -Obtenido (Get-AlcanceDelMuestreo -UltimoMuestreo $muestreoTrasCorrida -HayRecientes -Ahora ([datetime]$muestreoAnotado).AddHours(8))
 
 Test-Afirmacion -Nombre 'Y el motor le pasa al cotejo lo que acaba de copiar' `
     -Esperado $true -Obtenido ($fuenteMotor -match "\`$argsCotejo\['Recientes'\] = ")
