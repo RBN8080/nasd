@@ -1128,9 +1128,18 @@ function Write-EstadoRespaldo {
         # fuera del motor y dura horas. Sin heredarla, la primera corrida
         # programada que cayera durante un guardado borraba lo que el tablero
         # ensena de el.
+        #
+        # `muestreo_*` ES DEL COTEJO Y FALTABA AQUI DESDE QUE NACIO (51161fd,
+        # 23/09). De `muestreo_momento` depende cuando toca releer la raiz
+        # entera -una vez por semana, seccion 9-. Cada corrida lo borraba, el
+        # cotejo de despues lo encontraba vacio y releia la raiz entera OTRA
+        # VEZ: el muestreo semanal se hacia en todas las corridas, que es justo
+        # el coste que 51161fd habia quitado. Se vio el 2026-10-09 porque
+        # muestreo_momento y huellas_momento eran el mismo segundo.
         if ($clave -like 'disco_*' -or $clave -like 'huellas_*' -or
             $clave -like 'semilla_*' -or $clave -like 'restauracion_*' -or
-            $clave -like 'copia_*' -or $clave -like 'laboratorio_*') {
+            $clave -like 'copia_*' -or $clave -like 'laboratorio_*' -or
+            $clave -like 'muestreo_*') {
             if (-not $Datos.ContainsKey($clave)) { $heredadas[$clave] = $previo[$clave] }
         }
     }
