@@ -662,8 +662,10 @@ function Show-Ventana {
     }
     Write-Linea ' '
 
-    # --- Los dos destinos ---------------------------------------------------
-    foreach ($destino in @($d.Nodo, $d.Disco)) {
+    # --- Los destinos: nodo, disco frio y el laboratorio (seccion 5.2) -------
+    $destinos = @($d.Nodo, $d.Disco)
+    if ($d.PSObject.Properties.Name -contains 'Laboratorio') { $destinos += $d.Laboratorio }
+    foreach ($destino in $destinos) {
         Write-Linea ('  {0}{1}{2}{3}' -f `
             (Format-Celda -Texto $destino.Nombre -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
             (Format-Celda -Texto $destino.Situacion -Ancho 14 -Paleta $p -Color $p[$destino.TonoSituacion]), `
@@ -788,6 +790,11 @@ function Get-DatosDeVentana {
     $muestreo = 'muestreo {0}' -f (Format-Antiguedad -Momento ('' + $estado['muestreo_momento']))
     if (('' + $estado['muestreo_estado']) -eq 'Falla') { $muestreo += ' con diferencias' }
 
+    # El laboratorio va fuera del motor (seccion 5.2) y por eso no tiene fila en
+    # la tabla por raiz, que escribe el motor. Es un destino mas, como el disco.
+    $laboratorio = Get-DestinoDelLaboratorio -Estado $estado `
+        -Marca (Get-MarcaDeCorrida -Archivo 'LABORATORIO.lock')
+
     return [pscustomobject]@{
         Equipo      = '' + $Configuracion.destinos.nodo.prefijoEquipo
         Estado      = '' + $v.Estado
@@ -808,6 +815,7 @@ function Get-DatosDeVentana {
             UltimaCopia   = (Format-Antiguedad -Momento ('' + $estado['disco_momento']))
             TonoCopia     = $tonoDisco
         }
+        Laboratorio = $laboratorio
         Filas       = $filas
         HorasVerde  = $horasVerde
         Seguridad   = @(('centinelas {0}' -f $centinelas), ('cambio {0} % en la ultima corrida' -f $cambio))
@@ -822,6 +830,66 @@ function Get-DatosDeVentana {
             ('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
         Automatismo = @(Get-EstadoDeTarea)
         Pendiente   = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas)
+    }
+}
+
+function Get-DestinoDelLaboratorio {
+    <#
+        .SYNOPSIS
+            La fila LAB VMWARE de la ventana, ya decidida. Funcion pura.
+        .DESCRIPTION
+            Seccion 5.2: el laboratorio se guarda en el nodo a peticion y fuera
+            del motor. Hasta el 2026-10-09 la ventana no lo nombraba en ningun
+            sitio -solo raices de C:- aunque es el mayor volumen que viaja.
+
+            QUE SE ENSENA, de peor a mejor:
+              marca viva                         guardando    verde
+              marca muerta, o Copiando sin marca CORTADO      rojo
+              el ultimo guardado fallo           FALLO        rojo
+              copiado, falta el cotejo en la Pi  sin cotejar  ambar
+              copiado y cotejado                 cotejado     verde
+              nunca se anoto                     a peticion   gris
+
+            CORTADO ES ROJO porque el laboratorio es un espejo: un guardado
+            interrumpido deja a medias la copia del nodo de la VM que iba
+            subiendo.
+
+            "ULT. COPIA" SALE DE laboratorio_copia Y NO DE laboratorio_momento:
+            la segunda se escribe al empezar, y pintarla seria anunciar una
+            copia que todavia no termino -el error del 04/09-.
+        .PARAMETER Estado
+            Lo que devuelve Read-EstadoRespaldo.
+        .PARAMETER Marca
+            Lo que devuelve Get-MarcaDeCorrida -Archivo LABORATORIO.lock.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][hashtable] $Estado,
+        [Parameter(Mandatory)][psobject] $Marca
+    )
+
+    $ultimo = '' + $Estado['laboratorio_estado']
+    $situacion = 'a peticion'
+    $tono = 'Gris'
+    $libres = '' + $Estado['laboratorio_tamano']
+    if ($Marca.Existe -and -not $Marca.Vieja) {
+        $situacion = 'guardando'; $tono = 'Verde'
+        $libres = 'lleva {0} min' -f $Marca.Minutos
+    }
+    elseif ($Marca.Existe -or $ultimo -eq 'Copiando') { $situacion = 'CORTADO'; $tono = 'Rojo' }
+    elseif ($ultimo -eq 'Falla') { $situacion = 'FALLO'; $tono = 'Rojo' }
+    elseif ($ultimo -eq 'Atencion') { $situacion = 'sin cotejar'; $tono = 'Ambar' }
+    elseif ($ultimo -eq 'Protegido') { $situacion = 'cotejado'; $tono = 'Verde' }
+
+    $ultimaCopia = Format-Antiguedad -Momento ('' + $Estado['laboratorio_copia'])
+    return [pscustomobject]@{
+        Nombre        = 'LAB VMWARE'
+        Situacion     = $situacion
+        TonoSituacion = $tono
+        Libres        = $libres
+        UltimaCopia   = $ultimaCopia
+        TonoCopia     = $(if ($ultimaCopia -eq 'nunca') { 'Ambar' } else { 'Valor' })
     }
 }
 

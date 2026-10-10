@@ -137,8 +137,10 @@ function Show-VentanaRica {
     Format-SpectrePanel -Data $cuerpo -Header $cabecera -Border 'Rounded' -Color $c[$tono] -Width $ancho |
         Out-SpectreHost
 
-    # --- Los dos destinos ---------------------------------------------------
-    $filasDestino = foreach ($destino in @($Datos.Nodo, $Datos.Disco)) {
+    # --- Los destinos: nodo, disco frio y el laboratorio (seccion 5.2) -------
+    $destinos = @($Datos.Nodo, $Datos.Disco)
+    if ($Datos.PSObject.Properties.Name -contains 'Laboratorio') { $destinos += $Datos.Laboratorio }
+    $filasDestino = foreach ($destino in $destinos) {
         New-SpectreGridRow -Data @(
             (Format-Marcado -Texto $destino.Nombre -Tono 'Etiqueta'),
             (Format-Marcado -Texto $destino.Situacion -Tono $destino.TonoSituacion),
