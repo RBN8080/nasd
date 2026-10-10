@@ -9,7 +9,7 @@
      puede estar escrito sin acentos por una limitación del intérprete. -->
 
 Generado por el cliente de respaldo el **{{FECHA}}** en **{{EQUIPO}}**.
-Contrato: `30_CLIENTE_RESPALDO.md` §3.2, §5 y §8.
+Contrato: `30_CLIENTE_RESPALDO.md` §3.2, §5, §5.2 y §8.
 
 ## El criterio, en una frase
 
@@ -41,16 +41,20 @@ minutos.
 | `.cache` | Es caché: se rehace sola |
 | `Downloads` | Zona de paso. Lo que importaba ya se movió a su carpeta numerada |
 | `Juegos` | La biblioteca se descarga de nuevo |
-| `*.vmdk` | Los discos virtuales. La semilla guarda las **rutas de los `.vmx`**, que es la configuración; los discos se rehacen desde la plantilla |
 | `D:\LAB\tools` | Herramientas descargables del laboratorio |
 
 ## Máquinas virtuales
 
-El aprovisionamiento automático está **fuera de alcance** por decisión escrita
-(§16): es construir máquinas desde plantilla, no respaldar archivos. El atajo
-que da la mayor parte del beneficio sin escribir nada: una instantánea de la
-máquina recién configurada, más una plantilla lista en `D:`. La semilla guarda
-dónde estaba cada `.vmx`.
+**No son clase C desde el 2026-10-08.** El laboratorio entero está en el nodo:
+`\\192.168.1.38\datos\01_BACKUP\EQUIPO-01\D\VMware_LAB` (contrato §5.2).
+Cuándo se guardó por última vez y si el cotejo salió bien: `ULTIMO_GUARDADO.txt`
+en esa carpeta.
+
+1. Instalar VMware Workstation 17.6.
+2. Copiar esa carpeta a `D:\VMware_LAB`.
+3. Seguir su `_lab\LEEME.txt`: redes, `REGISTRAR_VMS.bat`, «I Moved It».
+4. `Windows 11 x64` pide la contraseña de su vTPM: está en el gestor de
+   contraseñas, no en el nodo.
 
 ## Lo que este archivo no puede prometer
 
