@@ -1371,6 +1371,8 @@ else {
             Libres = '10 GB libres'; UltimaCopia = 'hoy 06:36'; TonoCopia = 'Valor' }
         Disco  = [pscustomobject]@{ Nombre = 'DISCO FRIO'; Situacion = 'no conectado'; TonoSituacion = 'Gris'
             Libres = ''; UltimaCopia = 'nunca'; TonoCopia = 'Valor' }
+        Laboratorio = [pscustomobject]@{ Nombre = 'LAB VMWARE'; Situacion = 'guardando'; TonoSituacion = 'Verde'
+            Libres = 'lleva 85 min'; UltimaCopia = 'nunca'; TonoCopia = 'Ambar' }
         Filas = $filasModelo; HorasVerde = 12
         Seguridad = @('centinelas 8/8'); Comprobado = @('huellas hoy 06:44')
         Automatismo = @('motor 3 ventanas Ready'); Pendiente = @('conecta el disco frio')
@@ -1393,6 +1395,8 @@ else {
             -Esperado $true -Obtenido ($textoPanel -match 'C:\\dev' -and $textoPanel -match 'homeUsers' -and $textoPanel -match 'FALLO')
         Test-Afirmacion -Nombre 'Los corchetes salen tal cual: el texto se escapa antes del marcado' `
             -Esperado $true -Obtenido ($textoPanel -match '\[corchetes\]' -and $textoPanel -match '\[1\] al nodo')
+        Test-Afirmacion -Nombre 'Y la fila del laboratorio sale con los destinos (seccion 5.2)' `
+            -Esperado $true -Obtenido ($textoPanel -match 'LAB VMWARE' -and $textoPanel -match 'guardando')
     }
 }
 
@@ -2687,6 +2691,121 @@ foreach ($archivoPs1 in @(Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -
 }
 Test-Afirmacion -Nombre 'Ningun .ps1 lleva un solo byte fuera de ASCII (ADR-0078)' `
     -Esperado '' -Obtenido ($conAcentos -join ', ')
+
+# ===========================================================================
+#  SECCION 5.2 - EL GUARDADO DEL LABORATORIO SE VE (2026-10-09)
+#
+#  Se subian 168 GB de D:\VMware_LAB y el tablero decia "Protegido", sin una
+#  sola linea del laboratorio, con el icono en verde fijo. El guardado va fuera
+#  del motor y no ponia marca ni escribia estado: para el icono no existia.
+# ===========================================================================
+
+Write-Titulo 'Seccion 5.2: el guardado del laboratorio se ve'
+
+$cajaLab = Join-Path $caja.Raiz 'estado-laboratorio'
+New-Item -ItemType Directory -Path $cajaLab -Force | Out-Null
+
+# --- 1. SU PROPIA MARCA, QUE EL MOTOR NO PISA -------------------------------
+Enter-MarcaDeCorrida -Carpeta $cajaLab -Tipo 'laboratorio' -Archivo 'LABORATORIO.lock' -Confirm:$false | Out-Null
+Test-Afirmacion -Nombre 'El laboratorio marca en LABORATORIO.lock, no en la del motor' `
+    -Esperado 'True|False' -Obtenido ('{0}|{1}' -f (Test-Path -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock')),
+        (Test-Path -LiteralPath (Join-Path $cajaLab 'EN_CURSO.lock')))
+
+# La corrida programada pone y retira la suya sin mirar: la del laboratorio
+# tiene que seguir ahi, viva.
+Enter-MarcaDeCorrida -Carpeta $cajaLab -Confirm:$false | Out-Null
+Exit-MarcaDeCorrida -Carpeta $cajaLab -Confirm:$false
+$marcaLabViva = Get-MarcaDeCorrida -Carpeta $cajaLab -Archivo 'LABORATORIO.lock'
+Test-Afirmacion -Nombre 'Una corrida del motor que entra y sale NO borra la marca del laboratorio' `
+    -Esperado 'True|False|laboratorio' -Obtenido ('{0}|{1}|{2}' -f $marcaLabViva.Existe, $marcaLabViva.Vieja, $marcaLabViva.Tipo)
+
+$lanzoCruzada = $false
+try { Enter-MarcaDeCorrida -Carpeta $cajaLab -Tipo 'laboratorio' -Confirm:$false | Out-Null } catch { $lanzoCruzada = $true }
+Test-Afirmacion -Nombre 'Una marca de laboratorio en EN_CURSO.lock lanza, y no deja nada escrito' `
+    -Esperado 'True|False' -Obtenido ('{0}|{1}' -f $lanzoCruzada, (Test-Path -LiteralPath (Join-Path $cajaLab 'EN_CURSO.lock')))
+
+# Seis horas es lo que dura un guardado entero: con el proceso vivo, no es un
+# cadaver. Con el proceso muerto, si, aunque sea de hace un minuto.
+"pid=$PID`ninicio=$((Get-Date).AddHours(-6).ToString('s'))`nequipo=CAJA`ntipo=laboratorio`n" |
+    Set-Content -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Encoding UTF8
+Test-Afirmacion -Nombre 'Un guardado de 6 h con su proceso vivo sigue siendo creible' `
+    -Esperado $false -Obtenido (Get-MarcaDeCorrida -Carpeta $cajaLab -Archivo 'LABORATORIO.lock').Vieja
+$pidLabMuerto = (Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'exit' -PassThru -WindowStyle Hidden).Id
+Start-Sleep -Milliseconds 400
+"pid=$pidLabMuerto`ninicio=$((Get-Date).ToString('s'))`nequipo=CAJA`ntipo=laboratorio`n" |
+    Set-Content -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Encoding UTF8
+Test-Afirmacion -Nombre 'Y con el proceso muerto es vieja: el guardado se corto' `
+    -Esperado $true -Obtenido (Get-MarcaDeCorrida -Carpeta $cajaLab -Archivo 'LABORATORIO.lock').Vieja
+Exit-MarcaDeCorrida -Carpeta $cajaLab -Archivo 'LABORATORIO.lock' -Confirm:$false
+Test-Afirmacion -Nombre 'Y se retira sola, sin tocar la del motor' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock'))
+
+# --- 2. SUS CLAVES, QUE NADIE BORRA Y QUE NO TOCAN EL VEREDICTO -------------
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'corrida buena' -Carpeta $cajaLab -Confirm:$false
+Write-EstadoDelLaboratorio -Estado 'Copiando' -Detalle 'guardando' -Momento '2026-10-09T22:50:00' `
+    -Tamano '276.8 GB' -Carpeta $cajaLab -Confirm:$false
+$eLab = Read-EstadoRespaldo -Carpeta $cajaLab
+Test-Afirmacion -Nombre 'Anotar el laboratorio no toca el veredicto del nodo' `
+    -Esperado 'Protegido|Copiando' -Obtenido ('{0}|{1}' -f $eLab['estado'], $eLab['laboratorio_estado'])
+Test-Afirmacion -Nombre 'Empezar a guardar no escribe "ult. copia" (la leccion del 04/09)' `
+    -Esperado $false -Obtenido $eLab.ContainsKey('laboratorio_copia')
+
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'otra corrida' -Carpeta $cajaLab -Confirm:$false
+Test-Afirmacion -Nombre 'Una corrida del motor a mitad del guardado conserva las claves del laboratorio' `
+    -Esperado 'Copiando|276.8 GB' -Obtenido ('{0}|{1}' -f (Read-EstadoRespaldo -Carpeta $cajaLab)['laboratorio_estado'],
+        (Read-EstadoRespaldo -Carpeta $cajaLab)['laboratorio_tamano'])
+
+Write-EstadoDelLaboratorio -Estado 'Atencion' -Detalle 'copiado' -Momento '2026-10-09T22:50:00' -Carpeta $cajaLab -Confirm:$false
+Test-Afirmacion -Nombre 'Terminada la copia, "ult. copia" es la foto del laboratorio y el tamano se conserva' `
+    -Esperado '2026-10-09T22:50:00|276.8 GB' -Obtenido ('{0}|{1}' -f (Read-EstadoRespaldo -Carpeta $cajaLab)['laboratorio_copia'],
+        (Read-EstadoRespaldo -Carpeta $cajaLab)['laboratorio_tamano'])
+Write-EstadoDelLaboratorio -Estado 'Falla' -Detalle 'se corto' -Momento '2026-10-12T10:00:00' -Carpeta $cajaLab -Confirm:$false
+Test-Afirmacion -Nombre 'Un guardado que falla no mueve "ult. copia": sigue la ultima buena' `
+    -Esperado '2026-10-09T22:50:00' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaLab)['laboratorio_copia'])
+
+# --- 3. LA FILA DE LA VENTANA ------------------------------------------------
+$sinMarcaLab = [pscustomobject]@{ Existe = $false; Vieja = $false; Pid = 0; Inicio = $null; Minutos = 0 }
+$vivaLab     = [pscustomobject]@{ Existe = $true; Vieja = $false; Tipo = 'laboratorio'; ProcesoVivo = $true; Pid = 1; Inicio = (Get-Date); Minutos = 85 }
+$muertaLab   = [pscustomobject]@{ Existe = $true; Vieja = $true; Tipo = 'laboratorio'; ProcesoVivo = $false; Pid = 1; Inicio = (Get-Date); Minutos = 3 }
+$hoyLab = Get-Date -Format 's'
+$filaLab = { param($e, $m) $f = Get-DestinoDelLaboratorio -Estado $e -Marca $m; '{0},{1}' -f $f.Situacion, $f.TonoSituacion }
+Test-Afirmacion -Nombre 'Fila del laboratorio: guardando en verde, cortado y fallo en rojo, sin cotejar en ambar, cotejado en verde' `
+    -Esperado 'guardando,Verde|CORTADO,Rojo|CORTADO,Rojo|FALLO,Rojo|sin cotejar,Ambar|cotejado,Verde|a peticion,Gris' `
+    -Obtenido (@(
+        (& $filaLab @{ laboratorio_estado = 'Copiando' } $vivaLab),
+        (& $filaLab @{ laboratorio_estado = 'Copiando' } $muertaLab),
+        (& $filaLab @{ laboratorio_estado = 'Copiando' } $sinMarcaLab),
+        (& $filaLab @{ laboratorio_estado = 'Falla' } $sinMarcaLab),
+        (& $filaLab @{ laboratorio_estado = 'Atencion'; laboratorio_copia = $hoyLab } $sinMarcaLab),
+        (& $filaLab @{ laboratorio_estado = 'Protegido'; laboratorio_copia = $hoyLab } $sinMarcaLab),
+        (& $filaLab @{} $sinMarcaLab)) -join '|')
+$guardandoLab = Get-DestinoDelLaboratorio -Estado @{ laboratorio_estado = 'Copiando'; laboratorio_momento = $hoyLab } -Marca $vivaLab
+Test-Afirmacion -Nombre 'Mientras guarda dice cuanto lleva, y "ult. copia" NO sale de cuando empezo' `
+    -Esperado 'lleva 85 min|nunca|Ambar' -Obtenido ('{0}|{1}|{2}' -f $guardandoLab.Libres, $guardandoLab.UltimaCopia, $guardandoLab.TonoCopia)
+$fuenteTablero = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\tablero.ps1') -Raw -Encoding UTF8
+$fuentePanel   = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\panel.ps1') -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'Las dos ventanas pintan la fila del laboratorio junto al nodo y al disco' `
+    -Esperado $true -Obtenido ($fuenteTablero -match '\$destinos \+= \$d\.Laboratorio' -and $fuentePanel -match '\$destinos \+= \$Datos\.Laboratorio')
+
+# --- 4. EL ICONO, CON EL INDICADOR DE VERDAD ---------------------------------
+# Hace falta una tarea habilitada cualquiera o el indicador sale por el paso 1
+# (la misma razon que en la auditoria del 2026-09-14).
+$tareaLab = @(Get-ScheduledTask -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -ne 'Disabled' } | Select-Object -First 1)
+if ($tareaLab.Count -eq 1) {
+    "pid=$PID`ninicio=$((Get-Date).AddMinutes(-85).ToString('s'))`nequipo=CAJA`ntipo=laboratorio`n" |
+        Set-Content -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Encoding UTF8
+    $vistaLab = & $indicador -UnaSolaLectura -NombreTarea $tareaLab[0].TaskName -CarpetaEstado $cajaLab
+    Test-Afirmacion -Nombre 'Guardando el laboratorio, el icono respira en Copiando y lo dice' `
+        -Esperado 'Copiando|True' -Obtenido ('{0}|{1}' -f $vistaLab.Estado, ($vistaLab.Detalle -like 'Guardando el laboratorio*'))
+
+    "pid=$pidLabMuerto`ninicio=$((Get-Date).ToString('s'))`nequipo=CAJA`ntipo=laboratorio`n" |
+        Set-Content -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Encoding UTF8
+    $vistaLabMuerta = & $indicador -UnaSolaLectura -NombreTarea $tareaLab[0].TaskName -CarpetaEstado $cajaLab
+    Test-Afirmacion -Nombre 'Y si el guardado se corto, rojo: la copia del laboratorio en el nodo esta a medias' `
+        -Esperado 'Falla|laboratorio' -Obtenido ('{0}|{1}' -f $vistaLabMuerta.Estado, $vistaLabMuerta.Fuente)
+    Remove-Item -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Force
+}
 
 # ===========================================================================
 

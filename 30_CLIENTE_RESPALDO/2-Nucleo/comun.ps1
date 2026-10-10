@@ -1123,9 +1123,14 @@ function Write-EstadoRespaldo {
         #
         # Su dueno no es "esta corrida": es "la ultima corrida buena". Solo la
         # pisa otra corrida buena, que es justo lo que se quiere.
+        #
+        # `laboratorio_*` es del guardado del laboratorio (seccion 5.2), que va
+        # fuera del motor y dura horas. Sin heredarla, la primera corrida
+        # programada que cayera durante un guardado borraba lo que el tablero
+        # ensena de el.
         if ($clave -like 'disco_*' -or $clave -like 'huellas_*' -or
             $clave -like 'semilla_*' -or $clave -like 'restauracion_*' -or
-            $clave -like 'copia_*') {
+            $clave -like 'copia_*' -or $clave -like 'laboratorio_*') {
             if (-not $Datos.ContainsKey($clave)) { $heredadas[$clave] = $previo[$clave] }
         }
     }
@@ -1205,6 +1210,18 @@ function Enter-MarcaDeCorrida {
             'verificacion' comparte el plazo del nodo -son minutos- y NO escribe
             estado: solo enciende el pulso del icono mientras lee. Igual que la
             copia fria, que tampoco pisa el veredicto del nodo.
+
+            'laboratorio' es el guardado de D:\VMware_LAB (seccion 5.2), que va
+            fuera del motor y dura horas. Va SIEMPRE en LABORATORIO.lock, nunca
+            en EN_CURSO.lock: ver -Archivo.
+        .PARAMETER Archivo
+            EN_CURSO.lock para el motor, LABORATORIO.lock para el laboratorio.
+            DOS ARCHIVOS PORQUE EL MOTOR NO PREGUNTA: respaldo.ps1 pone y retira
+            EN_CURSO.lock en cada corrida sin mirar de quien era. Con una sola
+            marca, la corrida programada de las 12:00 apagaba el aviso de un
+            guardado del laboratorio que seguia copiando, y al terminar este
+            borraba la marca de una corrida viva. Se exige aqui y no se confia
+            al llamador: la pareja tipo-archivo cruzada lanza.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([string])]
@@ -1212,10 +1229,16 @@ function Enter-MarcaDeCorrida {
         [ValidateNotNullOrEmpty()]
         [string] $Carpeta = (Get-CarpetaDeEstado),
 
-        [ValidateSet('nodo', 'disco', 'verificacion')]
-        [string] $Tipo = 'nodo'
+        [ValidateSet('nodo', 'disco', 'verificacion', 'laboratorio')]
+        [string] $Tipo = 'nodo',
+
+        [ValidateSet('EN_CURSO.lock', 'LABORATORIO.lock')]
+        [string] $Archivo = 'EN_CURSO.lock'
     )
-    $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
+    if (($Tipo -eq 'laboratorio') -ne ($Archivo -eq 'LABORATORIO.lock')) {
+        throw ("Una marca de tipo '{0}' no va en {1}: el laboratorio usa LABORATORIO.lock y el motor EN_CURSO.lock." -f $Tipo, $Archivo)
+    }
+    $ruta = Join-Path $Carpeta $Archivo
     if (-not $PSCmdlet.ShouldProcess($ruta, 'Marcar corrida en curso')) { return $ruta }
     $texto = "pid={0}`ninicio={1}`nequipo={2}`ntipo={3}`n" -f $PID, (Get-Date -Format 's'), $env:COMPUTERNAME, $Tipo
     Set-ContenidoAtomico -Ruta $ruta -Contenido $texto -Confirm:$false
@@ -1232,14 +1255,19 @@ function Exit-MarcaDeCorrida {
             solo es que alguien olvido el finally.
         .PARAMETER Carpeta
             Donde estaba.
+        .PARAMETER Archivo
+            Cual de las dos marcas (ver Enter-MarcaDeCorrida).
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([void])]
     param(
         [ValidateNotNullOrEmpty()]
-        [string] $Carpeta = (Get-CarpetaDeEstado)
+        [string] $Carpeta = (Get-CarpetaDeEstado),
+
+        [ValidateSet('EN_CURSO.lock', 'LABORATORIO.lock')]
+        [string] $Archivo = 'EN_CURSO.lock'
     )
-    $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
+    $ruta = Join-Path $Carpeta $Archivo
     if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return }
     if (-not $PSCmdlet.ShouldProcess($ruta, 'Retirar marca de corrida')) { return }
     Remove-Item -LiteralPath $ruta -Force -ErrorAction SilentlyContinue
@@ -1258,6 +1286,8 @@ function Get-MarcaDeCorrida {
             Donde buscarla.
         .PARAMETER MinutosParaVieja
             A partir de cuantos minutos una marca deja de ser creible.
+        .PARAMETER Archivo
+            Cual de las dos marcas se lee (ver Enter-MarcaDeCorrida).
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
@@ -1269,10 +1299,18 @@ function Get-MarcaDeCorrida {
         # La copia fria mueve decenas de GB por un enlace que pasa por el equipo
         # (seccion 6.2): ocho horas es holgado a proposito. Quien delata una
         # corrida muerta de verdad es el PID, no el reloj.
-        [ValidateRange(1, 1440)][int] $MinutosParaViejaDisco = 480
+        [ValidateRange(1, 1440)][int] $MinutosParaViejaDisco = 480,
+
+        # El laboratorio son ~277 GB por un nodo que escribe a 13 MB/s: la copia
+        # entera ronda las 6 h, y ocho horas ya no serian holgadas. Un dia
+        # entero, y otra vez quien manda es el PID.
+        [ValidateRange(1, 1440)][int] $MinutosParaViejaLaboratorio = 1440,
+
+        [ValidateSet('EN_CURSO.lock', 'LABORATORIO.lock')]
+        [string] $Archivo = 'EN_CURSO.lock'
     )
 
-    $ruta = Join-Path $Carpeta 'EN_CURSO.lock'
+    $ruta = Join-Path $Carpeta $Archivo
     if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) {
         return [pscustomobject]@{ Existe = $false; Vieja = $false; Pid = 0; Inicio = $null; Minutos = 0 }
     }
@@ -1290,7 +1328,11 @@ function Get-MarcaDeCorrida {
     if ($mapa.ContainsKey('inicio')) { $hayInicio = [datetime]::TryParse($mapa['inicio'], [ref]$inicio) }
     $minutos = if ($hayInicio) { [int]((Get-Date) - $inicio).TotalMinutes } else { [int]::MaxValue }
     $tipo = if ($mapa.ContainsKey('tipo')) { $mapa['tipo'] } else { 'nodo' }
-    $plazo = if ($tipo -eq 'disco') { $MinutosParaViejaDisco } else { $MinutosParaVieja }
+    $plazo = switch ($tipo) {
+        'disco'       { $MinutosParaViejaDisco }
+        'laboratorio' { $MinutosParaViejaLaboratorio }
+        default       { $MinutosParaVieja }
+    }
     [int] $procesoId = 0
     if ($mapa.ContainsKey('pid')) { [void][int]::TryParse($mapa['pid'], [ref]$procesoId) }
 
@@ -2325,6 +2367,107 @@ function Write-EstadoDelDisco {
     [void]$sb.AppendLine(('estado={0}' -f $estadoPrincipal))
     [void]$sb.AppendLine(('momento={0}' -f ('' + $previo['momento'])))
     [void]$sb.AppendLine(('detalle={0}' -f ($detallePrincipal -replace '[\r\n]+', ' ')))
+    foreach ($clave in ($datos.Keys | Sort-Object)) {
+        [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $datos[$clave]) -replace '[\r\n]+', ' ')))
+    }
+    Set-ContenidoAtomico -Ruta (Join-Path $Carpeta 'ESTADO.txt') -Contenido $sb.ToString() -Confirm:$false
+}
+
+function Write-EstadoDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Anota como va el guardado del laboratorio SIN tocar el veredicto del
+            nodo.
+
+        .DESCRIPTION
+            Seccion 5.2: D:\VMware_LAB se guarda entero en el nodo, a peticion y
+            FUERA DEL MOTOR (GUARDAR_EN_NAS.ps1). Fuera del motor no quiere decir
+            invisible, y lo era: el 2026-10-09 se estaban subiendo 168 GB y el
+            tablero decia "Protegido" con el icono quieto, porque nada de ese
+            guardado pasaba por ESTADO.txt.
+
+            ES EL TRATO DE LA COPIA FRIA (Write-EstadoDelDisco). Un destino
+            aparte escribe SUS claves -laboratorio_*- y el veredicto principal,
+            el que pinta el icono, sigue siendo el de las corridas diarias. Que
+            el laboratorio vaya bien no dice nada del respaldo diario, ni al
+            reves.
+
+            "ULT. COPIA" NO SE MUEVE MIENTRAS SE COPIA. laboratorio_copia solo
+            se escribe cuando la copia termino (Atencion o Protegido); empezar
+            o fallar la conservan. Es la leccion del 04/09: esa linea llego a
+            anunciar una copia que no habia ocurrido.
+        .PARAMETER Estado
+            Copiando mientras guarda; Atencion si ya se copio y falta el cotejo
+            en la Pi; Protegido si se copio y se coteja; Falla si algo fallo.
+        .PARAMETER Detalle
+            Una frase para la persona.
+        .PARAMETER Momento
+            DE CUANDO ES LO GUARDADO, no cuando se anota: el instante en que se
+            congelo el laboratorio con las VMs apagadas. El cotejo puede acabar
+            horas despues, y lo que el nodo guarda es el laboratorio de aquel
+            momento.
+        .PARAMETER Tamano
+            Cuanto ocupa lo guardado, ya escrito para la persona. Si no se da,
+            se conserva el que hubiera.
+        .PARAMETER Carpeta
+            Donde vive ESTADO.txt.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Protegido', 'Copiando', 'Atencion', 'Falla')]
+        [string] $Estado,
+
+        [ValidateNotNull()]
+        [string] $Detalle = '',
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Momento = (Get-Date -Format 's'),
+
+        [ValidateNotNull()]
+        [string] $Tamano = '',
+
+        [ValidateNotNullOrEmpty()]
+        [string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $previo = Read-EstadoRespaldo -Carpeta $Carpeta
+
+    $datos = @{}
+    foreach ($clave in $previo.Keys) {
+        if ($clave -in @('estado', 'momento', 'detalle')) { continue }
+        if ($clave -like 'laboratorio_*') { continue }
+        $datos[$clave] = $previo[$clave]
+    }
+    $datos['laboratorio_estado']  = $Estado
+    $datos['laboratorio_detalle'] = $Detalle
+    $datos['laboratorio_momento'] = $Momento
+    $datos['laboratorio_anotado'] = (Get-Date -Format 's')
+    if ($Estado -in @('Atencion', 'Protegido')) {
+        $datos['laboratorio_copia'] = $Momento
+    }
+    elseif ($previo.ContainsKey('laboratorio_copia')) {
+        $datos['laboratorio_copia'] = $previo['laboratorio_copia']
+    }
+    if ($Tamano) { $datos['laboratorio_tamano'] = $Tamano }
+    elseif ($previo.ContainsKey('laboratorio_tamano')) { $datos['laboratorio_tamano'] = $previo['laboratorio_tamano'] }
+
+    # El veredicto principal, tal cual; sin uno, SinDatos y no un verde
+    # prestado por el laboratorio.
+    $estadoPrincipal = '' + $previo['estado']
+    if ($estadoPrincipal -notin @('Protegido', 'Copiando', 'Atencion', 'Falla', 'SinDatos')) {
+        $estadoPrincipal = 'SinDatos'
+    }
+
+    if (-not $PSCmdlet.ShouldProcess((Join-Path $Carpeta 'ESTADO.txt'), 'Anotar el guardado del laboratorio')) { return }
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('# ESTADO.txt - lo que lee el indicador (seccion 10.2)')
+    [void]$sb.AppendLine('# Escrito de forma atomica: nunca se lee a medias.')
+    [void]$sb.AppendLine(('estado={0}' -f $estadoPrincipal))
+    [void]$sb.AppendLine(('momento={0}' -f ('' + $previo['momento'])))
+    [void]$sb.AppendLine(('detalle={0}' -f (('' + $previo['detalle']) -replace '[\r\n]+', ' ')))
     foreach ($clave in ($datos.Keys | Sort-Object)) {
         [void]$sb.AppendLine(('{0}={1}' -f $clave, (('' + $datos[$clave]) -replace '[\r\n]+', ' ')))
     }

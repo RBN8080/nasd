@@ -32,6 +32,10 @@
           sin marca, ya paso la hora           no corrio               Atencion
           la tarea programada no existe o esta deshabilitada           FALLA
 
+        EL LABORATORIO (seccion 5.2) VA FUERA DEL MOTOR, CON SU PROPIA MARCA
+        -LABORATORIO.lock- y las mismas dos lecturas: viva es Copiando
+        ("Guardando el laboratorio..."), muerta es FALLA.
+
         PUNTO CIEGO DECLARADO: si el indicador muere no hay icono, y un icono
         ausente se parece a "todo bien". Se mitiga relanzandolo desde la tarea,
         pero EL SILENCIO DEL ICONO NUNCA ES PRUEBA DE NADA. La prueba esta en el
@@ -160,6 +164,25 @@ function Get-EstadoParaElIcono {
             return [pscustomobject]@{ Estado = 'Falla'; Detalle = "Una corrida arranco y nunca termino ($porque)"; Fuente = 'marca' }
         }
 
+        # 2.bis EL GUARDADO DEL LABORATORIO (seccion 5.2) TIENE SU PROPIA MARCA.
+        #    Va fuera del motor y dura horas, y el 2026-10-09 subia 168 GB con
+        #    el icono en verde fijo: no ponia marca, asi que aqui no existia. Va
+        #    en LABORATORIO.lock porque el motor pisa y retira EN_CURSO.lock en
+        #    cada corrida sin mirar de quien es.
+        #
+        #    MUERTA ES LA MISMA FALLA DE ARRIBA, y por lo mismo: arranco y no
+        #    termino. El laboratorio es un espejo, asi que su copia en el nodo
+        #    queda a medias y esa VM no se restaura hasta volver a guardarla.
+        $marcaLab = Get-MarcaDeCorrida -Carpeta $script:CarpetaEstado -Archivo 'LABORATORIO.lock'
+        if ($marcaLab.Existe -and $marcaLab.Vieja) {
+            $porque = if (-not $marcaLab.ProcesoVivo) { 'su proceso ya no existe' } else { "lleva $($marcaLab.Minutos) min" }
+            return [pscustomobject]@{
+                Estado  = 'Falla'
+                Detalle = "El guardado del laboratorio se corto ($porque): su copia en el nodo esta a medias. Vuelve a lanzarlo"
+                Fuente  = 'laboratorio'
+            }
+        }
+
         # 3. Marca presente y viva -> el motor trabaja ahora.
         #
         # EL ESTADO SIGUE SIENDO 'Copiando' Y EL DETALLE DICE LA VERDAD. Son las
@@ -184,6 +207,17 @@ function Get-EstadoParaElIcono {
                 Estado  = 'Copiando'
                 Detalle = "$queHace desde hace $($marca.Minutos) min"
                 Fuente  = 'marca'
+            }
+        }
+
+        # 3.bis El laboratorio guarda ahora: el mismo 'Copiando' y su detalle.
+        #    Si a la vez corre el motor, gana el de arriba: los dos son verde
+        #    que respira, y la corrida diaria es la que dura minutos.
+        if ($marcaLab.Existe) {
+            return [pscustomobject]@{
+                Estado  = 'Copiando'
+                Detalle = "Guardando el laboratorio en el nodo desde hace $($marcaLab.Minutos) min"
+                Fuente  = 'laboratorio'
             }
         }
 
