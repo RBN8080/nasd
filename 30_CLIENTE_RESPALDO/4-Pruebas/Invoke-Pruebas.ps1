@@ -2782,6 +2782,20 @@ Write-EstadoDelLaboratorio -Estado 'Falla' -Detalle 'se corto' -Momento '2026-10
 Test-Afirmacion -Nombre 'Un guardado que falla no mueve "ult. copia": sigue la ultima buena' `
     -Esperado '2026-10-09T22:50:00' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaLab)['laboratorio_copia'])
 
+# --- 2.bis EL METODO DE LA COPIA (v2 foto VSS) -------------------------------
+# 'directo' (v1, VMs apagadas toda la copia) o 'foto-vss' (v2, desde una foto;
+# las VMs pueden seguir encendidas). Carpeta aparte para no tocar el estado de arriba.
+$cajaMet = Join-Path (Split-Path $cajaLab -Parent) 'estado-lab-metodo'
+New-Item -ItemType Directory -Force $cajaMet | Out-Null
+Write-EstadoDelLaboratorio -Estado 'Copiando' -Detalle 'g' -Momento '2026-10-11T09:00:00' -Carpeta $cajaMet -Confirm:$false
+Test-Afirmacion -Nombre 'Una copia del laboratorio sin decir metodo queda como directo' `
+    -Esperado 'directo' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaMet)['laboratorio_metodo'])
+Write-EstadoDelLaboratorio -Estado 'Copiando' -Detalle 'g' -Momento '2026-10-11T09:00:00' -Metodo 'foto-vss' -Carpeta $cajaMet -Confirm:$false
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'corrida del motor' -Carpeta $cajaMet -Confirm:$false
+Write-EstadoDelLaboratorio -Estado 'Atencion' -Detalle 'copiado' -Momento '2026-10-11T09:00:00' -Carpeta $cajaMet -Confirm:$false
+Test-Afirmacion -Nombre 'v2 marca la copia foto-vss y se conserva al terminar y entre corridas del motor' `
+    -Esperado 'foto-vss' -Obtenido ('' + (Read-EstadoRespaldo -Carpeta $cajaMet)['laboratorio_metodo'])
+
 # --- 3. LA FILA DE LA VENTANA ------------------------------------------------
 $sinMarcaLab = [pscustomobject]@{ Existe = $false; Vieja = $false; Pid = 0; Inicio = $null; Minutos = 0 }
 $vivaLab     = [pscustomobject]@{ Existe = $true; Vieja = $false; Tipo = 'laboratorio'; ProcesoVivo = $true; Pid = 1; Inicio = (Get-Date); Minutos = 85 }
@@ -2805,6 +2819,13 @@ $fuenteTablero = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -
 $fuentePanel   = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\panel.ps1') -Raw -Encoding UTF8
 Test-Afirmacion -Nombre 'Las dos ventanas pintan la fila del laboratorio junto al nodo y al disco' `
     -Esperado $true -Obtenido ($fuenteTablero -match '\$destinos \+= \$d\.Laboratorio' -and $fuentePanel -match '\$destinos \+= \$Datos\.Laboratorio')
+# Con foto VSS (v2) la copia no bloquea el lab: la columna dice "foto", no "lleva",
+# para que "guardando" no se lea como downtime. Sin foto (v1), el texto de siempre.
+$libresLab = { param($e, $m) (Get-DestinoDelLaboratorio -Estado $e -Marca $m).Libres }
+Test-Afirmacion -Nombre 'Guardando con foto VSS la columna dice "foto" (no es downtime); sin foto, "lleva"' `
+    -Esperado 'foto, 85 min|lleva 85 min' -Obtenido ('{0}|{1}' -f `
+        (& $libresLab @{ laboratorio_estado = 'Copiando'; laboratorio_metodo = 'foto-vss' } $vivaLab), `
+        (& $libresLab @{ laboratorio_estado = 'Copiando' } $vivaLab))
 
 # --- 4. EL ICONO, CON EL INDICADOR DE VERDAD ---------------------------------
 # Hace falta una tarea habilitada cualquiera o el indicador sale por el paso 1
@@ -2823,6 +2844,14 @@ if ($tareaLab.Count -eq 1) {
     $vistaLabMuerta = & $indicador -UnaSolaLectura -NombreTarea $tareaLab[0].TaskName -CarpetaEstado $cajaLab
     Test-Afirmacion -Nombre 'Y si el guardado se corto, rojo: la copia del laboratorio en el nodo esta a medias' `
         -Esperado 'Falla|laboratorio' -Obtenido ('{0}|{1}' -f $vistaLabMuerta.Estado, $vistaLabMuerta.Fuente)
+
+    # v2: con foto VSS el globo deja claro que el lab NO esta parado.
+    "pid=$PID`ninicio=$((Get-Date).AddMinutes(-85).ToString('s'))`nequipo=CAJA`ntipo=laboratorio`n" |
+        Set-Content -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Encoding UTF8
+    Write-EstadoDelLaboratorio -Estado 'Copiando' -Detalle 'g' -Momento '2026-10-11T09:00:00' -Metodo 'foto-vss' -Carpeta $cajaLab -Confirm:$false
+    $vistaLabFoto = & $indicador -UnaSolaLectura -NombreTarea $tareaLab[0].TaskName -CarpetaEstado $cajaLab
+    Test-Afirmacion -Nombre 'Con foto VSS el globo dice que las VMs pueden seguir encendidas' `
+        -Esperado 'Copiando|True' -Obtenido ('{0}|{1}' -f $vistaLabFoto.Estado, ($vistaLabFoto.Detalle -like '*pueden seguir encendidas*'))
     Remove-Item -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Force
 }
 

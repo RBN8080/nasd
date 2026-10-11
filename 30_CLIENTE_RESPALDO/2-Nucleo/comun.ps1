@@ -2418,6 +2418,12 @@ function Write-EstadoDelLaboratorio {
         .PARAMETER Tamano
             Cuanto ocupa lo guardado, ya escrito para la persona. Si no se da,
             se conserva el que hubiera.
+        .PARAMETER Metodo
+            Como viaja la copia: 'directo' (v1, con las VMs apagadas toda la
+            copia) o 'foto-vss' (v2, desde una foto; las VMs pueden seguir
+            encendidas). Sirve para que el tablero no pinte "guardando" como
+            downtime cuando no lo es. Al empezar una copia sin decirlo se asume
+            'directo'; los demas estados conservan el anterior.
         .PARAMETER Carpeta
             Donde vive ESTADO.txt.
     #>
@@ -2436,6 +2442,9 @@ function Write-EstadoDelLaboratorio {
 
         [ValidateNotNull()]
         [string] $Tamano = '',
+
+        [ValidateSet('', 'directo', 'foto-vss')]
+        [string] $Metodo = '',
 
         [ValidateNotNullOrEmpty()]
         [string] $Carpeta = (Get-CarpetaDeEstado)
@@ -2461,6 +2470,14 @@ function Write-EstadoDelLaboratorio {
     }
     if ($Tamano) { $datos['laboratorio_tamano'] = $Tamano }
     elseif ($previo.ContainsKey('laboratorio_tamano')) { $datos['laboratorio_tamano'] = $previo['laboratorio_tamano'] }
+
+    # El metodo de la copia: 'directo' (v1, VMs apagadas toda la copia) o 'foto-vss'
+    # (v2, copia desde una foto; las VMs pueden seguir encendidas). Lo usa el tablero
+    # para que "guardando" no se lea como downtime cuando no lo es. Empezar una copia
+    # sin decir metodo se asume 'directo'; los demas estados conservan el anterior.
+    if ($Metodo) { $datos['laboratorio_metodo'] = $Metodo }
+    elseif ($Estado -eq 'Copiando') { $datos['laboratorio_metodo'] = 'directo' }
+    elseif ($previo.ContainsKey('laboratorio_metodo')) { $datos['laboratorio_metodo'] = $previo['laboratorio_metodo'] }
 
     # El veredicto principal, tal cual; sin uno, SinDatos y no un verde
     # prestado por el laboratorio.

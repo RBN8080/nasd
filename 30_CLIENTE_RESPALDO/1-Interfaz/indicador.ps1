@@ -214,9 +214,17 @@ function Get-EstadoParaElIcono {
         #    Si a la vez corre el motor, gana el de arriba: los dos son verde
         #    que respira, y la corrida diaria es la que dura minutos.
         if ($marcaLab.Existe) {
+            # Con foto VSS (v2) la copia no bloquea el lab; se dice para que el
+            # globo no parezca downtime. Sin foto (v1) el texto de siempre.
+            $detalleLab = if (('' + $estado['laboratorio_metodo']) -eq 'foto-vss') {
+                "Guardando el laboratorio desde una foto; las VMs pueden seguir encendidas (hace $($marcaLab.Minutos) min)"
+            }
+            else {
+                "Guardando el laboratorio en el nodo desde hace $($marcaLab.Minutos) min"
+            }
             return [pscustomobject]@{
                 Estado  = 'Copiando'
-                Detalle = "Guardando el laboratorio en el nodo desde hace $($marcaLab.Minutos) min"
+                Detalle = $detalleLab
                 Fuente  = 'laboratorio'
             }
         }
