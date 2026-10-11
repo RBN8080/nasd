@@ -870,12 +870,16 @@ function Get-DestinoDelLaboratorio {
     )
 
     $ultimo = '' + $Estado['laboratorio_estado']
+    $metodo = '' + $Estado['laboratorio_metodo']
     $situacion = 'a peticion'
     $tono = 'Gris'
     $libres = '' + $Estado['laboratorio_tamano']
     if ($Marca.Existe -and -not $Marca.Vieja) {
         $situacion = 'guardando'; $tono = 'Verde'
-        $libres = 'lleva {0} min' -f $Marca.Minutos
+        # Con foto VSS (v2) la copia no bloquea el lab: las VMs pueden seguir
+        # encendidas. Se dice en la columna para que "guardando" no se lea como
+        # downtime; sin foto (v1) el texto de siempre.
+        $libres = if ($metodo -eq 'foto-vss') { 'foto, {0} min' -f $Marca.Minutos } else { 'lleva {0} min' -f $Marca.Minutos }
     }
     elseif ($Marca.Existe -or $ultimo -eq 'Copiando') { $situacion = 'CORTADO'; $tono = 'Rojo' }
     elseif ($ultimo -eq 'Falla') { $situacion = 'FALLO'; $tono = 'Rojo' }
