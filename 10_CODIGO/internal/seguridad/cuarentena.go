@@ -331,7 +331,14 @@ func (c *Cuarentena) Evaluar(origenes []Origen, ahora time.Time) []Apartado {
 		// rechazo basta cuando viene de un operador desde el que jamás ha
 		// entrado nadie; la barandilla que impide que esto eche a una persona
 		// es Operadores, no un umbral.
-		senal, hay := SenalOperadorDesconocido, c.operadorAjeno(asn)
+		//
+		// QUIEN TRAE UNA COOKIE DE SESIÓN QUEDA FUERA DE ESTA REGLA — ADR-0101.
+		// Las sesiones viven en memoria y mueren en cada reinicio, así que la
+		// cookie vieja de alguien que ya entró llega como sesion_invalida: es
+		// lo que apartó al responsable desde un operador nuevo el 2026-10-03.
+		// Un escáner no manda cookies. Quien las falsifique para esquivar esta
+		// regla sigue sujeto a la de conducta, que es la de siempre.
+		senal, hay := SenalOperadorDesconocido, c.operadorAjeno(asn) && !traiaSesion(o)
 		if !hay {
 			senal, hay = senalQueAparta(o)
 		}
@@ -377,6 +384,12 @@ func (c *Cuarentena) Evaluar(origenes []Origen, ahora time.Time) []Apartado {
 		nuevos = append(nuevos, *a)
 	}
 	return nuevos
+}
+
+// traiaSesion dice si este origen presentó alguna cookie de sesión, válida en
+// su día o no. Ver la regla del operador en Evaluar.
+func traiaSesion(o Origen) bool {
+	return o.PorMotivo[SesionInvalida]+o.PorMotivo[SesionCaducada] > 0
 }
 
 // senalQueAparta traduce «tiene señal» a «hay que apartarlo», que NO es la

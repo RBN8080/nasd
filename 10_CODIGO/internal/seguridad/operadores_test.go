@@ -282,7 +282,7 @@ func TestEntrarConContrasenaSueltaAlOperadorApartado(t *testing.T) {
 	c, conocidos := conOperadores(t, deQuienFalso{telefono: asnNuevo, otraCasa: asnNuevo})
 	ahora := time.Now()
 
-	c.Evaluar(PorOrigen([]Evento{rechazo(telefono, SesionInvalida, "/", ahora)}), ahora)
+	c.Evaluar(PorOrigen([]Evento{rechazo(telefono, SinSesion, "/", ahora)}), ahora)
 	if _, cubre := c.Cubre(netip.MustParseAddr(otraCasa), ahora); !cubre {
 		t.Fatal("el andamio no reproduce el caso: el operador debería estar apartado")
 	}
@@ -320,7 +320,7 @@ func TestAlArrancarSeSueltaLoQueElArchivoTraiaDeUnOperadorConocido(t *testing.T)
 	vacios := operadoresDePrueba(t)
 	c.ConOperadores(mapa, vacios)
 	c.Evaluar(PorOrigen([]Evento{
-		rechazo(familiaMovil, SesionInvalida, "/", ahora),
+		rechazo(familiaMovil, SinSesion, "/", ahora),
 		rechazo(driftnetUna, SinSesion, "/", ahora),
 	}), ahora)
 	if err := c.Volcar(); err != nil {
@@ -380,6 +380,50 @@ func TestLaConductaDesdeUnOperadorConocidoApartaSoloLaDireccion(t *testing.T) {
 	}
 	if _, cubre := c.Cubre(netip.MustParseAddr(escaner), ahora); !cubre {
 		t.Error("al escáner no se le cierra la puerta")
+	}
+}
+
+// UNA COOKIE DE SESIÓN NO APARTA AL OPERADOR — ADR-0101. Es exactamente lo que
+// llegó el 2026-10-03 desde un operador nuevo: la cookie de una sesión que un
+// reinicio había borrado, y los iconos que el teléfono pide solo. Con eso se
+// apartó al operador entero del responsable. Sin el cambio, esta prueba aparta.
+func TestUnaCookieDeSesionNoApartaAlOperador(t *testing.T) {
+	const telefono = "2001:db8:265:8c35::2a06"
+	c, _ := conOperadores(t, deQuienFalso{telefono: 64500})
+	ahora := time.Now()
+
+	nuevos := c.Evaluar(PorOrigen([]Evento{
+		rechazo(telefono, SesionInvalida, "/", ahora),
+		rechazo(telefono, RutaInexistente, "/favicon.ico", ahora),
+		rechazo(telefono, RutaInexistente, "/apple-touch-icon.png", ahora),
+	}), ahora)
+
+	if len(nuevos) != 0 {
+		t.Fatalf("se apartó a quien traía una cookie de sesión (%+v)", nuevos)
+	}
+	if _, cubre := c.Cubre(netip.MustParseAddr(telefono), ahora); cubre {
+		t.Error("al de la cookie se le cierra la puerta")
+	}
+}
+
+// PERO LA COOKIE NO ES UN SALVOCONDUCTO: quien la falsifique y explore sigue
+// cayendo por conducta, con el alcance y la caducidad de siempre.
+func TestConCookieLaConductaSigueApartando(t *testing.T) {
+	const escaner = "2001:db8:66::1"
+	c, _ := conOperadores(t, deQuienFalso{escaner: 64501})
+	ahora := time.Now()
+
+	eventos := []Evento{rechazo(escaner, SesionInvalida, "/", ahora)}
+	for i := range umbralExploracion {
+		eventos = append(eventos, rechazo(escaner, RutaInexistente, "/inventada-"+strconv.Itoa(i), ahora))
+	}
+	nuevos := c.Evaluar(PorOrigen(eventos), ahora)
+
+	if len(nuevos) != 1 || nuevos[0].Senal != SenalExploracion {
+		t.Fatalf("apartados = %+v; se esperaba uno por exploración", nuevos)
+	}
+	if nuevos[0].ASN != 0 || nuevos[0].Hasta.IsZero() {
+		t.Errorf("el apartado por conducta alcanza al AS%d o no caduca", nuevos[0].ASN)
 	}
 }
 
