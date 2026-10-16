@@ -732,7 +732,9 @@
 
 <div class="notas">
   <span class="rt">Notas</span>
-  <span class="nt">Historial: <b>{{.Capacidad}}</b> rechazos conservados{{if .Resumen.Truncado}} de <b>{{.Resumen.TotalHistorico}}</b> vistos{{end}}.</span>
+  {{/* DOS CARRILES DESDE ADR-0100: una ráfaga de casa ya no borra lo de fuera,
+       y la nota dice cuánto guarda cada uno. */}}
+  <span class="nt">Historial: <b>{{.GuardadosInternet}}</b> rechazos de Internet y <b>{{.GuardadosCasa}}</b> de casa conservados, hasta {{.Capacidad}} de cada{{if .Resumen.Truncado}}, de <b>{{.Resumen.TotalHistorico}}</b> vistos{{end}}.</span>
   {{/* AQUÍ, Y NO EN LA BANDA. Es un total desde que existe el registro, y
        arriba quedaba dentro de una fila que habla de la ventana filtrada. */}}
   {{if .HayMasConexiones}}<span class="nt">Conexiones aceptadas desde siempre: <b>{{.TotalConexiones}}</b>.</span>{{end}}

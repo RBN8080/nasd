@@ -162,7 +162,7 @@ func TestElOrdenNoBailaEntreRecargas(t *testing.T) {
 
 func TestFiltrosAcotanLoQueSeMira(t *testing.T) {
 	base := time.Now()
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	a.Anotar(ev(base, "203.0.113.7", RutaInexistente, "/wp-login.php"))
 	a.Anotar(ev(base, "10.77.0.3", SinSesion, "/"))
 	a.Anotar(ev(base, "192.168.1.18", CredencialIncorrecta, "/acceso"))
@@ -188,7 +188,7 @@ func TestFiltrosAcotanLoQueSeMira(t *testing.T) {
 
 func TestFiltrarPorDesconocidoNoEsLoMismoQueNoFiltrar(t *testing.T) {
 	base := time.Now()
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	a.Anotar(ev(base, "203.0.113.7", MotivoDesconocido, "/"))
 	a.Anotar(ev(base, "203.0.113.7", TestigoCSRF, "/borrar"))
 
@@ -202,7 +202,7 @@ func TestFiltrarPorDesconocidoNoEsLoMismoQueNoFiltrar(t *testing.T) {
 
 // El resumen no puede dejar creer que el anillo es toda la historia.
 func TestElResumenDiceCuantoNoEstaMostrando(t *testing.T) {
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	base := time.Now()
 	for i := range Capacidad + 500 {
 		a.Anotar(ev(base.Add(time.Duration(i)*time.Millisecond), "203.0.113.7", SinSesion, "/"))
