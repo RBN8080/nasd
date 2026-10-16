@@ -90,6 +90,17 @@ func apartadoDe(ip string, desde time.Time) *seguridad.Apartado {
 	}
 }
 
+// apartadoDeOperador es el apartado de la regla del operador desconocido: todo
+// el ASN y sin caducidad (ADR-0083).
+func apartadoDeOperador(ip string, asn uint32, desde time.Time) *seguridad.Apartado {
+	return &seguridad.Apartado{
+		IP:    netip.MustParseAddr(ip),
+		Senal: seguridad.SenalOperadorDesconocido,
+		Desde: desde,
+		ASN:   asn,
+	}
+}
+
 // direccion produce direcciones distintas y válidas para las pruebas de tope.
 //
 // Recorre 203.0.113.0/24 y sigue por 198.51.100.0/24 —los dos rangos que RFC

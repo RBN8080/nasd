@@ -355,13 +355,21 @@ func (c *Cuarentena) Evaluar(origenes []Origen, ahora time.Time) []Apartado {
 			IP:    o.IP,
 			Senal: senal,
 			Desde: ahora,
-			ASN:   asn,
 		}
-		// SIN OPERADOR, LA CADUCIDAD DE SIEMPRE. Un apartado eterno que solo
-		// alcanza a una dirección es el que llena el tope de fantasmas y deja
-		// sordo al guardia; y encima castigaría dentro de un mes a quien herede
-		// esa dirección. Con operador no pasa ninguna de las dos cosas.
-		if asn == 0 {
+		// SOLO LA REGLA DEL OPERADOR ALCANZA AL OPERADOR — ADR-0099. Lo que
+		// aparta por conducta aparta a la DIRECCIÓN, con la caducidad de
+		// siempre, aunque se sepa su operador. Antes heredaba el ASN y no
+		// caducaba: una exploración desde un operador CONOCIDO —el móvil de la
+		// familia— habría dejado fuera a todo ese operador para siempre, que es
+		// justo lo que la barandilla de Operadores existe para impedir.
+		//
+		// Un apartado eterno que solo alcanza a una dirección es el que llena el
+		// tope de fantasmas y deja sordo al guardia; y encima castigaría dentro
+		// de un mes a quien herede esa dirección. Con operador no pasa ninguna
+		// de las dos cosas.
+		if senal == SenalOperadorDesconocido {
+			a.ASN = asn
+		} else {
 			a.Hasta = ahora.Add(DuracionCuarentena)
 		}
 		c.apartados[o.IP] = a
@@ -483,6 +491,42 @@ func (c *Cuarentena) Soltar(ip netip.Addr) bool {
 	delete(c.apartados, ip)
 	c.sucio = true
 	return true
+}
+
+// SoltarConocidos retira los apartados que alcanzan a un operador desde el que
+// ya ha entrado alguien con contraseña, y los devuelve para que quien llame lo
+// anote en el diario. ADR-0099.
+//
+// # EL DEFECTO QUE ESTO CORRIGE, Y LE PASÓ AL RESPONSABLE
+//
+// El 2026-10-03 su teléfono llegó desde un operador sin historial con una
+// cookie de una sesión que un reinicio había borrado. Ese rechazo bastó para
+// apartar al operador entero, sin caducidad. Veintisiete segundos después
+// entró con su contraseña —el navegador reutilizó la conexión ya abierta— y el
+// operador pasó a constar como conocido. El apartado siguió en pie trece días:
+// la barandilla impedía apartar a un operador conocido, pero nadie soltaba al
+// que ya estaba apartado, y Cubre no lo mira. Cualquier conexión nueva desde
+// ese operador se habría colgado.
+//
+// Se llama al arrancar —por lo que dejara el archivo— y cada vez que un
+// operador pasa a constar. Con eso, un operador conocido no tiene apartado de
+// operador nunca, y Cubre no necesita un segundo criterio.
+func (c *Cuarentena) SoltarConocidos() []Apartado {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conocidos == nil {
+		return nil
+	}
+	var soltados []Apartado
+	for ip, a := range c.apartados {
+		if a.ASN == 0 || !c.conocidos.Conocido(a.ASN) {
+			continue
+		}
+		soltados = append(soltados, *a)
+		delete(c.apartados, ip)
+		c.sucio = true
+	}
+	return soltados
 }
 
 // Mantener vuelca cada minuto y una última vez al cerrarse el canal. Misma

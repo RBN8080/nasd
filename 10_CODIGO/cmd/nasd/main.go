@@ -246,6 +246,13 @@ func ejecutar() error {
 	// línea se comporta exactamente como antes: por dirección, con caducidad y
 	// con los umbrales de conducta.
 	cuarentena.ConOperadores(baseGeo, operadores)
+	// Un operador que ya consta no puede seguir apartado entero (ADR-0099).
+	// Al arrancar se suelta lo que dejara el archivo; en caliente lo hace el
+	// acceso correcto (web/seguridad.go).
+	for _, a := range cuarentena.SoltarConocidos() {
+		reg.Info("apartado soltado: su operador ya consta",
+			"origen", a.IP.String(), "asn", a.ASN)
+	}
 
 	// La marca de novedades. Solo guarda CUÁNDO se miró por última vez; el
 	// resto se deriva de lo que ya sobrevive al reinicio.

@@ -100,10 +100,20 @@ const (
 	// puede contar: durante ese rato pudo perderse un aviso. Se emite AL
 	// VOLVER, que es el único instante en el que se puede entregar.
 	ClaseCanalRecuperado
+	// ClaseOperadorApartado — la cuarentena acaba de apartar a un operador
+	// ENTERO y sin caducidad, por la regla del operador desconocido (ADR-0083).
+	//
+	// Existe porque ADR-0083 prometió que «el guardia avisa por Telegram al
+	// apartar» y no avisaba: un rechazo limpio no tiene clase, así que el
+	// apartado no producía situación, y el resumen diario contaba siempre cero
+	// cuarentenas. El 2026-10-03 apartó al operador del responsable y nadie se
+	// enteró en trece días (ADR-0099). Amarillo porque puede ser alguien de
+	// casa, y entonces hay que soltarlo.
+	ClaseOperadorApartado
 )
 
 // UltimaClase es el mayor valor del enum. Mismo motivo que UltimaSeveridad.
-const UltimaClase = ClaseCanalRecuperado
+const UltimaClase = ClaseOperadorApartado
 
 // String es la clave estable con la que una clase se persiste y forma parte de
 // la identidad de una situación.
@@ -125,6 +135,8 @@ func (c Clase) String() string {
 		return "averia_del_nodo"
 	case ClaseCanalRecuperado:
 		return "canal_recuperado"
+	case ClaseOperadorApartado:
+		return "operador_apartado"
 	}
 	return "desconocida"
 }
@@ -178,6 +190,8 @@ func (c Clase) Titulo() string {
 		return "Un indicador del nodo cambió de estado"
 	case ClaseCanalRecuperado:
 		return "El canal de avisos estuvo sin servicio"
+	case ClaseOperadorApartado:
+		return "Se apartó a un operador nuevo entero"
 	}
 	return "Suceso sin clasificar"
 }
@@ -230,6 +244,9 @@ func (c Clase) Recomendacion() string {
 		return "Revise /estado. La acción concreta va en el propio indicador."
 	case ClaseCanalRecuperado:
 		return "No se requiere intervención. Revise /seguridad por si algo ocurrió mientras el canal estaba mudo."
+	case ClaseOperadorApartado:
+		return "Si no lo reconoce, no hace falta nada. Si es alguien de casa, nadie de ese operador puede " +
+			"conectar hasta que lo suelte: entre por el túnel WireGuard y suéltelo en /seguridad."
 	}
 	return "Revise /seguridad."
 }
