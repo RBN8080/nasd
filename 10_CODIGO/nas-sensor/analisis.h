@@ -26,4 +26,12 @@ int leer_toque(const char *linea, struct toque *t);
 
 int leer_total(const char *linea, unsigned long long *total);
 
+// direccion_privada dice si un origen YA FORMATEADO es de un rango que nunca
+// llega por Internet: RFC 1918, bucle local y enlace local en IPv4; bucle
+// local, enlace local (fe80::/10) y ULA (fc00::/7) en IPv6. Es un hecho del
+// protocolo, no de esta casa: el IPv6 publico de casa NO cuenta aqui, porque
+// ese prefijo solo lo conoce nasd. Decide el anillo del toque (ADR-0101).
+// Devuelve 1 si es privada; 0 si no, o si el texto no se reconoce.
+int direccion_privada(const char *origen);
+
 #endif

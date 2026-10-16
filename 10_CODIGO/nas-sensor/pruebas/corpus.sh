@@ -234,6 +234,23 @@ esperar "total-visto que no cabe" "--historial" "$DIR/hist_total_roto" \
 total=0 leidos=1"
 
 echo
+echo "== El anillo de cada toque: privada o de fuera (ADR-0101) =="
+# Lo privado lo dice el protocolo, no esta casa. El IPv6 publico de casa va al
+# anillo de fuera: ese prefijo solo lo conoce nasd.
+for o in 10.0.0.1 127.0.0.1 172.16.0.1 172.31.255.255 192.168.1.18 169.254.3.4 \
+         0:0:0:0:0:0:0:1 fe80:0:0:0:1:2:3:4 febf:0:0:0:0:0:0:1 fd00:0:0:0:0:0:0:1 fc12:0:0:0:0:0:0:1; do
+  esperar "privada: $o" "--privada" "$o" "privada"
+done
+for o in 172.15.0.1 172.32.0.1 192.169.0.1 203.0.113.7 8.8.8.8 \
+         2a06:4884:1000:0:0:0:0:1d fec0:0:0:0:0:0:0:1 fe00:0:0:0:0:0:0:1 2001:db8:0:0:0:0:0:1; do
+  esperar "de fuera: $o" "--privada" "$o" "de-fuera"
+done
+# Lo que no se reconoce no es privado: se queda en el anillo que importa.
+for o in "" "300.1.2.3" "10" "abcde:0:0:0:0:0:0:1" ":" "basura"; do
+  esperar "ilegible: «$o»" "--privada" "$o" "de-fuera"
+done
+
+echo
 echo "== Historial malformado: aqui solo se exige NO REVENTAR =="
 comprobar "historial que no existe" "--historial" "$DIR/no_existe_ninguno"
 : > "$DIR/hist_vacio"

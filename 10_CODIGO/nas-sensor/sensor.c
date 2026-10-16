@@ -39,6 +39,13 @@
 // and with it its history of defects. Accepted consequence: the file contains
 // the odd local row.
 //
+// AMENDED BY ADR-0101: TWO RINGS. Measured 2026-10-16, 1460 of the 2000 rows
+// were from home and Internet only reached back three weeks. Private addresses
+// (direccion_privada: RFC 1918, ULA, link-local, loopback -- protocol facts,
+// not this home's configuration) now get their own ring of CAPACIDAD, so the
+// household cannot push out what came from outside. Deciding what is HOME is
+// still nasd's job: the home's public IPv6 stays in the outside ring.
+//
 // INTERFACE
 //
 //   nas-sensor <output-file>
@@ -77,15 +84,20 @@
 #include <time.h>
 #include <unistd.h>
 
-#define CAPACIDAD 2000u   // toques que caben, el mismo tope que los anillos de Go
+#define CAPACIDAD 2000u   // toques que caben EN CADA ANILLO, el tope de los de Go
 #define PAQUETE_MAX 256u  // solo hacen falta cabeceras; el cuerpo no se lee
 #define RUTA_MAX 512u
 #define SEGUNDOS_VOLCADO 60
 
-static struct toque anillo[CAPACIDAD];
-static unsigned siguiente;
+struct anillo {
+  struct toque t[CAPACIDAD];
+  unsigned siguiente;
+  unsigned poblados;
+};
 
-static unsigned poblados;
+// Dos anillos (ADR-0101): lo que llega de fuera y lo de direcciones privadas.
+static struct anillo de_fuera;
+static struct anillo privadas;
 
 static unsigned long long total;
 
@@ -97,12 +109,30 @@ static void al_recibir_senal(int s) {
 }
 
 static void anotar(const struct toque *t) {
-  anillo[siguiente] = *t;
-  siguiente = (siguiente + 1u) % CAPACIDAD;
-  if (poblados < CAPACIDAD) {
-    poblados++;
+  struct anillo *a = direccion_privada(t->origen) ? &privadas : &de_fuera;
+  a->t[a->siguiente] = *t;
+  a->siguiente = (a->siguiente + 1u) % CAPACIDAD;
+  if (a->poblados < CAPACIDAD) {
+    a->poblados++;
   }
   total++;
+}
+
+// El i-esimo toque de un anillo, del mas antiguo (0) al mas reciente.
+static const struct toque *antiguo(const struct anillo *a, unsigned i) {
+  return &a->t[(a->siguiente + CAPACIDAD - a->poblados + i) % CAPACIDAD];
+}
+
+static void escribir_toque(FILE *f, const struct toque *t) {
+  time_t cuando = (time_t)t->momento;
+  struct tm utc;
+  char texto[32];
+  if (gmtime_r(&cuando, &utc) == NULL ||
+      strftime(texto, sizeof(texto), "%Y-%m-%dT%H:%M:%SZ", &utc) == 0) {
+    return;
+  }
+  fprintf(f, "%s %s %u %s\n", texto, t->origen, (unsigned)t->puerto,
+          t->tipo == TIPO_PING ? "ping" : "syn");
 }
 
 static int volcar(const char *ruta) {
@@ -116,25 +146,22 @@ static int volcar(const char *ruta) {
   if (f == NULL) {
     return -1;
   }
-  fprintf(f, "# Historial de toques -- anillo de %u, del mas antiguo al mas reciente.\n",
-          CAPACIDAD);
+  fprintf(f, "# Historial de toques -- %u de fuera y %u privados como mucho, del mas antiguo al mas reciente.\n",
+          CAPACIDAD, CAPACIDAD);
   fprintf(f, "# Un toque por linea: instante origen puerto tipo.\n");
   fprintf(f, "# total-visto: %llu\n", total);
 
-  unsigned cuantos = poblados;
-  for (unsigned i = 0; i < cuantos; i++) {
-    
-    unsigned pos = (siguiente + CAPACIDAD - cuantos + i) % CAPACIDAD;
-    const struct toque *t = &anillo[pos];
-    time_t cuando = (time_t)t->momento;
-    struct tm utc;
-    char texto[32];
-    if (gmtime_r(&cuando, &utc) == NULL ||
-        strftime(texto, sizeof(texto), "%Y-%m-%dT%H:%M:%SZ", &utc) == 0) {
-      continue;
+  // Los dos anillos mezclados por instante: el archivo sigue siendo UNA lista
+  // cronologica, y al releerlo cada linea vuelve a su anillo.
+  unsigned i = 0, j = 0;
+  while (i < de_fuera.poblados || j < privadas.poblados) {
+    if (j >= privadas.poblados ||
+        (i < de_fuera.poblados &&
+         antiguo(&de_fuera, i)->momento <= antiguo(&privadas, j)->momento)) {
+      escribir_toque(f, antiguo(&de_fuera, i++));
+    } else {
+      escribir_toque(f, antiguo(&privadas, j++));
     }
-    fprintf(f, "%s %s %u %s\n", texto, t->origen, (unsigned)t->puerto,
-            t->tipo == TIPO_PING ? "ping" : "syn");
   }
 
   if (fflush(f) != 0 || fsync(fileno(f)) != 0) {

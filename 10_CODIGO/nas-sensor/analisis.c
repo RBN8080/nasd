@@ -333,3 +333,67 @@ int leer_total(const char *linea, unsigned long long *total) {
   *total = v;
   return 1;
 }
+
+// Un grupo hexadecimal de IPv6, de 1 a 4 cifras, hasta el primer ':'.
+static int primer_grupo(const char *s, unsigned *out) {
+  unsigned v = 0;
+  size_t i = 0;
+  for (; i < 4u; i++) {
+    char c = s[i];
+    unsigned d;
+    if (c >= '0' && c <= '9') {
+      d = (unsigned)(c - '0');
+    } else if (c >= 'a' && c <= 'f') {
+      d = (unsigned)(c - 'a') + 10u;
+    } else if (c >= 'A' && c <= 'F') {
+      d = (unsigned)(c - 'A') + 10u;
+    } else {
+      break;
+    }
+    v = v * 16u + d;
+  }
+  if (i == 0u || s[i] != ':') {
+    return 0;
+  }
+  *out = v;
+  return 1;
+}
+
+// Un octeto decimal de IPv4, de 1 a 3 cifras y hasta 255, seguido de '.'.
+static int octeto(const char *s, size_t *usados, unsigned *out) {
+  unsigned v = 0;
+  size_t i = 0;
+  while (i < 3u && s[i] >= '0' && s[i] <= '9') {
+    v = v * 10u + (unsigned)(s[i] - '0');
+    i++;
+  }
+  if (i == 0u || v > 255u || s[i] != '.') {
+    return 0;
+  }
+  *usados = i + 1u;
+  *out = v;
+  return 1;
+}
+
+int direccion_privada(const char *origen) {
+  if (origen == NULL) {
+    return 0;
+  }
+  if (strchr(origen, ':') != NULL) {
+    if (strcmp(origen, "0:0:0:0:0:0:0:1") == 0 || strcmp(origen, "::1") == 0) {
+      return 1;
+    }
+    unsigned g;
+    if (!primer_grupo(origen, &g)) {
+      return 0;
+    }
+    return (g & 0xfe00u) == 0xfc00u || (g & 0xffc0u) == 0xfe80u;
+  }
+  unsigned a, b;
+  size_t n1, n2;
+  if (!octeto(origen, &n1, &a) || !octeto(origen + n1, &n2, &b)) {
+    return 0;
+  }
+  return a == 10u || a == 127u || (a == 172u && b >= 16u && b <= 31u) ||
+         (a == 192u && b == 168u) || (a == 169u && b == 254u);
+}

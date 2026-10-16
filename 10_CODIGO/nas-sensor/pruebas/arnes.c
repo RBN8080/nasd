@@ -37,6 +37,10 @@ int main(int argc, char **argv) {
   if (argc == 3 && strcmp(argv[1], "--historial") == 0) {
     return historial(argv[2]);
   }
+  if (argc == 3 && strcmp(argv[1], "--privada") == 0) {
+    printf("%s\n", direccion_privada(argv[2]) ? "privada" : "de-fuera");
+    return 0;
+  }
   if (argc != 3) {
     fprintf(stderr, "uso: arnes <archivo-con-un-paquete> <4|6>\n");
     fprintf(stderr, "     arnes --historial <archivo-de-historial>\n");

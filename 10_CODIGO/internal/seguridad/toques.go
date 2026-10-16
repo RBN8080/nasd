@@ -103,10 +103,17 @@ func LeerToques(ruta string, desde time.Time) (Historial, error) {
 		if err != nil {
 			return Historial{}, fmt.Errorf("historial de toques, línea %d: %w", n, err)
 		}
-		// La profundidad se mide ANTES de descartar lo de casa: lo que interesa
-		// es desde cuándo hay registro, no desde cuándo hay registro de fuera.
+		// La profundidad es la del ANILLO DE FUERA del sensor (ADR-0101): desde
+		// que tiene dos, el de direcciones privadas alcanza otra fecha, y medir
+		// con él diría que hay registro de Internet donde no lo hay. Se usa el
+		// mismo criterio que direccion_privada en C —un hecho del protocolo—, no
+		// ClasificarRed: el IPv6 público de casa vive en el anillo de fuera.
 		// Se toma el mínimo en vez de fiarse de que la primera línea sea la más
 		// antigua, porque el orden lo garantiza otro programa.
+		if privadaPorProtocolo(t.Origen) {
+			leidos = append(leidos, t)
+			continue
+		}
 		if primer.IsZero() || t.Momento.Before(primer) {
 			primer = t.Momento
 		}
@@ -130,6 +137,13 @@ func LeerToques(ruta string, desde time.Time) (Historial, error) {
 		out = append(out, t)
 	}
 	return Historial{Hay: true, Toques: out, Total: total, Desde: primer}, nil
+}
+
+// privadaPorProtocolo es el criterio de direccion_privada de nas-sensor: lo que
+// nunca llega por Internet, diga lo que diga la configuración de la casa.
+func privadaPorProtocolo(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()
 }
 
 // deLinea analiza «instante origen puerto tipo».
