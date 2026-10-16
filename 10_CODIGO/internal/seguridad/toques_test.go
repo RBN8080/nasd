@@ -185,23 +185,30 @@ func TestUnEscaneoNoFalseaLaCuentaAunqueAcorteLosPuertos(t *testing.T) {
 	}
 }
 
-func TestDesdeEsLaLineaMasAntiguaAunqueSeaDeCasa(t *testing.T) {
+// DESDE ES LA PROFUNDIDAD DEL ANILLO DE FUERA — ADR-0101. El sensor guarda
+// aparte las direcciones privadas, y ese anillo alcanza otra fecha: medir con
+// él diría que hay registro de Internet donde no lo hay. Las líneas privadas
+// no cuentan; una IPv6 pública sí, aunque luego sea de casa, porque el sensor
+// la guarda en el anillo de fuera.
+func TestDesdeEsLaProfundidadDelAnilloDeFuera(t *testing.T) {
 	ruta := archivoDeToques(t,
 		"2026-08-19T04:39:55Z 192.168.1.18 22 syn",
+		"2026-08-19T04:50:00Z fe80:0:0:0:1:2:3:4 445 syn",
+		"2026-08-19T05:00:00Z 2001:db8:0:0:0:0:0:7 443 syn",
 		"2026-08-19T05:10:00Z 203.0.113.7 443 syn",
 	)
 	h, err := LeerToques(ruta, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	quiero := time.Date(2026, 8, 19, 4, 39, 55, 0, time.UTC)
+	quiero := time.Date(2026, 8, 19, 5, 0, 0, 0, time.UTC)
 	if !h.Desde.Equal(quiero) {
-		t.Errorf("Desde = %v; se esperaba %v (la linea de casa, que es la mas antigua)",
+		t.Errorf("Desde = %v; se esperaba %v (la primera línea del anillo de fuera)",
 			h.Desde, quiero)
 	}
 	// Y lo que se devuelve para pintar sigue siendo solo lo de Internet.
-	if len(h.Toques) != 1 {
-		t.Fatalf("toques = %d; se esperaba 1", len(h.Toques))
+	if len(h.Toques) != 2 {
+		t.Fatalf("toques = %d; se esperaban 2", len(h.Toques))
 	}
 }
 

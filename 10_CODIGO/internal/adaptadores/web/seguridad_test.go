@@ -879,12 +879,12 @@ func TestSeDeclaraDesdeCuandoAlcanzaElRegistroDePaquetes(t *testing.T) {
 		t.Fatal("el panel no dice desde cuándo alcanza la capa de paquetes: " +
 			"una fila con conexiones y cero paquetes se lee como una contradicción")
 	}
-	// LA LÍNEA DE CASA MARCA EL COMIENZO, y es deliberado: la profundidad del
-	// registro no depende de que lo que se anotara fuera de Internet. Tomarla
-	// del primer toque EXTERNO diría que el registro empieza más tarde de lo
-	// que empieza, que es la misma clase de mentira que se está corrigiendo.
-	if !strings.Contains(panel, arranque.Local().Format("2006-01-02 15:04")) {
-		t.Error("la profundidad se está midiendo después de descartar lo de casa")
+	// EL COMIENZO LO MARCA EL ANILLO DE FUERA, no la línea privada — ADR-0101.
+	// Hasta entonces mandaba la de casa, porque había un solo anillo. Con dos,
+	// el de direcciones privadas alcanza otra fecha, y medir con él diría que
+	// hay registro de Internet donde no lo hay.
+	if !strings.Contains(panel, arranque.Add(time.Minute).Local().Format("2006-01-02 15:04")) {
+		t.Error("la profundidad no se mide sobre el anillo de fuera")
 	}
 }
 
