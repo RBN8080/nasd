@@ -107,8 +107,8 @@ const (
 	// apartar» y no avisaba: un rechazo limpio no tiene clase, así que el
 	// apartado no producía situación, y el resumen diario contaba siempre cero
 	// cuarentenas. El 2026-10-03 apartó al operador del responsable y nadie se
-	// enteró en trece días (ADR-0099). Amarillo porque puede ser alguien de
-	// casa, y entonces hay que soltarlo.
+	// enteró en trece días (ADR-0099). Amarillo —entrega inmediata en modo
+	// normal— porque puede ser alguien de casa, y entonces hay que soltarlo.
 	ClaseOperadorApartado
 )
 
@@ -205,7 +205,7 @@ func (c Clase) SeveridadBase() Severidad {
 	switch c {
 	case ClaseSondeoAjeno, ClaseAnomalia:
 		return Verde
-	case ClaseExploracion, ClaseFuerzaBruta, ClaseAveriaDelNodo:
+	case ClaseExploracion, ClaseFuerzaBruta, ClaseAveriaDelNodo, ClaseOperadorApartado:
 		return Amarillo
 	case ClaseCanalRecuperado:
 		return Naranja
