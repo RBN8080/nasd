@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,9 +28,12 @@ import (
 //
 // 2000 sale del peor caso de memoria, no de una preferencia: con el
 // User-Agent acotado a topeAgente y la ruta a topeRuta, un evento no pasa de
-// ~400 B, así que el anillo lleno queda por debajo de 1 MB sobre un proceso
+// ~400 B, así que un carril lleno queda por debajo de 1 MB sobre un proceso
 // que hoy ocupa ~8 MB de RSS. Es la cifra más alta que se puede afirmar sin
 // que el panel deje de ser barato en un A53.
+//
+// ES LA CAPACIDAD DE CADA CARRIL, no del anillo entero, desde ADR-0100: los
+// rechazos de Internet y los de casa tienen 2000 cada uno. Ver Anillo.
 const Capacidad = 2000
 
 // topeRuta acota la ruta guardada, por el mismo motivo que topeAgente: una
@@ -55,9 +59,84 @@ const topeRuta = 256
 // cada minuto en vez de cada evento.
 const intervaloVolcado = time.Minute
 
-// Anillo guarda los últimos Capacidad eventos, en memoria y respaldados por
-// un archivo en /var/lib/nasd/ — el mismo StateDirectory y el mismo patrón de
-// escritura atómica que internal/metricas (ADR-0024).
+// carril es un anillo de tamaño fijo con los eventos de UNA procedencia.
+type carril struct {
+	// buf es un slice de tamaño FIJO, reservado entero al construir. Nunca
+	// se hace append: escribir es asignar en una posición ya existente, así
+	// que anotar un evento no reserva memoria ni puede provocar una pausa de
+	// recolección en mitad de una petición.
+	buf []Evento
+	// siguiente es dónde va el próximo. Módulo Capacidad.
+	siguiente int
+	// llenos son las posiciones con evento, hasta Capacidad.
+	llenos int
+}
+
+func nuevoCarril() carril { return carril{buf: make([]Evento, Capacidad)} }
+
+func (c *carril) anotar(e Evento) {
+	c.buf[c.siguiente] = e
+	c.siguiente = (c.siguiente + 1) % Capacidad
+	if c.llenos < Capacidad {
+		c.llenos++
+	}
+}
+
+// reciente es el i-ésimo evento contando desde el último anotado (i = 0). Se
+// suma Capacidad antes del módulo porque en Go el módulo de un negativo es
+// negativo.
+func (c *carril) reciente(i int) Evento {
+	return c.buf[(c.siguiente-1-i+Capacidad)%Capacidad]
+}
+
+// desde devuelve los eventos no anteriores a t, del más reciente al más
+// antiguo. El carril está ordenado por naturaleza, así que el primero que
+// queda fuera de la ventana garantiza que los siguientes también.
+func (c *carril) desde(t time.Time) []Evento {
+	out := make([]Evento, 0, c.llenos)
+	for i := range c.llenos {
+		e := c.reciente(i)
+		if e.Momento.Before(t) {
+			break
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// mezclar une dos listas ordenadas del más reciente al más antiguo en una
+// sola con el mismo orden.
+func mezclar(x, y []Evento) []Evento {
+	out := make([]Evento, 0, len(x)+len(y))
+	i, j := 0, 0
+	for i < len(x) && j < len(y) {
+		if y[j].Momento.After(x[i].Momento) {
+			out = append(out, y[j])
+			j++
+			continue
+		}
+		out = append(out, x[i])
+		i++
+	}
+	out = append(out, x[i:]...)
+	return append(out, y[j:]...)
+}
+
+// Anillo guarda los últimos Capacidad eventos DE CADA CARRIL, en memoria y
+// respaldados por un archivo en /var/lib/nasd/ — el mismo StateDirectory y el
+// mismo patrón de escritura atómica que internal/metricas (ADR-0024).
+//
+// # DOS CARRILES: INTERNET Y CASA — ADR-0100
+//
+// Con un solo anillo, el ruido de casa expulsaba la evidencia de fuera. Medido
+// el 2026-10-16: de los 2000 eventos guardados, 1764 eran una prueba de
+// intrusión lanzada desde la LAN el 24/09 y solo 22 venían de Internet, que es
+// lo único que el responsable declaró importante. Ahora cada procedencia tiene
+// su carril, y una ráfaga de casa ya no puede borrar lo que llegó de fuera.
+//
+// El archivo no cambia de formato: se escriben los dos carriles mezclados en
+// orden cronológico y, al releer, cada evento vuelve a su carril por
+// ClasificarRed. Un archivo de antes se lee igual.
 //
 // # ESTADO COMPARTIDO (ADR-0013)
 //
@@ -68,13 +147,10 @@ const intervaloVolcado = time.Minute
 // entero mientras las peticiones siguen anotando.
 type Anillo struct {
 	mu sync.Mutex
-	// buf es un slice de tamaño FIJO, reservado entero al construir. Nunca
-	// se hace append: escribir es asignar en una posición ya existente, así
-	// que anotar un evento no reserva memoria ni puede provocar una pausa de
-	// recolección en mitad de una petición.
-	buf []Evento
-	// siguiente es dónde va el próximo. Módulo Capacidad.
-	siguiente int
+	// internet guarda lo que viene de fuera; casa, todo lo demás —LAN, túnel,
+	// el propio nodo y lo que no se pudo clasificar—.
+	internet carril
+	casa     carril
 	// total son los eventos anotados DESDE SIEMPRE, no los que caben. Se
 	// guarda porque el panel necesita poder decir «se muestran 2000 de
 	// 47 130»: sin esa cifra, un anillo lleno se lee como si eso fuera todo
@@ -107,10 +183,7 @@ type Anillo struct {
 // historial. Negarse a arrancar el NAS entero por eso sería cambiar un
 // servicio sano por un archivo de observación.
 func CargarAnillo(ruta string) (*Anillo, error) {
-	a := &Anillo{
-		buf:  make([]Evento, Capacidad),
-		ruta: ruta,
-	}
+	a := nuevoAnillo(ruta)
 	if err := a.releer(); err != nil {
 		// Se devuelve el anillo VACÍO Y USABLE junto al error, para que la
 		// raíz de composición pueda registrar el problema y seguir. Devolver
@@ -119,6 +192,19 @@ func CargarAnillo(ruta string) (*Anillo, error) {
 		return a, err
 	}
 	return a, nil
+}
+
+// nuevoAnillo construye un anillo vacío con sus dos carriles reservados.
+func nuevoAnillo(ruta string) *Anillo {
+	return &Anillo{internet: nuevoCarril(), casa: nuevoCarril(), ruta: ruta}
+}
+
+// carrilDe elige el carril por la red ya clasificada del evento.
+func (a *Anillo) carrilDe(e Evento) *carril {
+	if e.Red.DeFuera() {
+		return &a.internet
+	}
+	return &a.casa
 }
 
 // marcaTotal es la cabecera que lleva el total historico en los TRES
@@ -199,15 +285,12 @@ func (a *Anillo) releer() error {
 		return fmt.Errorf("leer el historial de seguridad: %w", err)
 	}
 
-	// Si el archivo trae más de los que caben —porque una versión anterior
-	// tenía el anillo más grande— se conservan los ÚLTIMOS, que son los que
-	// importan. Descartar los primeros sería lo contrario de lo que quiere
-	// quien mira un panel de seguridad.
-	if len(leidos) > Capacidad {
-		leidos = leidos[len(leidos)-Capacidad:]
+	// Cada evento vuelve a su carril. Si el archivo trae más de los que caben
+	// en uno, se conservan los ÚLTIMOS de ese carril, que son los que importan:
+	// el carril los pisa en orden igual que en caliente.
+	for _, ev := range leidos {
+		a.carrilDe(ev).anotar(ev)
 	}
-	copy(a.buf, leidos)
-	a.siguiente = len(leidos) % Capacidad
 	// EL MAXIMO DE LOS DOS, y las dos mitades tienen su motivo. Un archivo SIN
 	// la marca es uno escrito antes del 2026-08-18: se cae a lo unico que se
 	// puede afirmar, que es lo guardado, y desde el primer volcado la cifra ya
@@ -239,8 +322,7 @@ func (a *Anillo) Anotar(e Evento) {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.buf[a.siguiente] = e
-	a.siguiente = (a.siguiente + 1) % Capacidad
+	a.carrilDe(e).anotar(e)
 	a.total++
 	a.dias.anotar(e.Momento, e.Red)
 	a.sucio = true
@@ -277,42 +359,51 @@ func (a *Anillo) Total() int64 {
 // ha dado nada, y lo que hace falta es lo primero que hay ANTES de ella.
 //
 // Recorre desde lo más reciente hacia atrás y para en cuanto encuentra. En el
-// caso normal para en el primero; solo recorre el anillo entero cuando no hay
+// caso normal para en el primero; solo recorre el carril entero cuando no hay
 // NADA de esa red, que es exactamente cuando esto se usa y cuando 2000
 // comparaciones de un entero no le importan a nadie.
 func (a *Anillo) Ultimo(red *Red) (Evento, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	cuantos := int(min(a.total, int64(Capacidad)))
-	for i := range cuantos {
-		e := a.buf[(a.siguiente-1-i+Capacidad)%Capacidad]
-		if red == nil || e.Red == *red {
-			return e, true
+	if red != nil {
+		c := &a.casa
+		if red.DeFuera() {
+			c = &a.internet
+		}
+		for i := range c.llenos {
+			if e := c.reciente(i); e.Red == *red {
+				return e, true
+			}
+		}
+		return Evento{}, false
+	}
+	var ultimo Evento
+	hay := false
+	for _, c := range []*carril{&a.internet, &a.casa} {
+		if c.llenos == 0 {
+			continue
+		}
+		if e := c.reciente(0); !hay || e.Momento.After(ultimo.Momento) {
+			ultimo, hay = e, true
 		}
 	}
-	return Evento{}, false
+	return ultimo, hay
 }
 
 func (a *Anillo) Desde(t time.Time) []Evento {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return mezclar(a.internet.desde(t), a.casa.desde(t))
+}
 
-	cuantos := int(min(a.total, int64(Capacidad)))
-	out := make([]Evento, 0, cuantos)
-	for i := range cuantos {
-		// Se retrocede desde la última escritura. +Capacidad antes del módulo
-		// porque en Go el módulo de un negativo es negativo.
-		pos := (a.siguiente - 1 - i + Capacidad) % Capacidad
-		e := a.buf[pos]
-		// El anillo está ordenado por naturaleza, así que el primero que
-		// queda fuera de la ventana garantiza que los siguientes también.
-		if e.Momento.Before(t) {
-			break
-		}
-		out = append(out, e)
-	}
-	return out
+// Conservados son los eventos que guarda ahora cada carril. El panel los
+// enseña junto al total para que un anillo lleno no se lea como toda la
+// historia.
+func (a *Anillo) Conservados() (internet, casa int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.internet.llenos, a.casa.llenos
 }
 
 // Mantener vuelca a disco cada intervaloVolcado hasta que se cancele, y hace
@@ -345,7 +436,7 @@ func (a *Anillo) Mantener(hecho <-chan struct{}, alFallar func(error)) {
 // El anillo ENTERO y no lo nuevo desde la última vez: un archivo que solo
 // crece por añadidura tendría que podarse aparte, y esa poda es justamente el
 // crecimiento indefinido que la estructura de anillo ya elimina. Reescribir
-// 2000 líneas cada minuto en un nodo con actividad es ~500 KB; en un nodo
+// los dos carriles llenos cada minuto en un nodo con actividad es ~1 MB; en un nodo
 // tranquilo no se reescribe nada, porque «sucio» lo evita.
 func (a *Anillo) Volcar() error {
 	a.mu.Lock()
@@ -358,11 +449,10 @@ func (a *Anillo) Volcar() error {
 	// mientras tanto bloquearía cada petición que quisiera anotar un rechazo.
 	// Es el mismo criterio que autenticacion aplica con la derivación de
 	// 3.6 s (00_RECTOR.md v1.55.0).
-	cuantos := int(min(a.total, int64(Capacidad)))
-	orden := make([]Evento, 0, cuantos)
-	for i := cuantos - 1; i >= 0; i-- {
-		orden = append(orden, a.buf[(a.siguiente-1-i+Capacidad)%Capacidad])
-	}
+	// Los dos carriles mezclados y del más antiguo al más reciente, que es el
+	// orden del archivo.
+	orden := mezclar(a.internet.desde(time.Time{}), a.casa.desde(time.Time{}))
+	slices.Reverse(orden)
 	a.dias.podar(time.Now())
 	lineasDias := a.dias.lineas()
 	// El total se copia DENTRO del candado, con el resto de la foto. Antes se
@@ -388,7 +478,7 @@ func (a *Anillo) Volcar() error {
 // guardar escribe el historial de rechazos.
 func (a *Anillo) guardar(eventos []Evento, total int64, dias []string) error {
 	return atomico.Escribir(a.ruta, ".seguridad-*", func(w io.Writer) error {
-		fmt.Fprintf(w, "# Historial de rechazos — anillo de %d eventos, del más antiguo al más reciente.\n", Capacidad)
+		fmt.Fprintf(w, "# Historial de rechazos — %d eventos de Internet y %d de casa como mucho, del más antiguo al más reciente.\n", Capacidad, Capacidad)
 		fmt.Fprint(w, "# Un evento por línea, en JSON. NUNCA contiene contraseñas, cookies ni cuerpos (04_SEGURIDAD §6).\n")
 		fmt.Fprintf(w, "%s%d\n", marcaTotal, total)
 		// El conteo por día va en la CABECERA y no al final: si un corte deja

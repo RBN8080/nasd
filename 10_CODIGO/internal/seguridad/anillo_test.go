@@ -24,7 +24,7 @@ func evento(momento time.Time, ip string, m Motivo) Evento {
 // estructura: la retención está acotada POR CONSTRUCCIÓN, no por una tarea de
 // limpieza que pueda fallar.
 func TestElAnilloNoCreceNunca(t *testing.T) {
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	base := time.Now()
 	for i := range Capacidad * 3 {
 		a.Anotar(evento(base.Add(time.Duration(i)*time.Second), "203.0.113.7", SinSesion))
@@ -41,13 +41,109 @@ func TestElAnilloNoCreceNunca(t *testing.T) {
 	}
 }
 
+// UNA RÁFAGA DE CASA NO BORRA LO DE INTERNET — ADR-0100. Es lo que pasó el
+// 24/09: una prueba de intrusión desde la LAN llenó el anillo y expulsó todos
+// los rechazos de Internet anteriores. Con un solo anillo esta prueba falla.
+func TestUnaRafagaDeCasaNoBorraLoDeInternet(t *testing.T) {
+	a := nuevoAnillo("")
+	base := time.Now()
+	a.Anotar(evento(base, "203.0.113.7", SinSesion))
+	for i := range Capacidad * 2 {
+		a.Anotar(evento(base.Add(time.Duration(i+1)*time.Millisecond), "192.168.1.43", RutaInexistente))
+	}
+
+	internet := RedInternet
+	if _, hay := a.Ultimo(&internet); !hay {
+		t.Fatal("la ráfaga de casa borró el único rechazo de Internet")
+	}
+	if i, c := a.Conservados(); i != 1 || c != Capacidad {
+		t.Errorf("conservados = %d de Internet y %d de casa; se esperaban 1 y %d", i, c, Capacidad)
+	}
+	if got := len(a.Desde(time.Time{})); got != Capacidad+1 {
+		t.Errorf("Desde devuelve %d eventos; se esperaban %d", got, Capacidad+1)
+	}
+	if a.Total() != int64(1+Capacidad*2) {
+		t.Errorf("total = %d; se anotaron %d", a.Total(), 1+Capacidad*2)
+	}
+}
+
+// LOS CARRILES SOBREVIVEN AL REINICIO SIN CAMBIAR EL ARCHIVO: se escriben
+// mezclados en orden cronológico y al releer cada evento vuelve al suyo. Lo que
+// se comprueba es que el orden y el reparto salgan iguales.
+func TestLosCarrilesSobrevivenAlReinicio(t *testing.T) {
+	ruta := filepath.Join(t.TempDir(), "seguridad")
+	a, err := CargarAnillo(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 3, 20, 0, 0, 0, time.UTC)
+	ips := []string{"203.0.113.7", "192.168.1.18", "10.77.0.3", "198.51.100.4", "192.168.1.43"}
+	for i := range 50 {
+		a.Anotar(evento(base.Add(time.Duration(i)*time.Second), ips[i%len(ips)], SinSesion))
+	}
+	antes := a.Desde(time.Time{})
+	if err := a.Volcar(); err != nil {
+		t.Fatal(err)
+	}
+
+	otro, err := CargarAnillo(ruta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	despues := otro.Desde(time.Time{})
+	if len(despues) != len(antes) {
+		t.Fatalf("tras reiniciar hay %d eventos; había %d", len(despues), len(antes))
+	}
+	for i := range antes {
+		if !despues[i].Momento.Equal(antes[i].Momento) || despues[i].Origen != antes[i].Origen {
+			t.Fatalf("el evento %d cambió al reiniciar: %v %v, era %v %v", i,
+				despues[i].Momento, despues[i].Origen, antes[i].Momento, antes[i].Origen)
+		}
+	}
+	ai, ac := a.Conservados()
+	di, dc := otro.Conservados()
+	if ai != di || ac != dc || ai != 20 || ac != 30 {
+		t.Errorf("reparto antes %d/%d, después %d/%d; se esperaba 20/30", ai, ac, di, dc)
+	}
+}
+
+// ULTIMO BUSCA EN EL CARRIL DE SU RED, y sin red devuelve el más reciente de
+// los dos.
+func TestUltimoMiraElCarrilDeSuRed(t *testing.T) {
+	a := nuevoAnillo("")
+	base := time.Now()
+	a.Anotar(evento(base, "203.0.113.7", SinSesion))
+	a.Anotar(evento(base.Add(time.Minute), "192.168.1.18", SinSesion))
+	a.Anotar(evento(base.Add(2*time.Minute), "10.77.0.3", SinSesion))
+
+	internet, lan, tunel := RedInternet, RedLocal, RedTunel
+	if e, _ := a.Ultimo(&internet); e.Origen.String() != "203.0.113.7" {
+		t.Errorf("último de Internet = %v", e.Origen)
+	}
+	if e, _ := a.Ultimo(&lan); e.Origen.String() != "192.168.1.18" {
+		t.Errorf("último de la LAN = %v", e.Origen)
+	}
+	if e, _ := a.Ultimo(&tunel); e.Origen.String() != "10.77.0.3" {
+		t.Errorf("último del túnel = %v", e.Origen)
+	}
+	if e, _ := a.Ultimo(nil); e.Origen.String() != "10.77.0.3" {
+		t.Errorf("último sin red = %v; se esperaba el más reciente", e.Origen)
+	}
+}
+
 // TestDesdeDevuelveDelMasRecienteAlMasAntiguo fija el orden, que es el de una
 // vista cronológica de seguridad y no el de inserción.
 func TestDesdeDevuelveDelMasRecienteAlMasAntiguo(t *testing.T) {
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	base := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
+	// Se alternan las dos procedencias: el orden tiene que salir bien también
+	// al mezclar los carriles.
 	for i := range 5 {
-		a.Anotar(evento(base.Add(time.Duration(i)*time.Minute), "203.0.113.7", SinSesion))
+		ip := "203.0.113.7"
+		if i%2 == 1 {
+			ip = "192.168.1.18"
+		}
+		a.Anotar(evento(base.Add(time.Duration(i)*time.Minute), ip, SinSesion))
 	}
 
 	got := a.Desde(time.Time{})
@@ -64,7 +160,7 @@ func TestDesdeDevuelveDelMasRecienteAlMasAntiguo(t *testing.T) {
 // TestDesdeCortaEnLaVentana comprueba el filtro temporal, que es lo que hace
 // posible el «últimas 24 horas» del panel sin recorrer el anillo entero.
 func TestDesdeCortaEnLaVentana(t *testing.T) {
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	ahora := time.Now()
 	a.Anotar(evento(ahora.Add(-48*time.Hour), "203.0.113.7", SinSesion))
 	a.Anotar(evento(ahora.Add(-30*time.Hour), "203.0.113.7", SinSesion))
@@ -152,7 +248,7 @@ func TestUnHistorialRotoNoImpideArrancar(t *testing.T) {
 // REAL. Sin truncado, una cabecera de 64 KB —que MaxHeaderBytes admite—
 // multiplicada por la capacidad convertiría este registro en el problema.
 func TestLoQueSeGuardaEstaAcotado(t *testing.T) {
-	a := &Anillo{buf: make([]Evento, Capacidad)}
+	a := nuevoAnillo("")
 	a.Anotar(Evento{
 		Momento: time.Now(),
 		Origen:  netip.MustParseAddr("203.0.113.7"),

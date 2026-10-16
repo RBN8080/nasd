@@ -308,14 +308,18 @@ type vistaSeguridad struct {
 	// página no pueden tener distinta idea de la honestidad.
 	TopeRutas   int
 	HayMasRutas bool
-	// Capacidad es cuántos rechazos caben en el anillo.
+	// Capacidad es cuántos rechazos caben en CADA carril del anillo, y
+	// GuardadosInternet y GuardadosCasa cuántos guarda cada uno ahora
+	// (ADR-0100).
 	//
-	// SE PUBLICA PORQUE LA CIFRA ANTERIOR ERA IMPRECISA: la nota decía «se
+	// SE PUBLICAN PORQUE LA CIFRA ANTERIOR ERA IMPRECISA: la nota decía «se
 	// conservan los {Resumen.Eventos} más recientes de N vistos», pero
-	// Resumen.Eventos es lo FILTRADO EN LA VENTANA, no lo que cabe en el
+	// Resumen.Eventos es lo FILTRADO EN LA VENTANA, no lo que guarda el
 	// anillo. Con «?horas=1» llegaba a decir «se conservan los 3 más recientes
-	// de 5000», que es falso: se conservan 2000.
-	Capacidad int
+	// de 5000», que es falso.
+	Capacidad         int
+	GuardadosInternet int
+	GuardadosCasa     int
 	// FechaGeo es cuando se preparo la base. Se publica porque se refresca
 	// una vez al mes y puede ir por detras de la realidad: una base vieja que
 	// no se anuncia es una afirmacion que dejo de ser verdad sin avisar.
@@ -722,9 +726,10 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	eventos := s.seguridad.Filtrados(f)
 	origenes := seguridad.PorOrigen(eventos)
 	resumen := seguridad.Resumir(eventos, origenes, s.seguridad.Total())
-	// El resumen sabe si el anillo está lleno; la página lo dice para que un
-	// anillo saturado no se lea como «esto es todo lo que ha pasado».
-	resumen.Truncado = resumen.TotalHistorico > int64(seguridad.Capacidad)
+	// El resumen sabe si el anillo ya olvidó algo; la página lo dice para que
+	// un anillo saturado no se lea como «esto es todo lo que ha pasado».
+	conservInternet, conservCasa := s.seguridad.Conservados()
+	resumen.Truncado = resumen.TotalHistorico > int64(conservInternet+conservCasa)
 
 	cronologia := eventos
 	hayMas := false
@@ -822,6 +827,8 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 		TopeRutas:          seguridad.TopeRutas,
 		HayMasRutas:        resumen.RutasVistas > seguridad.TopeRutas,
 		Capacidad:          seguridad.Capacidad,
+		GuardadosInternet:  conservInternet,
+		GuardadosCasa:      conservCasa,
 		Marco:              s.construirMarco(r, "seguridad", "Seguridad", ""),
 		// Cerrar el detalle vuelve a ESTA vista sin el detalle, no al panel
 		// limpio: el filtro con el que se llegó hasta aquí se conserva.
