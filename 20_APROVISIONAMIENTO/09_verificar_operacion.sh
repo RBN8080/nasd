@@ -65,6 +65,10 @@ else
   no "no hay SystemMaxUse: el diario NO está acotado. Ejecute 08_observabilidad.sh"
 fi
 dato "ocupación actual del diario: ${USO:-desconocida}"
+# Desde cuándo alcanza. Con el tope de 200M eran ~3 semanas y nadie lo veía:
+# la retención de 3 meses estaba escrita y no se cumplía.
+PRIMERA=$(journalctl -q -o short-iso --no-pager 2>/dev/null | head -n 1 | cut -d' ' -f1 || true)
+dato "el diario alcanza desde: ${PRIMERA:-desconocido} (retención pedida: 3 meses)"
 
 # Storage=persistent es CONDICIÓN NECESARIA Y NO SUFICIENTE, y confundir las dos
 # cosas es exactamente lo que dejó pasar el defecto de ADR-0039. Se dice así.

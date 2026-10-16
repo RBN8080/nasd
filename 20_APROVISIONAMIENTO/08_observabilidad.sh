@@ -50,7 +50,17 @@ PUNTO=/srv/nas
 DIARIO="$PUNTO/estado/diario"
 ENLACE=/var/log/journal
 
-MAX_DIARIO=200M
+# EL TOPE TIENE QUE DEJAR QUE MANDE LA RETENCIÓN, y con 200M no la dejaba.
+# Medido el 2026-10-16: 206 MB en 21,5 días (~9,6 MB/día), entrada más antigua
+# del 24/09. Con 200M el diario guardaba ~3 semanas y MaxRetentionSec=3month no
+# llegaba a aplicarse nunca: el detalle del 01/08 al 24/09 —incluida la prueba
+# de contraseñas de la Auditoría 9— ya se había borrado. 1G da los 3 meses con
+# holgura, y el disco de datos tiene más de 600 GB libres.
+#
+# NO se silencia nas-vigilar-disco, que es casi todo el volumen: sus líneas
+# de cada minuto son las que acotan el instante de un corte de corriente
+# (P-11, sección 4 de este script).
+MAX_DIARIO=1G
 GUARDAR_LIBRE=1G
 MAX_ARCHIVO=20M
 RETENCION=3month
