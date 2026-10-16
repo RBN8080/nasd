@@ -258,6 +258,15 @@ func TestApartarAUnOperadorEnteroProduceUnaSituacion(t *testing.T) {
 	if len(ss) != 1 || ss[0].Clase != ClaseOperadorApartado {
 		t.Fatalf("situaciones = %d (%v); se esperaba una de operador apartado", len(ss), severidadDe(ss))
 	}
+	// TIENE QUE LLEGAR EN EL ACTO con el modo del nodo, que es el normal. En
+	// verde iba al resumen diario: el responsable se habría enterado al día
+	// siguiente de que su operador estaba fuera.
+	if ss[0].Severidad != Amarillo {
+		t.Errorf("severidad = %q; se esperaba amarillo", ss[0].Severidad)
+	}
+	if e := Decidir(ss[0].Severidad, ModoNormal); e != EntregaInmediata {
+		t.Errorf("en modo normal la entrega es %v; se esperaba inmediata", e)
+	}
 	texto := todoElTexto(ss[0])
 	if !strings.Contains(texto, "AS64500, sin caducidad") {
 		t.Errorf("el aviso no dice que alcanza a todo el operador y no caduca\n%s", texto)
