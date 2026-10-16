@@ -104,13 +104,30 @@ func (s *Servidor) quizaResumen(ahora time.Time) {
 
 	// SE RELEE LA VENTANA ENTERA, no se reutiliza la del ciclo. La del ciclo es
 	// de una hora —la de la cuarentena— y el resumen habla de veinticuatro.
-	amplia := s.reunir(seguridad.PorOrigen(s.seguridad.Desde(ahora.Add(-ventana))), nil, ventana, ahora)
+	//
+	// Y CON LOS APARTADOS DE LA VENTANA, que aquí iban como nil: «Cuarentenas
+	// aplicadas» salía siempre en cero aunque el nodo apartara a seis
+	// operadores entre el 03 y el 15/10 (ADR-0099).
+	desde := ahora.Add(-ventana)
+	amplia := s.reunir(seguridad.PorOrigen(s.seguridad.Desde(desde)),
+		apartadosDesde(s.cuarentena.Vigentes(ahora), desde), ventana, ahora)
 	retenidas, omitidas := s.retenidas.Vaciar()
 	resumen := aviso.Resumir(amplia, retenidas, ahora)
 	resumen.RetenidasOmitidas += omitidas
 	resumen.Avisadas, resumen.Absorbidas = s.avisos.Cuentas()
 
 	s.emitir(aviso.MensajeResumen(resumen))
+}
+
+// apartadosDesde son los apartados nacidos dentro de la ventana del resumen.
+func apartadosDesde(vigentes []seguridad.Apartado, desde time.Time) []seguridad.Apartado {
+	var out []seguridad.Apartado
+	for _, a := range vigentes {
+		if !a.Desde.Before(desde) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // reunir compone la Entrada del dominio a partir de lo que este adaptador tiene.

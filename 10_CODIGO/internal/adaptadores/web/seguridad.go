@@ -138,6 +138,13 @@ func (s *Servidor) anotarOperadorConocido(r *http.Request, ahora time.Time) {
 		// red, y sin ella habría que deducirlo del archivo.
 		s.reg.Info("operador nuevo con sesión iniciada; la cuarentena ya no lo apartará sola",
 			"asn", asn, "operadores_conocidos", s.operadores.Cuantos())
+		// Y el apartado que ya tuviera se retira en el acto (ADR-0099): es el
+		// caso del primer acceso desde un operador nuevo, cuyo primer rechazo
+		// lo apartó antes de que llegara la contraseña.
+		for _, a := range s.cuarentena.SoltarConocidos() {
+			s.reg.Info("apartado soltado: su operador ya consta",
+				"origen", a.IP.String(), "asn", a.ASN, "desde", ip.String())
+		}
 	}
 }
 

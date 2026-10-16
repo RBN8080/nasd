@@ -212,6 +212,15 @@ func situacionDeOrigen(o OrigenVisto) (Situacion, bool) {
 	}
 
 	clase, hay := claseDeOrigen(o)
+	// APARTAR A UN OPERADOR ENTERO ES SIEMPRE UNA HISTORIA — ADR-0099. Un
+	// rechazo limpio no tiene clase, y por eso el apartado del 2026-10-03 no
+	// produjo ningún aviso. Si la conducta ya cuenta una historia que avisa en
+	// el acto —exploración, fuerza bruta—, el apartado va dentro de ella como
+	// «Respuesta»; si no, es él quien la cuenta.
+	if o.Apartado != nil && o.Apartado.ASN != 0 &&
+		(!hay || clase.SeveridadBase() < ClaseOperadorApartado.SeveridadBase()) {
+		clase, hay = ClaseOperadorApartado, true
+	}
 	if !hay {
 		return Situacion{}, false
 	}
@@ -261,14 +270,27 @@ func situacionDeOrigen(o OrigenVisto) (Situacion, bool) {
 	// informe: sin ella, quien lea no sabe si tiene que hacer algo YA o si el
 	// nodo ya se ocupó.
 	if o.Apartado != nil {
-		s.conHecho("Respuesta", fmt.Sprintf("cuarentena automática aplicada hasta %s",
-			o.Apartado.Hasta.Format("15:04 del 02/01")))
+		s.conHecho("Respuesta", respuestaDe(*o.Apartado))
 		if o.Apartado.Frenados > 0 {
 			s.conHecho("Conexiones frenadas", fmt.Sprintf("%d", o.Apartado.Frenados))
 		}
 	}
 
 	return s, true
+}
+
+// respuestaDe dice qué hizo la cuarentena. Un Hasta en cero significa «no
+// caduca», y formateado salía «00:00 del 01/01»: una fecha que no existe en
+// cada aviso de un apartado por operador. Es el mismo defecto que el panel ya
+// corrigió en «Frenados» (v1.126.0).
+func respuestaDe(a seguridad.Apartado) string {
+	switch {
+	case a.Hasta.IsZero() && a.ASN != 0:
+		return fmt.Sprintf("cuarentena automática a todo el operador AS%d, sin caducidad", a.ASN)
+	case a.Hasta.IsZero():
+		return "cuarentena automática sin caducidad"
+	}
+	return fmt.Sprintf("cuarentena automática aplicada hasta %s", a.Hasta.Format("15:04 del 02/01"))
 }
 
 // claseDeOrigen elige QUÉ historia cuenta una dirección cuando podría contar

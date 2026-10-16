@@ -3,6 +3,7 @@ package seguridad
 import (
 	"net/netip"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -263,6 +264,122 @@ func TestUnaSesionInvalidaNoSiembraOperador(t *testing.T) {
 	eventos := []Evento{rechazo(driftnetUna, SesionInvalida, "/", ahora)}
 	if n := o.Sembrar(eventos, deQuienFalso{driftnetUna: asnDriftnet}, ahora); n != 0 {
 		t.Fatalf("sembrados = %d; una cookie que el gestor no conoce no prueba nada", n)
+	}
+}
+
+// EL CASO DEL 2026-10-03 — ADR-0099. El primer rechazo desde un operador nuevo
+// lo aparta entero; segundos después alguien entra con contraseña desde ahí.
+// Ese operador ya consta, y su apartado tiene que caer: si no, cualquier otra
+// conexión desde él se cuelga para siempre. Es lo que le pasó al responsable
+// durante trece días. Las direcciones y el ASN son de documentación (RFC 3849
+// y RFC 5398): los reales no salen del repositorio privado.
+func TestEntrarConContrasenaSueltaAlOperadorApartado(t *testing.T) {
+	const (
+		telefono = "2001:db8:265:8c35::2a06"
+		otraCasa = "2001:db8:265:8c35::fa2f"
+		asnNuevo = uint32(64500)
+	)
+	c, conocidos := conOperadores(t, deQuienFalso{telefono: asnNuevo, otraCasa: asnNuevo})
+	ahora := time.Now()
+
+	c.Evaluar(PorOrigen([]Evento{rechazo(telefono, SesionInvalida, "/", ahora)}), ahora)
+	if _, cubre := c.Cubre(netip.MustParseAddr(otraCasa), ahora); !cubre {
+		t.Fatal("el andamio no reproduce el caso: el operador debería estar apartado")
+	}
+
+	conocidos.Anotar(asnNuevo, ahora.Add(27*time.Second))
+	soltados := c.SoltarConocidos()
+
+	if len(soltados) != 1 || soltados[0].ASN != asnNuevo {
+		t.Fatalf("soltados = %+v; se esperaba el apartado del AS%d", soltados, asnNuevo)
+	}
+	for _, ip := range []string{telefono, otraCasa} {
+		if _, cubre := c.Cubre(netip.MustParseAddr(ip), ahora.Add(time.Minute)); cubre {
+			t.Errorf("a %s se le sigue cerrando la puerta con su operador ya conocido", ip)
+		}
+	}
+	if n := len(c.Vigentes(ahora)); n != 0 {
+		t.Errorf("quedan %d apartados vigentes; el panel lo seguiría enseñando", n)
+	}
+}
+
+// LO QUE DEJÓ EL ARCHIVO TAMBIÉN SE SUELTA, que es lo que hará el nodo al
+// desplegar esto: el apartado del 03/10 está escrito en disco y su operador
+// consta desde ese día. Al arrancar, SoltarConocidos tiene que retirarlo y el
+// siguiente volcado tiene que dejarlo fuera del archivo.
+func TestAlArrancarSeSueltaLoQueElArchivoTraiaDeUnOperadorConocido(t *testing.T) {
+	dir := t.TempDir()
+	rutaC := filepath.Join(dir, "cuarentena")
+	mapa := deQuienFalso{familiaMovil: asnMovil, driftnetUna: asnDriftnet}
+	ahora := time.Now()
+
+	c, err := CargarCuarentena(rutaC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vacios := operadoresDePrueba(t)
+	c.ConOperadores(mapa, vacios)
+	c.Evaluar(PorOrigen([]Evento{
+		rechazo(familiaMovil, SesionInvalida, "/", ahora),
+		rechazo(driftnetUna, SinSesion, "/", ahora),
+	}), ahora)
+	if err := c.Volcar(); err != nil {
+		t.Fatal(err)
+	}
+
+	// El «reinicio», ya con la familia constando.
+	otra, err := CargarCuarentena(rutaC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conocidos := operadoresDePrueba(t)
+	conocidos.Anotar(asnMovil, ahora)
+	otra.ConOperadores(mapa, conocidos)
+	if s := otra.SoltarConocidos(); len(s) != 1 || s[0].ASN != asnMovil {
+		t.Fatalf("soltados al arrancar = %+v; se esperaba solo el de la familia", s)
+	}
+	if err := otra.Volcar(); err != nil {
+		t.Fatal(err)
+	}
+
+	tercera, err := CargarCuarentena(rutaC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vigentes := tercera.Vigentes(ahora)
+	if len(vigentes) != 1 || vigentes[0].ASN != asnDriftnet {
+		t.Fatalf("en disco quedan %+v; se esperaba solo DRIFTNET", vigentes)
+	}
+}
+
+// LA CONDUCTA APARTA A LA DIRECCIÓN, NO AL OPERADOR, aunque el operador se
+// sepa — ADR-0099. Un escáner que comparte operador con la familia se lleva
+// sus 24 horas; la familia, que llama desde otra dirección del mismo
+// operador, no. Antes el apartado heredaba el ASN y no caducaba.
+func TestLaConductaDesdeUnOperadorConocidoApartaSoloLaDireccion(t *testing.T) {
+	const escaner = "3fff:2f0:9020:1::66"
+	c, conocidos := conOperadores(t, deQuienFalso{escaner: asnMovil, familiaMovil: asnMovil})
+	ahora := time.Now()
+	conocidos.Anotar(asnMovil, ahora.Add(-24*time.Hour))
+
+	var eventos []Evento
+	for i := range umbralExploracion {
+		eventos = append(eventos, rechazo(escaner, RutaInexistente, "/inventada-"+strconv.Itoa(i), ahora))
+	}
+	nuevos := c.Evaluar(PorOrigen(eventos), ahora)
+
+	if len(nuevos) != 1 || nuevos[0].Senal != SenalExploracion {
+		t.Fatalf("apartados = %+v; se esperaba uno por exploración", nuevos)
+	}
+	if nuevos[0].ASN != 0 || nuevos[0].Hasta.IsZero() {
+		t.Errorf("el apartado por conducta alcanza al AS%d sin caducidad (%v); debe ser solo la dirección, 24 h",
+			nuevos[0].ASN, nuevos[0].Hasta)
+	}
+	if _, cubre := c.Cubre(netip.MustParseAddr(familiaMovil), ahora); cubre {
+		t.Error("el escáner dejó fuera a la familia, que comparte operador")
+	}
+	if _, cubre := c.Cubre(netip.MustParseAddr(escaner), ahora); !cubre {
+		t.Error("al escáner no se le cierra la puerta")
 	}
 }
 

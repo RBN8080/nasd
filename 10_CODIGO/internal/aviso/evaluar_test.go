@@ -243,6 +243,52 @@ func TestElHallazgoSiEnsenaSuRutaPorqueEsAjenaPorConstruccion(t *testing.T) {
 	}
 }
 
+// APARTAR A UN OPERADOR ENTERO CUENTA SU PROPIA HISTORIA — ADR-0099. Es el caso
+// del 2026-10-03: un rechazo corriente desde un operador nuevo, el operador
+// apartado sin caducidad, y ningún aviso, porque un rechazo corriente no tiene
+// clase. Sin el cambio, esta prueba da cero situaciones.
+func TestApartarAUnOperadorEnteroProduceUnaSituacion(t *testing.T) {
+	// Dirección y ASN de documentación (RFC 3849, RFC 5398).
+	const telefono = "2001:db8:265:8c35::2a06"
+	ahora := time.Now()
+	o := rutinario(telefono, ahora)
+	o.Apartado = apartadoDeOperador(telefono, 64500, ahora)
+
+	ss := Evaluar(Entrada{Origenes: []OrigenVisto{o}}, ahora)
+	if len(ss) != 1 || ss[0].Clase != ClaseOperadorApartado {
+		t.Fatalf("situaciones = %d (%v); se esperaba una de operador apartado", len(ss), severidadDe(ss))
+	}
+	texto := todoElTexto(ss[0])
+	if !strings.Contains(texto, "AS64500, sin caducidad") {
+		t.Errorf("el aviso no dice que alcanza a todo el operador y no caduca\n%s", texto)
+	}
+	if !strings.Contains(texto, "WireGuard") {
+		t.Errorf("el aviso no dice cómo soltarlo si es alguien de casa\n%s", texto)
+	}
+}
+
+// UN APARTADO QUE NO CADUCA NO TIENE FECHA DE FIN. Formatear su Hasta en cero
+// daba «00:00 del 01/01» en cada aviso de un apartado por operador. Y si la
+// conducta ya cuenta una historia que avisa —exploración—, el apartado va dentro
+// de ella y no como un segundo aviso.
+func TestLaRespuestaDeUnApartadoSinCaducidadNoInventaUnaFecha(t *testing.T) {
+	ahora := time.Now()
+	o := explorador("203.0.113.7", 9, ahora)
+	o.Apartado = apartadoDeOperador("203.0.113.7", 211298, ahora)
+
+	ss := Evaluar(Entrada{Origenes: []OrigenVisto{o}}, ahora)
+	if len(ss) != 1 || ss[0].Clase != ClaseExploracion {
+		t.Fatalf("situaciones = %d; se esperaba una sola, de exploración", len(ss))
+	}
+	texto := todoElTexto(ss[0])
+	if strings.Contains(texto, "01/01") {
+		t.Errorf("el aviso inventa una fecha de fin para un apartado que no caduca\n%s", texto)
+	}
+	if !strings.Contains(texto, "sin caducidad") {
+		t.Errorf("el aviso no dice que el apartado no caduca\n%s", texto)
+	}
+}
+
 func tieneHecho(s Situacion, rotulo string) bool {
 	for _, h := range s.Hechos {
 		if h.Rotulo == rotulo {
