@@ -768,6 +768,7 @@ function Get-DatosDeVentana {
     if ($disco) { $libresDisco = Get-EspacioLibre -Ruta $disco.Raiz }
     $tonoDisco = 'Valor'
     if (('' + $estado['disco_estado']) -eq 'Atencion') { $tonoDisco = 'Ambar' }
+    elseif (('' + $estado['disco_estado']) -eq 'Falla') { $tonoDisco = 'Rojo' }
 
     # EL CORTE DEL VERDE SALE DE LA CADENCIA, no de un numero escrito aqui: es el
     # hueco que el propio reparto de ventanas promete. Si no se puede leer, 12 h,
@@ -2023,6 +2024,11 @@ function Invoke-OpcionDelTablero {
                     Write-Linea '   Copiando al disco frio (dos pasadas)...'
                     $rd = & "$nucleo\disco.ps1" @comunes -Confirm:$false
                     if ($rd.Abortada) { Write-Warning $rd.Motivo }
+                    elseif (@($rd.Fallidas).Count -gt 0) {
+                        # ANTES QUE "COMPLETA". El 2026-10-18 salia "COMPLETA"
+                        # justo debajo de "FALLO C:\dev".
+                        Write-Warning ('COPIA FRIA CON FALLOS: {0} raices sin dar por buenas ({1}). Lo demas se copio; el detalle, en el registro de hoy.' -f @($rd.Fallidas).Count, (@($rd.Fallidas) -join ', '))
+                    }
                     elseif (-not $rd.Completa) {
                         Write-Warning 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.'
                     }

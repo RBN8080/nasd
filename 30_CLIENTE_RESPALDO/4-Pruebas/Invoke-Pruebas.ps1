@@ -471,8 +471,19 @@ Test-Afirmacion -Nombre 'Y sigue llevando /L: en seco no se escribe nada' `
 $vReal = & { Invoke-Robocopy -Origen $raizB.Ruta -Destino $dDocs -Clase 'B' -Verbose } 4>&1 |
     Where-Object { $_ -is [System.Management.Automation.VerboseRecord] } |
     ForEach-Object { '' + $_.Message }
-Test-Afirmacion -Nombre 'La copia real SI conserva /MT:8: alli el entrelazado no decide nada' `
+Test-Afirmacion -Nombre 'La copia real al nodo SI conserva /MT:8' `
     -Esperado $true -Obtenido ([bool](@($vReal) -match '/MT:8'))
+
+# SALVO LA DEL DISCO FRIO. El disco es aditivo y guarda lo que el equipo ya
+# borro: sus 567 lineas "*Archivo EXTRA" salian partidas con ocho hilos y la
+# raiz 'C:\dev' se dio por FALLO con la copia hecha (2026-10-18).
+$vUnHilo = & { Invoke-Robocopy -Origen $raizB.Ruta -Destino $dDocs -Clase 'B' -UnSoloHilo -Verbose } 4>&1 |
+    Where-Object { $_ -is [System.Management.Automation.VerboseRecord] } |
+    ForEach-Object { '' + $_.Message }
+Test-Afirmacion -Nombre 'La copia real con -UnSoloHilo NO lleva /MT: el disco frio no parte lineas' `
+    -Esperado $false -Obtenido ([bool](@($vUnHilo) -match '/MT'))
+Test-Afirmacion -Nombre 'Y no es una pasada en seco: copia de verdad' `
+    -Esperado $false -Obtenido ([bool](@($vUnHilo) -match '/L\b'))
 
 # Y el conteo, tres veces seguidas sobre el mismo disco, tiene que ser el mismo.
 # En el arenero es una comprobacion barata; contra el nodo es la que fallaba.
@@ -810,6 +821,27 @@ else {
     Test-Afirmacion -Criterio '7' -Nombre 'El disco frio NO esta conectado: los criterios 7 y 7c no se pueden comprobar hoy' `
         -Esperado 'sin disco' -Obtenido 'sin disco'
 }
+
+Write-Titulo 'El veredicto del disco frio: una raiz fallida no es COMPLETA (18/10/2026)'
+
+# El 2026-10-18 el tablero dijo "Copia fria COMPLETA: 3492 archivos nuevos"
+# justo debajo de "FALLO C:\dev", y ESTADO.txt anoto Protegido: solo se miraba
+# si el nodo habia respondido.
+$copiaBuena = [pscustomobject]@{ Origen = 'C:\buena'; Correcto = $true;  NumACopiar = 5 }
+$copiaMala  = [pscustomobject]@{ Origen = 'C:\mala';  Correcto = $false; NumACopiar = 7 }
+
+$vFallo = Get-VeredictoDelDisco -Copias @($copiaBuena, $copiaMala) -Completa $true
+Test-Afirmacion -Nombre 'Una raiz fallida con las dos pasadas hechas es Falla, no Protegido' `
+    -Esperado 'Falla' -Obtenido $vFallo.Estado
+Test-Afirmacion -Nombre 'Y dice cual fallo, para que el tablero lo ensene' `
+    -Esperado @('C:\mala') -Obtenido @($vFallo.Fallidas)
+Test-Afirmacion -Nombre 'Una raiz fallida pesa mas que la pasada del nodo que falto' `
+    -Esperado 'Falla' -Obtenido (Get-VeredictoDelDisco -Copias @($copiaMala) -Completa $false).Estado
+Test-Afirmacion -Nombre 'Sin fallos pero sin la pasada del nodo sigue siendo Atencion' `
+    -Esperado 'Atencion' -Obtenido (Get-VeredictoDelDisco -Copias @($copiaBuena) -Completa $false).Estado
+$vBien = Get-VeredictoDelDisco -Copias @($copiaBuena) -Completa $true
+Test-Afirmacion -Nombre 'Sin fallos y con las dos pasadas, Protegido y con su cuenta' `
+    -Esperado 'Protegido|5|0' -Obtenido ('{0}|{1}|{2}' -f $vBien.Estado, $vBien.Copiados, @($vBien.Fallidas).Count)
 
 Write-Titulo 'SIMULAR NO ESCRIBE -- la prueba que faltaba el 2026-09-02'
 
