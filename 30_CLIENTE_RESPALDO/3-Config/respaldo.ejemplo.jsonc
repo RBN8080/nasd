@@ -45,7 +45,9 @@
 
     // El disco frio, a peticion. Es aditivo: no borra lo que ya hay.
     "discoFrio": {
-      "serie": "ZZ000000000A1",
+      // La firma del disco: MBR en 8 cifras hexadecimales (diskpart, uniqueid
+      // disk) o el GUID del disco si es GPT. Vive en el disco, no en la caja USB.
+      "firma": "0A1B2C3D",
       "etiqueta": "COPIA-FRIA",
       "sistemaDeArchivos": "NTFS",
 

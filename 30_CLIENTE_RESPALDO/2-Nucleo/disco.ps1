@@ -42,10 +42,11 @@
         JAMAS: equipo bajo EQUIPO-01\, nodo bajo NODO-01\. Es una propiedad de
         seguridad, no una preferencia estetica.
 
-        EL DISCO SE RECONOCE POR NUMERO DE SERIE, NUNCA POR LETRA (seccion 6.1),
-        y la confirmacion es el archivo centinela en su raiz. Los dos criterios,
-        y los dos tienen que pasar: es como el criterio 7b -"conectar otro disco
-        USB cualquiera"- se resuelve sin depender de que nadie renombre nada.
+        EL DISCO SE RECONOCE POR SU FIRMA, NUNCA POR LETRA NI POR CAJA (seccion
+        6.1, ADR-0102), y la confirmacion es el archivo centinela en su raiz. Los
+        dos criterios, y los dos tienen que pasar: es como el criterio 7b
+        -"conectar otro disco USB cualquiera"- se resuelve sin depender de que
+        nadie renombre nada.
 
     .PARAMETER RutaConfiguracion
         Configuracion a usar. Por omision la de 3-Config.
@@ -164,20 +165,20 @@ function Invoke-CorridaAlDiscoFrio {
         ArchivosCopiados = 0
     }
 
-    # --- Guarda 1: el disco, por SERIE y por CENTINELA -----------------------
+    # --- Guarda 1: el disco, por FIRMA y por CENTINELA -----------------------
     # Los dos criterios. Asi es como el criterio 7b -"conectar otro disco USB
-    # cualquiera"- se resuelve: sin serie coincidente NI centinela, no se
+    # cualquiera"- se resuelve: sin firma coincidente NI centinela, no se
     # escribe nada. Y el criterio 7 -"otra letra"- sale gratis, porque la letra
     # no se usa para identificar.
     $disco = Get-DiscoFrio -Configuracion $Configuracion
     if (-not $disco) {
         $resultado.Abortada = $true
-        $resultado.Motivo = 'El disco frio no esta conectado, o no supera la prueba de serie y centinela. No se escribe nada.'
+        $resultado.Motivo = 'El disco frio no esta conectado, o no supera la prueba de firma y centinela. No se escribe nada.'
         Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' -Mensaje $resultado.Motivo
         return [pscustomobject]$resultado
     }
     $resultado.Disco = $disco
-    Write-RegistroRespaldo -Etapa 'disco' -Mensaje "Disco frio reconocido en $($disco.Raiz) por serie $($disco.Serie) y centinela."
+    Write-RegistroRespaldo -Etapa 'disco' -Mensaje "Disco frio reconocido en $($disco.Raiz) por firma $($disco.Firma) y centinela."
 
     # --- Guarda 2: los centinelas del equipo --------------------------------
     # Si algo esta tocando archivos que nadie usa, tampoco se escribe al disco.
