@@ -494,15 +494,42 @@ function Test-DestinoNodo {
     return $false
 }
 
+function Get-FirmaDeDisco {
+    <#
+        .SYNOPSIS
+            La identidad que vive EN el disco, no en la caja USB que lo lleva.
+        .DESCRIPTION
+            MBR: la firma de 32 bits, en 8 cifras hexadecimales como la ensena
+            `diskpart` (uniqueid disk). GPT: el GUID del disco, sin llaves. Las
+            dos se escriben al particionar y no cambian al formatear, ni con la
+            letra, ni con la caja (ADR-0102).
+            Devuelve $null si el disco no tiene ninguna (sin inicializar).
+        .PARAMETER Disco
+            Un objeto de Get-Disk.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][psobject] $Disco
+    )
+
+    $estilo = '' + $Disco.PartitionStyle
+    if ($estilo -eq 'GPT' -and $Disco.Guid) { return ('' + $Disco.Guid).Trim('{}').ToUpperInvariant() }
+    if ($estilo -eq 'MBR' -and $Disco.Signature) { return '{0:X8}' -f [uint32]$Disco.Signature }
+    return $null
+}
+
 function Get-DiscoFrio {
     <#
         .SYNOPSIS
-            Localiza el disco frio por NUMERO DE SERIE, nunca por letra.
+            Localiza el disco frio por su FIRMA, nunca por letra ni por caja.
         .DESCRIPTION
-            La letra cambia sola; el numero de serie sobrevivio a un formato
-            completo, verificado el 2026-09-01 (seccion 6.1). La confirmacion es
-            el archivo centinela en la raiz, que evita escribir en un disco
-            parecido por accidente (seccion 15, criterios 7 y 7b).
+            La letra cambia sola, y la serie que lee Windows es la de la caja
+            USB, no la del disco: al cambiar de caja el 2026-10-18 el motor lo
+            dio por "no conectado" con el disco puesto (ADR-0102). La firma
+            esta grabada en el propio disco. La confirmacion es el archivo
+            centinela en la raiz, que evita escribir en un disco parecido por
+            accidente (seccion 15, criterios 7 y 7b).
             Devuelve $null si no esta conectado o si no supera las dos pruebas.
         .PARAMETER Configuracion
             El objeto de configuracion completo.
@@ -515,9 +542,20 @@ function Get-DiscoFrio {
     )
 
     $ficha = $Configuracion.destinos.discoFrio
-    $disco = @(Get-Disk | Where-Object { $_.SerialNumber -eq $ficha.serie })
+    $disco = @(Get-Disk | Where-Object { (Get-FirmaDeDisco -Disco $_) -eq $ficha.firma })
     if ($disco.Count -eq 0) {
-        Write-Verbose "Disco frio con serie $($ficha.serie) no conectado."
+        # EL CENTINELA PUESTO Y LA FIRMA DISTINTA NO ES "NO CONECTADO". Asi lo
+        # decia el 2026-10-18, cuatro veces, con el disco en F:. Se sigue sin
+        # escribir, pero se dice que firma hay para que se pueda decidir.
+        foreach ($v in @(Get-Volume | Where-Object { $_.DriveLetter })) {
+            if (-not (Test-Path -LiteralPath (Join-Path ('{0}:\' -f $v.DriveLetter) $ficha.centinela) -PathType Leaf)) { continue }
+            $vista = 'ilegible'
+            try { $vista = Get-FirmaDeDisco -Disco (Get-Partition -DriveLetter $v.DriveLetter -ErrorAction Stop | Get-Disk -ErrorAction Stop) }
+            catch { Write-Verbose "Firma de $($v.DriveLetter): ilegible: $($_.Exception.Message)" }
+            Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'disco' -Mensaje ("El centinela del disco frio esta en {0}:\ pero ese disco tiene la firma {1} y la configuracion espera {2}. No se escribe nada." -f $v.DriveLetter, $vista, $ficha.firma)
+            return $null
+        }
+        Write-Verbose "Disco frio con firma $($ficha.firma) no conectado."
         return $null
     }
 
@@ -531,12 +569,12 @@ function Get-DiscoFrio {
     $raiz = '{0}:\' -f $letra
     $centinela = Join-Path $raiz $ficha.centinela
     if (-not (Test-Path -LiteralPath $centinela -PathType Leaf)) {
-        Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'disco' -Mensaje "Serie correcta en $raiz pero FALTA el centinela '$($ficha.centinela)'. No se escribe nada."
+        Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'disco' -Mensaje "Firma correcta en $raiz pero FALTA el centinela '$($ficha.centinela)'. No se escribe nada."
         return $null
     }
 
     return [pscustomobject]@{
-        Serie     = $ficha.serie
+        Firma     = $ficha.firma
         Letra     = $letra
         Raiz      = $raiz
         Centinela = $centinela

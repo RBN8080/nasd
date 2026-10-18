@@ -757,31 +757,50 @@ Test-Afirmacion -Nombre 'Las dos pasadas del disco no pueden pisarse: raices dis
     -Esperado $false `
     -Obtenido ($destEquipo.StartsWith('F:\NODO-01') -or $destNodo.StartsWith('F:\EQUIPO-01'))
 
-Write-Titulo 'Criterios 7 y 7b: el disco se reconoce por SERIE y CENTINELA'
+Write-Titulo 'Criterios 7 y 7b: el disco se reconoce por FIRMA y CENTINELA'
 
 . "$nucleo\disco.ps1"
 
-# 7b - "conectar otro disco USB cualquiera": sin serie coincidente, nada.
-$cfgSerieMala = [pscustomobject]@{
-    destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{
-        serie = 'ESTA-SERIE-NO-EXISTE'; centinela = '_COPIA_FRIA_ZZ000000000A1.txt' } }
-}
-Test-Afirmacion -Criterio '7b' -Nombre 'Sin serie coincidente NO se reconoce ningun disco' `
-    -Esperado $true -Obtenido ($null -eq (Get-DiscoFrio -Configuracion $cfgSerieMala))
+# LA FIRMA ES LA DEL DISCO, NO LA DE LA CAJA (ADR-0102). La serie que leia el
+# motor era la de la caja USB: el 2026-10-18, en otra caja, el disco puesto en
+# F: salio "no conectado". La firma se escribe en 8 cifras como en diskpart.
+Test-Afirmacion -Criterio '7' -Nombre 'La firma MBR sale en 8 cifras hexadecimales, como en diskpart' `
+    -Esperado '12AB34CD' `
+    -Obtenido (Get-FirmaDeDisco -Disco ([pscustomobject]@{ PartitionStyle = 'MBR'; Signature = [uint32]313210061; Guid = $null }))
+Test-Afirmacion -Criterio '7' -Nombre 'Una firma MBR pequena conserva los ceros de la izquierda' `
+    -Esperado '0000ABCD' `
+    -Obtenido (Get-FirmaDeDisco -Disco ([pscustomobject]@{ PartitionStyle = 'MBR'; Signature = [uint32]0xABCD; Guid = $null }))
+Test-Afirmacion -Criterio '7' -Nombre 'La firma GPT es el GUID del disco, sin llaves' `
+    -Esperado '0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0' `
+    -Obtenido (Get-FirmaDeDisco -Disco ([pscustomobject]@{ PartitionStyle = 'GPT'; Signature = $null; Guid = '{0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0}' }))
+Test-Afirmacion -Criterio '7b' -Nombre 'Un disco sin inicializar no tiene firma y no puede coincidir' `
+    -Esperado $true `
+    -Obtenido ($null -eq (Get-FirmaDeDisco -Disco ([pscustomobject]@{ PartitionStyle = 'RAW'; Signature = $null; Guid = $null })))
 
-# 7b - y con la serie correcta pero SIN el centinela, tampoco se escribe.
+$cfgReal = Get-ConfiguracionRespaldo
+
+# 7b - "conectar otro disco USB cualquiera": sin firma coincidente, nada. Con el
+# disco real puesto, esto ademas pasa por el aviso de "centinela en un disco con
+# otra firma", que es el caso del 2026-10-18.
+$cfgFirmaMala = [pscustomobject]@{
+    destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{
+        firma = 'ESTA-FIRMA-NO-EXISTE'; centinela = $cfgReal.destinos.discoFrio.centinela } }
+}
+Test-Afirmacion -Criterio '7b' -Nombre 'Sin firma coincidente NO se reconoce ningun disco' `
+    -Esperado $true -Obtenido ($null -eq (Get-DiscoFrio -Configuracion $cfgFirmaMala 2>$null))
+
+# 7b - y con la firma correcta pero SIN el centinela, tampoco se escribe.
 $cfgSinCentinela = [pscustomobject]@{
     destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{
-        serie = 'ZZ000000000A1'; centinela = '_centinela_que_no_existe.txt' } }
+        firma = $cfgReal.destinos.discoFrio.firma; centinela = '_centinela_que_no_existe.txt' } }
 }
-Test-Afirmacion -Criterio '7b' -Nombre 'Serie correcta pero SIN centinela: tampoco se escribe' `
+Test-Afirmacion -Criterio '7b' -Nombre 'Firma correcta pero SIN centinela: tampoco se escribe' `
     -Esperado $true -Obtenido ($null -eq (Get-DiscoFrio -Configuracion $cfgSinCentinela 2>$null))
 
 # 7 - "conectar el disco con otra letra": la letra se DERIVA, no se declara.
-$cfgReal = Get-ConfiguracionRespaldo
 $discoReal = Get-DiscoFrio -Configuracion $cfgReal
 if ($discoReal) {
-    Test-Afirmacion -Criterio '7' -Nombre 'El disco real se reconoce por serie, y la letra se DERIVA' `
+    Test-Afirmacion -Criterio '7' -Nombre 'El disco real se reconoce por firma, y la letra se DERIVA' `
         -Esperado $true -Obtenido ($discoReal.Letra -and $discoReal.Raiz -like "$($discoReal.Letra):*")
     Test-Afirmacion -Criterio '7' -Nombre 'La letra NO aparece en la configuracion del disco' `
         -Esperado $false `
