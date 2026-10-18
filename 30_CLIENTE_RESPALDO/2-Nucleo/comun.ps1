@@ -611,6 +611,8 @@ function Invoke-Robocopy {
         .PARAMETER SoloListar
             Anade /L: no copia, lista lo que copiaria. Es la base del freno y de
             la verificacion (secciones 7 y 9).
+        .PARAMETER UnSoloHilo
+            La copia real sin /MT. La usa el disco frio: ver mas abajo.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
@@ -618,7 +620,8 @@ function Invoke-Robocopy {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Origen,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Destino,
         [Parameter(Mandatory)][ValidateSet('A', 'B')][string] $Clase,
-        [switch] $SoloListar
+        [switch] $SoloListar,
+        [switch] $UnSoloHilo
     )
 
     # Banderas que NO son opcionales (seccion 4 del contrato):
@@ -666,7 +669,15 @@ function Invoke-Robocopy {
     # trabajo: robocopy copia bien con ocho hilos y ningun umbral se decide con
     # esa salida. El codigo de salida y el cubo de sin clasificar se siguen
     # mirando igual.
-    if (-not $SoloListar) { $comunes += '/MT:8' }
+    #
+    # SALVO EN EL DISCO FRIO (-UnSoloHilo), y ahi el entrelazado SI decidia. El
+    # disco es aditivo: guarda lo que el equipo ya borro, y robocopy lo lista
+    # como "*Archivo EXTRA" en cada pasada -567 lineas en 'C:\dev'-. Con ocho
+    # hilos esas lineas salen partidas y sin ruta, caen en el cubo de sin
+    # clasificar y la raiz se daba por FALLO con la copia hecha. Medido el
+    # 2026-10-18 sobre 'C:\dev': 8 lineas partidas en la copia real, 19 a 22 en
+    # tres pasadas en seco con /MT:8, y cero sin el.
+    if (-not $SoloListar -and -not $UnSoloHilo) { $comunes += '/MT:8' }
 
     # /FP ruta completa, para poder clasificar por prefijo.
     # /NJH /NJS sin cabecera ni resumen: el resumen esta localizado y no se usa.

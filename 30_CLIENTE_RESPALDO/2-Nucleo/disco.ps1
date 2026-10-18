@@ -120,7 +120,10 @@ function Invoke-PasadaAlDisco {
         }
 
         if (-not $PSCmdlet.ShouldProcess($r.Ruta, "Copiar al disco frio en $destino")) { continue }
-        $res = Invoke-Robocopy -Origen $r.Ruta -Destino $destino -Clase 'A'
+        # UN SOLO HILO: con /MT las lineas "*Archivo EXTRA" del disco salian
+        # partidas y daban por FALLO una copia hecha (Invoke-Robocopy). El disco
+        # es un solo cabezal por USB: ocho hilos no le compran gran cosa.
+        $res = Invoke-Robocopy -Origen $r.Ruta -Destino $destino -Clase 'A' -UnSoloHilo
         $resultados.Add($res)
 
         if ($res.Correcto) {
@@ -131,6 +134,57 @@ function Invoke-PasadaAlDisco {
         }
     }
     return $resultados.ToArray()
+}
+
+function Get-VeredictoDelDisco {
+    <#
+        .SYNOPSIS
+            Que se puede afirmar de una copia fria, y con que estado se anota.
+        .DESCRIPTION
+            EL ORDEN IMPORTA. Una raiz que no se dio por buena pesa mas que la
+            pasada del nodo que falto, y las dos pesan mas que el numero de
+            archivos. El 2026-10-18 el tablero dijo "COMPLETA" justo debajo de
+            "FALLO C:\dev": solo se miraba si el nodo habia respondido.
+        .PARAMETER Copias
+            Los resultados de las dos pasadas, sin nulos.
+        .PARAMETER Completa
+            Si corrieron las dos pasadas.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Copias,
+        [Parameter(Mandatory)][bool] $Completa
+    )
+
+    $fallidas = @($Copias | Where-Object { -not $_.Correcto } | ForEach-Object { '' + $_.Origen })
+    $copiados = 0
+    foreach ($c in $Copias) { $copiados += [int]$c.NumACopiar }
+
+    if ($fallidas.Count -gt 0) {
+        $estado  = 'Falla'
+        $detalle = 'CON FALLOS: {0} de {1} raices sin dar por buenas ({2}). Ver el registro de hoy' -f `
+            $fallidas.Count, @($Copias).Count, ($fallidas -join ', ')
+    }
+    elseif (-not $Completa) {
+        # UNA COPIA FRIA A LA QUE LE FALTO UNA PASADA NO SE PINTA DE VERDE.
+        $estado  = 'Atencion'
+        $detalle = 'INCOMPLETA: lo que solo vive en el nodo NO llego al disco'
+    }
+    elseif ($copiados -eq 0) {
+        $estado  = 'Protegido'
+        $detalle = 'Al dia: las dos pasadas corrieron, nada nuevo que copiar'
+    }
+    else {
+        $estado  = 'Protegido'
+        $detalle = 'COMPLETA: las dos pasadas, {0} archivos nuevos' -f $copiados
+    }
+    return [pscustomobject]@{
+        Estado   = $estado
+        Detalle  = $detalle
+        Fallidas = $fallidas
+        Copiados = $copiados
+    }
 }
 
 function Invoke-CorridaAlDiscoFrio {
@@ -162,6 +216,7 @@ function Invoke-CorridaAlDiscoFrio {
         PasadaNodo    = @()
         NodoAlcanzable= $false
         Completa      = $false
+        Fallidas      = @()
         ArchivosCopiados = 0
     }
 
@@ -248,36 +303,22 @@ function Invoke-CorridaAlDiscoFrio {
         if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
     }
 
+    # Ademas se cuenta lo que DE VERDAD se copio: decir "completa" cuando no se
+    # movio un solo archivo es cierto pero no es lo que la persona pregunta. Lo
+    # que quiere saber es si falto algo.
+    $veredicto = Get-VeredictoDelDisco -Completa $resultado.Completa `
+        -Copias @(@($resultado.PasadaEquipo) + @($resultado.PasadaNodo) | Where-Object { $_ })
+    $resultado.Fallidas = $veredicto.Fallidas
+
     if (-not $Simular) {
+        $resultado.ArchivosCopiados = $veredicto.Copiados
+
         # SE ANOTA EN LAS CLAVES DEL DISCO, NO EN EL VEREDICTO PRINCIPAL. Que la
         # copia fria fuera bien no dice nada sobre el respaldo diario al nodo, y
         # el 2026-09-02 escribir aqui "Protegido" borro un fallo real del nodo
         # que nadie habia arreglado.
-        #
-        # Ademas se cuenta lo que DE VERDAD se copio: decir "completa" cuando no
-        # se movio un solo archivo es cierto pero no es lo que la persona
-        # pregunta. Lo que quiere saber es si falto algo.
-        $copiados = 0
-        foreach ($r in (@($resultado.PasadaEquipo) + @($resultado.PasadaNodo))) {
-            if ($r) { $copiados += [int]$r.NumACopiar }
-        }
-        # UNA COPIA FRIA A LA QUE LE FALTO UNA PASADA NO SE PINTA DE VERDE.
-        if ($resultado.Completa) {
-            $frase = if ($copiados -eq 0) {
-                'Al dia: las dos pasadas corrieron, nada nuevo que copiar'
-            }
-            else {
-                'COMPLETA: las dos pasadas, {0} archivos nuevos' -f $copiados
-            }
-            Write-EstadoDelDisco -Estado 'Protegido' -Detalle $frase `
-                -Carpeta $carpetaEstado -Confirm:$false
-        }
-        else {
-            Write-EstadoDelDisco -Estado 'Atencion' `
-                -Detalle 'INCOMPLETA: lo que solo vive en el nodo NO llego al disco' `
-                -Carpeta $carpetaEstado -Confirm:$false
-        }
-        $resultado.ArchivosCopiados = $copiados
+        Write-EstadoDelDisco -Estado $veredicto.Estado -Detalle $veredicto.Detalle `
+            -Carpeta $carpetaEstado -Confirm:$false
 
         # La mitad "disco" de la tabla del tablero. Las dos pasadas juntas: para
         # quien mira la tabla, una raiz esta en el disco o no esta, y de que
