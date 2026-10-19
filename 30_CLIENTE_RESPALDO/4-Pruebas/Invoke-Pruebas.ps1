@@ -871,7 +871,7 @@ Test-Afirmacion -Nombre 'El destino sigue sin existir siquiera' `
 
 # Y la causa raiz, comprobada directamente: ningun guion del nucleo carga a otro
 # guion que tenga param(). Si alguien lo reintroduce, esta prueba lo dice.
-$conParam = @('respaldo.ps1', 'disco.ps1', 'semilla.ps1', 'verificar.ps1')
+$conParam = @('respaldo.ps1', 'disco.ps1', 'semilla.ps1', 'verificar.ps1', 'laboratorio.ps1')
 $cargasProhibidas = @()
 foreach ($archivo in (Get-ChildItem -LiteralPath $nucleo -Filter *.ps1)) {
     $texto = Get-Content -LiteralPath $archivo.FullName -Raw
@@ -2905,6 +2905,189 @@ if ($tareaLab.Count -eq 1) {
         -Esperado 'Copiando|True' -Obtenido ('{0}|{1}' -f $vistaLabFoto.Estado, ($vistaLabFoto.Detalle -like '*pueden seguir encendidas*'))
     Remove-Item -LiteralPath (Join-Path $cajaLab 'LABORATORIO.lock') -Force
 }
+
+# ===========================================================================
+Write-Titulo 'ADR-0104: el laboratorio va por bloques y nunca sube entera una VM que ya esta'
+# ===========================================================================
+#
+# EL v1 SUBIA EL .vmdk ENTERO EN CUANTO CAMBIABA UN BYTE: 7.1 h con las VMs
+# apagadas el 2026-10-10. laboratorio.ps1 envia solo los bloques que cambiaron,
+# y para saberlo SIN releer el nodo se fia de un manifiesto. Estas pruebas
+# existen para que esa confianza no se pueda romper en silencio: el manifiesto
+# tiene que ser el nodo, o no se escribe nada.
+#
+# El destino es una UNC de verdad, como en el resto de la bateria, y el cotejo
+# es 'local' -lee el destino desde aqui- porque la bateria no tiene una Pi.
+
+. "$nucleo\laboratorio.ps1"
+
+$labRaiz = Join-Path $caja.Raiz 'laboratorio'
+$labOrigen = Join-Path $labRaiz 'origen'
+$labEstado = Join-Path $labRaiz 'estado'
+$labDestinoLocal = Join-Path $labRaiz 'destino\lab'
+New-Item -ItemType Directory -Path "$labOrigen\VM1", "$labOrigen\VM2", $labEstado, (Split-Path $labDestinoLocal -Parent) -Force | Out-Null
+$azar = New-Object System.Random 20261018
+$escribirAzar = {
+    param($Ruta, $Bytes)
+    $b = New-Object byte[] $Bytes
+    $azar.NextBytes($b)
+    [System.IO.File]::WriteAllBytes($Ruta, $b)
+}
+& $escribirAzar "$labOrigen\VM1\disco.vmdk" (3MB + 1000)
+& $escribirAzar "$labOrigen\VM2\otro.vmdk" 2MB
+'config = 1' | Set-Content -LiteralPath "$labOrigen\VM1\vm.vmx" -Encoding ASCII
+$cfgLab = [pscustomobject]@{
+    carpetaEstado = $labEstado
+    laboratorio   = [pscustomobject]@{
+        origen = $labOrigen; destino = ('\\localhost\C$' + $labDestinoLocal.Substring(2)); destinoEnLaPi = '/no/se/usa'
+        umbralDeltaBytes = 1MB; bloqueBytes = 65536; verificador = 'local'; vmrun = ''
+    }
+}
+$hashDe = { param($Ruta) (Get-FileHash -LiteralPath $Ruta -Algorithm SHA256).Hash }
+$vmdk1 = "$labOrigen\VM1\disco.vmdk"
+$vmdk1Nodo = "$labDestinoLocal\VM1\disco.vmdk"
+$tocarBloques = {
+    param([long[]]$Offsets, [int]$Minutos)
+    $fs = [System.IO.File]::Open($vmdk1, 'Open', 'ReadWrite')
+    try { foreach ($o in $Offsets) { $fs.Position = $o; $fs.WriteByte([byte]($o % 251)) } } finally { $fs.Dispose() }
+    (Get-Item -LiteralPath $vmdk1).LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddMinutes($Minutos)
+}
+
+# --- Las piezas puras --------------------------------------------------------
+$huellas = Get-HuellasPorBloque -Ruta $vmdk1 -Bloque 65536
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    $py = @(& $python.Source -I (Join-Path $nucleo 'blkhash.py') full $vmdk1 65536)
+    Test-Afirmacion -Nombre 'Las huellas de .NET son las de blkhash.py, bloque corto final incluido' `
+        -Esperado ((@('SIZE ' + $huellas.Tamano) + $huellas.Huellas) -join ',') -Obtenido ($py -join ',')
+}
+else {
+    Test-Afirmacion -Nombre 'Sin python en este equipo: la paridad con blkhash.py no se comprueba hoy' -Esperado 'sin python' -Obtenido 'sin python'
+}
+$crece = [pscustomobject]@{ Huellas = @('a', 'b', 'X', 'd', 'e') }
+$antes = [pscustomobject]@{ Huellas = @('a', 'b', 'c') }
+Test-Afirmacion -Nombre 'Un archivo que crece envia el bloque cambiado y los nuevos' `
+    -Esperado @(2, 3, 4) -Obtenido (Get-IndicesCambiados -Actual $crece -Previo $antes)
+Test-Afirmacion -Nombre 'Uno que encoge no inventa indices: lo resuelve el tamano' `
+    -Esperado 0 -Obtenido (Get-IndicesCambiados -Actual $antes -Previo ([pscustomobject]@{ Huellas = @('a', 'b', 'c', 'd') })).Count
+Test-Afirmacion -Nombre 'El ultimo bloque corto cuenta lo que mide, no un bloque entero' `
+    -Esperado (65536 + 1000) -Obtenido (Get-BytesDeIndices -Indices @(0, 48) -Bloque 65536 -Tamano (48 * 65536 + 1000))
+
+$blkPrueba = Join-Path $labEstado 'prueba.blk'
+Write-ManifiestoDeBloques -Ruta $blkPrueba -Huellas $huellas -FechaUtc ([datetime]::new(2026, 10, 18, 12, 0, 0, [System.DateTimeKind]::Utc)) -Confirm:$false
+$leido = Read-ManifiestoDeBloques -Ruta $blkPrueba
+Test-Afirmacion -Nombre 'El manifiesto vuelve igual que se escribio, con la fecha del nodo' `
+    -Esperado ('{0}|{1}|{2}' -f $huellas.Tamano, ($huellas.Huellas -join ','), [datetime]::new(2026, 10, 18, 12, 0, 0, [System.DateTimeKind]::Utc).Ticks) `
+    -Obtenido ('{0}|{1}|{2}' -f $leido.Tamano, ($leido.Huellas -join ','), $leido.FechaUtcTicks)
+"BS 65536 SIZE 10`nabc`n" | Set-Content -LiteralPath $blkPrueba -NoNewline -Encoding ASCII
+Test-Afirmacion -Nombre 'Un manifiesto del v2, sin fecha, se lee con fecha 0: no se puede dar por bueno' `
+    -Esperado 0 -Obtenido (Read-ManifiestoDeBloques -Ruta $blkPrueba).FechaUtcTicks
+
+$cmpMal = Compare-HuellasLeidas -Esperadas @('a', 'b', 'c') -Indices @(0, 2) -Leidas @{ 0 = 'a'; 2 = 'Z' } -Tamano 3 -TamanoLeido 3
+Test-Afirmacion -Nombre 'Un bloque que la Pi no confirma tumba el cotejo y se cuenta' `
+    -Esperado 'False|1' -Obtenido ('{0}|{1}' -f $cmpMal.Correcto, $cmpMal.Malos)
+Test-Afirmacion -Nombre 'Y un tamano distinto tambien, aunque los bloques cuadren' `
+    -Esperado $false -Obtenido (Compare-HuellasLeidas -Esperadas @('a') -Indices @(0) -Leidas @{ 0 = 'a' } -Tamano 3 -TamanoLeido 4).Correcto
+
+$fichaLab = Get-FichaDelLaboratorio -Configuracion $cfgLab
+Test-Afirmacion -Nombre 'Los cerrojos, la memoria y los registros de una VM no se guardan' `
+    -Esperado 'True|True|True|False' -Obtenido ('{0}|{1}|{2}|{3}' -f
+        (Test-ExcluidoDelLaboratorio -Relativa 'VM1\disco.vmdk.lck\M1.lck' -Ficha $fichaLab),
+        (Test-ExcluidoDelLaboratorio -Relativa 'VM1\vm.vmem' -Ficha $fichaLab),
+        (Test-ExcluidoDelLaboratorio -Relativa '_lab\registros\x.txt' -Ficha $fichaLab),
+        (Test-ExcluidoDelLaboratorio -Relativa 'VM1\disco.vmdk' -Ficha $fichaLab))
+$cfgLabLocal = [pscustomobject]@{ laboratorio = [pscustomobject]@{ origen = 'D:\x'; destino = 'C:\no\es\red'; destinoEnLaPi = '/x'; umbralDeltaBytes = 1; bloqueBytes = 65536 } }
+$lanzo = $false
+try { [void](Get-FichaDelLaboratorio -Configuracion $cfgLabLocal) } catch { $lanzo = $true }
+Test-Afirmacion -Nombre 'Un destino del laboratorio que no es UNC no se acepta: es un espejo' -Esperado $true -Obtenido $lanzo
+
+$filasLab = @(Get-FilasDelLaboratorio -Base '2026-10-10T16:24:00' -EnNodo @{ A = 1; B = 1; C = 1; E = 1; F = 1 } -Abiertas @('B') `
+        -PorVm @{ E = [pscustomobject]@{ Vm = 'E'; Bytes = 1; Guardado = ''; Enviado = -1; Estado = 'Falla'; Detalle = 'x'; Lectura = '' }
+                  F = [pscustomobject]@{ Vm = 'F'; Bytes = 1; Guardado = ''; Enviado = -1; Estado = 'Pendiente'; Detalle = 'y'; Lectura = '' } } `
+        -Vms @(
+            [pscustomobject]@{ Vm = 'A'; Bytes = 6; Cambio = [datetime]'2026-10-09T10:00:00' }
+            [pscustomobject]@{ Vm = 'B'; Bytes = 5; Cambio = [datetime]'2026-10-15T10:00:00' }
+            [pscustomobject]@{ Vm = 'D'; Bytes = 4; Cambio = [datetime]'2026-10-09T10:00:00' }
+            [pscustomobject]@{ Vm = 'E'; Bytes = 3; Cambio = [datetime]'2026-10-09T10:00:00' }
+            [pscustomobject]@{ Vm = 'F'; Bytes = 2; Cambio = [datetime]'2026-10-09T10:00:00' }))
+Test-Afirmacion -Nombre 'La tabla por VM dice al dia, cambiada, nueva, FALLO y pendiente, y si esta abierta' `
+    -Esperado 'al dia|cambiada 15/10, abierta|nueva|FALLO|pendiente [T]' -Obtenido (($filasLab | ForEach-Object { $_.Desde }) -join '|')
+Test-Afirmacion -Nombre 'Y solo al dia va en verde' `
+    -Esperado 'Verde|Ambar|Ambar|Rojo|Ambar' -Obtenido (($filasLab | ForEach-Object { $_.Tono }) -join '|')
+
+$vRobocopy = & { Invoke-Robocopy -Origen $labOrigen -Destino $cfgLab.laboratorio.destino -Clase 'B' -SoloListar -UnSoloHilo -ExcluirArchivos @('disco.vmdk') -Verbose } 4>&1 |
+    Where-Object { $_ -is [System.Management.Automation.VerboseRecord] } | ForEach-Object { '' + $_.Message }
+Test-Afirmacion -Nombre 'Robocopy recibe los discos grandes en /XF' -Esperado $true -Obtenido ([bool](@($vRobocopy) -match '/XF disco\.vmdk'))
+
+# --- El guardado entero, en el arenero ---------------------------------------
+$g1 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Primera vez: los discos nuevos van enteros y llegan identicos' `
+    -Esperado 'Protegido|5243880|True|True' -Obtenido ('{0}|{1}|{2}|{3}' -f $g1.Estado, $g1.Enviado,
+        ((& $hashDe $vmdk1) -eq (& $hashDe $vmdk1Nodo)), (Test-Path -LiteralPath "$labDestinoLocal\VM1\vm.vmx"))
+
+& $tocarBloques @(70000, 200000) 1
+$previa = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Simular
+Test-Afirmacion -Nombre '[V] dice cuanto enviaria -dos bloques- y no escribe nada' `
+    -Esperado ('{0}|False' -f (2 * 65536)) -Obtenido ('{0}|{1}' -f $previa.Enviado, ((& $hashDe $vmdk1) -eq (& $hashDe $vmdk1Nodo)))
+
+$g2 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Dos bloques cambiados: viajan DOS BLOQUES, no la VM, y el nodo queda identico' `
+    -Esperado ('Protegido|{0}|True' -f (2 * 65536)) -Obtenido ('{0}|{1}|{2}' -f $g2.Estado, $g2.Enviado, ((& $hashDe $vmdk1) -eq (& $hashDe $vmdk1Nodo)))
+Test-Afirmacion -Nombre 'Y robocopy ni lo vio: si lo viera lo truncaria y lo subiria entero' `
+    -Esperado $false -Obtenido ([bool](@($g2.Pequenos.ACopiar) -match 'disco\.vmdk'))
+
+$g3 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Sin cambios no viaja nada' -Esperado 'Protegido|0' -Obtenido ('{0}|{1}' -f $g3.Estado, $g3.Enviado)
+$tsvLab = Read-EstadoDelLaboratorioPorVm -Carpeta $labEstado
+Test-Afirmacion -Nombre 'LABORATORIO.tsv anota cada VM al dia y con su fecha de guardado' `
+    -Esperado 'AlDia|True' -Obtenido ('{0}|{1}' -f $tsvLab['VM1'].Estado, [bool]$tsvLab['VM1'].Guardado)
+$guardadoBueno = $tsvLab['VM1'].Guardado
+
+# Alguien toca el nodo por fuera -el v1 de emergencia, un error a mano-: el
+# manifiesto ya no es el nodo y fiarse de el dejaria bloques viejos para siempre.
+$fs = [System.IO.File]::Open($vmdk1Nodo, 'Open', 'ReadWrite'); $fs.Position = 5; $fs.WriteByte(9); $fs.Dispose()
+(Get-Item -LiteralPath $vmdk1Nodo).LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddMinutes(5)
+$nodoTocado = & $hashDe $vmdk1Nodo
+& $tocarBloques @(300000) 7
+$g4 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+$vm1g4 = @($g4.PorVm | Where-Object { $_.Vm -eq 'VM1' })[0]
+Test-Afirmacion -Nombre 'Si el nodo cambio por fuera, la VM queda pendiente y NO se escribe en ella' `
+    -Esperado ('Falla|Pendiente|{0}' -f $nodoTocado) -Obtenido ('{0}|{1}|{2}' -f $g4.Estado, $vm1g4.Estado, (& $hashDe $vmdk1Nodo))
+Test-Afirmacion -Nombre 'Y conserva la fecha de su ultimo guardado bueno' `
+    -Esperado $guardadoBueno -Obtenido (Read-EstadoDelLaboratorioPorVm -Carpeta $labEstado)['VM1'].Guardado
+
+$t1 = Invoke-LecturaDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre '[T] lee el nodo, ve que no era su manifiesto y lo corrige' `
+    -Esperado 'Recogida|True' -Obtenido ('{0}|{1}' -f $t1.Estado, (@($t1.Archivos | Where-Object { $_.Vm -eq 'VM1' })[0].Distintos -gt 0))
+$g5 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Y el siguiente [G] reenvia solo lo distinto y deja el nodo identico' `
+    -Esperado ('Protegido|{0}|True' -f (2 * 65536)) -Obtenido ('{0}|{1}|{2}' -f $g5.Estado, $g5.Enviado, ((& $hashDe $vmdk1) -eq (& $hashDe $vmdk1Nodo)))
+
+New-Item -ItemType Directory -Path "$labOrigen\VM1\disco.vmdk.lck" -Force | Out-Null
+& $tocarBloques @(400000) 9
+$antesLck = & $hashDe $vmdk1Nodo
+$g6 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Con una VM encendida (.lck) se niega y no escribe nada' `
+    -Esperado ('True|{0}' -f $antesLck) -Obtenido ('{0}|{1}' -f $g6.Abortada, (& $hashDe $vmdk1Nodo))
+Remove-Item -LiteralPath "$labOrigen\VM1\disco.vmdk.lck" -Recurse -Force
+
+Remove-Item -LiteralPath "$labOrigen\VM2" -Recurse -Force
+$g7 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Una VM borrada de D: se borra del nodo: es un espejo, como el v1' `
+    -Esperado 'Protegido|False|False' -Obtenido ('{0}|{1}|{2}' -f $g7.Estado, (Test-Path -LiteralPath "$labDestinoLocal\VM2\otro.vmdk"),
+        (Read-EstadoDelLaboratorioPorVm -Carpeta $labEstado).ContainsKey('VM2'))
+
+$labVacio = Join-Path $labRaiz 'vacio'
+New-Item -ItemType Directory -Path $labVacio -Force | Out-Null
+$cfgVacio = [pscustomobject]@{ carpetaEstado = $labEstado; laboratorio = [pscustomobject]@{
+        origen = $labVacio; destino = $cfgLab.laboratorio.destino; destinoEnLaPi = '/x'; umbralDeltaBytes = 1MB; bloqueBytes = 65536; verificador = 'local' } }
+$g8 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgVacio -Confirm:$false
+Test-Afirmacion -Nombre 'Un origen vacio aborta: el espejo de la nada borraria el nodo' `
+    -Esperado 'True|True' -Obtenido ('{0}|{1}' -f $g8.Abortada, (Test-Path -LiteralPath $vmdk1Nodo))
+
+Test-Afirmacion -Nombre 'La linea PENDIENTE del tablero nombra el laboratorio cuando algo no esta al dia' `
+    -Esperado $true -Obtenido ([bool](@(Get-ResumenPendiente -Estado @{ huerfanos = '0' } -Disco ([pscustomobject]@{ Raiz = 'F:\' }) -Filas @() `
+                -Laboratorio ([pscustomobject]@{ Vms = 12; NoAlDia = 7 })) -match '^laboratorio: 7 de 12'))
 
 # ===========================================================================
 

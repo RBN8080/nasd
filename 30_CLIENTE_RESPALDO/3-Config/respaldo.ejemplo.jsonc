@@ -69,6 +69,27 @@
   },
 
   // ---------------------------------------------------------------------------
+  //  EL LABORATORIO DE MAQUINAS VIRTUALES (ADR-0104). Opcional: sin este bloque
+  //  el tablero no ensena la fila ni las opciones [L] [V] [G] [T].
+  //
+  //  Los discos de mas de `umbralDeltaBytes` viajan por bloques: solo los que
+  //  cambiaron. La Pi confirma cada bloque leyendo SU disco, por eso hacen
+  //  falta la ruta del recurso compartido y la del disco en la Pi.
+  // ---------------------------------------------------------------------------
+  "laboratorio": {
+    "origen": "D:\\Laboratorio",
+    "destino": "\\\\192.168.1.38\\datos\\01_BACKUP\\EQUIPO-01\\D\\Laboratorio",
+    "destinoEnLaPi": "/srv/nas/datos/01_BACKUP/EQUIPO-01/D/Laboratorio",
+    "ssh": "rpi",
+    "usuarioEnLaPi": "nas",
+    "vmrun": "C:\\Program Files (x86)\\VMware\\VMware Workstation\\vmrun.exe",
+    "umbralDeltaBytes": 1073741824,
+    "bloqueBytes": 1048576,
+    "excluirArchivos": ["*.lck", "*.vmem", "*.vmss", "*.log", "*.scoreboard", "_SHA256SUMS.txt", "ULTIMO_GUARDADO.txt"],
+    "excluirCarpetas": ["_POR_BORRAR", "registros", "caches", "*.lck"]
+  },
+
+  // ---------------------------------------------------------------------------
   //  QUE ENTRA
   //
   //  Un CONTENEDOR no se respalda entero: dentro de el entran solo las

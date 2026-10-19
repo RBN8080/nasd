@@ -577,13 +577,16 @@ function Get-ResumenPendiente {
             La ficha del disco frio, o $null si no esta conectado.
         .PARAMETER Filas
             Lo que devolvio Read-EstadoPorRaiz.
+        .PARAMETER Laboratorio
+            Lo que devolvio Get-ResumenDelLaboratorio, o $null.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory)][hashtable] $Estado,
         [AllowNull()][psobject] $Disco,
-        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
+        [AllowNull()][psobject] $Laboratorio
     )
 
     $partes = New-Object System.Collections.Generic.List[string]
@@ -605,6 +608,10 @@ function Get-ResumenPendiente {
     # Sin el, todo este tablero solo sirve si alguien se acuerda de abrirlo, y
     # un respaldo que lleva tres semanas parado se ve igual que uno sano hasta
     # que alguien lo abre. Por eso sale como pendiente y no como nota al pie.
+    if ($Laboratorio -and $Laboratorio.NoAlDia -gt 0) {
+        $partes.Add(('laboratorio: {0} de {1} carpetas sin guardar en el nodo ([L])' -f $Laboratorio.NoAlDia, $Laboratorio.Vms))
+    }
+
     if (-not (Get-UrlDelTestigo)) { $partes.Add('el testigo externo no esta configurado') }
 
     return $partes.ToArray()
@@ -791,8 +798,9 @@ function Get-DatosDeVentana {
     $muestreo = 'muestreo {0}' -f (Format-Antiguedad -Momento ('' + $estado['muestreo_momento']))
     if (('' + $estado['muestreo_estado']) -eq 'Falla') { $muestreo += ' con diferencias' }
 
-    # El laboratorio va fuera del motor (seccion 5.2) y por eso no tiene fila en
-    # la tabla por raiz, que escribe el motor. Es un destino mas, como el disco.
+    # El laboratorio no va en la corrida diaria (seccion 5.2) y por eso no tiene
+    # fila en la tabla por raiz. Es un destino mas, como el disco; su detalle
+    # VM por VM esta en [L] (ADR-0104).
     $laboratorio = Get-DestinoDelLaboratorio -Estado $estado `
         -Marca (Get-MarcaDeCorrida -Archivo 'LABORATORIO.lock')
 
@@ -830,7 +838,10 @@ function Get-DatosDeVentana {
             ('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))),
             ('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
         Automatismo = @(Get-EstadoDeTarea)
-        Pendiente   = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas)
+        # El laboratorio lista D: en local -unos 500 archivos, milisegundos-; el
+        # nodo no se toca. No rompe la regla de "no escanea nada" de arriba.
+        Pendiente   = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas `
+                -Laboratorio (Get-ResumenDelLaboratorio -Configuracion $Configuracion -Estado $estado))
     }
 }
 
@@ -921,6 +932,11 @@ function Get-MenuDelTablero {
             "cotejar" y no "verificar": en Mexico una copia cotejada es la que se
             comparo contra su original, asi que la palabra ya lleva dentro el
             "contra que" que faltaba.
+
+            EL LABORATORIO VA EN SUS DOS FILAS, con letras y no numeros: [G]
+            guarda D:\VMware_LAB en el nodo por bloques y [V] cuelga de ella
+            como [2] de [1]; [L] lo ensena VM por VM y [T] lee el nodo entero
+            en la Pi (ADR-0104). [S] baja a la ultima fila, donde se busca.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
@@ -932,7 +948,9 @@ function Get-MenuDelTablero {
             , @('[1] al nodo', '[3] cotejar el nodo', '[5] semilla de arranque')
             , @('[2]    vista previa', '[4] estado completo', '[6] automatismo')
             , @('[7] al disco frio', '[9] cotejar el disco frio', '[A] ajustes')
-            , @('[8]    vista previa', '[R] ensayo de restauracion', '[S] salir'))
+            , @('[8]    vista previa', '[R] ensayo de restauracion', '')
+            , @('[G] laboratorio al nodo', '[L] ver el laboratorio', '')
+            , @('[V]    vista previa', '[T] leer el lab en la Pi', '[S] salir'))
         Nota     = 'centinelas y clases: se cambian en 3-Config/respaldo.jsonc'
     }
 }
@@ -1878,6 +1896,140 @@ function Show-Reparto {
     return $vigente
 }
 
+function Show-Laboratorio {
+    <#
+        .SYNOPSIS
+            [L]: el laboratorio de D: VM por VM, y que hacer con lo que no esta al dia.
+        .DESCRIPTION
+            Las filas ya vienen decididas (Get-FilasDelLaboratorio, comun.ps1):
+            aqui solo se pinta. Seccion 5.2, ADR-0104.
+        .PARAMETER Vista
+            Lo que devuelve laboratorio.ps1 -Accion Ver.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowNull()][psobject] $Vista
+    )
+
+    $p = $script:Paleta
+    if (-not $Vista) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La configuracion no declara el laboratorio.' `
+            -Accion 'Anade el bloque laboratorio a 3-Config/respaldo.jsonc.'
+        return
+    }
+    $filas = @($Vista.Filas)
+    if ($filas.Count -eq 0) {
+        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'No hay nada en el laboratorio de D:.' -Accion 'Comprueba que D: esta montado.'
+        return
+    }
+
+    Write-Linea ('   {0}{1} {2} {3} {4} {5} {6} {7}{8}' -f $p.Tenue, 'VM'.PadRight(22), 'EN D:'.PadLeft(9), 'EN EL NODO'.PadLeft(11),
+        'GUARDADA'.PadRight(12), 'DESDE ENTONCES'.PadRight(20), 'ULT. ENVIO'.PadLeft(10), 'LECTURA PI', $p.Fin)
+    foreach ($f in $filas) {
+        $color = switch ('' + $f.Tono) { 'Verde' { $p.Verde } 'Rojo' { $p.Rojo } default { $p.Ambar } }
+        Write-Linea ('   {0} {1} {2} {3} {4} {5} {6}' -f
+            (Format-Celda -Texto $f.Vm -Ancho 22 -Paleta $p -Color $p.Valor),
+            (Format-Celda -Texto $f.EnD -Ancho 9 -Paleta $p -Derecha),
+            (Format-Celda -Texto $f.EnNodo -Ancho 11 -Paleta $p -Derecha),
+            (Format-Celda -Texto $f.Guardada -Ancho 12 -Paleta $p),
+            (Format-Celda -Texto $f.Desde -Ancho 20 -Paleta $p -Color $color),
+            (Format-Celda -Texto $f.Enviado -Ancho 10 -Paleta $p -Derecha),
+            (Format-Celda -Texto $f.Lectura -Ancho 12 -Paleta $p))
+    }
+    foreach ($f in @($filas | Where-Object { $_.Detalle })) {
+        Write-Linea ('   {0}{1}: {2}{3}' -f $p.Tenue, $f.Vm, $f.Detalle, $p.Fin)
+    }
+    if (-not $Vista.NodoLeido) { Write-Warning 'El nodo no respondio: la columna EN EL NODO sale con ?.' }
+    if ($Vista.LecturaEnCurso) {
+        Write-Linea ('   Hay una lectura completa en la Pi lanzada {0}: pulsa [T] para ver como va.' -f $Vista.LecturaEnCurso)
+    }
+
+    $noAlDia = @($filas | Where-Object { $_.Desde -notlike 'al dia*' })
+    $abiertas = @($Vista.Abiertas)
+    if ($noAlDia.Count -eq 0) {
+        Write-Veredicto -Nivel 'OK' -Frase ('Las {0} carpetas del laboratorio estan al dia en el nodo.' -f $filas.Count)
+        return
+    }
+    $accion = 'Apaga las VMs y pulsa [G]: solo viaja lo que cambio. [V] dice cuanto antes de escribir nada.'
+    if ($Vista.Manifiestos -eq 0) {
+        $accion = 'Antes del primer [G] pulsa [T]: la Pi lee el nodo y anota que tiene (horas; puedes usar las VMs). Sin eso [G] no sabe que bloques faltan y no sube nada entero.'
+    }
+    elseif (@($noAlDia | Where-Object { $_.Desde -like 'pendiente*' }).Count -gt 0) {
+        $accion = 'Las pendientes necesitan [T] antes de [G]: el nodo ya no es lo que anotamos.'
+    }
+    if ($abiertas.Count -gt 0) { $accion += (' Ahora mismo hay abiertas: {0}.' -f ($abiertas -join ', ')) }
+    Write-Veredicto -Nivel 'ATENCION' -Frase ('{0} de {1} carpetas del laboratorio no estan al dia en el nodo.' -f $noAlDia.Count, $filas.Count) -Accion $accion
+}
+
+function Show-GuardadoDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Lo que hizo [G], o lo que haria [V]: cuanto viajo por VM y el veredicto.
+        .PARAMETER Resultado
+            Lo que devuelve laboratorio.ps1 -Accion Guardar o -Accion Previa.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowNull()][psobject] $Resultado
+    )
+
+    $p = $script:Paleta
+    if (-not $Resultado) { Write-Veredicto -Nivel 'SIN DATOS' -Frase 'El guardado no devolvio nada.'; return }
+    if ($Resultado.Abortada) {
+        Write-Veredicto -Nivel 'ATENCION' -Frase ('No se escribio nada. {0}' -f $Resultado.Motivo)
+        return
+    }
+
+    $verbo = if ($Resultado.Simulada) { 'enviaria' } else { 'enviado' }
+    foreach ($v in @($Resultado.PorVm | Where-Object { $_.Enviado -gt 0 -or $_.Estado -ne 'AlDia' })) {
+        $color = switch ('' + $v.Estado) { 'AlDia' { $p.Verde } 'Falla' { $p.Rojo } default { $p.Ambar } }
+        $texto = if ($v.Estado -eq 'AlDia') { '{0} {1}' -f $verbo, (Format-BytesDelLaboratorio -Bytes $v.Enviado) } else { $v.Detalle }
+        Write-Linea ('   {0} {1}' -f (Format-Celda -Texto $v.Vm -Ancho 22 -Paleta $p -Color $p.Valor), (Format-Celda -Texto $texto -Ancho 70 -Paleta $p -Color $color))
+    }
+    $total = Format-BytesDelLaboratorio -Bytes $Resultado.Enviado
+    if ($Resultado.Simulada) {
+        $nivel = if ($Resultado.Estado -eq 'Protegido') { 'OK' } else { 'ATENCION' }
+        Write-Veredicto -Nivel $nivel -Frase ('Vista previa: [G] enviaria {0} en total. No se escribio nada.' -f $total) `
+            -Accion $(if ($nivel -eq 'OK') { '' } else { 'Lo que sale en ambar o rojo no se podria guardar asi: mira su linea.' })
+        return
+    }
+    if ($Resultado.Estado -eq 'Protegido') {
+        Write-Veredicto -Nivel 'OK' -Frase ('Laboratorio guardado: {0} enviados y confirmados en la Pi; lo demas ya estaba.' -f $total)
+    }
+    else {
+        Write-Veredicto -Nivel 'FALLO' -Frase ('Guardado incompleto ({0} enviados). Lo que esta en rojo o ambar no quedo en el nodo.' -f $total) `
+            -Accion 'Si dice "pulsa [T]", lee el nodo en la Pi y vuelve a [G]. El detalle, en el registro de hoy.'
+    }
+}
+
+function Show-LecturaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Lo que hizo [T]: la lanzo, sigue, o la recogio.
+        .PARAMETER Resultado
+            Lo que devuelve laboratorio.ps1 -Accion Leer.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][AllowNull()][psobject] $Resultado
+    )
+
+    if (-not $Resultado) { Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La lectura no devolvio nada.'; return }
+    switch ('' + $Resultado.Estado) {
+        'Lanzada'  { Write-Veredicto -Nivel 'OK' -Frase $Resultado.Detalle }
+        'EnCurso'  { Write-Veredicto -Nivel 'ATENCION' -Frase ('Todavia en curso: {0}.' -f $Resultado.Detalle) -Accion 'Vuelve a pulsar [T] mas tarde para recogerla. Mientras, [G] espera.' }
+        'Recogida' {
+            $malos = @($Resultado.Archivos | Where-Object { -not $_.Correcto }).Count
+            if ($malos -eq 0) { Write-Veredicto -Nivel 'OK' -Frase ('Lectura recogida: {0}. [G] ya sabe que tiene el nodo.' -f $Resultado.Detalle) }
+            else { Write-Veredicto -Nivel 'ATENCION' -Frase ('Lectura recogida con errores: {0}.' -f $Resultado.Detalle) -Accion 'El detalle esta en el registro de hoy. Esas VMs siguen pendientes: vuelve a lanzar [T].' }
+        }
+        default    { Write-Veredicto -Nivel 'SIN DATOS' -Frase ('' + $Resultado.Detalle) }
+    }
+}
+
 function Test-HayCorridaEnCurso {
     <#
         .SYNOPSIS
@@ -2050,6 +2202,29 @@ function Invoke-OpcionDelTablero {
                 Show-RevisionDelDisco -Revision $r9.DiscoEnVuelo
             }
             'R' { Show-PruebaDeRestauracion -Configuracion $Configuracion }
+            # EL LABORATORIO DE D: (seccion 5.2, ADR-0104). Va en LABORATORIO.lock
+            # y no pasa por Test-HayCorridaEnCurso: no comparte destino con el
+            # motor, y laboratorio.ps1 ya se niega si hay otro guardado suyo.
+            'L' {
+                Write-Anuncio -Que 'El laboratorio de D:, VM por VM' `
+                    -Detalle 'Solo lee: D: en local y el nodo por la red. Segundos.'
+                Show-Laboratorio -Vista (& "$nucleo\laboratorio.ps1" @comunes -Accion Ver)
+            }
+            'V' {
+                Write-Anuncio -Que 'Vista previa del laboratorio al nodo' `
+                    -Detalle 'NO escribe nada. Lee en D: los discos que cambiaron para medir cuanto viajaria. Con las VMs apagadas.'
+                Show-GuardadoDelLaboratorio -Resultado (& "$nucleo\laboratorio.ps1" @comunes -Accion Previa)
+            }
+            'G' {
+                Write-Anuncio -Que 'Laboratorio al nodo: solo lo que cambio' `
+                    -Detalle 'Escribe en el nodo. Las VMs APAGADAS todo el rato; si cambio poco, son minutos.'
+                Show-GuardadoDelLaboratorio -Resultado (& "$nucleo\laboratorio.ps1" @comunes -Accion Guardar -Confirm:$false)
+            }
+            'T' {
+                Write-Anuncio -Que 'Leer el laboratorio entero en la Pi' `
+                    -Detalle 'La Pi relee del disco del nodo cada disco virtual: horas. La primera vez la lanza; despues dice como va o la recoge. Puedes usar las VMs.'
+                Show-LecturaDelLaboratorio -Resultado (& "$nucleo\laboratorio.ps1" @comunes -Accion Leer -Confirm:$false)
+            }
             'A' {
                 # Lo que devuelve -la configuracion releida si se cambio el
                 # horario- se descarta a proposito: el bucle relee la
