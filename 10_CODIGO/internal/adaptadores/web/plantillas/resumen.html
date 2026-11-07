@@ -31,9 +31,10 @@
   </div>
 
   <!-- EL NODO: dos cifras vivas y el último latido. estado.js escribe en
-       «.cifra» y dibuja la gráfica de bala y la minigráfica de CPU con las
-       muestras que ya trae el flujo de /estado: no se mide nada nuevo. El
-       rótulo de conexión nace oculto; sin JavaScript no hay nada que anunciar. -->
+       «.cifra» y dibuja la gráfica de bala y la minigráfica de CPU, que llega
+       con los últimos 30 s que guarda el nodo (historia_cpu.go) y sigue con el
+       flujo de /estado. El rótulo de conexión nace oculto; sin JavaScript no
+       hay nada que anunciar. -->
   <section class="sc s12">
     <div class="sch"><h2>El nodo</h2><span id="latido" class="p p-na" hidden></span></div>
     <div class="metricas">
@@ -53,7 +54,7 @@
       <div class="pl" data-clave="cpu">
         <span class="q">Uso de CPU</span>
         <span class="n mono cifra">{{.CPU}}</span>
-        <svg class="spark" data-serie="cpu" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="sp-a"></path><polyline class="sp-l"></polyline></svg>
+        {{with .SerieCPU}}<svg class="spark" data-serie="cpu" data-muestras="{{.}}" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="sp-a"></path><polyline class="sp-l"></polyline></svg>{{end}}
         <span class="d">{{.CPUPie}}</span>
       </div>
       <div class="pl">

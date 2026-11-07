@@ -216,10 +216,10 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .bala-eje span{position:absolute; top:0; transform:translateX(-50%); white-space:nowrap;}
 .bala-eje .e0{left:0; transform:none;} .bala-eje .e60{left:50%;} .bala-eje .e70{left:66.667%;}
 .bala-eje .e80{left:83.333%;} .bala-eje .e90{left:100%; transform:translateX(-100%);}
-/* D12: minigráfica en vivo. Los puntos los escribe estado.js. */
+/* D12: minigráfica en vivo. Los puntos los escribe estado.js. Su hueco existe
+   desde el primer pintado: la plantilla solo la pone si el nodo mide la CPU, y
+   aparecer después empujaría lo de debajo (en Safari, sin anclaje, salta). */
 .spark{display:block; width:100%; height:40px;}
-/* Sin ninguna muestra todavía (o con la cifra «no disponible») no se reserva el hueco. */
-.spark:has(.sp-l:not([points])){display:none;}
 .spark .sp-a{fill:var(--acT);}
 .spark .sp-l{fill:none; stroke:var(--ac); stroke-width:1.75; vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round;}
 .tarj{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e3) var(--e4); background:var(--s1); border-radius:var(--r-pozo);}

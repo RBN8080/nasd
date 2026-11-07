@@ -55,6 +55,9 @@ type vistaResumen struct {
 	TemperaturaPie string
 	CPU            string
 	CPUPie         string
+	// SerieCPU es la historia de la minigráfica (historia_cpu.go). Vacía donde
+	// no se mide la CPU, y entonces la plantilla no pone gráfica.
+	SerieCPU string
 
 	// LatidoOK distingue «no hay testigo configurado» de «lo hay y no ha
 	// salido». Sin esa distinción, un nodo sin la capa de avisos y uno con el
@@ -108,7 +111,8 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 		// separadas por un cuarto de segundo (ver sistema.VentanaCPU y el
 		// encabezado de vivo.go). Decirlo evita la lectura equivocada de un
 		// «0 %», que no significa que el nodo no haya hecho nada hoy.
-		CPUPie: "lectura del instante, no del día",
+		CPUPie:   "lectura del instante, no del día",
+		SerieCPU: s.serieCPU(n.Vivo),
 	}
 
 	if d := n.Datos; d.Disponible && d.TotalBytes > 0 {

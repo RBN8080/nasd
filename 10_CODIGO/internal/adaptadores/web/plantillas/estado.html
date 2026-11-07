@@ -111,7 +111,7 @@
   <div class="fl{{if .Seleccionada}} sel{{end}}" data-clave="{{.Clave}}">
     <div class="cl"><span class="et">Indicador</span><a href="?ind={{.Clave}}">{{.Nombre}}</a></div>
     <div class="cl"><span class="et">Valor</span><span class="ct2 cifra">{{.Valor}}</span>
-      {{- if eq .Clave "cpu"}}<svg class="spark" data-serie="cpu" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="sp-a"></path><polyline class="sp-l"></polyline></svg>{{end}}
+      {{- if and (eq .Clave "cpu") .Serie}}<svg class="spark" data-serie="cpu" data-muestras="{{.Serie}}" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="sp-a"></path><polyline class="sp-l"></polyline></svg>{{end}}
       {{- if eq .Clave "temperatura"}}<svg class="bala" viewBox="0 0 60 12" preserveAspectRatio="none" aria-hidden="true"><rect class="b0" x="0" y="0" width="30" height="12"></rect><rect class="b1" x="30" y="0" width="10" height="12"></rect><rect class="b2" x="40" y="0" width="10" height="12"></rect><rect class="b3" x="50" y="0" width="10" height="12"></rect><rect class="med" data-bala="temperatura" x="0" y="4.5" width="0" height="3"></rect></svg>{{end}}
       <span class="accion">{{.Accion}}</span></div>
     <div class="cl"><span class="et">Veredicto</span><span class="pls"><span class="pastilla p{{with .Veredicto.Clase}} {{.}}{{end}}">{{.Veredicto.Etiqueta}}</span></span></div>
