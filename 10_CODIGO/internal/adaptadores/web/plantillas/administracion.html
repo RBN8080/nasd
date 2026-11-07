@@ -15,7 +15,7 @@
      rail. -->
 <div class="ordenes">
   <details class="menu">
-    <summary class="od">
+    <summary class="od pri">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20"/><circle cx="8.5" cy="7" r="3.5"/><path d="M19 7v6M22 10h-6"/></svg>
       Crear cuenta
     </summary>
@@ -51,6 +51,8 @@
 
 {{if .Mensaje}}<p class="msg {{if .EsError}}mal{{end}}">{{.Mensaje}}</p>{{end}}
 
+<section class="sc">
+<div class="sch"><h2>Cuentas</h2><span class="ms">{{len .Usuarios}} · el superusuario no figura aquí</span></div>
 <div class="t-cta">
   <div class="th"><span>Cuenta</span><span>Sesión</span><span>Uso de disco</span><span></span></div>
   <div class="fls">
@@ -75,7 +77,9 @@
       <!-- Bajo demanda, no en vivo (P-4, etapa 3): se dice explícitamente
            CUÁNDO se midió, para no confundirlo con la sesión de al lado, que
            sí es de ahora mismo. -->
-      <div class="cl"><span class="et">Disco</span><span class="ct2">{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}} <small>· medido {{fecha .Medido}}</small>{{end}}</span></div>
+      <div class="cl"><span class="et">Disco</span><div class="uso">
+        {{- if .Barra}}<svg class="barra" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="v" x="0" y="0" width="{{.Barra}}" height="6"></rect></svg>{{end}}
+        <span class="ct2">{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}} <small>· medido {{fecha .Medido}}</small>{{end}}</span></div></div>
       <div class="cl"><a class="bt pel" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></div>
     </div>
     {{else}}
@@ -83,20 +87,15 @@
     {{end}}
   </div>
 </div>
-
-<!-- LAS DOS SALVEDADES QUE SON CIERTAS Y NO SON EL MOTIVO DE ABRIR ESTA
-     PÁGINA. Van al pie, en gris y dentro del cuadro del módulo, por decisión
-     del responsable sobre captura: quien no las busca no las lee, quien
-     necesita saber por qué la página no abre desde fuera lo tiene ahí. -->
-<div class="notas">
-  <span class="rt">Notas</span>
-  <span class="nt">La administración de cuentas no responde desde Internet — <b>RF-35</b>.</span>
-  <span class="nt">El superusuario no figura en esta lista: no está en el registro (<b>ADR-0055</b>) y no puede darse de baja a sí mismo por aquí.</span>
-</div>
+</section>
+{{/* LAS NOTAS DEL PIE SE RETIRAN el 2026-11-07 por decisión del responsable
+     (consola 2): el diseño queda lo más limpio posible. Las reglas que
+     contaban siguen en vigor y en su sitio: RF-35 y ADR-0055. */}}
 
 {{template "marco-fin" .}}
 
 {{if .Detalle}}
+<a class="velo" href="/administracion" aria-label="Cerrar"></a>
 <aside class="detalle">
   <div class="dvw">
     {{with .Detalle}}

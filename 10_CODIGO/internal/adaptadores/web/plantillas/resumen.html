@@ -10,85 +10,89 @@
      Cada cifra enlaza al módulo que la explica del todo. */}}
 {{template "marco-cuerpo" .}}
 
-<!-- TRES CIFRAS, LAS TRES YA MEDIDAS EN OTRO SITIO (ver resumen.go): esta
-     página no añade ni un punto de medición al nodo, reúne los que ya existen.
-     Cada una enlaza a la página que la explica, en vez de repetir aquí su
-     tabla entera.
-     LA TEMPERATURA NO ESTÁ AQUÍ, y es lo único que cambió: la enseña la
-     tarjeta de «El nodo», más abajo, con su pie y su rótulo. Dos veces en la
-     misma pantalla es una vez de más. -->
-<div class="cif">
-  <a class="cf" href="/estado">
-    <div class="n mono">{{if .DiscoOK}}{{.DiscoUsado}}{{else}}—{{end}}</div>
-    <div class="r">{{if .DiscoOK}}En uso · {{.DiscoPorcentaje}}{{else}}Disco sin medir{{end}}</div>
-  </a>
-  <a class="cf" href="/administracion">
-    <div class="n mono">{{.Cuentas}}</div>
-    <div class="r">Cuentas</div>
-  </a>
-  <a class="cf{{if .Interrumpidas}} mk{{end}}" href="/estado">
-    <div class="n mono">{{len .Interrumpidas}}</div>
-    <div class="r">A medias</div>
-  </a>
-</div>
-
-<!-- SUBIDAS INTERRUMPIDAS, de cualquier cuenta. Se reanudan solas al volver
-     a intentarlas (RF-12): esto es el aviso de que hay alguna a medias, no
-     una acción — no hay nada que pulsar aquí.
-     La barra de progreso va en SVG y no con «style="width:…%"»: la CSP es
-     «style-src 'self'» sin 'unsafe-inline' (ADR-0060) y un estilo en línea
-     se descarta en silencio, dejando la barra vacía. -->
-{{if .Interrumpidas}}
-<section class="sc">
-  <div class="sch"><h2>Subidas interrumpidas</h2><span class="ms">reanudación automática</span></div>
-  {{range .Interrumpidas}}
-  <div class="tarj">
-    <div class="t1"><b>{{.Ruta}}</b><span>{{.Progreso}}</span></div>
-    <svg class="prog" viewBox="0 0 100 5" preserveAspectRatio="none" aria-hidden="true">
-      <rect class="v" x="0" y="0" width="{{.Porcentaje}}" height="5"></rect>
-    </svg>
-    <p>Se conserva 7 días y se reanuda en el punto alcanzado, no desde cero.</p>
+<!-- CONSOLA 2 (ADR-0105): tablero en rejilla. Las cifras son las mismas que
+     antes —ver resumen.go—: esta página no añade ni un punto de medición al
+     nodo. La temperatura vive en «El nodo», con su gráfica de bala; dos veces
+     en la misma pantalla sería una vez de más. -->
+<div class="tablero">
+  <div class="cif s12">
+    <a class="cf" href="/estado">
+      <div class="n mono">{{if .DiscoOK}}{{.DiscoUsado}}{{else}}—{{end}}</div>
+      <div class="r">{{if .DiscoOK}}En uso · {{.DiscoPorcentaje}}{{else}}Disco sin medir{{end}}</div>
+    </a>
+    <a class="cf" href="/administracion">
+      <div class="n mono">{{.Cuentas}}</div>
+      <div class="r">Cuentas</div>
+    </a>
+    <a class="cf{{if .Interrumpidas}} mk{{end}}" href="/estado">
+      <div class="n mono">{{len .Interrumpidas}}</div>
+      <div class="r">{{if .Interrumpidas}}<i class="forma f-av" aria-hidden="true"></i>{{end}}A medias</div>
+    </a>
   </div>
+
+  <!-- EL NODO: dos cifras vivas y el último latido. estado.js escribe en
+       «.cifra» y dibuja la gráfica de bala y la minigráfica de CPU con las
+       muestras que ya trae el flujo de /estado: no se mide nada nuevo. El
+       rótulo de conexión nace oculto; sin JavaScript no hay nada que anunciar. -->
+  <section class="sc s12">
+    <div class="sch"><h2>El nodo</h2><span id="latido" class="p p-na" hidden></span></div>
+    <div class="metricas">
+      <div class="pl" data-clave="temperatura">
+        <span class="q">Temperatura</span>
+        <span class="n mono cifra">{{.Temperatura}}</span>
+        <div>
+          <svg class="bala" viewBox="0 0 60 12" preserveAspectRatio="none" aria-hidden="true">
+            <rect class="b0" x="0" y="0" width="30" height="12"></rect><rect class="b1" x="30" y="0" width="10" height="12"></rect>
+            <rect class="b2" x="40" y="0" width="10" height="12"></rect><rect class="b3" x="50" y="0" width="10" height="12"></rect>
+            <rect class="med" data-bala="temperatura" x="0" y="4.5" width="0" height="3"></rect>
+          </svg>
+          <div class="bala-eje" aria-hidden="true"><span class="e0">30</span><span class="e60">60</span><span class="e70">70</span><span class="e80">80</span><span class="e90">90</span></div>
+        </div>
+        <span class="d">{{.TemperaturaPie}}</span>
+      </div>
+      <div class="pl" data-clave="cpu">
+        <span class="q">Uso de CPU</span>
+        <span class="n mono cifra">{{.CPU}}</span>
+        <svg class="spark" data-serie="cpu" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="sp-a"></path><polyline class="sp-l"></polyline></svg>
+        <span class="d">{{.CPUPie}}</span>
+      </div>
+      <div class="pl">
+        <span class="q">Último latido</span>
+        <span class="n mono">{{if .LatidoOK}}{{.Latido}}{{else}}—{{end}}</span>
+        <span class="d">{{.LatidoPie}}</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- SUBIDAS INTERRUMPIDAS, de cualquier cuenta. Se reanudan solas (RF-12):
+       es un aviso, no una acción. La barra va en SVG y no con «style»: la CSP
+       descarta los estilos en línea (ADR-0060). -->
+  {{if .Interrumpidas}}
+  <section class="sc {{if .CanalConfigurado}}s7{{else}}s12{{end}}">
+    <div class="sch"><h2>Subidas interrumpidas</h2><span class="ms">reanudación automática</span></div>
+    {{range .Interrumpidas}}
+    <div class="tarj">
+      <div class="t1"><b>{{.Ruta}}</b><span>{{.Progreso}}</span></div>
+      <svg class="prog" viewBox="0 0 100 5" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="v" x="0" y="0" width="{{.Porcentaje}}" height="5"></rect>
+      </svg>
+      <p>Se conserva 7 días y se reanuda en el punto alcanzado, no desde cero.</p>
+    </div>
+    {{end}}
+  </section>
   {{end}}
-</section>
-{{end}}
 
-<!-- EL NODO: DOS CIFRAS VIVAS Y UNA DE LA CARGA, y ninguna repetida de la
-     tabla de /estado.
-     Se fue «En marcha»: era una duración que no se mueve en la escala en la
-     que se mira esta página —un nodo lleva días encendido— y ya la dice el
-     rail («en línea · 8d 20h») dos dedos a la izquierda. Su sitio lo ocupa el
-     USO DE CPU, que es lo único del nodo que cambia de verdad entre un marco
-     y el siguiente, y que además EXPLICA la temperatura de al lado: la misma
-     razón por la que filasVivas las pone juntas en /estado.
-     El rótulo de conexión es el de /estado, con el mismo gancho y el mismo
-     motivo: sin él, un flujo caído dejaría estas dos cifras congeladas con
-     cara de estar al día. Nace oculto —sin JavaScript no hay nada que
-     anunciar—. El último latido NO es vivo: se calcula al abrir la página,
-     como antes, y por eso no lleva «data-clave». -->
-<section class="sc">
-  <div class="sch"><h2>El nodo</h2><span id="latido" class="p p-na" hidden></span></div>
-  <div class="esc">
-    <div class="pl" data-clave="temperatura"><div class="n mono cifra">{{.Temperatura}}</div><div class="t"><div class="q">Temperatura</div><div class="d">{{.TemperaturaPie}}</div></div></div>
-    <div class="pl" data-clave="cpu"><div class="n mono cifra">{{.CPU}}</div><div class="t"><div class="q">Uso de CPU</div><div class="d">{{.CPUPie}}</div></div></div>
-    <div class="pl"><div class="n mono">{{if .LatidoOK}}{{.Latido}}{{else}}—{{end}}</div><div class="t"><div class="q">Último latido</div><div class="d">{{.LatidoPie}}</div></div></div>
-  </div>
-</section>
-
-<!-- CANAL DE AVISOS: UNA SOLA LÍNEA, que es toda la pregunta que el resumen
-     contesta —«¿salen los avisos?»— y toda la respuesta que se puede dar sin
-     abrir /estado.
-     Se fueron los contadores del encabezado («3 entregados · 0 fallidos») y
-     el renglón que remitía a /estado: los primeros son la vista detallada, y
-     el segundo decía en una frase lo que el rail ya dice con un enlace. -->
-{{if .CanalConfigurado}}
-<section class="sc">
-  <div class="sch"><h2>Canal de avisos</h2></div>
-  <div class="tarj">
-    <div class="t1"><b>{{if .CanalOK}}Entregando{{else}}Con fallos{{end}}</b><span class="pls"><span class="p {{if .CanalOK}}p-ok{{else}}p-av{{end}}">{{if .CanalOK}}Correcto{{else}}Atención{{end}}</span></span></div>
-  </div>
-</section>
-{{end}}
+  <!-- CANAL DE AVISOS: una sola línea, que es toda la pregunta que el resumen
+       contesta — «¿salen los avisos?». -->
+  {{if .CanalConfigurado}}
+  <section class="sc {{if .Interrumpidas}}s5{{else}}s12{{end}}">
+    <div class="sch"><h2>Canal de avisos</h2></div>
+    <div class="tarj">
+      <div class="t1"><b>{{if .CanalOK}}Entregando{{else}}Con fallos{{end}}</b><span class="pls"><span class="p {{if .CanalOK}}p-ok{{else}}p-av{{end}}">{{if .CanalOK}}Correcto{{else}}Atención{{end}}</span></span></div>
+    </div>
+  </section>
+  {{end}}
+</div>
 
 {{template "marco-fin" .}}
 {{template "marco-cierra" .}}

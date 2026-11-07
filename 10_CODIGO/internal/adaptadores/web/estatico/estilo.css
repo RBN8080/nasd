@@ -1,36 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   LA CONSOLA — ADR-0075.
+   LA CONSOLA 2 — ADR-0105 (sustituye el lenguaje visual de ADR-0075).
    ═══════════════════════════════════════════════════════════════════════
 
-   ESTE ARCHIVO ES LA MAQUETA 12 PORTADA, NO UNA INTERPRETACIÓN DE ELLA.
-   El responsable la aprobó tras doce iteraciones probadas en su propio
-   navegador, y la primera entrega falló justamente por no portarla: se
-   trajeron los colores y el rail, y se dejaron las tablas y la tipografía
-   viejas debajo. Lo que sigue es el bloque de la maqueta con TRES cambios,
-   y ninguno más:
+   Aprobada sobre maqueta por el responsable el 2026-11-07. Las decisiones
+   D1–D21 y sus fuentes están en el ADR; aquí solo queda lo que hace falta
+   para no romper esta hoja al tocarla:
 
-     1. Las cinco vistas ya no se conmutan con radios ocultos —cada página
-        del servidor pinta la suya—, así que los selectores «:has(#v-…)» se
-        sustituyen por la clase que escribe el servidor.
-     2. El marco ocupa la ventana (100dvh) en vez de los 800 px del
-        artefacto, y pierde el borde y las esquinas del recuadro.
-     3. La barra de órdenes se ve TAMBIÉN en el teléfono. Es la única
-        desviación deliberada: en la maqueta quedaba oculta bajo 880 px, y
-        con el 69 % del uso medido en móvil eso dejaría este NAS sin poder
-        subir un archivo desde el teléfono.
-
-   Si algo aquí no se parece a la maqueta, es un defecto — no una decisión.
-
-   # LAS TIPOGRAFÍAS VAN ALOJADAS AQUÍ, Y NO ES OPCIONAL
-
-   La maqueta las pedía a fonts.googleapis.com. La CSP de este servidor es
-   «default-src 'self'» (ADR-0060, servidor.go: cspBase), así que una
-   petición a Google se bloquea y la página cae a la fuente del sistema —
-   que es exactamente la diferencia que el responsable vio en su captura.
-   Los seis archivos woff2 viven en /estatico/ y se sirven desde el propio
-   binario. «unicode-range» hace que el navegador baje SOLO el subconjunto
-   que la página necesita: para una página en español, latin — unos 50 KB —
-   y nunca latin-ext, salvo que un nombre de archivo lo exija.
+   1. CSP «style-src 'self'» SIN 'unsafe-inline' (ADR-0060): ningún tamaño ni
+      color puede ir en un atributo style. Lo que depende de un dato va en un
+      atributo de SVG (x, width…) o en una clase que escribe Go.
+   2. Las fuentes van alojadas en /estatico/ y servidas por el binario.
+   3. El teléfono es lo primero. El navegador entra con @container (≥ 880 px
+      de .app). Los paneles (.sc) son contenedores también: sus tablas se
+      ordenan según el ancho del PANEL, no el de la ventana.
+   4. Tokens en OKLCH: la luminosidad sube en pasos que el ojo percibe iguales.
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Archivo — variable, 400..700 en un solo archivo por subconjunto. */
@@ -40,8 +23,6 @@
 @font-face{font-family:'Archivo';font-style:normal;font-weight:400 700;font-display:swap;
   src:url(/estatico/archivo-latin.woff2) format('woff2');
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
-
-/* DM Mono — dos pesos, dos archivos cada uno. */
 @font-face{font-family:'DM Mono';font-style:normal;font-weight:400;font-display:swap;
   src:url(/estatico/dmmono400-latinext.woff2) format('woff2');
   unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
@@ -55,1187 +36,725 @@
   src:url(/estatico/dmmono500-latin.woff2) format('woff2');
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
 
-/* ── Vocabulario ── los mismos valores de la maqueta, con la paleta HIELO
-   resuelta en :root: aquí no hay selector de paletas que conmutar. */
+/* ═════ TOKENS ═════ */
 :root{
-  --e0:.25rem; --e1:.5rem; --e2:.75rem; --e3:1rem; --e4:1.5rem; --e5:2rem;
-  --r1:3px; --r2:4px; --r3:6px;
-  --rail:236px; --det:308px;
-
-  --n0:#000; --n1:#08090a; --n2:#0e0f11; --n3:#16181b; --n4:#21242a; --n5:#30343c;
-  --tx:#e9ecf1; --tx2:#868d99; --tx3:#5b616b;
-  --ac:#b9cdea; --ac2:#d9e5f6; --acT:#b9cdea14; --acB:#b9cdea40;
-  --ok:#3fb950; --av:#d29922; --fa:#f85149; --nada:#6b7280;
-
-  /* LA LINEA DE TABLA TIENE TOKEN PROPIO, y no es un capricho de nomenclatura.
-     Hasta el 2026-09-09 las seis tablas separaban sus filas con «--n4», el
-     mismo tono que dibuja el borde del rail, el de la barra superior y el de
-     cada tarjeta. Ahi funciona: son bordes de PIEZA, uno por elemento, y hay
-     que verlos. Dentro de una tabla no son piezas — son veinte trazos
-     apilados, y a ese ritmo el mismo hilo deja de separar filas y empieza a
-     dibujar una rejilla. Reportado sobre captura de /estado, que es donde
-     primero se nota: sus filas miden 42.5 px contra 46 de Archivos y 65 de
-     Cuentas, y ademas es el unico modulo que pinta una linea por rotulo de
-     grupo. Veinte lineas por pantalla frente a doce.
-     El valor es «--n3», que ya estaba en el vocabulario: la mitad justa del
-     salto contra el fondo, visible sin marcar. Se separa en token porque el
-     borde de tabla y el borde de pieza dejan de ser la misma decision — quien
-     retoque uno no debe arrastrar el otro sin querer.
-
-     ALCANCE: TODA SEPARACION ENTRE RENGLONES DE UNA LISTA, en las once
-     paginas. No es solo la tabla — el criterio es el papel que hace la
-     linea, no la clase que la dibuja. Lo lleva «.th», «.fl» y «.gh» de las
-     seis tablas; «.dp», que apila los datos del panel de detalle; las
-     carpetas de Mover y las subidas en curso de Archivos. Lo que sigue en
-     «--n4» es lo que dibuja el CONTORNO de una pieza —el rail, la barra
-     superior, la tira de estado, las pestañas, las tarjetas y los campos—:
-     ahi la linea no separa renglones, cierra un objeto, y bajarle el tono
-     lo disolveria contra el fondo. */
-  --lnT:var(--n3);
+  color-scheme:dark;
+  /* Superficies por luz (D2, D3): hundido, base, elevado, superpuesto. */
+  --s0:oklch(0.150 0.008 255); --s1:oklch(0.185 0.010 255);
+  --s2:oklch(0.235 0.012 255); --s3:oklch(0.285 0.013 255);
+  --ln:oklch(0.360 0.013 255); --lnT:oklch(0.300 0.012 255);
+  --ctl:oklch(0.600 0.016 255);                 /* contorno de control ≥ 3:1 (D5) */
+  /* Texto (D4): los tres pasan de 4.5:1 sobre cualquier superficie. */
+  --tx:oklch(0.955 0.005 255); --tx2:oklch(0.820 0.012 255); --tx3:oklch(0.715 0.014 255);
+  /* Acento Hielo y estados a la misma luminosidad (D1, D6). */
+  --ac:oklch(0.843 0.046 257);  --acT:oklch(0.843 0.046 257 / .14);
+  --ok:oklch(0.775 0.150 150);  --okT:oklch(0.775 0.150 150 / .13);
+  --av:oklch(0.800 0.135 80);   --avT:oklch(0.800 0.135 80 / .13);
+  --fa:oklch(0.730 0.150 25);   --faT:oklch(0.730 0.150 25 / .14);
+  --barra:color-mix(in oklab, var(--ac) 38%, var(--s3));  /* barras de desplazamiento */
+  --brillo:inset 0 1px 0 oklch(1 0 0 / .045);
+  /* Rampa del mapa: un solo tono, de apagado a encendido. */
+  --tierra:oklch(0.265 0.012 255);
+  --m1:oklch(0.36 0.045 257); --m2:oklch(0.47 0.062 257); --m3:oklch(0.59 0.074 257);
+  --m4:oklch(0.71 0.068 257); --m5:oklch(0.843 0.046 257);
+  /* Letra (D7, D9). */
+  --f-txt:Archivo, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-dat:"DM Mono", ui-monospace, monospace;
+  /* Espacio (D11) y forma (D10): cápsula, pieza, hoja, dato. */
+  --e1:4px; --e2:8px; --e3:12px; --e4:16px; --e5:24px; --e6:32px; --e7:48px;
+  --r-dato:4px; --r-pozo:8px; --r-pieza:12px; --r-hoja:20px; --rc:999px;
+  /* Movimiento (D15): curvas productivas de IBM Carbon. */
+  --d1:70ms; --d2:110ms; --d3:150ms; --d4:240ms;
+  --c-std:cubic-bezier(.2,0,.38,.9); --c-ent:cubic-bezier(0,0,.38,.9); --c-sal:cubic-bezier(.2,0,1,.9);
+  --inset-inf:env(safe-area-inset-bottom, 0px);
+  /* El cajón de detalle declara su ancho aquí y NINGUNA rejilla lo reserva:
+     sin panel abierto, el contenido se lleva el ancho entero. */
+  --det:380px;
+  /* Alto fijo de la barra superior en el teléfono: la cinta de Seguridad se
+     pega justo debajo y tiene que saber dónde. */
+  --alto-f1:calc(74px + env(safe-area-inset-top, 0px));
 }
 
-*{box-sizing:border-box;}
-body{margin:0;background:var(--n0);color:var(--tx);
-  font-family:Archivo,system-ui,-apple-system,"Segoe UI",sans-serif;
-  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
-.mono{font-family:"DM Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;}
-a{color:inherit;text-decoration:none;}
+/* ═════ BASE ═════ */
+*,*::before,*::after{box-sizing:border-box;}
+body{margin:0; background:var(--s1); color:var(--tx); font-family:var(--f-txt); font-size:1rem; line-height:1.5;
+  -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;}
+a{color:inherit; text-decoration:none;}
 img,svg{max-width:100%;}
-
-/* Barras de desplazamiento discretas, con los tokens de la paleta */
-*{scrollbar-width:thin;scrollbar-color:var(--n5) transparent;}
-::-webkit-scrollbar{width:9px;height:9px;}
+button,input,select,textarea{font:inherit; color:inherit;}
+[hidden]{display:none !important;}
+:focus-visible{outline:2px solid var(--ac); outline-offset:2px;}
+.mono{font-family:var(--f-dat); font-variant-numeric:tabular-nums;}
+*{scrollbar-width:thin; scrollbar-color:var(--barra) transparent;}
+::-webkit-scrollbar{width:8px; height:8px;}
 ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent;}
-::-webkit-scrollbar-thumb{background:var(--n5);border-radius:99px;
-  border:2px solid transparent;background-clip:content-box;}
-::-webkit-scrollbar-thumb:hover{background:var(--tx3);background-clip:content-box;}
+::-webkit-scrollbar-thumb{background:var(--barra); border-radius:var(--rc); border:2px solid transparent; background-clip:content-box;}
+::-webkit-scrollbar-thumb:hover{background:var(--ac); background-clip:content-box;}
+.ctl{position:absolute; opacity:0; width:0; height:0; pointer-events:none;}
 
-/* El interruptor del filtro, fuera de la vista — el MISMO de la maqueta. */
-.ctl{position:absolute;opacity:0;width:0;height:0;pointer-events:none;}
+/* Estados por forma además de color (D6): ■ correcto, ▲ aviso, ● fallo, ○ sin dato. */
+.forma{display:inline-block; width:9px; height:9px; flex:0 0 9px;}
+.f-ok{background:var(--ok); border-radius:2px;}
+.f-av{background:var(--av); clip-path:polygon(50% 0, 100% 100%, 0 100%);}
+.f-fa{background:var(--fa); border-radius:50%;}
 
-/* ═════ APP ═════ */
-.app{container-type:inline-size;background:var(--n0);overflow:hidden;}
-.marco{display:grid;grid-template-columns:minmax(0,1fr);
-  grid-template-rows:auto minmax(0,1fr) auto;
-  grid-template-areas:"top" "cuerpo" "tabs";height:100dvh;}
-/* LA COLUMNA DE DETALLE ES «auto», Y ESE ES EL PUNTO.
-   Con «var(--det)» la rejilla reservaba 308 px SIEMPRE, hubiera panel o no:
-   en Archivos —que nunca abre detalle— y en Estado sin indicador
-   seleccionado, la tabla se cortaba a 308 px del borde y quedaba una franja
-   negra a la derecha. Reportado sobre captura el 2026-08-26.
-   Con «auto» la columna mide lo que mida su contenido, y una columna sin
-   ningún elemento dentro mide cero: el cuerpo se lleva el ancho entero sin
-   que ninguna plantilla tenga que avisar de nada. El ancho fijo se declara
-   entonces donde vive el panel, no donde vive la rejilla. */
-@container (min-width:880px){
-  .marco{grid-template-columns:var(--rail) minmax(0,1fr) auto;
-    grid-template-rows:auto minmax(0,1fr) auto;
-    grid-template-areas:"rail top top" "rail cuerpo detalle" "rail estado estado";}
-}
-.rail{grid-area:rail;} .top{grid-area:top;} .cuerpo{grid-area:cuerpo;}
-.detalle{grid-area:detalle;} .tabs{grid-area:tabs;} .estado{grid-area:estado;}
-.marco > *{min-width:0;min-height:0;}
+/* ═════ MARCO — teléfono primero ═════ */
+.app{container-type:inline-size; --rail:232px;}
+.marco{--f1:.8125rem; --f2:.875rem; --f3:1rem; --f4:1.0625rem; --f5:1.25rem; --f6:1.5rem; --f7:1.75rem;
+  display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"f1" "cuerpo" "ordenes" "tabs";
+  grid-template-rows:auto 1fr auto auto; min-height:100dvh; font-size:var(--f3); background:var(--s1);}
+.marco > *{min-width:0;}
+.rail{display:none; grid-area:rail;}
+.top{display:contents;}
 
-/* ── RAIL ── */
-.rail{display:none;background:var(--n1);border-right:1px solid var(--n4);
-  flex-direction:column;overflow-y:auto;padding:var(--e2) var(--e1);}
-@container (min-width:880px){.rail{display:flex;}}
-/* SIN CUADRADO DE MARCA. Llevaba las dos primeras letras del nombre del
-   nodo, que en «192.168.1.38» son «19» y no significan nada: un adorno con
-   forma de dato. Retirado por indicación sobre captura el 2026-08-26. Lo que
-   queda es el nombre del nodo entero y desde cuándo lleva en línea, que sí
-   se leen. El color que tenía —fondo de acento, texto negro— pasa al avatar
-   de la esquina, donde la inicial SÍ dice de quién es la sesión. */
-.marca{display:flex;align-items:center;gap:var(--e2);padding:var(--e1) var(--e2) var(--e2);}
-.marca .nm{display:flex;flex-direction:column;line-height:1.15;min-width:0;}
-.marca .nm b{font-size:.87rem;font-weight:700;letter-spacing:-.01em;}
-.marca .nm span{font-size:.63rem;color:var(--tx3);display:flex;align-items:center;gap:4px;}
-.marca .nm span i{width:5px;height:5px;background:var(--ok);display:block;}
-.gr{display:flex;flex-direction:column;gap:1px;margin-bottom:var(--e2);}
-.gr .cab{font-size:.59rem;letter-spacing:.15em;text-transform:uppercase;color:var(--tx3);
-  font-weight:600;padding:var(--e2) var(--e2) var(--e0);}
-.ni{display:flex;align-items:center;gap:var(--e2);padding:7px var(--e2);border-radius:var(--r1);
-  color:var(--tx2);font-size:.82rem;cursor:pointer;width:100%;text-align:left;
-  border-left:2px solid transparent;}
-.ni:hover{background:var(--n3);color:var(--tx);}
-.ni .ic{width:16px;height:16px;flex:0 0 16px;opacity:.9;}
-.ni .ct{margin-left:auto;font-family:"DM Mono",monospace;font-size:.65rem;color:var(--tx3);}
-.ni .pt{margin-left:auto;width:6px;height:6px;background:var(--av);flex:0 0 6px;}
-.disco{margin-top:auto;padding:var(--e2);display:flex;flex-direction:column;gap:6px;
-  border-top:1px solid var(--n4);}
-.disco .l1{display:flex;justify-content:space-between;align-items:baseline;}
-.disco .l1 b{font-size:.71rem;font-weight:600;}
-.disco .l1 span{font-size:.65rem;color:var(--tx3);font-family:"DM Mono",monospace;}
-.seg{display:flex;height:6px;overflow:hidden;background:var(--n3);gap:1px;}
-.seg i{display:block;height:100%;}
-.disco .ley{display:flex;flex-wrap:wrap;gap:var(--e1) var(--e2);font-size:.62rem;color:var(--tx3);}
-.disco .ley span{display:flex;align-items:center;gap:4px;}
-.disco .ley u{width:6px;height:6px;display:block;text-decoration:none;}
+/* D20: la barra superior se pega y deja ver lo que pasa por debajo. */
+.f1{grid-area:f1; position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:var(--e3); padding:var(--e3) var(--e4);
+  padding-top:calc(var(--e3) + env(safe-area-inset-top, 0px)); height:var(--alto-f1);
+  background:color-mix(in oklch, var(--s1) 80%, transparent); -webkit-backdrop-filter:blur(20px) saturate(150%); backdrop-filter:blur(20px) saturate(150%);
+  box-shadow:inset 0 -1px 0 color-mix(in oklch, var(--ln) 55%, transparent);}
+.tv{display:flex; flex-direction:column; min-width:0; flex:1 1 auto;}
+.tv h1{margin:0; font-size:var(--f6); font-weight:720; font-stretch:112%; letter-spacing:-.015em; line-height:1.15;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;}
+.tv .sb{font-family:var(--f-dat); font-size:var(--f2); color:var(--tx3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.tv > .p{align-self:flex-start;}
+.usr{width:36px; height:36px; flex:0 0 36px; margin-left:auto; border-radius:var(--rc); background:var(--ac); color:var(--s0);
+  display:grid; place-items:center; font-weight:700; font-size:var(--f2);}
+.cuerpo{grid-area:cuerpo; padding:var(--e4) var(--e3) var(--e6);}
+.vw{display:flex; flex-direction:column; gap:var(--e3);}
 
-/* ── TOP ── */
-.top{background:var(--n1);border-bottom:1px solid var(--n4);
-  display:flex;flex-direction:column;gap:var(--e2);padding:var(--e2);}
-@container (min-width:880px){.top{padding:var(--e2) var(--e3);}}
-.f1{display:flex;align-items:center;gap:var(--e2);}
-.miga{display:none;align-items:center;gap:6px;font-size:.8rem;color:var(--tx3);flex:0 0 auto;}
-@container (min-width:880px){.miga{display:flex;}}
-.miga b{color:var(--tx);font-weight:600;}
-.miga svg{opacity:.4;flex:0 0 auto;}
-/* LA INICIAL DE QUIEN TIENE LA SESIÓN, con el color que antes gastaba el
-   cuadrado del nodo. Es el único sitio de la barra donde un cuadrado de
-   acento se gana el sitio: dice de quién es la sesión abierta, y basta una
-   letra para reconocerse sin anunciarle la cuenta a quien mire de reojo.
-
-   EL «margin-left:auto» ES LO QUE SOSTIENE LA BARRA DESDE QUE SE FUE EL
-   BUSCADOR, y no es cosmético. «.f1» es un flex y el buscador llevaba
-   «flex:1»: era él quien empujaba esta inicial contra el borde derecho. Al
-   retirarlo, «.f1» se quedó con un solo hijo y la inicial se iba a la
-   IZQUIERDA, pegada al hueco donde estaba el campo. Medido en Edge a 390 px
-   y a 1280 px antes de darlo por bueno. */
-.usr{width:26px;height:26px;flex:0 0 26px;margin-left:auto;border-radius:var(--r2);background:var(--ac);
-  display:grid;place-items:center;color:#000;font-weight:700;font-size:.68rem;}
-/* Sin línea propia: la separación de la barra de órdenes la da el hueco, y
-   una regla más ahí era la segunda de las dos que encajonaban el buscador.
-   La única línea de esta zona es la que cierra «.top» por abajo. */
-.ordenes{display:none;align-items:center;gap:var(--e0);padding-top:var(--e1);}
-/* La barra de ordenes NO es global: su contenido lo decide el modulo, y en
-   Resumen y Estado no hay ninguna orden real que ofrecer, asi que la barra
-   entera desaparece. Un control que no puede cambiar nada es ruido con
-   contorno. Conmuta por el mismo :has() que ya conmuta las vistas. */
-/* LA BARRA DE ÓRDENES NO RECORTA: ENVUELVE.
-   Llevaba «overflow-x:auto» para poder deslizarse en el teléfono, y eso se
-   comió los tres desplegables que cuelgan de ella. Un elemento con
-   «overflow-x» distinto de visible convierte también su «overflow-y» en
-   automático, así que el panel de «Crear cuenta», «Subir» y «Nueva
-   carpeta» —posicionado a «top:100%», es decir JUSTO DEBAJO de la barra—
-   caía fuera de una caja de 35 px de alto y se recortaba entero. El botón
-   abría el <details> y no pasaba nada visible: exactamente «no sirve este
-   botón», reportado el 2026-08-26 sobre Cuentas, y valía igual para
-   Archivos.
-   Envolver en vez de deslizar cura los tres de una vez y no deja el
-   problema esperando al siguiente desplegable que alguien cuelgue aquí. Y
-   en el teléfono es además mejor: dos renglones se ven, un deslizamiento
-   lateral sin barra visible hay que adivinarlo. */
-.ordenes{display:flex;flex-wrap:wrap;row-gap:var(--e1);}
+/* D19: las órdenes bajan al pulgar, encima de las pestañas. */
+.ordenes{grid-area:ordenes; position:sticky; z-index:25; bottom:calc(var(--inset-inf) * .5 + 64px + var(--e3));
+  display:flex; flex-wrap:wrap; gap:var(--e2); padding:0 var(--e3); margin-bottom:var(--e3); pointer-events:none;}
 .ordenes:empty{display:none;}
-.od{display:inline-flex;align-items:center;gap:6px;padding:5px var(--e2);border-radius:var(--r1);
-  background:none;border:0;color:var(--tx2);font-family:inherit;font-size:.77rem;cursor:pointer;flex:0 0 auto;}
-.od:hover{background:var(--n3);color:var(--tx);}
-.od svg{opacity:.7;}
-/* Filtros bajo demanda. Solo Seguridad tiene volumen que filtrar (~1 456
-   eventos en 11 dias); Cuentas son 3 filas y Estado son indicadores fijos:
-   ahi el filtro no puede cambiar lo que se ve. Y aun en Seguridad la fila
-   arranca plegada -- se abre con «Filtrar» y lo que este ACTIVO se queda
-   siempre visible como pastilla retirable, para que plegado nunca
-   signifique oculto. */
-.chips{display:none;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px;
-  padding-top:var(--e1);}
-body:has(#f-abre:checked) .chips{display:flex;}
-.fbtn{display:inline-flex;align-items:center;gap:5px;
-  flex:0 0 auto;padding:5px var(--e2);border-radius:var(--r1);background:var(--n2);
-  border:1px solid var(--n4);color:var(--tx2);font-family:inherit;font-size:.74rem;
-  cursor:pointer;}
-body:has(#f-abre:checked) .fbtn{background:var(--acT);border-color:var(--acB);color:var(--ac2);}
-body:has(#f-abre:checked) .fbtn .cv{transform:rotate(180deg);}
-.cv{transition:transform .12s;}
-/* SIN «margin-left:auto» DESDE LA CINTA. Con el auto este rótulo se iba al
-   borde derecho —lo más lejos que la fila permite del control del que es
-   adjetivo— y dejaba muerto todo el centro del renglón. Pegado al botón, el
-   resto queda para la marquesina, y además cumple mejor lo que su propia nota
-   en seguridad.html ya decía querer. */
-.rango{color:var(--tx3);font-size:.72rem;font-variant-numeric:tabular-nums;
-  flex:0 0 auto;padding-left:var(--e1);white-space:nowrap;}
-.chips::-webkit-scrollbar{display:none;}
+.ordenes > *{pointer-events:auto;}
+.ordenes > details, .ordenes > form{position:static; margin:0;}
+.od{display:inline-flex; align-items:center; gap:var(--e2); min-height:48px; padding:0 var(--e5); border:0; border-radius:var(--rc);
+  background:color-mix(in oklch, var(--s3) 86%, transparent); -webkit-backdrop-filter:blur(16px) saturate(150%); backdrop-filter:blur(16px) saturate(150%);
+  color:var(--tx); font-size:var(--f3); font-weight:600; cursor:pointer; white-space:nowrap; list-style:none;
+  box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 8px 24px rgb(0 0 0 / .35);
+  transition:transform var(--d1) var(--c-std), background-color var(--d1) var(--c-std);}
+.od::-webkit-details-marker{display:none;}
+.od:active{transform:scale(.97);}
+.od.pri{background:var(--ac); color:var(--s0);}
+.ordenes .miga, .ordenes .rango{display:none;}
+/* Control segmentado: la ventana de Seguridad y la capa del mapa. */
+.sgg{display:inline-flex; padding:3px; gap:2px; border-radius:var(--rc); background:color-mix(in oklch, var(--s3) 86%, transparent);
+  -webkit-backdrop-filter:blur(16px) saturate(150%); backdrop-filter:blur(16px) saturate(150%);
+  box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 8px 24px rgb(0 0 0 / .35);}
+.sgg a{display:inline-flex; align-items:center; min-height:42px; padding:0 var(--e3); border-radius:var(--rc); font-size:var(--f2); font-weight:600; color:var(--tx2); white-space:nowrap;
+  transition:background-color var(--d1) var(--c-std), color var(--d1) var(--c-std);}
+.sgg a.on{background:var(--ac); color:var(--s0);}
 
-/* ── CUERPO ── */
-.cuerpo{overflow-y:auto;padding:var(--e3) var(--e2) var(--e4);}
-@container (min-width:880px){.cuerpo{padding:var(--e3);}}
-.vw{display:none;flex-direction:column;gap:var(--e4);}
-.vw{display:flex;}
+/* D20: pestañas flotantes en cápsula, sobre la zona segura. */
+.tabs{grid-area:tabs; position:sticky; bottom:calc(var(--inset-inf) * .5); z-index:30; display:flex; gap:2px; height:64px;
+  margin:0 var(--e3) max(var(--e3), calc(var(--inset-inf) * .5)); padding:6px; border-radius:var(--rc);
+  background:color-mix(in oklch, var(--s3) 82%, transparent); -webkit-backdrop-filter:blur(24px) saturate(160%); backdrop-filter:blur(24px) saturate(160%);
+  box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 12px 32px rgb(0 0 0 / .5);}
+.tb{position:relative; flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  border-radius:var(--rc); color:var(--tx2); font-size:var(--f1); font-weight:600; line-height:1.2; white-space:nowrap;
+  transition:color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
+.tb .ic{width:22px; height:22px;}
+.tb:active{transform:scale(.94);}
+.tb-activo{background:var(--acT); color:var(--ac);}
+.tb .mk{position:absolute; top:7px; right:calc(50% - 19px); width:9px; height:9px; background:var(--av); clip-path:polygon(50% 0, 100% 100%, 0 100%);}
 
-/* Elemento de navegación activo, en rail y en pestañas */
-.ni-activo{background:var(--acT);color:var(--ac2);font-weight:600;border-left-color:var(--ac);}
-.ni-activo .ct{color:var(--ac2);}
-.tb-activo{color:var(--ac2);}
+/* ═════ PANELES ═════ */
+.tablero{display:grid; grid-template-columns:minmax(0,1fr); gap:var(--e3);}
+.tablero > *{min-width:0;}
+.sc{container-type:inline-size; display:flex; flex-direction:column; gap:var(--e3); padding:var(--e4); background:var(--s2);
+  border-radius:var(--r-pieza); min-width:0; box-shadow:var(--brillo);}
+.sch{display:flex; align-items:center; justify-content:space-between; gap:var(--e2) var(--e3); flex-wrap:wrap; min-height:24px;}
+.sch h2{margin:0; font-size:var(--f3); font-weight:650;}
+.sch .ms{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+.sch h3.sub, .sub{margin:0; font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3);}
+.sch:has(h3.sub){margin-top:var(--e2);}
+/* Paneles con barra propia: el contenido se desplaza DENTRO y la página no crece. */
+.desliza{max-height:26rem;}
+.desliza > .sc-cuerpo{flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:var(--e3);
+  margin-right:calc(var(--e2) * -1); padding-right:var(--e2);}
+.vivo{display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 8px; border-radius:var(--rc); background:var(--okT);
+  color:var(--ok); font-size:var(--f1); font-weight:600; white-space:nowrap;}
+.vivo i{width:7px; height:7px; border-radius:50%; background:currentColor; animation:latir 2s ease-in-out infinite;}
 
-/* EL TÍTULO VIVE EN LA BARRA DESDE EL 2026-09-04, no en el cuerpo.
-   «min-width:0» y «nowrap» son lo que impide que un nombre largo empuje la
-   inicial de la sesión fuera de su sitio: en la barra el título comparte
-   renglón, y ahí envolver no es una opción — se recorta con puntos. Dentro
-   del cuerpo podía envolver porque tenía el ancho entero para él solo. */
-.tv{display:flex;align-items:baseline;gap:var(--e2);min-width:0;}
-.tv h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
-@container (min-width:880px){.tv h1{font-size:1.45rem;}}
-.tv .sb{font-size:.73rem;color:var(--tx3);font-family:"DM Mono",monospace;
-  white-space:nowrap;}
-
-.sc{display:flex;flex-direction:column;gap:var(--e2);}
-.sch{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);flex-wrap:wrap;}
-.sch h2{margin:0;font-size:.69rem;letter-spacing:.14em;text-transform:uppercase;color:var(--tx2);font-weight:600;}
-.sch .ms{font-size:.7rem;color:var(--tx3);}
-/* EL RÓTULO DE UNA TABLA DENTRO DE UNA SECCIÓN — «Contención activa» agrupa
-   tres, y sin un escalón entre el título de la sección y el de cada tabla las
-   cuatro cabeceras pesarían igual y no se vería qué cuelga de qué. Un punto
-   más pequeño y en el gris de lo secundario basta: es jerarquía, no adorno. */
-.sch h3.sub{margin:0;font-size:.63rem;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--tx3);font-weight:600;}
-.sch:has(h3.sub){margin-top:var(--e1);}
-
-/* Escalera */
-.esc{display:grid;grid-template-columns:1fr;gap:var(--e1);}
-@container (min-width:620px){.esc{grid-template-columns:repeat(3,1fr);gap:var(--e2);}}
-/* CINCO CUADROS EN VEZ DE TRES — «Volumen observado» del panel de seguridad,
-   que el 2026-09-10 fundió en una sola banda las dos que había (tres cifras
-   arriba y cuatro llamadas «Resumen» al otro lado del gráfico).
-   «auto-fit» y no «repeat(5,1fr)» por lo mismo que en cualquier rejilla que
-   tiene que sobrevivir a un teléfono: a 620 px, cinco columnas fijas dejarían
-   114 px por cuadro para un número de 1.95rem. Con auto-fit la banda usa las
-   columnas que caben y baja lo que sobra al renglón siguiente, sin un punto de
-   corte más que mantener. La regla va DESPUÉS de «.esc» a propósito: misma
-   especificidad, gana la última, y el elemento lleva las dos clases. */
-@container (min-width:620px){.esc-5{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}}
-.pl{position:relative;overflow:hidden;background:var(--n2);border:1px solid var(--n4);
-  border-radius:var(--r2);padding:var(--e2) var(--e3);display:flex;align-items:center;gap:var(--e3);min-width:0;}
-@container (min-width:620px){.pl{flex-direction:column;align-items:flex-start;gap:2px;padding:var(--e3);}}
-.pl::after{content:"";position:absolute;inset:auto auto 0 0;width:34px;height:2px;background:var(--ac);}
-.pl .n{font-size:1.5rem;font-weight:500;line-height:1;color:var(--tx);}
-@container (min-width:620px){.pl .n{font-size:1.95rem;}}
-.pl .t{display:flex;flex-direction:column;gap:1px;min-width:0;}
-.pl .q{font-size:.71rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;}
-.pl .d{font-size:.68rem;color:var(--tx3);line-height:1.35;}
-
-/* Cifras */
-.cif{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--e1);}
-@container (min-width:620px){.cif{grid-template-columns:repeat(4,1fr);gap:var(--e2);}}
-.cf{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
-  padding:var(--e2) var(--e3);display:flex;flex-direction:column;gap:1px;min-width:0;}
-.cf .n{font-size:1.32rem;font-weight:500;line-height:1.1;}
-@container (min-width:620px){.cf .n{font-size:1.6rem;}}
-.cf .r{font-size:.61rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
-.cf.mk .n{color:var(--av);}
-
-/* EL AVISO DE QUE LO QUE SE ESTÁ VIENDO YA NO ES LO QUE HAY. Es una nota, no
-   una alarma: el nodo no ha fallado, solo ha cambiado algo mientras la página
-   estaba quieta. Lleva la barra de acento a la izquierda —el mismo recurso de
-   «.msg» y «.aviso»— para que no se lea como una más de las notas grises del
-   pie, y nace oculta: sin JavaScript nunca aparece, porque sin JavaScript
-   tampoco hay nada que la contradiga. */
-.nota.nvo{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ac);
-  border-radius:var(--r2);padding:var(--e2) var(--e3);color:var(--ac2);}
-
-/* Gráfico — un panel por serie, cada uno con su eje de valores a la izquierda.
-   La rejilla es lo que alinea las tres piezas: el eje de valores ocupa la
-   primera columna y la gráfica y el eje de días la segunda, así que los días
-   caen bajo el trazo y no bajo los números. */
-.grp{display:flex;flex-direction:column;gap:var(--e1);}
-.grh{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);}
-.grh b{font-size:.72rem;font-weight:600;}
-/* «.ms» estaba definido SOLO dentro de «.sch», así que aquí heredaba el cuerpo
-   de la página y «lineal · máx 22» salía del tamaño de un párrafo, gritando
-   más que el título del panel. Visto en el render. */
-.grh .ms{font-size:.66rem;color:var(--tx3);font-family:"DM Mono",monospace;}
-.grc{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
-  padding:var(--e2) var(--e3) var(--e3);
-  display:grid;grid-template-columns:46px minmax(0,1fr);align-items:start;}
-.gre{grid-column:2;display:flex;margin-top:6px;font-size:.56rem;color:var(--tx3);}
-@container (min-width:620px){.gre{font-size:.62rem;}}
-/* El eje va SIN hueco entre rótulos y con cada uno centrado en su franja: son
-   las mismas doce franjas en las que la gráfica reparte los días, así que un
-   «gap» aquí y no allí desalineaba el número respecto de su punto. */
-.gre span{flex:1;text-align:center;min-width:0;}
-
-/* ═══ TABLAS ═══
-   La cabecera de columnas y la fila en rejilla SOLO aparecen a partir de
-   1100 px de CONTENEDOR. Por debajo se quedan las tarjetas, que se leen
-   bien. Ese es el arreglo de fondo del traslape: la columna de señales
-   nunca puede ser más estrecha que su pastilla más larga, porque a esos
-   anchos la rejilla ni siquiera existe. */
-.th{display:none;}
-.fls{display:flex;flex-direction:column;gap:2px;}
-.gh{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);
-  margin-top:var(--e2);padding:var(--e1) var(--e2) 5px;border-bottom:1px solid var(--lnT);
-  font-size:.62rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
-.gh:first-child{margin-top:0;}
-.notas{margin-top:auto;padding-top:var(--e4);display:flex;flex-direction:column;gap:3px;
-  max-width:56ch;font-size:.63rem;line-height:1.55;color:var(--tx3);}
-.notas .nt{display:block;}
-.notas .rt{font-size:.58rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);
-  opacity:.7;margin-bottom:1px;}
-.notas b{color:var(--tx2);font-weight:600;}
-.fl{display:grid;grid-template-columns:1fr;gap:6px;padding:var(--e2);border-radius:var(--r1);
-  background:var(--n2);border:1px solid transparent;cursor:pointer;min-width:0;}
-.fl:hover{background:var(--n3);}
-.fl[aria-selected=true],.fl.sel{background:var(--acT);border-color:var(--acB);}
-.fl > *{min-width:0;}
-/* LA CELDA EN MODO TARJETA ES UNA REJILLA, Y ESA ES LA CAUSA DEL DESBORDE
-   DEL TELÉFONO — no el ancho de ninguna pastilla.
-   Era «display:flex» sin envolver, así que TODO lo que cuelga de una celda se
-   ponía en fila: el rótulo, la fila de pastillas, los tres <details> de las
-   señales y el formulario de «Bloquear…». A 390 px eso son seis columnas de
-   texto de un dedo de ancho, y el cuerpo medía 664 px de contenido para 390 de
-   caja. Es literalmente la captura del 2026-08-29.
-   Con la rejilla, el rótulo se queda a la izquierda y TODO lo demás baja en
-   columna, cada cosa en su renglón y ninguna más ancha que la celda.
-   El «:has» es el mismo mecanismo que ya conmuta el filtro: una celda SIN
-   rótulo —el nombre de un archivo, el menú de acciones— no reserva los 58 px
-   y sigue ocupando el ancho entero, que es como se veía antes. */
-.cl{display:grid;grid-template-columns:minmax(0,1fr);
-  gap:var(--e0) var(--e1);align-items:baseline;min-width:0;}
-.cl:has(> .et){grid-template-columns:58px minmax(0,1fr);}
-.cl > .et{grid-column:1;}
-.cl:has(> .et) > :not(.et){grid-column:2;}
-.cl>.et{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);
-  font-weight:600;}
-.cl .ip{font-family:"DM Mono",monospace;font-size:.74rem;word-break:break-all;line-height:1.3;}
-.cl .op{font-size:.7rem;color:var(--tx2);}
-.cl .ct2{font-family:"DM Mono",monospace;font-size:.75rem;line-height:1.5;
-  flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:break-word;}
-.cl .ct2 small{color:var(--tx3);font-size:.64rem;}
-/* LA COLUMNA «VALOR» DE LOS INDICADORES VA UN PUNTO MÁS GRANDE, y solo ella.
-   .75rem son 12 px = 9 pt, que en las demás tablas es correcto porque ahí la
-   celda lleva IPs y fechas que se buscan con el dedo. En /estado la celda es
-   LO QUE SE VA A LEER —«55.8 °C», «21 % — 715.9 MB libres de 904.8 MB»— y a
-   9 pt de monoespaciada obligaba a acercarse a la pantalla. .84rem son
-   13.44 px = 10.08 pt: un punto justo, en la MISMA DM Mono, sin tocar el
-   resto de la tabla ni las otras cinco que comparten «.ct2». */
-.t-est .cl .ct2{font-size:.84rem;}
-/* CADA CAPA DE «Actividad» ES UNA PIEZA, no un trozo de frase. En tarjeta van
-   en línea separadas por el punto medio; en la tabla, una debajo de otra. Sin
-   esto la columna partía «2026-08-30 08:32 →» por donde le cabía. */
-.ct2 .cp{white-space:nowrap;}
-.ct2 .cp + .cp::before{content:"· ";color:var(--tx3);}
-/* El intervalo SÍ puede bajar de línea —es lo único de la celda que no cabe
-   entero en ningún ancho razonable—, y es la mitad que faltaba de la regla de
-   las pastillas: el VALOR se parte, la PASTILLA no. */
-.ct2 .lapso{white-space:normal;}
-
-@container (min-width:1100px){
-  .th{display:grid;gap:var(--e2);padding:0 var(--e2) 5px;border-bottom:1px solid var(--lnT);}
-  .th > *{min-width:0;}
-  .th span,.th button,.th a{color:var(--tx3);font-family:inherit;font-size:.6rem;letter-spacing:.1em;
-    text-transform:uppercase;font-weight:600;background:none;border:0;padding:0;text-align:left;
-    display:inline-flex;align-items:center;gap:4px;cursor:pointer;}
-  .th button:hover,.th a:hover{color:var(--tx);}
-  .th button.act,.th a.act{color:var(--ac2);}
-  .fl{align-items:start;gap:var(--e2);padding:9px var(--e2);background:transparent;
-    border-radius:0;border-bottom:1px solid var(--lnT);border-left:2px solid transparent;}
-  .fl:hover{background:var(--n2);}
-  .fl[aria-selected=true],.fl.sel{border-left-color:var(--ac);}
-  .cl>.et{display:none;}
-  .cl{display:block;}
-  .t-seg .ct2 .cp{display:block;}
-  .t-seg .ct2 .cp + .cp::before{content:none;}
-  /* Rejillas por tipo de tabla */
-  /* ORÍGENES. El reparto anterior daba 2,2fr a «Dirección» —que solo tiene que
-     alojar una IPv6 de 27 caracteres— y 76 px a «Actividad», donde tres capas
-     y un intervalo de fechas se partían en cuatro renglones ilegibles. La
-     columna que necesitaba sitio era «Señales», que es la que lleva las
-     pastillas y la evidencia plegada: el recuadro rojo de la captura del
-     2026-08-29.
-     Se recorta lo que sobraba —Dirección y Operador—, «Actividad» pasa a un
-     ancho FIJO donde su contenido cabe sin partirse por la mitad, y todo lo
-     que se libera va a «Señales». */
-  .t-seg .th,.t-seg .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,.95fr) 124px minmax(0,2.8fr);}
-  /* «Operador» recorrido al centro, encabezado y celda a la vez: si solo se
-     centrara uno de los dos, la columna diría una cosa y su rótulo otra. */
-  /* «justify-content» Y NO SOLO «text-align»: los rotulos de «.th» son
-     inline-flex —lo pide el indicador de orden que llevan algunos—, y un
-     contenedor flexible no atiende a text-align. Se puso primero solo
-     text-align y no movio nada. La celda, en cambio, es un bloque corriente y
-     con text-align basta. */
-  .t-seg .th > :nth-child(2){justify-content:center;}
-  .t-seg .fl > .cl:nth-child(2){text-align:center;}
-  /* BLOQUEOS Y RESPUESTAS INESPERADAS. «Alcance» tenía 104 px para dos
-     pastillas, la fecha de la base y el aviso de base nueva: de ahí salía la
-     pastilla que se dibujaba encima de «Frenados» y del botón. Se le da ancho
-     de verdad a costa de «Cubre», que era un 2fr casi vacío — y con eso el
-     rótulo CUBRE deja de quedarse solo contra el borde izquierdo. */
-  .t-blo .th,.t-blo .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 132px 96px;}
-  /* APARTADOS POR CONDUCTA — CINCO COLUMNAS DESDE EL 2026-09-10, y por eso deja
-     de compartir «.t-blo».
-     El estado se separó del motivo: «Apartado» va en verde, en columna propia,
-     porque dice que el control está en vigor; el motivo se queda en ámbar
-     porque es una inferencia sobre alguien. Con las dos cosas en la misma celda
-     el color acababa calificando a la sospecha.
-     La columna del motivo cabe en 1fr desde que las etiquetas de señal son
-     nombres y no frases: las nuevas miden aproximadamente la mitad que las
-     oraciones que había antes.
-
-     NO SE CITA AQUÍ NINGUNA ETIQUETA RETIRADA, y no es manía. Esta hoja viaja
-     ENTERA dentro del binario por embed, comentarios incluidos, así que todo lo
-     que se escriba aquí aparece en un «strings /usr/local/bin/nasd». Citar el
-     rótulo viejo dejaría un señuelo permanente: quien un día audite el binario
-     para comprobar si aquel texto se retiró de verdad encontraría una
-     coincidencia y no sabría si es una etiqueta viva o esta nota. Se comprobó
-     el 2026-09-10 sobre el binario ya desplegado, y pasó: el rótulo retirado
-     seguía saliendo. Es la misma regla que _marco.html dejó escrita al retirar
-     el buscador.
-     «Frenados» lleva 172 px y no 128 porque su celda no es un número: es el
-     número MÁS «hasta 2026-09-11 06:50» en monoespaciada. Con 128 px la fecha
-     se partía en dos renglones y estiraba la fila entera — visto en el render,
-     no en el código. */
-  .t-apa .th,.t-apa .fl{grid-template-columns:minmax(0,1.4fr) 104px minmax(0,1fr) 172px 92px;}
-  /* EL ROTULO RECORRIDO AL CENTRO ES SOLO EL DE «Cubre», y por eso lleva
-     modificador propio. Se pidio para «Bloqueos puestos», donde la columna es
-     ancha y el rotulo quedaba solo contra el borde; se aplico a «.t-blo» y
-     alcanzo tambien a «Respuestas inesperadas» y a «Apartados por conducta»,
-     donde el contenido es corto y el efecto fue el contrario: el rotulo
-     flotando en mitad de un hueco, lejos de la fila que titula. Reportado
-     sobre captura el 2026-08-31.
-     Las columnas 2 y 3 SI se centran en las dos tablas que siguen en «.t-blo»,
-     porque ahi tambien se centra el contenido y rotulo y celda comparten eje.
-     «.t-apa» ya no las hereda, y esta bien: sus cinco columnas van todas a la
-     izquierda, que es como se lee una fila que empieza por una direccion. */
-  .t-cub .th > :first-child{justify-content:center;}
-  .t-blo .th > :nth-child(2),
-  .t-blo .th > :nth-child(3){justify-content:center;}
-  .t-blo .fl > .cl:nth-child(2),.t-blo .fl > .cl:nth-child(3){text-align:center;}
-  .t-blo .fl > .cl:nth-child(2) .pls{justify-content:center;}
-  .t-arc .th,.t-arc .fl{grid-template-columns:minmax(0,3fr) 96px 120px 40px;}
-  .t-cta .th,.t-cta .fl{grid-template-columns:minmax(0,1.6fr) 132px 104px minmax(140px,1.4fr);}
-  .t-est .th,.t-est .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,2fr) 116px;}
-  /* La cronologia lleva CINCO columnas porque el User-Agent es un dato y no
-     un adorno: la ausencia de uno es en si misma informacion —un cliente
-     automatizado a menudo no lo manda—. No cabia en las cuatro de .t-blo. */
-  .t-cro .th,.t-cro .fl{grid-template-columns:132px minmax(0,1.4fr) minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,1.2fr);}
-}
-
-/* ═══ PASTILLAS — NO SE PARTEN MIENTRAS QUEPAN, Y NUNCA SE SALEN ═══
-
-   La regla anterior era «ni se encogen ni se parten», con «flex:0 0 auto» y
-   «white-space:nowrap». Contiene media verdad y por eso duró: evita que una
-   pastilla quede reducida a una letra. Pero una pastilla que NO puede
-   encogerse tampoco puede caber, y entonces se dibuja ENCIMA de la columna de
-   al lado — que es el traslape de «Apartados por conducta», donde «SONDEO DE
-   SOFTWARE QUE AQUÍ NO EXISTE» mide 240 px y su columna 104: la pastilla se
-   comía «Frenados» y el botón «Soltar».
-
-   La regla correcta tiene tres partes y las tres hacen falta:
-
-     1. «flex:0 1 auto» — puede encogerse, pero solo cuando hace falta. Con
-        flex-wrap, una línea que no llega a llenarse NO encoge a nadie: la
-        pastilla que no cabe baja a la siguiente línea antes que estrecharse.
-     2. «max-width:100%» — nunca más ancha que su celda. Es lo único que de
-        verdad impide el traslape, porque el resto son preferencias y esto es
-        un tope.
-     3. «overflow-wrap:anywhere» — cuando una pastilla es más ancha que la
-        celda ENTERA y ya no hay adónde bajarla, parte por dentro en vez de
-        salirse. Y a diferencia de «break-word», también reduce su tamaño
-        mínimo, que es lo que evita que el navegador la deje sobresalir igual.
-
-   Lo que la regla vieja protegía sigue protegido: el mínimo de un elemento
-   flexible es su contenido, así que ninguna pastilla se queda en una letra
-   mientras tenga sitio para su palabra más larga. */
-.pls{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0;}
-.p{
-  display:inline-block; flex:0 1 auto; max-width:100%;
-  overflow-wrap:anywhere;
-  font-size:.6rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
-  padding:2px 7px; line-height:1.6; border-radius:var(--r1);
-  border:1px solid currentColor;
-}
+/* ═════ PASTILLAS (D6) ═════ */
+.pls{display:flex; flex-wrap:wrap; gap:4px; align-items:center; min-width:0;}
+.p{display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:3px 10px 3px 9px; border-radius:var(--rc);
+  font-size:var(--f1); font-weight:600; line-height:1.4; overflow-wrap:anywhere; background:var(--s3); color:var(--tx2);}
 .p:empty{display:none;}
-/* NI SE ESTIRAN, que es la otra mitad de la misma regla.
-   Una pastilla suelta dentro de «.vw» —que es una columna flexible— recibe
-   «align-self:stretch» del contenedor y se dibuja del ancho de la FILA
-   ENTERA: así salía «EN LÍNEA» en Estado, una banda verde de borde a borde
-   para una palabra de siete letras. Reportado sobre captura el 2026-08-26.
-   «inline-block» no la salva: dentro de un flex el display se bloquifica y
-   manda el eje transversal. Las que viven en «.pls» ya están a salvo porque
-   esa fila mide por contenido; esto cubre a las que van sueltas. */
+.p::before{content:""; width:8px; height:8px; flex:0 0 8px; background:currentColor; border-radius:50%;}
+.p-ok{color:var(--ok); background:var(--okT);} .p-ok::before{border-radius:2px;}
+.p-av{color:var(--av); background:var(--avT);} .p-av::before{border-radius:0; clip-path:polygon(50% 0, 100% 100%, 0 100%);}
+.p-fa{color:var(--fa); background:var(--faT);}
+.p-na{color:var(--tx3); background:var(--s3);} .p-na::before{background:none; border:1.5px solid currentColor; width:7px; height:7px;}
+.p-ll{color:var(--ac); background:var(--acT);} .p-ll::before{border-radius:2px;}
 .vw > .p{align-self:flex-start;}
-.p-ok{color:var(--ok);} .p-av{color:var(--av);} .p-fa{color:var(--fa);} .p-na{color:var(--nada);}
-.p-ll{background:var(--acT);color:var(--ac2);border-color:var(--acB);}
 
-/* Motivos */
-.mts{display:flex;flex-direction:column;gap:6px;}
-.mt{display:grid;grid-template-columns:1fr;gap:3px;min-width:0;}
-@container (min-width:620px){.mt{grid-template-columns:164px 1fr 50px;align-items:center;gap:var(--e2);}}
-.mt > *{min-width:0;}
-/* Una ruta de sondeo puede medir mas que su columna —«/vendor/phpunit/…/
-   eval-stdin.php» son 51 caracteres— y sin permiso para partirse se dibujaba
-   sobre la barra de al lado. Misma regla que el VALOR de una celda: el texto
-   se parte, la pastilla no. */
-.mt .mn{font-size:.72rem;display:flex;justify-content:space-between;gap:var(--e1);
-  min-width:0;overflow-wrap:anywhere;}
-@container (min-width:620px){.mt .mn{display:block;}}
-.mt .mn i{font-style:normal;color:var(--tx3);font-family:"DM Mono",monospace;font-size:.68rem;}
-@container (min-width:620px){.mt .mn i{display:none;}}
-.mt .mb{height:6px;background:var(--n3);overflow:hidden;}
-.mt .mb u{display:block;height:100%;background:var(--n5);text-decoration:none;}
-.mt .mv{display:none;font-family:"DM Mono",monospace;font-size:.68rem;color:var(--tx3);text-align:right;}
-@container (min-width:620px){.mt .mv{display:block;}}
-
-/* Archivos */
-.ico-f{width:26px;height:26px;flex:0 0 26px;border-radius:var(--r1);display:grid;place-items:center;
-  background:var(--n3);color:var(--tx2);}
-.ico-f.ext{font-family:"DM Mono",monospace;font-size:.52rem;font-weight:500;letter-spacing:0;text-transform:uppercase;}
-.nomb{display:flex;align-items:center;gap:var(--e2);min-width:0;}
-.nomb .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;}
-.menu-p{background:none;border:0;color:var(--tx3);cursor:pointer;padding:2px 6px;border-radius:var(--r1);}
-.menu-p:hover{background:var(--n3);color:var(--tx);}
-
-/* Barra de progreso */
-.prog{height:5px;background:var(--n3);overflow:hidden;}
-.prog i{display:block;height:100%;background:var(--ac);}
-
-/* Tarjeta de aviso */
-.tarj{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ac);
-  border-radius:var(--r2);padding:var(--e2) var(--e3);display:flex;flex-direction:column;gap:6px;}
-.tarj .t1{display:flex;align-items:baseline;justify-content:space-between;gap:var(--e2);flex-wrap:wrap;}
-.tarj .t1 b{font-size:.84rem;font-weight:600;}
-.tarj .t1 span{font-size:.7rem;color:var(--tx3);font-family:"DM Mono",monospace;}
-.tarj p{margin:0;font-size:.75rem;color:var(--tx2);line-height:1.5;}
-
-
-/* ── DETALLE ── */
-.detalle{display:none;background:var(--n1);border-left:1px solid var(--n4);
-  overflow-y:auto;padding:var(--e3);flex-direction:column;gap:var(--e3);}
-/* El ancho del panel se declara AQUÍ y no en la rejilla, para que la columna
-   pueda medir cero cuando la plantilla no pinta ningún panel. Ver «.marco». */
-@container (min-width:880px){.detalle{display:flex;width:var(--det);}}
-.dc{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--e2);}
-.dc h3{margin:0 0 2px;font-size:.9rem;font-weight:700;letter-spacing:-.01em;}
-.dc .x{background:none;border:0;color:var(--tx3);cursor:pointer;font-size:1rem;line-height:1;padding:0;}
-.dip{font-family:"DM Mono",monospace;font-size:.71rem;color:var(--ac2);word-break:break-all;}
-.db{display:flex;flex-direction:column;gap:5px;min-width:0;}
-.db .h{font-size:.58rem;letter-spacing:.13em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
-.dp{display:flex;justify-content:space-between;gap:var(--e2);font-size:.74rem;padding:3px 0;border-bottom:1px solid var(--lnT);}
-.dp span{color:var(--tx3);}
-.dp b{font-weight:500;font-family:"DM Mono",monospace;font-size:.71rem;text-align:right;}
-.dsn{display:flex;flex-direction:column;gap:2px;}
-.dsn code{font-family:"DM Mono",monospace;font-size:.66rem;color:var(--tx2);background:var(--n2);
-  padding:3px 7px;border-radius:2px;word-break:break-all;}
-.dac{display:flex;flex-direction:column;gap:6px;margin-top:auto;padding-top:var(--e2);}
-.bt{padding:8px var(--e2);border-radius:var(--r2);font-family:inherit;font-size:.76rem;font-weight:600;
-  cursor:pointer;text-align:center;background:var(--n3);color:var(--tx);border:1px solid var(--n5);}
-.bt:hover{background:var(--n4);}
-.bt.pel{background:transparent;color:var(--fa);border-color:var(--fa);}
-.bt.pel:hover{background:var(--n3);}
-.dvw{display:none;flex-direction:column;gap:var(--e3);height:100%;}
-.dvw{display:flex;}
-
-/* ── TIRA DE ESTADO ── */
-.estado{display:none;align-items:center;gap:var(--e2);flex-wrap:wrap;padding:5px var(--e3);
-  background:var(--n1);border-top:1px solid var(--n4);
-  font-family:"DM Mono",monospace;font-size:.65rem;color:var(--tx3);}
-@container (min-width:880px){.estado{display:flex;}}
-.estado .it{display:flex;align-items:center;gap:5px;}
-.estado .pt{width:6px;height:6px;display:block;}
-.estado .pt.v{background:var(--ok);} .estado .pt.a{background:var(--av);}
-.estado b{color:var(--tx2);font-weight:400;}
-.estado .der{margin-left:auto;display:flex;gap:var(--e2);}
-
-/* ── PESTAÑAS ── */
-.tabs{display:flex;background:var(--n1);border-top:1px solid var(--n4);
-  padding:5px 2px max(6px,env(safe-area-inset-bottom));}
-@container (min-width:880px){.tabs{display:none;}}
-.tb{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;
-  padding:5px 2px;cursor:pointer;color:var(--tx3);font-size:.58rem;font-weight:600;position:relative;}
-.tb .ic{width:20px;height:20px;}
-.tb .pt{position:absolute;top:3px;right:calc(50% - 16px);width:5px;height:5px;background:var(--av);}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   LO QUE LA MAQUETA PINTABA CON «style="width:…%"»
-   ═══════════════════════════════════════════════════════════════════════
-
-   Cuatro piezas llevaban la medida en un estilo en línea: el medidor de
-   disco del rail, las barras del gráfico de actividad, la barra de progreso
-   de una subida y las de «Motivos». La CSP de este servidor es
-   «style-src 'self'» SIN 'unsafe-inline' (ADR-0060, cspBase), así que un
-   atributo style se descarta EN SILENCIO: la pieza saldría vacía y nada
-   fallaría a gritos.
-
-   Las cuatro pasan a <svg> con la medida en atributos numéricos —x, width,
-   height—, que NO son CSS y la política no toca. El color sigue viniendo de
-   una clase, como en el resto del archivo. El aspecto es el mismo; lo que
-   cambia es que ahora se ve.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* El medidor del rail: la maqueta usaba un flex de <i>; aquí es un SVG que
-   se estira al ancho del rail gracias a preserveAspectRatio="none".
-
-   ═══ LOS TRAMOS SE VEN, Y ANTES NO — reportado sobre captura el 2026-08-31.
-   Los tres tonos eran #30343c, #5b616b y #21242a sobre una pista de #16181b:
-   dos de ellos a menos de un 5 % de luminancia de la propia pista. La barra
-   salía en gris plano en las cinco páginas, y la de «otros» —que en este nodo
-   es el 35 % del disco— quedaba a un paso de ser invisible. Un medidor que
-   hay que adivinar no mide.
-
-   Se sube la escala entera y se le da JERARQUÍA, que es lo que la barra tiene
-   que contestar de un vistazo: lo de las CUENTAS va en el acento —es sobre lo
-   único que se puede actuar—, «otros» en un gris que se lee pero no compite,
-   y lo libre sigue siendo la pista. La alternancia entre cuentas se conserva;
-   lo que cambia es el escalón, no la idea.
-
-   VA EN EL CSS COMPARTIDO Y POR ESO ALCANZA A LAS CINCO PÁGINAS DE GOLPE: el
-   rail es uno solo (_marco.html) y su medidor no sabe en qué módulo está. */
-.seg{display:block;width:100%;height:6px;background:var(--n3);}
-.sg-a{fill:var(--ac);}
-.sg-b{fill:var(--ac2);}
-.sg-o{fill:var(--tx3);}
-/* Los cuadraditos de la leyenda son <u>, no SVG: ahí el color es lo único
-   que hay que decir, y una clase basta. Van EN EL MISMO TONO que su tramo —si
-   se quedaran atrás, la leyenda dejaría de nombrar lo que hay en la barra. */
-.disco .ley u.sg-a{background:var(--ac);}
-.disco .ley u.sg-b{background:var(--ac2);}
-.disco .ley u.sg-o{background:var(--tx3);}
-
-/* «Salir» cierra el rail, pegado abajo cuando no hay medidor de disco que
-   ocupe ese sitio. Reutiliza «.od» —el botón de la barra de órdenes— para
-   que no estrene una forma nueva. */
-.salir-rail{margin-top:var(--e1);padding:var(--e1) 0 var(--e0);}
-.disco + .salir-rail{margin-top:0;}
-.rail > .gr:last-of-type{margin-bottom:auto;}
-.salir-rail .od{width:100%;}
-
-/* LA GRÁFICA DE ACTIVIDAD — UNA LÍNEA POR PANEL, CON SU EJE DE VALORES.
-   Eran barras y no comunicaban: sin eje, la altura de una barra solo se puede
-   juzgar contra la de al lado. Se pasó a línea el 2026-08-31, y el 2026-09-10
-   llegó el eje que faltaba — con él, cada capa necesita su propio marco, y el
-   razonamiento entero está en grafica_seguridad.go.
-
-   «vector-effect:non-scaling-stroke» NO ES OPCIONAL AQUÍ. El SVG se estira al
-   ancho real con preserveAspectRatio="none", así que la transformación es
-   ANISÓTROPA: un trazo de 1,6 unidades saldría multiplicado por el factor
-   horizontal —once veces a 1100 px de ancho— y en vez de una línea se
-   dibujaría una franja. Con el efecto, el grosor se mide en píxeles de
-   pantalla y la deformación solo afecta a la POSICIÓN de los puntos, que es
-   justo lo que se quiere. Por el mismo motivo no hay círculos en los vértices:
-   un <circle> saldría convertido en una elipse tumbada.
-
-   LOS DOS ALTOS TIENEN QUE SER EL MISMO — el de «.grl» y el de «.gry» —, y por
-   eso van en la misma regla. El eje se dibuja en un SVG cuyo viewBox mide
-   46×112, exactamente lo que mide su caja, para que la escala sea 1:1 y el
-   texto no se deforme; si aquí se cambia el alto sin cambiar el viewBox de
-   grafica_seguridad.go (altoEje), los números dejan de coincidir con su
-   rejilla. */
-.grl,.gry{display:block;height:112px;}
-.grl{width:100%;}
-.gry{width:46px;}
-/* Los números del eje. Al ir en un SVG a escala 1:1, «px» aquí son unidades
-   del viewBox: 8 px de fuente son 8 unidades de las 112. */
-.gyt{fill:var(--tx3);font-family:"DM Mono",monospace;font-size:9px;
-  text-anchor:end;font-variant-numeric:tabular-nums;}
-/* La rejilla es RECESIVA: está para poder leer una altura, no para verse. Va
-   en el tono de las líneas de tabla, que es el más tenue de la paleta. */
-.grl .grj{stroke:var(--n4);stroke-width:1;}
-/* LA SERIE QUE SE LEE: un trazo limpio, sin relleno que lo emborrone. */
-.grl .gl{fill:none;stroke:var(--tx2);stroke-width:1.6;
-  stroke-linejoin:round;stroke-linecap:round;}
-/* LA CAPA DE CONTEXTO: lo que el sensor vio pasar. Se dibuja como ÁREA con un
-   trazo más fino encima, y esa es toda su distinción respecto del panel de
-   abajo — que es un trazo suelto.
-
-   ANTES ERA UNA LÍNEA DISCONTINUA, y tenía sentido mientras las dos capas
-   compartían marco: había que separarlas sin gastar color, porque el único
-   color de esta pantalla es el ámbar de un ESTADO. Con un panel por serie la
-   separación la da el propio marco, y una discontinua sobre su relleno se lee
-   peor que una continua. Lo que no cambia es el criterio de fondo: las dos
-   capas se distinguen por FORMA —área contra trazo— y no por tono, que es lo
-   único que sigue funcionando para quien no distingue colores y en una captura
-   en blanco y negro.
-
-   NO LLEVA COLOR PROPIO por lo mismo de siempre: gastarlo aquí se lo quitaría
-   al que de verdad avisa. */
-.grl .gp{fill:none;stroke:var(--tx3);stroke-width:1.3;
-  stroke-linejoin:round;stroke-linecap:round;}
-.grl .ga{fill:var(--n4);}
-/* La zona sensible del día. «transparent» y no «none»: con fill:none el <rect>
-   deja de recibir el puntero y el <title> no llega a salir nunca. */
-.grl .gz{fill:transparent;}
-
-/* La barra de progreso de una subida a medias. */
-.prog{display:block;width:100%;height:5px;background:var(--n3);}
+/* ═════ RESUMEN ═════ */
+/* En el teléfono el disco ocupa la fila entera: «342.1 GB» no cabe en un tercio. */
+.cif{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--e2);}
+.cif > .cf:first-child{grid-column:1 / -1;}
+.cf{display:flex; flex-direction:column; gap:var(--e1); padding:var(--e4) var(--e3); background:var(--s2); border-radius:var(--r-pieza); min-width:0;
+  box-shadow:var(--brillo); transition:background-color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
+.cf:active{transform:scale(.97);}
+.cf .n{font-family:var(--f-dat); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+.cf .r{display:flex; align-items:center; gap:6px; font-size:var(--f2); color:var(--tx2);}
+.cf.mk{background:var(--avT);}
+.cf.mk .n{color:var(--av);}
+.metricas{display:grid; grid-template-columns:minmax(0,1fr); background:var(--s1); border-radius:var(--r-pozo);}
+.pl{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); min-width:0;}
+.metricas .pl + .pl{box-shadow:inset 0 1px 0 var(--lnT);}
+.pl .q{display:flex; justify-content:space-between; align-items:center; gap:var(--e2); font-size:var(--f2); font-weight:600; color:var(--tx2);}
+.pl .n{font-family:var(--f-dat); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+.pl .d{font-size:var(--f2); color:var(--tx3);}
+/* D12: gráfica de bala de la temperatura (30–90 °C; blando 60, aviso 70, fallo 80). */
+.bala{display:block; width:100%; height:12px; border-radius:3px; overflow:hidden;}
+.bala .b0{fill:var(--s3);} .bala .b1{fill:color-mix(in oklab, var(--s3) 55%, var(--ln));}
+.bala .b2{fill:color-mix(in oklab, var(--s3) 62%, var(--av));} .bala .b3{fill:color-mix(in oklab, var(--s3) 55%, var(--fa));}
+.bala .med{fill:var(--tx);}
+/* El eje NO va repartido a partes iguales: 30→60 es la mitad de la escala. */
+.bala-eje{position:relative; height:16px; margin-top:4px; font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+.bala-eje span{position:absolute; top:0; transform:translateX(-50%); white-space:nowrap;}
+.bala-eje .e0{left:0; transform:none;} .bala-eje .e60{left:50%;} .bala-eje .e70{left:66.667%;}
+.bala-eje .e80{left:83.333%;} .bala-eje .e90{left:100%; transform:translateX(-100%);}
+/* D12: minigráfica en vivo. Los puntos los escribe estado.js. */
+.spark{display:block; width:100%; height:40px;}
+/* Sin ninguna muestra todavía (o con la cifra «no disponible») no se reserva el hueco. */
+.spark:has(.sp-l:not([points])){display:none;}
+.spark .sp-a{fill:var(--acT);}
+.spark .sp-l{fill:none; stroke:var(--ac); stroke-width:1.75; vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round;}
+.tarj{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e3) var(--e4); background:var(--s1); border-radius:var(--r-pozo);}
+.tarj .t1{display:flex; align-items:center; justify-content:space-between; gap:var(--e2) var(--e3); flex-wrap:wrap;}
+.tarj .t1 b{font-size:var(--f3); font-weight:600; overflow-wrap:anywhere;}
+.tarj .t1 > span:not(.pls):not(.p){font-family:var(--f-dat); font-size:var(--f2); color:var(--tx2);}
+.tarj p{margin:0; font-size:var(--f2); color:var(--tx2);}
+.prog{display:block; width:100%; height:6px; border-radius:var(--rc); background:var(--s3); overflow:hidden;}
 .prog .v{fill:var(--ac);}
 
-/* Las barras de «Motivos». */
-.mb{display:block;width:100%;height:6px;background:var(--n3);}
-.mb .v{fill:var(--n5);}
-
-
-/* El rail lo pintan enlaces, no <label> como en la maqueta: aquí navegar es
-   navegar. «.ni» ya trae display:flex y color, así que solo hace falta
-   quitarle el subrayado que un <a> trae de fábrica — y lo mismo en las
-   pestañas y en las migas. */
-.ni,.tb{text-decoration:none;}
-
-/* La miga de pan de Archivos, en la barra superior. */
-.miga a{color:var(--tx3);}
-.miga a:hover{color:var(--tx);}
-.miga a:last-child{color:var(--tx);font-weight:600;}
-
-/* Un mensaje de resultado —«Cuenta creada», «no se pudo mover»— por encima
-   del contenido del módulo. Mismo lenguaje que «.tarj». */
-.msg{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ok);
-  border-radius:var(--r2);padding:var(--e2) var(--e3);font-size:.78rem;color:var(--tx2);line-height:1.5;}
-.msg.mal{border-left-color:var(--fa);color:var(--fa);}
-
-/* Un módulo vacío lo dice, en vez de dejar el hueco en blanco. */
-.vacio{padding:var(--e5) var(--e3);text-align:center;color:var(--tx3);font-size:.8rem;}
-
-/* La nota de una sección: una línea que dice QUÉ es la tabla de debajo. */
-.nota{margin:0;font-size:.72rem;color:var(--tx3);line-height:1.5;}
-.nota b,.nota strong{color:var(--tx2);font-weight:600;}
-
-/* «Ver los rechazos uno a uno» y la evidencia de un origen: plegables sin
-   una línea de JavaScript, igual que los menús de ADR-0027. */
-details.plg > summary{cursor:pointer;color:var(--tx3);font-size:.72rem;
-  padding:var(--e1) 0;list-style:none;}
+/* ═════ TABLAS — tarjeta en el teléfono, rejilla cuando el panel es ancho ═════ */
+.th{display:none;}
+.fls{display:flex; flex-direction:column;}
+.fl{display:grid; grid-template-columns:minmax(0,1fr); gap:6px; padding:var(--e3) 0; min-width:0;}
+.fls > .fl + .fl{box-shadow:inset 0 1px 0 var(--lnT);}
+.fl > *{min-width:0;}
+.fl.sel{background:var(--acT); border-radius:var(--r-pozo); padding-inline:var(--e3);}
+.cl{display:grid; grid-template-columns:minmax(0,1fr); gap:2px var(--e2); align-items:baseline; min-width:0;}
+.cl:has(> .et){grid-template-columns:5.5rem minmax(0,1fr);}
+.cl:has(> .et) > :not(.et){grid-column:2;}
+.cl > .et{grid-column:1; font-size:var(--f1); color:var(--tx3);}
+.cl .ip{font-family:var(--f-dat); font-size:var(--f2); color:var(--tx); overflow-wrap:anywhere;}
+.cl a.ip{color:var(--ac);}
+.cl .op{font-size:var(--f2); color:var(--tx2); overflow-wrap:anywhere;}
+.cl .op i{color:var(--tx3);}
+.ct2{font-family:var(--f-dat); font-size:var(--f2); color:var(--tx2); overflow-wrap:anywhere;}
+.ct2 small{color:var(--tx3); font-size:var(--f1);}
+.ct2 .cp{white-space:nowrap;}
+.ct2 .cp + .cp::before{content:"· "; color:var(--tx3);}
+.ct2 .lapso{white-space:normal;}
+.vacio{padding:var(--e5) var(--e3); text-align:center; color:var(--tx3); font-size:var(--f2);}
+.vacio p{margin:0 0 var(--e1);}
+.nota{margin:0; font-size:var(--f2); color:var(--tx3); line-height:1.5;}
+.nota b, .nota strong{color:var(--tx2); font-weight:600;}
+.notas{display:flex; flex-direction:column; gap:var(--e1); font-size:var(--f2); color:var(--tx3);}
+.notas .rt{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase;}
+.notas b{color:var(--tx2); font-weight:600;}
+.binario{margin:0; padding:var(--e3) var(--e4); background:var(--s2); border-radius:var(--r-pieza); font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);
+  display:flex; flex-wrap:wrap; gap:2px 0;}
+.binario b{font-weight:500; color:var(--tx2); white-space:nowrap;}
+.binario b + b::before{content:"·"; padding:0 .5em; color:var(--tx3);}
+details.plg > summary{display:flex; align-items:center; min-height:36px; cursor:pointer; color:var(--tx2); font-size:var(--f2); list-style:none;}
 details.plg > summary::-webkit-details-marker{display:none;}
-details.plg > summary::marker{content:"";}
-details.plg > summary::before{content:"▸ ";color:var(--tx3);}
-details.plg[open] > summary::before{content:"▾ ";}
-details.plg > summary:hover{color:var(--tx);}
-
-/* El menú de tres puntos de una fila de Archivos. Cuelga de la fila, que es
-   quien se posiciona, para que no se salga por el borde derecho. */
-.menu-fila{position:relative;}
-.menu-fila > summary{list-style:none;cursor:pointer;}
-.menu-fila > summary::-webkit-details-marker{display:none;}
-.menu-fila > summary::marker{content:"";}
-.menu-panel{position:absolute;right:0;top:calc(100% + 4px);z-index:30;min-width:13rem;
-  max-width:calc(100vw - 2rem);background:var(--n2);border:1px solid var(--n4);
-  border-radius:var(--r2);box-shadow:0 8px 24px #000a;padding:var(--e2);
-  display:flex;flex-direction:column;gap:var(--e1);text-align:left;}
-.menu-panel form{display:flex;flex-direction:column;gap:var(--e1);}
-.menu-panel .bt{width:100%;}
-
-/* El desplegable de la barra de órdenes —«Subir», «Nueva carpeta»,
-   «Filtrar», «Crear cuenta»— se ancla a la barra y no a su botón: a 390 px
-   un panel colgado de un botón del extremo izquierdo se salía de pantalla. */
-.ordenes{position:relative;}
-.ordenes > details{position:static;}
-.ordenes > details > .menu-panel{left:0;right:auto;top:calc(100% + 6px);min-width:16rem;}
-.ordenes > details > summary{list-style:none;}
-.ordenes > details > summary::-webkit-details-marker{display:none;}
-.ordenes > details > summary::marker{content:"";}
-
-/* Los filtros de Seguridad, dentro de su panel. */
-.filtros{display:grid;grid-template-columns:1fr;gap:var(--e2);}
-@container (min-width:620px){.filtros{grid-template-columns:repeat(3,1fr);}}
-.filtros > div{min-width:0;}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   LAS PÁGINAS DE UNA SOLA TAREA — acceso, visor, mover, borrar, baja,
-   bloquear.
-   ═══════════════════════════════════════════════════════════════════════
-
-   NO LLEVAN RAIL, y es deliberado: son pantallas de un solo gesto
-   —entrar, confirmar, elegir un destino, mirar una foto— y una barra de
-   navegación alrededor de una tarea que ya está centrada es ruido. La
-   maqueta no las cubría; se escriben aquí con SU MISMO vocabulario, para
-   que no se lean como de otro producto.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-.sola{min-height:100dvh;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;padding:var(--e4) var(--e2);gap:var(--e3);}
-.tarjeta{width:100%;max-width:23rem;background:var(--n1);border:1px solid var(--n4);
-  border-radius:var(--r3);padding:var(--e4);display:flex;flex-direction:column;gap:var(--e2);}
-.tarjeta.ancha{max-width:36rem;}
-.tarjeta h1{margin:0;font-size:1.28rem;font-weight:700;letter-spacing:-.02em;}
-.tarjeta > p{margin:0;font-size:.8rem;color:var(--tx2);line-height:1.55;}
-
-/* La marca del acceso: el nombre y nada más. Tenía además un cuadrado con un
-   logotipo inventado y un rótulo «Servidor de archivos»; los dos se retiran
-   el 2026-08-26. Se conserva la clase porque sigue habiendo algo que colocar
-   —el nombre— y porque este bloque es el que decide cuánto aire hay entre él
-   y la primera casilla. */
-.marca-sola{display:flex;flex-direction:column;align-items:center;gap:var(--e1);
-  margin-bottom:var(--e2);}
-.marca-sola b{font-size:1.05rem;font-weight:700;letter-spacing:-.01em;}
-
-/* EL FORMULARIO DE ACCESO: columna con aire y el botón CENTRADO.
-   El <form> era un bloque corriente, así que «Entrar» caía pegado al campo
-   de la contraseña y alineado a la izquierda, como si fuera un renglón más
-   del formulario en vez de su conclusión. Reportado sobre captura el
-   2026-08-26. El hueco de arriba es el doble que el que separa las casillas
-   entre sí: es lo que dice que ahí se termina de escribir y se pulsa.
-   El ancho mínimo evita que «Entrar» quede como una pastilla diminuta en
-   mitad de una tarjeta de 23 rem. */
-.acc{display:flex;flex-direction:column;gap:var(--e2);}
-.acc .bt{align-self:center;margin-top:var(--e2);min-width:9rem;}
-
-label.cmp{display:flex;flex-direction:column;gap:var(--e0);
-  font-size:.6rem;letter-spacing:.11em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
-input[type=text],input[type=password],input[type=file],select{
-  width:100%;background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
-  padding:9px var(--e2);color:var(--tx);font-family:inherit;font-size:.85rem;outline:0;}
-input[type=text]:focus,input[type=password]:focus,select:focus{
-  border-color:var(--acB);background:var(--n3);}
-input::placeholder{color:var(--tx3);}
-
-/* Un aviso: mismo lenguaje que «.tarj» del panel, con el color del suceso. */
-.aviso{background:var(--n2);border:1px solid var(--n4);border-left:2px solid var(--ac);
-  border-radius:var(--r2);padding:var(--e2) var(--e3);font-size:.78rem;color:var(--tx2);line-height:1.5;}
-.aviso.mal{border-left-color:var(--fa);color:var(--fa);}
-.aviso.bien{border-left-color:var(--ok);color:var(--ok);}
-.aviso.ojo{border-left-color:var(--av);}
-
-/* La ruta que hay que leer ANTES de destruir algo (RF-18): centrada, en
-   monoespaciada y con el peso suficiente para que no se lea de pasada. */
-.ruta-grande{font-family:"DM Mono",monospace;font-size:.95rem;color:var(--tx);
-  word-break:break-all;text-align:center;line-height:1.45;
-  background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);padding:var(--e2);}
-
-.enlace{font-size:.76rem;color:var(--tx3);text-align:center;}
-.enlace a{color:var(--ac2);}
-.enlace a:hover{text-decoration:underline;}
-
-/* Lista de carpetas del navegador de RF-17 */
-.carpetas{list-style:none;margin:0;padding:0;border:1px solid var(--n4);
-  border-radius:var(--r2);max-height:45vh;overflow-y:auto;background:var(--n2);}
-.carpetas li + li{border-top:1px solid var(--lnT);}
-.carpetas a{display:flex;align-items:center;gap:var(--e2);padding:9px var(--e2);
-  font-size:.82rem;color:var(--tx2);}
-.carpetas a:hover{background:var(--n3);color:var(--tx);}
-.carpetas .vacia{display:block;padding:var(--e3);font-size:.76rem;color:var(--tx3);text-align:center;}
-.migas-sola{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:.74rem;color:var(--tx3);}
-.migas-sola a{color:var(--ac2);}
-.migas-sola a + a::before{content:"/";color:var(--tx3);margin-right:4px;}
-
-.fila-bt{display:flex;flex-wrap:wrap;gap:var(--e1);}
-.fila-bt > *{flex:1 1 auto;}
-
-/* ── El visor (RF-25) ── */
-.visor-barra{display:flex;align-items:center;gap:var(--e2);padding:var(--e1) var(--e2);
-  background:var(--n1);border-bottom:1px solid var(--n4);position:sticky;top:0;z-index:10;}
-.visor-barra .nom{font-size:.82rem;font-weight:600;min-width:0;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;}
-.visor-barra .bt{flex:0 0 auto;padding:6px var(--e2);}
-.visor{display:flex;align-items:center;justify-content:center;padding:var(--e2);
-  min-height:calc(100dvh - 46px);}
-.visor > *{max-width:100%;}
-.visor img,.visor video{max-height:calc(100dvh - 80px);object-fit:contain;}
-.visor audio{width:min(100%,30rem);}
-.visor object,.visor iframe{width:100%;height:calc(100dvh - 80px);
-  border:1px solid var(--n4);border-radius:var(--r2);background:var(--n1);}
-
-/* Pasar de foto sin volver al listado: dos círculos fijos bajo el pulgar. */
-.paso{position:fixed;top:50%;transform:translateY(-50%);z-index:20;
-  width:3rem;height:3rem;display:grid;place-items:center;
-  font-size:1.4rem;line-height:1;color:var(--tx);
-  background:var(--n2);border:1px solid var(--n4);border-radius:50%;}
-.paso:hover{background:var(--n3);border-color:var(--acB);}
-.paso-anterior{left:calc(var(--e1) + env(safe-area-inset-left,0px));}
-.paso-siguiente{right:calc(var(--e1) + env(safe-area-inset-right,0px));}
-
-@media(prefers-reduced-motion:reduce){*{transition:none!important;}}
-:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PIEZAS QUE NO ESTÁN EN LA MAQUETA PORQUE LA MAQUETA NO LAS TENÍA
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* LA ACCIÓN RECOMENDADA de un indicador de /estado — «→ mirar dmesg y actuar
-   antes de escribir nada más». Va SIEMPRE en el HTML aunque esté vacía, para
-   que el flujo en vivo pueda escribir en ella sin crear ni destruir nodos, y
-   es el CSS quien la esconde mientras no diga nada. */
-.accion{display:block;margin-top:var(--e0);font-size:.7rem;color:var(--av);line-height:1.45;}
+details.plg > summary::before{content:""; width:7px; height:7px; margin-right:var(--e2); border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor;
+  transform:rotate(-45deg); transition:transform var(--d2) var(--c-std);}
+details.plg[open] > summary::before{transform:rotate(45deg);}
+.dsn{display:flex; flex-direction:column; gap:4px;}
+.dsn code{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx2); background:var(--s1); padding:4px 8px; border-radius:var(--r-dato); overflow-wrap:anywhere;}
+.msg, .aviso{margin:0; padding:var(--e3) var(--e4); background:var(--s2); border-radius:var(--r-pieza); font-size:var(--f2); color:var(--tx2); line-height:1.5;
+  box-shadow:inset 3px 0 0 var(--ok);}
+.msg.mal, .aviso.mal{box-shadow:inset 3px 0 0 var(--fa); color:var(--fa); background:var(--faT);}
+.aviso{box-shadow:inset 3px 0 0 var(--ac);}
+.aviso.bien{box-shadow:inset 3px 0 0 var(--ok); color:var(--ok);}
+.aviso.ojo{box-shadow:inset 3px 0 0 var(--av);}
+.accion{display:block; margin-top:var(--e1); font-family:var(--f-txt); font-size:var(--f1); color:var(--av); line-height:1.45;}
 .accion:empty{display:none;}
-.accion::before{content:"→ ";}
 
-/* LA LISTA DE SUBIDAS EN CURSO (subida.js). Cada fila es nombre · estado ·
-   acciones; el guion no crea clases, así que se estila por estructura. */
-#progreso{list-style:none;margin:var(--e2) 0 0;padding:0;display:flex;
-  flex-direction:column;gap:var(--e0);}
-#progreso li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--e2);
-  align-items:center;padding:var(--e1) 0;border-bottom:1px solid var(--lnT);font-size:.74rem;}
-#progreso li span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#progreso button{background:none;border:1px solid var(--n4);border-radius:var(--r1);
-  color:var(--tx2);font-family:inherit;font-size:.68rem;padding:2px 7px;cursor:pointer;}
-#progreso button:hover{background:var(--n3);color:var(--tx);}
-#zona-subida{display:flex;flex-direction:column;gap:var(--e2);}
+/* ═════ ESTADO: cada fila es nombre · valor · veredicto ═════ */
+.t-est .fl{grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"nom ver" "val val"; align-items:center; gap:4px var(--e3);}
+.t-est .fl > .cl:nth-child(1){grid-area:nom;}
+.t-est .fl > .cl:nth-child(2){grid-area:val;}
+.t-est .fl > .cl:nth-child(3){grid-area:ver; justify-self:end;}
+.t-est .cl > .et{display:none;}
+.t-est .cl:has(> .et){grid-template-columns:minmax(0,1fr);}
+.t-est .cl:has(> .et) > :not(.et){grid-column:1;}
+.t-est .cl > a{font-size:var(--f3); font-weight:500; color:var(--tx);}
+.t-est .cifra{font-size:var(--f3); color:var(--tx);}
+.t-est .spark{height:28px; margin-top:4px;}
+.t-est .bala{height:8px; margin-top:6px;}
 
-/* El visor cuando el navegador no puede con el formato: la tarjeta centrada
-   y nada más, que es lo que RF-25 pide al pie de la letra. */
-.no-compatible{text-align:center;}
+/* ═════ ARCHIVOS ═════ */
+.t-arc .fl{grid-template-columns:auto auto minmax(0,1fr) auto; grid-template-areas:"nom nom nom menu" "tam fec . menu"; column-gap:var(--e2); row-gap:0; padding:var(--e2) 0; align-items:center;}
+.t-arc .fl > .cl:nth-child(1){grid-area:nom;}
+.t-arc .fl > .cl:nth-child(2){grid-area:tam; padding-left:calc(40px + var(--e3)); margin-top:-6px;}
+.t-arc .fl > .cl:nth-child(3){grid-area:fec; margin-top:-6px;}
+.t-arc .fl > .cl:nth-child(4){grid-area:menu;}
+.t-arc .cl > .et{display:none;}
+.t-arc .cl:has(> .et){grid-template-columns:minmax(0,1fr);}
+.t-arc .cl:has(> .et) > :not(.et){grid-column:1;}
+.t-arc .ct2{color:var(--tx3); white-space:nowrap;}
+.t-arc .fl > .cl:nth-child(3) .ct2::before{content:"· ";}
+.nomb{display:flex; align-items:center; gap:var(--e3); min-width:0; min-height:44px;}
+.nomb .txt{font-size:var(--f3); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.ico-f{width:40px; height:40px; flex:0 0 40px; border-radius:10px; display:grid; place-items:center; background:var(--s2); color:var(--tx2); font-weight:700; object-fit:cover;}
+.ico-f.ext{font-family:var(--f-dat); font-size:var(--f1); font-weight:500; text-transform:uppercase;}
+.menu-p{width:44px; height:44px; display:grid; place-items:center; border-radius:var(--rc); color:var(--tx2); cursor:pointer; font-size:20px; line-height:1;
+  list-style:none; transition:background-color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
+.menu-p::-webkit-details-marker{display:none;}
+.menu-p:active{background:var(--s3); transform:scale(.94);}
+#progreso{list-style:none; margin:var(--e1) 0 0; padding:0; display:flex; flex-direction:column; gap:var(--e2);}
+#progreso li{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--e2); align-items:center; padding:var(--e3); background:var(--s1); border-radius:var(--r-pieza); font-size:var(--f2);}
+#progreso li span:first-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+#progreso button{min-height:44px; padding:0 var(--e4); border:0; border-radius:var(--rc); background:var(--s3); color:var(--tx); font-size:var(--f2); font-weight:600; cursor:pointer;}
+#zona-subida{display:flex; flex-direction:column; gap:var(--e3);}
 
-/* ═══════════════════════════════════════════════════════════════════════
-   LA CINTA EN VIVO DE /seguridad — ver cinta_seguridad.go.
-   ═══════════════════════════════════════════════════════════════════════
+/* ═════ MENÚS Y HOJAS (D14): hoja que sube en el teléfono, menú que cae en el navegador ═════ */
+.menu{position:relative;}
+.menu > summary{list-style:none; cursor:pointer;}
+.menu > summary::-webkit-details-marker{display:none;}
+.menu[open]::before{content:""; position:fixed; inset:0; z-index:40; background:rgb(0 0 0 / .45); animation:fundido var(--d3) var(--c-ent);}
+.menu-panel{position:absolute; z-index:41; display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); background:var(--s2); text-align:left;
+  border-radius:28px; box-shadow:0 0 0 1px var(--ln), 0 18px 48px rgb(0 0 0 / .55);}
+.menu[open] > .menu-panel{animation:hoja-in var(--d4) var(--c-ent) both;}
+.menu-panel form{display:flex; flex-direction:column; gap:var(--e2);}
+.menu-panel .bt{width:100%; min-height:48px;}
+.ordenes .menu-panel{left:var(--e3); right:var(--e3); bottom:calc(100% + var(--e2)); max-height:70dvh; overflow-y:auto;}
+.menu-fila .menu-panel{position:fixed; left:var(--e2); right:var(--e2); bottom:calc(var(--inset-inf) * .5 + var(--e2)); max-height:80dvh; overflow-y:auto;
+  border-radius:32px; padding:var(--e3) var(--e4) var(--e4);}
+.menu-fila .menu-panel::before, .detalle::before{content:""; flex:0 0 auto; width:36px; height:5px; margin-bottom:var(--e1); align-self:center; border-radius:var(--rc); background:var(--ln);}
 
-   UNA SOLA LÍNEA, Y DEL ALTO DEL BOTÓN. «flex-wrap:nowrap» no es un descuido:
-   con «wrap» —que es lo que se probó primero— el piloto y el texto se partían
-   en dos renglones, la fila crecía y dejaba de leerse como una banda. Con
-   «nowrap» el piloto manda a la izquierda, la pista se come el resto, y el
-   aviso de contención —cuando lo hay— ESTRECHA la pista en vez de empujar la
-   fila hacia abajo. «min-height» iguala el alto con «.fbtn» para que los tres
-   objetos de la fila compartan línea de base.
+/* ═════ DETALLE: hoja en el teléfono, cajón en el navegador ═════ */
+.velo{position:fixed; inset:0; z-index:48; background:rgb(0 0 0 / .45); animation:fundido var(--d3) var(--c-ent);}
+.detalle{position:fixed; z-index:50; left:var(--e2); right:var(--e2); bottom:calc(var(--inset-inf) * .5 + var(--e2)); max-height:80dvh; overflow-y:auto;
+  display:flex; flex-direction:column; gap:var(--e4); padding:var(--e3) var(--e4) var(--e5); background:var(--s2); border-radius:32px;
+  box-shadow:0 0 0 1px var(--ln), 0 24px 64px rgb(0 0 0 / .6); animation:hoja-in var(--d4) var(--c-ent) both;}
+.dvw{display:flex; flex-direction:column; gap:var(--e4);}
+.dc{display:flex; align-items:flex-start; justify-content:space-between; gap:var(--e3);}
+.dc h3{margin:0 0 2px; font-size:var(--f5); font-weight:700; font-stretch:108%;}
+.dip{font-family:var(--f-dat); font-size:var(--f2); color:var(--ac); overflow-wrap:anywhere;}
+.x{flex:0 0 44px; width:44px; height:44px; display:grid; place-items:center; border-radius:var(--rc); background:var(--s3); color:var(--tx); font-size:16px;}
+.db{display:flex; flex-direction:column; gap:var(--e1); min-width:0;}
+.db .h{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3);}
+.dp{display:flex; justify-content:space-between; gap:var(--e3); padding:6px 0; font-size:var(--f2); box-shadow:inset 0 -1px 0 var(--lnT);}
+.dp span{color:var(--tx3);}
+.dp b{font-family:var(--f-dat); font-weight:500; text-align:right; overflow-wrap:anywhere;}
+.dac{display:flex; flex-direction:column; gap:var(--e2); margin-top:auto;}
+.dac form{display:flex; flex-direction:column;}
 
-   «flex:1 1 18rem» ES LO QUE DA LAS DOS COMPOSICIONES CON UNA REGLA: en el
-   escritorio cabe detrás de «Filtrar» y su rótulo; en el teléfono, donde tras
-   esos dos sobran unos 140 px, la base de 18rem no entra y «.ordenes» —que ya
-   envuelve— la baja sola a su propio renglón, entera. Sin una media query
-   nueva y sin una segunda plantilla. */
-.marq{flex:1 1 18rem;min-width:0;display:flex;flex-wrap:nowrap;align-items:center;
-  gap:var(--e1);min-height:28px;margin-left:var(--e2);
-  background:var(--n2);border:1px solid var(--n4);border-radius:var(--r1);
-  padding:2px 3px 2px 4px;}
+/* ═════ CONTROLES (D5, D10, D16, D18) ═════ */
+.bt{display:inline-flex; align-items:center; justify-content:center; gap:var(--e2); min-height:44px; padding:0 var(--e5); border:0; border-radius:var(--rc);
+  background:var(--s3); color:var(--tx); font-size:var(--f3,1rem); font-weight:600; cursor:pointer; white-space:nowrap; list-style:none;
+  transition:background-color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
+.bt::-webkit-details-marker{display:none;}
+.bt:active{transform:scale(.97);}
+.bt.pel{background:var(--faT); color:var(--fa);}
+.cmp{display:flex; flex-direction:column; gap:6px; font-size:var(--f2,.875rem); font-weight:600; color:var(--tx2);}
+input[type=text], input[type=password], input[type=file], select, textarea{width:100%; min-height:44px; padding:0 var(--e3); background:var(--s1);
+  border:1px solid var(--ctl); border-radius:var(--r-pieza); color:var(--tx); font-size:1rem; outline:0;}
+input[type=file]{padding:6px; color:var(--tx3);}
+input[type=file]::file-selector-button{border:0; border-radius:var(--rc); background:var(--s3); color:var(--tx); font:inherit; font-weight:600; padding:8px 16px; margin-right:var(--e3); cursor:pointer;}
+input::placeholder{color:var(--tx3);}
+input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0 0 3px var(--acT);}
+.filtros{display:flex; flex-direction:column; gap:var(--e3);}
+.filtros > div{display:flex; flex-direction:column; gap:6px; min-width:0;}
+.fila-bt{display:flex; flex-wrap:wrap; gap:var(--e2);}
+.fila-bt > *{flex:1 1 auto;}
+.fila-bt > form{display:flex;}
+.fila-bt > form > .bt{flex:1 1 auto;}
 
-/* EL PILOTO — lo que sustituye a la pastilla «#latido» de la línea del título.
-   Es «flex:0 0 auto» y «nowrap» a propósito: un indicador de estado que se
-   recorta o que se desliza fuera de la pantalla es peor que no tenerlo. */
-.pil{flex:0 0 auto;display:flex;align-items:center;gap:5px;padding:2px 7px;
-  border-radius:var(--r1);border:1px solid currentColor;font-size:.6rem;font-weight:600;
-  letter-spacing:.04em;text-transform:uppercase;line-height:1.6;white-space:nowrap;}
-.pil i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 6px;}
-.pil .pil-hr{font-family:"DM Mono",monospace;font-weight:400;letter-spacing:0;
-  text-transform:none;opacity:.85;font-variant-numeric:tabular-nums;}
-/* Los cuatro estados. «foto» es el que escribe el servidor y el único que se
-   ve sin JavaScript; los otros tres los pone seguridad.js. */
-.pil-foto{color:var(--nada);}
-.pil-vivo{color:var(--ok);}
-.pil-aviso{color:var(--av);}
-.pil-corte{color:var(--fa);}
-/* El punto late mientras llegan marcos. Es la única señal que no depende de
-   leer: si deja de latir, algo pasó. Se apaga con «prefers-reduced-motion»
-   como todo lo demás. */
-@keyframes latir{0%,100%{opacity:1}50%{opacity:.35}}
+/* ═════ SEGURIDAD ═════ */
+/* La cinta en vivo (ADR-0090): piloto fijo, pista que corre, se para al posar. */
+.marq{display:flex; flex-wrap:nowrap; align-items:center; gap:var(--e2); min-height:40px; padding:4px 4px 4px 6px; background:var(--s0);
+  border-radius:var(--rc); box-shadow:inset 0 0 0 1px var(--lnT), 0 6px 16px rgb(0 0 0 / .35); overflow:hidden;}
+/* LA CINTA SE QUEDA A LA VISTA AL DESPLAZARSE: lleva el aviso de «la contención
+   cambió», que sirve justo cuando se está leyendo la cronología. En el teléfono
+   se pega bajo la barra superior; en el navegador, arriba del panel. */
+.vw > .marq{position:sticky; top:calc(var(--alto-f1) + var(--e2)); z-index:19;}
+.pil{flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 8px; border-radius:var(--rc); font-size:var(--f1); font-weight:600;
+  white-space:nowrap; background:var(--s3); color:var(--tx3);}
+.pil i{width:7px; height:7px; border-radius:50%; background:currentColor; flex:0 0 7px;}
+.pil .pil-hr{font-family:var(--f-dat); font-weight:400; color:var(--tx2); font-variant-numeric:tabular-nums;}
+.pil-vivo{color:var(--ok); background:var(--okT);}
 .pil-vivo i{animation:latir 2s ease-in-out infinite;}
-
-/* EL AVISO DE CONTENCIÓN CAMBIADA, mudado desde el pie de su sección.
-   «[hidden]» VA EXPLÍCITO Y NO ES REDUNDANTE: el atributo del HTML se aplica
-   con un «display:none» de la hoja del navegador, y CUALQUIER regla de autor
-   que fije «display» lo pisa. Sin esta línea el aviso nacía VISIBLE en toda
-   carga —diciendo «recargue» a quien acababa de recargar—, y no lo cazó
-   ninguna prueba: lo cazó mirar la pantalla. */
-.marq-nvo{flex:0 0 auto;display:flex;align-items:center;gap:5px;font-size:.62rem;
-  color:var(--av);padding:2px 7px;border:1px solid var(--av);border-radius:var(--r1);
-  white-space:nowrap;}
+.pil-aviso{color:var(--av); background:var(--avT);}
+.pil-corte{color:var(--fa); background:var(--faT);}
+.marq-nvo{flex:0 0 auto; display:inline-flex; align-items:center; padding:3px 10px; border-radius:var(--rc); font-size:var(--f1); font-weight:600;
+  color:var(--av); background:var(--avT); white-space:nowrap;}
 .marq-nvo[hidden]{display:none;}
-
-.marq-caja{flex:1 1 auto;min-width:0;overflow:hidden;}
-
-/* LA PISTA LLEVA EL TEXTO DOS VECES y se anima de «translateX(0)» a
-   «translateX(-50%)»: la distancia recorrida es el ancho de UNA copia, o sea
-   el del texto, y no el de la ventana. De ahí que el bucle no tenga hueco y
-   que la velocidad no cambie entre un teléfono y un monitor.
-
-   LA DURACIÓN VIENE EN UNA CLASE QUE ESCRIBE GO —«v1…v6»— Y NUNCA EN UN
-   ESTILO EN LÍNEA: la CSP es «style-src 'self'» sin 'unsafe-inline'
-   (ADR-0060), así que un «style="animation-duration:42s"» se descartaría en
-   silencio y la cinta se quedaría quieta sin que nada fallara a gritos. Mismo
-   mecanismo que los cubos «b0…b5» del mapa y que el medidor de disco. */
-.marq-pista{display:flex;width:max-content;animation-name:correr;
-  animation-timing-function:linear;animation-iteration-count:infinite;}
-@keyframes correr{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.marq-caja{flex:1 1 auto; min-width:0; overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);}
+.marq-pista{display:flex; width:max-content; animation-name:correr; animation-timing-function:linear; animation-iteration-count:infinite;}
+.marq:hover .marq-pista, .marq:focus-within .marq-pista{animation-play-state:paused;}
+@keyframes correr{from{transform:translateX(0);} to{transform:translateX(-50%);}}
 .v1{animation-duration:20s;} .v2{animation-duration:30s;} .v3{animation-duration:42s;}
 .v4{animation-duration:56s;} .v5{animation-duration:72s;} .v6{animation-duration:92s;}
-
-/* SE DETIENE AL POSAR EL CURSOR Y AL ENFOCAR CON EL TABULADOR. Una marquesina
-   que no se puede parar es un patrón hostil: quien lee despacio no debería
-   tener que esperar otra vuelta. «.marq» lleva «tabindex» para que el teclado
-   llegue hasta aquí. */
-.marq:hover .marq-pista,
-.marq:focus-within .marq-pista{animation-play-state:paused;}
-
-/* LA CINTA SE MUEVE SIEMPRE, Y ESTO ES LO QUE LO GARANTIZA.
-   Reportado por el responsable el 2026-09-14: en el escritorio no avanzaba.
-   La causa era una regla mía —«si el texto ya cabe, que no se mueva»— que
-   estaba mal planteada: se pidió una marquesina, no un cartel que a veces se
-   mueve. Se retira entera.
-
-   Lo que quedaba debajo sí era un problema real: con DOS copias, en un
-   monitor ancho el texto es más estrecho que la ventana, así que al desplazar
-   una copia entera detrás queda hueco vacío. La salida no es parar, es
-   REPETIR el texto las veces que hagan falta para que, desplazado el ancho de
-   una copia, siempre quede contenido cubriendo la ventana:
-
-       (copias − 1) × ancho_de_una  ≥  ancho_de_la_ventana
-
-   Y EL DESPLAZAMIENTO SIGUE SIENDO EL DE UNA SOLA COPIA, no la mitad de la
-   pista. Por eso hay una clase por número de copias, cada una con su
-   porcentaje 100/n: así la DISTANCIA en píxeles es siempre el ancho del
-   texto, y la duración que Go eligió por longitud sigue valiendo. Con un
-   «-50%» fijo y cuatro copias, un monitor recorrería el doble de distancia en
-   el mismo tiempo y la cinta iría al doble de velocidad que en el teléfono.
-
-   Cuántas copias hacen falta lo mide seguridad.js y lo aplica con una CLASE,
-   nunca con un estilo (ADR-0060). Sin JavaScript quedan las dos que escribe
-   Go y el «-50%» por omisión, que es exacto en el teléfono —donde el texto
-   siempre desborda— y deja hueco en un monitor ancho. Es la degradación
-   aceptable: sin JavaScript la cinta es una foto que se desplaza. */
 .n2{animation-name:correr;}
-@keyframes correr3{from{transform:translateX(0)}to{transform:translateX(-33.3333%)}}
-.n3{animation-name:correr3;}
-@keyframes correr4{from{transform:translateX(0)}to{transform:translateX(-25%)}}
-.n4{animation-name:correr4;}
-@keyframes correr5{from{transform:translateX(0)}to{transform:translateX(-20%)}}
-.n5{animation-name:correr5;}
-@keyframes correr6{from{transform:translateX(0)}to{transform:translateX(-16.6667%)}}
-.n6{animation-name:correr6;}
-@keyframes correr8{from{transform:translateX(0)}to{transform:translateX(-12.5%)}}
-.n8{animation-name:correr8;}
-@keyframes correr10{from{transform:translateX(0)}to{transform:translateX(-10%)}}
-.n10{animation-name:correr10;}
-@keyframes correr12{from{transform:translateX(0)}to{transform:translateX(-8.3333%)}}
-.n12{animation-name:correr12;}
-
-.tira{display:flex;align-items:center;flex:0 0 auto;}
-.sg{display:flex;align-items:baseline;gap:6px;padding:0 var(--e2);white-space:nowrap;
-  font-size:.72rem;}
-.sg + .sg{border-left:1px solid var(--n4);}
-.sg .et{font-size:.58rem;letter-spacing:.13em;text-transform:uppercase;color:var(--tx3);}
+@keyframes correr3{to{transform:translateX(-33.3333%);}} .n3{animation-name:correr3;}
+@keyframes correr4{to{transform:translateX(-25%);}} .n4{animation-name:correr4;}
+@keyframes correr5{to{transform:translateX(-20%);}} .n5{animation-name:correr5;}
+@keyframes correr6{to{transform:translateX(-16.6667%);}} .n6{animation-name:correr6;}
+@keyframes correr8{to{transform:translateX(-12.5%);}} .n8{animation-name:correr8;}
+@keyframes correr10{to{transform:translateX(-10%);}} .n10{animation-name:correr10;}
+@keyframes correr12{to{transform:translateX(-8.3333%);}} .n12{animation-name:correr12;}
+.tira{display:flex; align-items:center; flex:0 0 auto;}
+.sg{display:inline-flex; align-items:baseline; gap:6px; padding:0 var(--e4); white-space:nowrap; font-family:var(--f-dat); font-size:var(--f2);}
+.sg + .sg{box-shadow:inset 1px 0 0 var(--lnT);}
+.sg .et{font-family:var(--f-txt); font-size:var(--f1); font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--tx3);}
 .sg .vl{color:var(--tx2);}
-/* UN SEGMENTO SIN VALOR NO SE PINTA, pero su nodo sigue en el DOM para que el
-   flujo tenga dónde escribirlo cuando ese hecho aparezca. Mismo recurso que
-   «.accion:empty» en /estado. */
 .sg:has(.vl:empty){display:none;}
-/* EL ÁMBAR VA EN EL RÓTULO Y NO EN EL VALOR, y esto se corrigió mirando la
-   pantalla. Pintar el valor entero dejaba «sin respuestas inesperadas» en
-   ámbar, y en esta consola el ámbar es el color de las sospechas (ADR-0061):
-   se estaba coloreando de alarma un hecho BUENO. El valor es una enumeración
-   con partes buenas y malas dentro de una sola cadena de texto —viaja plana
-   por el flujo a propósito, para que ningún guion tenga que componer marcado—,
-   así que no hay forma de teñir solo los números sin volver a meter HTML en el
-   JSON. El rótulo sí puede llevarlo: dice «aquí hay contención vigente», que
-   es exactamente lo que el color tiene que señalar.
-   Y solo cuando hay algo: un ámbar permanente enseña a ignorar el panel
-   (ADR-0065). */
 .sg-av .et{color:var(--av);}
 
-/* ── LA ALTERNATIVA ESTÁTICA, Y NO ES OPCIONAL ──
-   Con «prefers-reduced-motion» el texto NO se mueve: la copia desaparece, la
-   pista deja de ser una tira de ancho infinito y los mismos segmentos se leen
-   envueltos en dos o tres renglones. Dice exactamente lo mismo; lo único que
-   se pierde es el movimiento, que es justo lo que se ha pedido perder. */
-@media(prefers-reduced-motion:reduce){
-  .marq{flex-wrap:wrap;row-gap:var(--e0);}
-  .marq-caja{overflow:visible;flex-basis:100%;}
-  .marq-pista{animation:none;width:auto;}
-  .marq-copia{display:none;}
-  .tira{flex-wrap:wrap;row-gap:2px;}
-  .sg + .sg{border-left:0;}
-  .pil-vivo i{animation:none;}
-}
+/* Cifras con su minigráfica (D12). */
+.kpis{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--e2);}
+.kpis > .kpi:last-child:nth-child(odd){grid-column:1 / -1;}
+.kpi{display:flex; flex-direction:column; gap:2px; padding:var(--e3) var(--e4); background:var(--s2); border-radius:var(--r-pieza); min-width:0; box-shadow:var(--brillo);}
+.kpi .q{font-size:var(--f2); font-weight:600; color:var(--tx2);}
+.kpi .n{font-family:var(--f-dat); font-size:var(--f6); font-weight:500; letter-spacing:-.02em; line-height:1.2; font-variant-numeric:tabular-nums;}
+.kpi .d{font-size:var(--f1); color:var(--tx3);}
+.kpi .sp{display:block; width:100%; height:28px; margin-top:4px;}
+.kpi .sp polyline{fill:none; stroke:var(--ac); stroke-width:1.5; vector-effect:non-scaling-stroke; stroke-linejoin:round;}
+.kpi .sp polygon{fill:var(--acT);}
 
-/* ═══════════════════════════════════════════════════════════════════════
-   PROCEDENCIA — el mapa de países de /seguridad (ADR-0089).
-   ═══════════════════════════════════════════════════════════════════════
-
-   DOS CAPAS SUPERPUESTAS, y la de abajo es una IMAGEN. «/estatico/mundo.svg»
-   son los 176 países en gris tierra: se baja una vez, con su ETag, y en las
-   recargas vuelve un 304 sin cuerpo. La capa de encima es un SVG en línea con
-   los trazos de SOLO los países que tienen actividad — cinco o veinte, unos
-   pocos KB, que es lo único que cambia entre dos cargas.
-
-   Las dos comparten el viewBox «0 0 1000 501», así que basta con que midan lo
-   mismo para que encajen: «position:absolute; inset:0» sobre un contenedor
-   con la relación de aspecto puesta. Sin cálculo de porcentajes en ninguna
-   plantilla.
-
-   EL COLOR VA EN CLASES Y NUNCA EN «fill» EN LÍNEA — la CSP es
-   «style-src 'self'» sin 'unsafe-inline' (ADR-0060) y un estilo en línea se
-   descartaría en silencio, dejando el mapa entero del color de la tierra sin
-   que nada fallara a gritos. Mismo mecanismo que el medidor de disco. */
-
-/* La rampa: UN tono, de apagado a encendido sobre el fondo oscuro. Nace del
-   acento de la consola, que es su escalón más alto. Seis escalones y no una
-   rampa continua porque el ojo no compara dos azules parecidos; con seis, la
-   leyenda se lee una vez y ya no hace falta volver a ella. */
-:root{
-  --tierra:#1b1e24;
-  --m1:#2b3b52; --m2:#3c5679; --m3:#5077a6; --m4:#7099cb; --m5:#a8c4e6;
-}
-
-.mctl{display:flex;flex-wrap:wrap;gap:var(--e1) var(--e2);align-items:center;}
-.sgl{font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);font-weight:600;}
-/* El control segmentado son dos ENLACES, no botones: cambiar de capa es
-   navegar, igual que ordenar el listado (P-3). Se les quita el subrayado por
-   lo mismo que a «.ni» y a «.tb». */
-.sgg{display:inline-flex;background:var(--n2);border:1px solid var(--n4);
-  border-radius:var(--r2);padding:2px;gap:2px;}
-.sgg .sg{display:inline-block;padding:5px var(--e2);border-radius:var(--r1);
-  font-size:.71rem;color:var(--tx3);text-decoration:none;white-space:nowrap;}
-.sgg .sg:hover{color:var(--tx2);background:var(--n3);}
-.sgg .sg.on{background:var(--acT);color:var(--ac2);box-shadow:inset 0 0 0 1px var(--acB);}
-
-/* El mapa a la izquierda y la lista a la derecha, y no la lista debajo: el
-   mapa dice DÓNDE y la lista dice CUÁNTO, y se leen juntas. Por debajo del
-   ancho de un portátil se apilan, que en un teléfono es la única opción. */
-.mgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--e2);align-items:start;}
-@container (min-width:900px){.mgrid{grid-template-columns:minmax(0,1.9fr) minmax(260px,1fr);}}
-.mcaja{background:var(--n2);border:1px solid var(--n4);border-radius:var(--r2);
-  padding:var(--e2);display:flex;flex-direction:column;gap:var(--e2);min-width:0;}
-
-/* «aspect-ratio» y no una altura fija: es la relación del viewBox que escribe
-   cmd/preparar-mapa, y atarla aquí evita que la capa de color y el fondo se
-   despeguen si algún día cambia el recorte de latitudes. */
-.mfig{position:relative;width:100%;aspect-ratio:1000/501;}
-/* «max-width:100%» aunque las dos vayan absolutas y no puedan ensanchar a su
-   padre: el <img> declara width=1000 en el atributo —que es lo que evita que
-   la caja salte mientras carga— y esa cifra no debe poder escaparse nunca de
-   la tarjeta en un teléfono. Cuesta nada y cierra la duda. */
-.mfondo,.mcapa{position:absolute;inset:0;width:100%;height:100%;max-width:100%;display:block;}
+/* Procedencia: el mapa (ADR-0089) y su encendido en vivo. */
+.mcaja{position:relative; background:var(--s1); border-radius:var(--r-pozo); padding:var(--e2);}
+.mfig{position:relative; width:100%; aspect-ratio:1000/501;}
+.mfondo, .mcapa{position:absolute; inset:0; width:100%; height:100%; max-width:100%; display:block;}
 .mcapa{overflow:visible;}
-.pa,.pt{fill:var(--tierra);stroke:var(--n2);stroke-linejoin:round;}
-.pa{stroke-width:.5;}
-.pt{stroke-width:1.2;}
-.b0{fill:var(--tierra);}
-.b1{fill:var(--m1);} .b2{fill:var(--m2);} .b3{fill:var(--m3);}
-.b4{fill:var(--m4);} .b5{fill:var(--m5);}
-/* Lo que tiene datos se puede señalar, con el dedo y con el tabulador. */
+.pa, .mcapa .pt{fill:var(--tierra); stroke:var(--s1); stroke-linejoin:round; transition:fill var(--d3) var(--c-std);}
+.pa{stroke-width:.5;} .mcapa .pt{stroke-width:1.2;}
+.mcapa .b0{fill:var(--tierra);} .mcapa .b1{fill:var(--m1);} .mcapa .b2{fill:var(--m2);}
+.mcapa .b3{fill:var(--m3);} .mcapa .b4{fill:var(--m4);} .mcapa .b5{fill:var(--m5);}
 .mcapa [data-iso]{cursor:pointer;}
-.mcapa [data-iso]:hover,.mcapa [data-iso]:focus-visible,.mcapa [data-iso].act{
-  stroke:var(--ac2);stroke-width:1.4;outline:none;}
-
-.ley{display:flex;align-items:center;gap:var(--e1);flex-wrap:wrap;
-  font-size:.62rem;color:var(--tx3);}
-.ley .cap{letter-spacing:.1em;text-transform:uppercase;font-weight:600;}
-.ley .sw{display:flex;align-items:center;}
-.ley i{width:26px;height:9px;display:block;border-radius:1px;}
-.ley .l0{background:var(--tierra);} .ley .l1{background:var(--m1);}
-.ley .l2{background:var(--m2);} .ley .l3{background:var(--m3);}
-.ley .l4{background:var(--m4);} .ley .l5{background:var(--m5);}
-.ley .tk{width:26px;text-align:center;font-family:"DM Mono",monospace;}
-.ley .mx{margin-left:auto;color:var(--tx2);}
-
-/* LA LÍNEA DE LECTURA. Reserva su alto desde el principio para que rellenarla
-   al posar no empuje el resto de la página hacia abajo. */
-.lect{margin:0;min-height:2.1rem;padding:var(--e1) var(--e2);background:var(--n2);
-  border:1px solid var(--n4);border-radius:var(--r2);
-  font-size:.73rem;color:var(--tx2);line-height:1.45;}
-
-/* La lista de países. Se ven los primeros y el resto está en el HTML: lo
-   descubre el MISMO interruptor de CSS que abre el panel de filtros
-   —un checkbox fuera de la vista y «:has()»—, sin una línea de JavaScript. */
-.mlista{display:flex;flex-direction:column;min-width:0;}
-.mlista .rank{list-style:none;margin:0;padding:0;background:var(--n2);
-  border:1px solid var(--n4);border-radius:var(--r2) var(--r2) 0 0;overflow:hidden;}
-.mlista:not(:has(.rkmas)) .rank{border-radius:var(--r2);}
-.rk{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:2px var(--e1);
-  align-items:baseline;padding:7px var(--e2);border-bottom:1px solid var(--lnT);}
-.rk:last-child{border-bottom:0;}
-.rk:hover,.rk:focus-visible,.rk.act{background:var(--acT);outline:none;}
-.rkp{font-size:.66rem;color:var(--tx3);font-variant-numeric:tabular-nums;}
-.rkn{font-size:.76rem;min-width:0;display:flex;flex-direction:column;}
-.rko{font-size:.63rem;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.rkv{font-size:.8rem;font-weight:500;}
-.rkb{grid-column:2/4;width:100%;height:3px;display:block;background:var(--n3);border-radius:1px;}
-.rkbf{fill:var(--m3);}
-.rk.act .rkbf{fill:var(--m5);}
-/* La marca de «este país no se pudo situar en el mapa»: ámbar, que en esta
-   consola es el color de lo que hay que mirar con reservas. */
+.mcapa [data-iso]:hover, .mcapa [data-iso]:focus-visible, .mcapa [data-iso].act{stroke:var(--tx); stroke-width:1.4; outline:none;}
+.mcapa .pulso{animation:pulso 1.6s var(--c-sal);}
+@keyframes pulso{0%,30%{fill:var(--av);}}
+.mcapa .anillo{fill:none; stroke:var(--av); stroke-width:1.6; vector-effect:non-scaling-stroke; transform-box:fill-box; transform-origin:center;
+  pointer-events:none; animation:anillo 1.6s var(--c-sal) forwards;}
+@keyframes anillo{from{transform:scale(.15); opacity:1;} to{transform:scale(1); opacity:0;}}
+.lect{position:absolute; left:var(--e3); bottom:var(--e3); max-width:calc(100% - 24px); margin:0; padding:4px 10px; border-radius:var(--rc);
+  background:color-mix(in oklch, var(--s0) 82%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  font-family:var(--f-dat); font-size:var(--f1); color:var(--tx2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.mcaja .ley, #procedencia .ley{display:flex; align-items:center; gap:6px var(--e2); flex-wrap:wrap; font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+#procedencia .ley .cap{font-family:var(--f-txt); font-weight:600; letter-spacing:.07em; text-transform:uppercase;}
+#procedencia .ley .sw{display:flex; align-items:center; gap:2px;}
+#procedencia .ley i{width:22px; height:8px; border-radius:2px; display:block;}
+#procedencia .ley .l0{background:var(--tierra);} #procedencia .ley .l1{background:var(--m1);} #procedencia .ley .l2{background:var(--m2);}
+#procedencia .ley .l3{background:var(--m3);} #procedencia .ley .l4{background:var(--m4);} #procedencia .ley .l5{background:var(--m5);}
+#procedencia .ley .tk{width:22px; text-align:center;}
+#procedencia .ley .mx{margin-left:auto; color:var(--tx2);}
+.mctl{display:flex; align-items:center; gap:var(--e2);}
+.mctl .sgl{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3);}
+.mctl .sgg{background:var(--s1); box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none;}
+.mctl .sgg a{min-height:32px;}
+/* La lista de países, en su propio panel. */
+.mlista{display:flex; flex-direction:column; min-width:0;}
+.rank{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;}
+.rk{display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:4px var(--e2); align-items:center; padding:6px var(--e2); border-radius:var(--r-pozo);
+  cursor:pointer; transition:background-color var(--d1) var(--c-std);}
+.rk:hover, .rk:focus-visible, .rk.act{background:var(--s3); outline:none;}
+.rkp{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+.rkn{display:flex; flex-direction:column; min-width:0; font-size:var(--f2);}
+.rko{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.rkv{font-family:var(--f-dat); font-size:var(--f2);}
+.rkb{grid-column:2 / 4; display:block; width:100%; height:4px; border-radius:var(--rc); background:var(--s3); overflow:hidden;}
+.rkbf{fill:var(--m3);} .rk.act .rkbf{fill:var(--m5);}
 .avi{color:var(--av);}
 .rk-mas{display:none;}
 .mlista:has(#m-todos:checked) .rk-mas{display:grid;}
-.rkmas{display:block;padding:8px var(--e2);background:var(--n2);
-  border:1px solid var(--n4);border-top:0;border-radius:0 0 var(--r2) var(--r2);
-  font-size:.68rem;color:var(--tx3);cursor:pointer;}
-.rkmas:hover{background:var(--n3);color:var(--tx2);}
+.rkmas{display:flex; align-items:center; justify-content:center; min-height:40px; margin-top:var(--e2); border-radius:var(--rc); background:var(--s3);
+  font-size:var(--f2); font-weight:600; color:var(--tx2); cursor:pointer;}
 .mas-cerrar{display:none;}
 .mlista:has(#m-todos:checked) .mas-abrir{display:none;}
 .mlista:has(#m-todos:checked) .mas-cerrar{display:inline;}
+/* Rutas más rechazadas. */
+.mts{display:flex; flex-direction:column; gap:var(--e3);}
+.mt{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px var(--e2); align-items:center;}
+.mt .mn{font-family:var(--f-dat); font-size:var(--f2); color:var(--tx2); overflow-wrap:anywhere;}
+.mt .mn i{display:none;}
+.mt .mb{grid-column:1 / 3; grid-row:2; display:block; width:100%; height:4px; border-radius:var(--rc); background:var(--s3); overflow:hidden;}
+.mt .mb .v{fill:color-mix(in oklab, var(--ac) 60%, var(--s3));}
+.mt .mv{grid-column:2; grid-row:1; font-family:var(--f-dat); font-size:var(--f2); color:var(--tx);}
+/* Actividad por día: un panel por serie, cada uno con su eje. */
+.grp{display:flex; flex-direction:column; gap:var(--e1);}
+.grp + .grp{margin-top:var(--e2);}
+.grh{display:flex; align-items:baseline; justify-content:space-between; gap:var(--e2);}
+.grh b{font-size:var(--f2); font-weight:600; color:var(--tx2);}
+.grh .ms{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+.grc{display:grid; grid-template-columns:46px minmax(0,1fr); align-items:start; padding:var(--e2) var(--e2) var(--e1) 0; background:var(--s1); border-radius:var(--r-pozo);}
+.grl, .gry{display:block; height:112px;}
+.grl{width:100%;}
+.gry{width:46px;}
+.gyt{fill:var(--tx3); font-family:var(--f-dat); font-size:9px; text-anchor:end; font-variant-numeric:tabular-nums;}
+.grl .grj{stroke:var(--lnT); stroke-width:1;}
+.grl .gl{fill:none; stroke:var(--av); stroke-width:1.75; stroke-linejoin:round; stroke-linecap:round;}
+.grl .gp{fill:none; stroke:var(--ac); stroke-width:1.4; stroke-linejoin:round;}
+.grl .ga{fill:var(--acT);}
+.grl .gz{fill:transparent;}
+.gre{grid-column:2; display:flex; margin-top:6px; font-family:var(--f-dat); font-size:10px; color:var(--tx3);}
+.gre span{flex:1; text-align:center; min-width:0;}
+/* Contención: tres tablas compactas dentro de su panel. */
+.t-apa .fl, .t-blo .fl{padding:var(--e3); background:var(--s1); border-radius:var(--r-pozo); box-shadow:none;}
+.t-apa .fls, .t-blo .fls{gap:var(--e2);}
+.t-apa .fls > .fl + .fl, .t-blo .fls > .fl + .fl{box-shadow:none;}
+.t-apa .cl:has(> .et), .t-blo .cl:has(> .et){grid-template-columns:5rem minmax(0,1fr);}
+.t-apa form, .t-blo form, .t-seg form{margin:0;}
 
-/* ── EL MAPA EN EL TELÉFONO ──
-   A 390 px el mapa mide 358 × 179: sirve para ver qué continente está
-   encendido, no para leer países pequeños. Por eso la lista va justo debajo y
-   la línea de lectura se mantiene: con el dedo no hay «posar el cursor», y el
-   <title> de un trazo no se enseña nunca en un móvil. */
-@container (max-width:899px){
-  .mfig{aspect-ratio:1000/501;}
-  .ley .tk{width:22px;}
-  .ley i{width:22px;}
+/* ═════ CUENTAS ═════ */
+.t-cta .ico-f{border-radius:var(--rc); background:var(--s3); color:var(--tx);}
+.uso{display:grid; grid-template-columns:minmax(0,1fr); gap:4px;}
+.uso .barra{display:block; width:100%; height:6px; border-radius:var(--rc); background:var(--s1); overflow:hidden;}
+.uso .barra .v{fill:var(--ac);}
+
+/* ═════ PÁGINAS DE UNA SOLA TAREA ═════ */
+.sola{--f1:.8125rem; --f2:.875rem; --f3:1rem; --f4:1.0625rem; --f5:1.25rem; --f6:1.5rem;
+  min-height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--e4);
+  padding:var(--e6) var(--e4) max(var(--e6), env(safe-area-inset-bottom, 0px)); font-size:var(--f3);}
+.tarjeta{width:100%; max-width:24rem; display:flex; flex-direction:column; gap:var(--e3); padding:var(--e5); background:var(--s2); border-radius:28px;
+  box-shadow:var(--brillo), 0 24px 64px rgb(0 0 0 / .35);}
+.tarjeta.ancha{max-width:34rem;}
+.tarjeta h1{margin:0; font-size:var(--f6); font-weight:720; font-stretch:112%; letter-spacing:-.015em;}
+.tarjeta > p{margin:0; font-size:var(--f2); color:var(--tx2); line-height:1.55;}
+.tarjeta > p b{color:var(--tx);}
+.tarjeta .sch h2{font-size:var(--f3);}
+.marca-sola{display:flex; flex-direction:column; align-items:center; gap:var(--e1); padding:var(--e2) 0 var(--e3);}
+.marca-sola b{font-size:var(--f6); font-weight:760; font-stretch:118%; letter-spacing:-.01em;}
+.acc{display:flex; flex-direction:column; gap:var(--e3);}
+.acc .bt{margin-top:var(--e2); background:var(--ac); color:var(--s0);}
+.ruta-grande{margin:0; padding:var(--e4); font-family:var(--f-dat); font-size:var(--f4); text-align:center; line-height:1.45; overflow-wrap:anywhere;
+  background:var(--s1); border-radius:var(--r-pieza); color:var(--tx);}
+.ruta-grande small{display:block; margin-top:4px; font-size:var(--f1); color:var(--tx3);}
+.enlace{margin:0; text-align:center; font-size:var(--f2); color:var(--tx3);}
+.enlace a{color:var(--ac);}
+.enlace a.bt{color:var(--tx);}
+.carpetas{list-style:none; margin:0; padding:var(--e1); max-height:45vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px;
+  background:var(--s1); border-radius:var(--r-pieza);}
+.carpetas a{display:flex; align-items:center; gap:var(--e3); min-height:48px; padding:0 var(--e3); border-radius:var(--r-pozo); color:var(--tx2); font-size:var(--f3);}
+.carpetas .ico-f{width:32px; height:32px; flex-basis:32px; border-radius:8px;}
+.carpetas .vacia{display:block; padding:var(--e4); font-size:var(--f2); color:var(--tx3); text-align:center;}
+.migas-sola{display:flex; flex-wrap:wrap; align-items:center; gap:4px; font-size:var(--f2); color:var(--tx3);}
+.migas-sola a{color:var(--ac);}
+.migas-sola a + a::before{content:"/"; color:var(--tx3); margin-right:4px;}
+.tarjeta .t-blo .fl{background:var(--s1);}
+.visor-barra{position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:var(--e2); padding:var(--e2) var(--e3);
+  padding-top:max(var(--e2), env(safe-area-inset-top, 0px));
+  background:color-mix(in oklch, var(--s0) 82%, transparent); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);}
+.visor-barra .nom{flex:1 1 auto; min-width:0; font-family:var(--f-dat); font-size:.875rem; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tx2);}
+.visor-barra .bt{flex:0 0 auto; min-height:40px; padding:0 var(--e4); font-size:.875rem;}
+.visor{display:flex; align-items:center; justify-content:center; padding:var(--e3); min-height:calc(100dvh - 56px); background:var(--s0);}
+.visor > *{max-width:100%;}
+.visor img, .visor video{max-height:calc(100dvh - 88px); object-fit:contain; border-radius:var(--r-pozo);}
+.visor audio{width:min(100%, 30rem);}
+.visor object, .visor iframe{width:100%; height:calc(100dvh - 88px); border:0; border-radius:var(--r-pieza); background:var(--s1);}
+.paso{position:fixed; top:50%; z-index:20; width:48px; height:48px; margin-top:-24px; display:grid; place-items:center; border-radius:var(--rc);
+  font-size:1.5rem; line-height:1; color:var(--tx); background:color-mix(in oklch, var(--s2) 75%, transparent);
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); box-shadow:0 0 0 1px var(--ln);
+  transition:transform var(--d1) var(--c-std), background-color var(--d1) var(--c-std);}
+.paso:active{transform:scale(.94);}
+.paso-anterior{left:calc(var(--e2) + env(safe-area-inset-left, 0px));}
+.paso-siguiente{right:calc(var(--e2) + env(safe-area-inset-right, 0px));}
+.no-compatible{text-align:center;}
+
+/* Sin contenedor (páginas sueltas): el menú vuelve a caer en pantalla ancha. */
+@media (min-width:880px){
+  .sola .menu-fila .menu-panel{position:absolute; left:0; right:auto; bottom:auto; top:calc(100% + var(--e1)); width:20rem; border-radius:var(--r-hoja);}
+  .sola .menu-fila .menu-panel::before{content:none;}
+  .sola .menu[open]::before{background:transparent;}
+}
+
+/* ═════ PANEL ANCHO (cada .sc es un contenedor) ═════ */
+@container (min-width:640px){
+  .cif{grid-template-columns:repeat(3, minmax(0,1fr));}
+  .cif > .cf:first-child{grid-column:auto;}
+  .metricas{grid-template-columns:repeat(3, minmax(0,1fr));}
+  .metricas .pl + .pl{box-shadow:inset 1px 0 0 var(--lnT);}
+  .filtros{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); align-items:end;}
+  .filtros > div:last-child{grid-column:1 / -1;}
+}
+@container (min-width:520px){
+  .t-est .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) auto; grid-template-areas:"nom val ver";}
+}
+@container (min-width:720px){
+  .th{display:grid; gap:var(--e3); padding:0 var(--e3) var(--e2); box-shadow:inset 0 -1px 0 var(--lnT);}
+  .th > *{min-width:0;}
+  .th span, .th a, .th button{display:inline-flex; align-items:center; gap:4px; background:none; border:0; padding:0; text-align:left;
+    font-family:inherit; font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3); cursor:pointer;}
+  .th a.act{color:var(--ac);}
+  .fl{gap:var(--e3); padding:var(--e2) var(--e3); align-items:start;}
+  .fl.sel{box-shadow:inset 3px 0 0 var(--ac);}
+  .cl{display:block;}
+  .cl > .et{display:none;}
+  .t-seg .ct2 .cp{display:block;}
+  .t-seg .ct2 .cp + .cp::before{content:none;}
+  .t-seg .th, .t-seg .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 136px minmax(0,2fr);}
+  .t-cro .th, .t-cro .fl{grid-template-columns:132px minmax(0,1.1fr) minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,1.2fr);}
+  .t-est .th, .t-est .fl{grid-template-columns:minmax(0,1.4fr) minmax(0,1.6fr) 120px;}
+  .t-est .th{grid-template-areas:"nom val ver";}
+  .t-cta .th, .t-cta .fl{grid-template-columns:minmax(0,1.2fr) 150px minmax(0,1.8fr) 170px;}
+  .t-cta .fl{align-items:center;}
+  .t-cta .bt.pel{min-height:36px; padding:0 var(--e4); font-size:var(--f2);}
+  .t-blo .th, .t-blo .fl{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 132px 96px;}
+  .t-apa .th, .t-apa .fl{grid-template-columns:minmax(0,1.4fr) 104px minmax(0,1fr) 172px 92px;}
+  .t-apa .fl, .t-blo .fl{background:transparent; border-radius:0; padding:var(--e2) var(--e3);}
+  .t-apa .fls > .fl + .fl, .t-blo .fls > .fl + .fl{box-shadow:inset 0 1px 0 var(--lnT);}
+  .t-apa .fls, .t-blo .fls{gap:0;}
+}
+
+/* ═════ NAVEGADOR (≥ 880 px de .app) ═════ */
+@container (min-width:880px){
+  .marco{--f1:.75rem; --f2:.8125rem; --f3:.9375rem; --f4:1.0625rem; --f5:1.25rem; --f6:1.5rem; --f7:1.875rem;
+    grid-template-columns:var(--rail) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"rail top" "rail cuerpo";
+    height:100dvh; min-height:0; background:var(--s0);}
+  /* Rail sobre el nivel hundido; el contenido en una hoja elevada concéntrica (D2, D10). */
+  .rail{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4) var(--e3); overflow-y:auto;}
+  .marca{display:flex; flex-direction:column; gap:2px; padding:var(--e2) var(--e3) var(--e3);}
+  .marca .nm{display:flex; flex-direction:column; gap:2px; min-width:0;}
+  .marca .nm b{font-size:var(--f4); font-weight:700; font-stretch:108%; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis;}
+  .marca .nm span{display:flex; align-items:center; gap:6px; font-family:var(--f-dat); font-size:var(--f2); color:var(--tx3);}
+  .marca .nm span i{width:8px; height:8px; border-radius:2px; background:var(--ok); display:block;}
+  .gr{display:flex; flex-direction:column; gap:2px;}
+  .gr .cab{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3); padding:var(--e4) var(--e3) var(--e2);}
+  .ni{display:flex; align-items:center; gap:var(--e3); min-height:40px; padding:0 var(--e3); border-radius:var(--rc); color:var(--tx2); font-size:var(--f3);
+    transition:background-color var(--d1) var(--c-std), color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
+  .ni .ic{width:18px; height:18px; flex:0 0 18px;}
+  .ni:active{transform:scale(.98);}
+  .ni-activo{background:var(--acT); color:var(--ac); font-weight:600;}
+  .ni .ct{margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-family:var(--f-dat); font-size:var(--f2); color:var(--av);}
+  .ni .ct::before{content:""; width:9px; height:9px; background:var(--av); clip-path:polygon(50% 0, 100% 100%, 0 100%);}
+  .disco{margin-top:auto; display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); background:var(--s1); border-radius:var(--r-pieza);}
+  .disco .l1{display:flex; flex-direction:column; gap:2px;}
+  .disco .l1 b{font-size:var(--f2); font-weight:600;}
+  .disco .l1 span{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+  .seg{display:block; width:100%; height:8px; border-radius:var(--rc); background:var(--s3); overflow:hidden;}
+  .sg-a{fill:var(--ac);} .sg-b{fill:color-mix(in oklab, var(--ac) 55%, var(--s3));} .sg-o{fill:var(--tx3);}
+  .disco .ley{display:flex; flex-wrap:wrap; gap:4px var(--e3); font-size:var(--f1); color:var(--tx3);}
+  .disco .ley span{display:inline-flex; align-items:center; gap:5px;}
+  .disco .ley u{width:8px; height:8px; border-radius:2px; display:block; text-decoration:none;}
+  .disco .ley u.sg-a{background:var(--ac);} .disco .ley u.sg-b{background:color-mix(in oklab, var(--ac) 55%, var(--s3));} .disco .ley u.sg-o{background:var(--tx3);}
+  .salir-rail{margin:var(--e1) 0 0;}
+  .salir-rail .od{min-height:40px;}
+  .top{grid-area:top; display:flex; flex-direction:column; gap:var(--e3); margin:var(--e2) var(--e2) 0 0; padding:var(--e4) var(--e5) var(--e3);
+    background:var(--s1); border-radius:var(--r-hoja) var(--r-hoja) 0 0;}
+  .f1{position:static; height:auto; padding:0; background:none; -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:none;}
+  .vw > .marq{top:0;}
+  .tv{flex-direction:row; align-items:baseline; gap:var(--e3);}
+  .app[data-modulo="archivos"] .tv .sb{display:none;}
+  .cuerpo{overflow-y:auto; margin:0 var(--e2) var(--e2) 0; padding:var(--e2) var(--e5) var(--e6); background:var(--s1); border-radius:0 0 var(--r-hoja) var(--r-hoja);}
+  .tabs{display:none;}
+  .ordenes{position:relative; bottom:auto; z-index:auto; padding:0; margin:0; pointer-events:auto; align-items:center;}
+  .od{min-height:36px; padding:0 var(--e4); font-size:var(--f2); color:var(--tx2); background:var(--s2); -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:none;}
+  .od.pri{background:var(--ac); color:var(--s0);}
+  .sgg{background:var(--s2); -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:none;}
+  .sgg a{min-height:30px;}
+  .ordenes .miga{display:flex; margin-left:auto; align-items:center; gap:6px; font-size:var(--f2); color:var(--tx3);}
+  .ordenes .miga a + a::before{content:"/"; margin-right:6px; color:var(--tx3);}
+  .ordenes .miga a:last-child{color:var(--tx); font-weight:600;}
+  .ordenes .rango{display:inline; margin-left:auto; font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3); white-space:nowrap;}
+  .tablero{grid-template-columns:repeat(12, minmax(0,1fr));}
+  .s12{grid-column:span 12;} .s8{grid-column:span 8;} .s7{grid-column:span 7;} .s6{grid-column:span 6;} .s5{grid-column:span 5;} .s4{grid-column:span 4;}
+  /* Sin mapa (sin base de operadores), la fila se reparte entre lo que queda. */
+  .tablero:not(:has(#procedencia)) .s5.prim{grid-column:span 12;}
+  .tablero:not(:has(#paises)) .fila-3{grid-column:span 6;}
+  /* La contención mide lo que mida el mapa de al lado y se desplaza dentro.
+     Solo cuando hay mapa dibujado: sin él, «contain:size» la dejaría en cero. */
+  .tablero:has(#procedencia .mfig) .iguala{contain:size; max-height:none;}
+  .desliza{max-height:24rem;}
+  .fila-3{height:22rem; max-height:none;}
+  .cif{gap:var(--e3);}
+  .cf{padding:var(--e4);}
+  .kpis{grid-template-columns:repeat(5, minmax(0,1fr)); gap:var(--e3);}
+  .kpis > .kpi:last-child:nth-child(odd){grid-column:auto;}
+  .t-arc .th, .t-arc .fl{grid-template-columns:minmax(0,3fr) 110px 130px 44px;}
+  .t-arc .th{display:grid; gap:var(--e3); padding:0 var(--e3) var(--e2); box-shadow:inset 0 -1px 0 var(--lnT);}
+  .t-arc .th a, .t-arc .th span{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3);}
+  .t-arc .th a.act{color:var(--ac);}
+  .t-arc .fl{grid-template-areas:none; gap:var(--e3); padding:var(--e1) var(--e3); border-radius:var(--r-dato); transition:background-color var(--d1) var(--c-std);}
+  .t-arc .fl > .cl:nth-child(n){grid-area:auto; padding-left:0; margin-top:0;}
+  .t-arc .fl > .cl:nth-child(3) .ct2::before{content:none;}
+  .t-arc .ico-f{width:32px; height:32px; flex-basis:32px; border-radius:8px;}
+  .t-arc .nomb{min-height:40px;}
+  .menu-p{width:36px; height:36px; font-size:18px;}
+  .menu[open]::before{background:transparent; animation:none;}
+  .menu-panel{border-radius:var(--r-hoja); padding:var(--e3);}
+  .menu[open] > .menu-panel{animation:menu-in var(--d3) var(--c-ent) both;}
+  .ordenes .menu-panel{left:0; right:auto; bottom:auto; top:calc(100% + var(--e2)); width:22rem;}
+  .menu-fila .menu-panel{position:absolute; left:auto; right:0; bottom:auto; top:calc(100% + var(--e1)); width:17rem; max-height:none;}
+  .menu-fila .menu-panel::before, .detalle::before{content:none;}
+  .menu-panel .bt{min-height:36px; font-size:var(--f2);}
+  .bt{min-height:36px; padding:0 var(--e4); font-size:var(--f2);}
+  input[type=text], input[type=password], input[type=file], select, textarea{min-height:38px; font-size:var(--f2);}
+  #progreso button{min-height:32px;}
+  .velo{background:rgb(0 0 0 / .3);}
+  .detalle{left:auto; top:var(--e2); right:var(--e2); bottom:var(--e2); width:var(--det); max-height:none; border-radius:var(--r-hoja); padding:var(--e5);
+    animation:cajon-in var(--d4) var(--c-ent) both;}
+}
+@container (max-width:879px){
+  .prim{order:-1;}
+}
+
+/* Efecto de pasar el ratón solo donde hay ratón (D16): en el teléfono se quedaría pegado. */
+@media (hover:hover){
+  .cf:hover{background:var(--s3);}
+  .ni:hover{background:var(--s2); color:var(--tx);}
+  .ni-activo:hover{background:var(--acT); color:var(--ac);}
+  .od:hover{background:var(--s3); color:var(--tx);}
+  .od.pri:hover, .acc .bt:hover{background:var(--tx); color:var(--s0);}
+  .sgg a:not(.on):hover{color:var(--tx); background:var(--s3);}
+  .fl:hover{background:color-mix(in oklch, var(--s3) 45%, transparent);}
+  .bt:hover{background:color-mix(in oklch, var(--s3) 70%, var(--ln));}
+  .bt.pel:hover{background:color-mix(in oklab, var(--faT) 70%, var(--fa)); color:var(--tx);}
+  .menu-p:hover{background:var(--s3); color:var(--tx);}
+  .x:hover{background:var(--ln);}
+  .carpetas a:hover{background:var(--s3); color:var(--tx);}
+  .rkmas:hover{background:var(--ln); color:var(--tx);}
+  .paso:hover{background:var(--s3);}
+  details.plg > summary:hover{color:var(--tx);}
+}
+
+/* ═════ MOVIMIENTO (D13–D17) ═════ */
+@keyframes latir{50%{opacity:.35;}}
+@keyframes hoja-in{from{opacity:0; transform:translateY(14px) scale(.98);}}
+@keyframes menu-in{from{opacity:0; transform:translateY(-6px) scale(.98);}}
+@keyframes cajon-in{from{opacity:0; transform:translateX(28px);}}
+@keyframes fundido{from{opacity:0;}}
+@keyframes fundido-sal{to{opacity:0;}}
+@keyframes sube{from{opacity:0; transform:translateY(10px);}}
+/* D13: transición entre páginas hecha por el navegador. Funde la página entera y
+   el resaltado del módulo viaja al nuevo. Los nombres van en elementos pequeños:
+   uno sobre el contenido lo aislaría y dejaría las hojas bajo las pestañas. */
+@view-transition{navigation:auto;}
+::view-transition-old(root){animation:var(--d2) var(--c-sal) both fundido-sal;}
+::view-transition-new(root){animation:var(--d4) var(--c-ent) both fundido;}
+.ni-activo{view-transition-name:sel-rail;}
+.tb-activo{view-transition-name:sel-tabs;}
+.tv h1{view-transition-name:titulo;}
+::view-transition-group(sel-rail), ::view-transition-group(sel-tabs), ::view-transition-group(titulo){animation-duration:var(--d4); animation-timing-function:var(--c-std);}
+::view-transition-new(titulo){animation:var(--d4) var(--c-ent) both sube;}
+/* D17: sin desplazamientos ni escalas; los fundidos y los colores se quedan. */
+@media (prefers-reduced-motion:reduce){
+  *, *::before, *::after{transition-property:opacity, background-color, color, border-color, box-shadow !important;}
+  .menu[open] > .menu-panel, .detalle{animation-name:fundido !important;}
+  .cf:active, .bt:active, .od:active, .tb:active, .ni:active, .menu-p:active, .paso:active{transform:none;}
+  .vivo i, .pil-vivo i{animation:none;}
+  .mcapa .pulso{animation-duration:.6s;}
+  .mcapa .anillo{display:none;}
+  .marq{flex-wrap:wrap; border-radius:var(--r-pieza); padding:var(--e2);}
+  .marq-caja{-webkit-mask-image:none; mask-image:none; flex-basis:100%; overflow:visible;}
+  .marq-pista{animation:none; width:auto;}
+  .marq-copia{display:none;}
+  .tira{flex-wrap:wrap; row-gap:4px;}
+  .sg + .sg{box-shadow:none;}
+  ::view-transition-group(*){animation-duration:0s !important;}
+  ::view-transition-new(titulo){animation-name:fundido !important;}
+}
+/* Curva continua donde el navegador la sabe dibujar (Chrome y Edge 139+). */
+@supports (corner-shape:squircle){
+  .cf, .sc, .kpi, .tarj, .menu-panel, .detalle, .tarjeta, .ico-f, .top, .cuerpo, .disco, .metricas, .mcaja{corner-shape:squircle;}
 }

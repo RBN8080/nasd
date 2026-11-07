@@ -50,6 +50,11 @@ type filaUsuario struct {
 	// usando la función de plantilla «fecha», la misma que ya usa
 	// listado.html.
 	Medido time.Time
+	// Barra es el ancho de la barra de uso, de 0 a 100, relativo a la cuenta
+	// que más ocupa. Va a un atributo de SVG y no a CSS: la CSP descarta los
+	// estilos en línea (ADR-0060).
+	Barra float64
+	bytes int64
 	// Seleccionada marca la fila cuyo detalle está abierto.
 	Seleccionada bool
 }
@@ -183,9 +188,11 @@ func (s *Servidor) verAdministracion(w http.ResponseWriter, r *http.Request) {
 		if m, ok := medidas[u.Nombre]; ok {
 			fila.UsoDisco = formatoUsoDisco(m)
 			fila.Medido = m.Momento
+			fila.bytes = m.Bytes
 		}
 		v.Usuarios = append(v.Usuarios, fila)
 	}
+	barrasDeUso(v.Usuarios)
 	if nombre := r.URL.Query().Get("cuenta"); nombre != "" {
 		for i := range v.Usuarios {
 			if v.Usuarios[i].Nombre == nombre {
@@ -318,6 +325,25 @@ func (s *Servidor) bajaUsuario(w http.ResponseWriter, r *http.Request) {
 // formatoUsoDisco compone el tamaño y la variación con signo desde la
 // última medida, en una sola cadena — ADR-0017: la decisión de formato es
 // del servidor, la plantilla solo la pega junto a la fecha (fila.Medido).
+// barrasDeUso calcula el ancho de cada barra contra la cuenta que más ocupa.
+// Una cuenta medida que ocupa algo nunca baja de 2: una barra a cero se leería
+// como «vacía», y no lo está. Sin medir se queda en cero y la plantilla no la
+// pinta.
+func barrasDeUso(filas []filaUsuario) {
+	var tope int64
+	for _, f := range filas {
+		tope = max(tope, f.bytes)
+	}
+	if tope <= 0 {
+		return
+	}
+	for i := range filas {
+		if filas[i].bytes > 0 {
+			filas[i].Barra = max(2, redondear(float64(filas[i].bytes)/float64(tope)*100))
+		}
+	}
+}
+
 func formatoUsoDisco(m metricas.Medida) string {
 	variacion := "primera medición"
 	if m.Variacion != nil {

@@ -64,6 +64,47 @@ function ponerTexto(elemento, texto) {
   }
 }
 
+// LAS GRÁFICAS EN VIVO (consola 2, ADR-0105). La CPU dibuja su minigráfica
+// con las muestras que el flujo YA trae, y la temperatura mueve su gráfica de
+// bala: no se mide nada nuevo. Se tocan ATRIBUTOS de SVG —points, d, width—
+// y nunca «style»: la CSP descarta los estilos en línea (ADR-0060).
+const MUESTRAS = 120; // 30 s a un marco cada 250 ms
+const serieCPU = [];
+
+function numero(texto) {
+  const m = /-?\d+(?:[.,]\d+)?/.exec(texto || '');
+  return m ? parseFloat(m[0].replace(',', '.')) : NaN;
+}
+
+function dibujarCPU(valor) {
+  if (Number.isNaN(valor)) return;
+  serieCPU.push(valor);
+  if (serieCPU.length > MUESTRAS) serieCPU.shift();
+  // El techo nunca baja de 25 %: con un nodo casi ocioso, una escala pegada
+  // al máximo convertiría un 3 % en una montaña.
+  const tope = Math.max(25, ...serieCPU) * 1.15;
+  const paso = 100 / (MUESTRAS - 1);
+  const x0 = 100 - (serieCPU.length - 1) * paso; // lo más nuevo, a la derecha
+  const puntos = serieCPU.map((v, i) =>
+    (x0 + i * paso).toFixed(2) + ',' + (38 - (v / tope) * 34).toFixed(2)).join(' ');
+  const area = 'M' + x0.toFixed(2) + ',40 L' + puntos.split(' ').join(' L') + ' L100,40 Z';
+  for (const svg of document.querySelectorAll('svg[data-serie="cpu"]')) {
+    const linea = svg.querySelector('.sp-l');
+    const relleno = svg.querySelector('.sp-a');
+    if (linea) linea.setAttribute('points', puntos);
+    if (relleno) relleno.setAttribute('d', area);
+  }
+}
+
+// La escala de la bala va de 30 a 90 °C en un viewBox de 60 de ancho.
+function moverBala(valor) {
+  if (Number.isNaN(valor)) return;
+  const ancho = Math.max(0, Math.min(60, valor - 30)).toFixed(1);
+  for (const r of document.querySelectorAll('rect[data-bala="temperatura"]')) {
+    r.setAttribute('width', ancho);
+  }
+}
+
 function aplicar(indice, filas) {
   for (const fila of filas) {
     const destino = indice.get(fila.clave);
@@ -74,6 +115,8 @@ function aplicar(indice, filas) {
     if (!destino) continue;
 
     ponerTexto(destino.cifra, fila.valor);
+    if (fila.clave === 'cpu') dibujarCPU(numero(fila.valor));
+    else if (fila.clave === 'temperatura') moverBala(numero(fila.valor));
     ponerTexto(destino.accion, fila.accion || '');
     // Vacía y no un guion: una fila sin umbral no tiene veredicto que enseñar,
     // y el CSS esconde la pastilla en cuanto se queda sin texto. El elemento se
@@ -100,6 +143,12 @@ function marcarLatido(estado, texto) {
 
 function arrancar() {
   const filas = indexar();
+  // Las gráficas arrancan con la cifra que pintó el servidor: sin esperar al
+  // primer marco y también sin JavaScript de flujo que la mueva.
+  const temp = filas.get('temperatura');
+  if (temp && temp.cifra) moverBala(numero(temp.cifra.textContent));
+  const cpu = filas.get('cpu');
+  if (cpu && cpu.cifra) dibujarCPU(numero(cpu.cifra.textContent));
   const flujo = new EventSource('/estado/flujo');
 
   flujo.onopen = function () {

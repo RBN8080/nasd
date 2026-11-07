@@ -24,9 +24,11 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
+	"nasd/internal/geoip"
 	"nasd/internal/seguridad"
 )
 
@@ -84,6 +86,64 @@ type marcoSeguridad struct {
 	// el reloj se para delante de quien mira — que es lo que distingue un
 	// panel tranquilo de un panel muerto (ADR-0083).
 	Hora string `json:"hora"`
+	// Llegadas son los rechazos de Internet registrados desde el marco
+	// anterior, para que el mapa los encienda en el acto. Ver llegadasDesde.
+	Llegadas []llegada `json:"llegadas,omitempty"`
+}
+
+// llegada es UN rechazo de Internet recién registrado, con lo justo para
+// encenderlo en el mapa: el país y el punto del dibujo (viewBox 1000×501).
+// No viaja la dirección: el mapa no la enseña, y lo que no se pinta no sale.
+type llegada struct {
+	ISO    string  `json:"iso"`
+	Nombre string  `json:"nombre"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+}
+
+// topeLlegadas acota un marco: más de ocho anillos a la vez ya no se leen, y
+// una ráfaga no debe inflar el flujo.
+const topeLlegadas = 8
+
+// llegadasDesde devuelve los rechazos de Internet posteriores a «desde» que
+// caen dentro del filtro de la página, y el momento del más reciente visto —
+// sea de Internet o no—, que es el «desde» del marco siguiente.
+//
+// LEE DEL MISMO ANILLO Y CON EL MISMO FILTRO QUE EL RESTO DEL MARCO: un país
+// no se enciende por un rechazo que la tabla de debajo no vaya a contar. Sin
+// base de operadores no hay país que encender y no viaja nada.
+func (s *Servidor) llegadasDesde(f seguridad.Filtro, desde time.Time) ([]llegada, time.Time) {
+	ultimo := desde
+	if s.geo == nil {
+		return nil, ultimo
+	}
+	nuevos := slices.DeleteFunc(s.seguridad.Filtrados(f), func(e seguridad.Evento) bool {
+		return !e.Momento.After(desde)
+	})
+	slices.SortFunc(nuevos, func(a, b seguridad.Evento) int { return a.Momento.Compare(b.Momento) })
+	var out []llegada
+	for _, e := range nuevos {
+		ultimo = e.Momento
+		if !e.Red.DeFuera() || !e.Origen.IsValid() {
+			continue
+		}
+		info, ok := s.geo.Buscar(e.Origen)
+		if !ok || info.Pais == "" {
+			continue
+		}
+		c, ok := centrosDePais()[info.Pais]
+		if !ok {
+			continue
+		}
+		out = append(out, llegada{
+			ISO: info.Pais, Nombre: geoip.NombreDePais(info.Pais),
+			X: redondear(c[0]), Y: redondear(c[1]),
+		})
+	}
+	if len(out) > topeLlegadas {
+		out = out[len(out)-topeLlegadas:]
+	}
+	return out, ultimo
 }
 
 // marcoDeSeguridad arma el marco para un filtro concreto.
@@ -172,6 +232,9 @@ func (s *Servidor) marcoDeSeguridad(f seguridad.Filtro) marcoSeguridad {
 func (s *Servidor) flujoDeSeguridad(w http.ResponseWriter, r *http.Request) {
 	emitirFlujo(s, w, r, func() (func(context.Context) (marcoSeguridad, bool), func()) {
 		t := time.NewTicker(intervaloSeguridadVivo)
+		// Las llegadas cuentan desde que se abrió el flujo: lo anterior ya está
+		// pintado en el mapa que trajo la página.
+		desde := time.Now()
 		siguiente := func(ctx context.Context) (marcoSeguridad, bool) {
 			select {
 			case <-ctx.Done():
@@ -184,7 +247,9 @@ func (s *Servidor) flujoDeSeguridad(w http.ResponseWriter, r *http.Request) {
 				// abierta toda la tarde se habría quedado contando desde el
 				// instante en que se abrió.
 				vivo, _, _ := filtroDeSeguridad(r.URL.Query())
-				return s.marcoDeSeguridad(vivo), true
+				m := s.marcoDeSeguridad(vivo)
+				m.Llegadas, desde = s.llegadasDesde(vivo, desde)
+				return m, true
 			}
 		}
 		return siguiente, t.Stop

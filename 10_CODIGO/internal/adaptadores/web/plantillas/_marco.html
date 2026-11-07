@@ -1,6 +1,6 @@
 {{/* _marco.html — el cromo de la maqueta 12, portado pieza a pieza: rail con
      iconos y medidor de disco, barra superior con la inicial de la sesión,
-     tira de estado al pie y pestañas en el teléfono.
+     y pestañas flotantes en el teléfono (consola 2, ADR-0105).
 
      # POR QUÉ SON CINCO BLOQUES Y NO UNO
 
@@ -19,13 +19,13 @@
        …el contenido del módulo…
        {{"{{template \"marco-fin\" .}}"}}       cierra el cuerpo
        …la columna de detalle, o nada…
-       {{"{{template \"marco-cierra\" .}}"}}    tira de estado + pestañas
+       {{"{{template \"marco-cierra\" .}}"}}    pestañas
 
      Un módulo sin barra de órdenes llama a los dos primeros seguidos; uno sin
      detalle, a los dos últimos. */}}
 
 {{define "marco-abre"}}
-<div class="app">
+<div class="app" data-modulo="{{.Marco.Modulo}}">
   <div class="marco">
 
     <aside class="rail">
@@ -41,7 +41,7 @@
       <div class="gr">
         {{if .Rotulo}}<div class="cab">{{.Rotulo}}</div>{{end}}
         {{range .Items}}
-        <a class="ni{{if .Activo}} ni-activo{{end}}" href="{{.Ruta}}">
+        <a class="ni{{if .Activo}} ni-activo{{end}}" href="{{.Ruta}}"{{if .Activo}} aria-current="page"{{end}}>
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">{{.Icono}}</svg>
           {{.Rotulo}}{{if .Marca}}<span class="ct">{{.Marca}}</span>{{end}}
         </a>
@@ -164,18 +164,13 @@
 {{end}}
 
 {{define "marco-cierra"}}
-    {{with .Marco.Estado}}
-    <div class="estado">
-      {{range .}}<span class="it">{{if .Punto}}<i class="pt {{.Punto}}"></i>{{end}}<b>{{.Nombre}}</b> {{.Valor}}</span>{{end}}
-      {{if $.Marco.Version}}<span class="der"><span class="it"><b>{{$.Marco.Version}}</b></span></span>{{end}}
-    </div>
-    {{end}}
-
+    {{/* SIN TIRA DE ESTADO AL PIE desde el 2026-11-07 (consola 2): el diseño
+         queda lo más limpio posible. La línea del binario sigue en /estado. */}}
     <nav class="tabs">
       {{range .Marco.Todos}}
-      <a class="tb{{if .Activo}} tb-activo{{end}}" href="{{.Ruta}}">
+      <a class="tb{{if .Activo}} tb-activo{{end}}" href="{{.Ruta}}"{{if .Activo}} aria-current="page"{{end}}>
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">{{.Icono}}</svg>
-        {{.Rotulo}}{{if .Marca}}<i class="pt"></i>{{end}}
+        {{.Rotulo}}{{if .Marca}}<i class="mk" aria-hidden="true"></i>{{end}}
       </a>
       {{end}}
     </nav>

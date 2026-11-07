@@ -252,10 +252,13 @@ func TestElAvisoDeContencionViveEnLaCintaYNoAlPieDeSuSeccion(t *testing.T) {
 	if i < 0 {
 		t.Fatal("desapareció el aviso de contención cambiada")
 	}
+	// Desde la consola 2 la cinta abre el cuerpo y se queda pegada arriba al
+	// desplazarse (estilo.css, «.vw > .marq»): el aviso tiene que ir dentro de
+	// ella, antes del tablero.
 	j := strings.Index(cuerpo, `class="marq"`)
-	k := strings.Index(cuerpo, `<main class="cuerpo">`)
+	k := strings.Index(cuerpo, `<div class="tablero">`)
 	if j < 0 || k < 0 {
-		t.Fatal("no se encontró la cinta o el cuerpo de la página")
+		t.Fatal("no se encontró la cinta o el tablero de la página")
 	}
 	if !(j < i && i < k) {
 		t.Error("el aviso no está dentro de la cinta: al desplazarse dejaría de verse")
