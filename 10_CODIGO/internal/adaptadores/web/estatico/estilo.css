@@ -102,7 +102,10 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .app{container-type:inline-size; --rail:232px;}
 .marco{--f1:.8125rem; --f2:.875rem; --f3:1rem; --f4:1.0625rem; --f5:1.25rem; --f6:1.5rem; --f7:1.75rem;
   display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"f1" "cuerpo" "ordenes" "tabs";
-  grid-template-rows:auto 1fr auto auto; min-height:100dvh; font-size:var(--f3); background:var(--s1);}
+  grid-template-rows:auto 1fr auto auto; min-height:100svh; font-size:var(--f3); background:var(--s1);}
+/* svh y no dvh (ADR-0107): dvh cambia cada vez que la barra de Safari se pliega,
+   es decir, al empezar a bajar, y obligaba a recalcular la página entera en mitad
+   del desplazamiento (WebKit 266835). svh no se mueve. */
 .marco > *{min-width:0;}
 .rail{display:none; grid-area:rail;}
 .top{display:contents;}
