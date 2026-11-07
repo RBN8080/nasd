@@ -12,7 +12,12 @@
 
      SIN viewport-fit=cover DESDE ADR-0107: con él, los margenes seguros del
      iPhone cambian al plegarse la barra de Safari, y con ellos el alto de las
-     barras en mitad del desplazamiento. */}}
+     barras en mitad del desplazamiento.
+
+     LAS DOS CARAS LATINAS SE PRECARGAN (ADR-0108): si la letra llegara
+     después del primer pintado, el texto cambiaría de ancho y la página
+     saltaría una vez al cargar. «crossorigin» hace falta aunque sean del mismo
+     origen: las fuentes se piden en modo CORS y sin él se bajarían dos veces. */}}
 {{define "cabeza"}}<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
@@ -20,4 +25,6 @@
 <title>{{.}}</title>
 <link rel="icon" href="/estatico/icono.svg">
 <link rel="apple-touch-icon" href="/estatico/icono.svg">
+<link rel="preload" href="/estatico/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/estatico/robotomono-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/estatico/estilo.css">{{end}}

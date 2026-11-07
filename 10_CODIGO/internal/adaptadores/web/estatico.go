@@ -114,17 +114,15 @@ func comprimible(tipo string) bool {
 var assetsPublicos = []string{
 	"/estatico/estilo.css",
 	"/estatico/icono.svg",
-	// Las seis caras de Archivo y DM Mono. Son seis y no dos porque cada
-	// familia se sirve partida por subconjunto Unicode: «unicode-range» hace
-	// que el navegador baje SOLO el que la página necesita —para una página
-	// en español, latin— y nunca latin-ext, salvo que un nombre de archivo lo
-	// exija.
-	"/estatico/archivo-latin.woff2",
-	"/estatico/archivo-latinext.woff2",
-	"/estatico/dmmono400-latin.woff2",
-	"/estatico/dmmono400-latinext.woff2",
-	"/estatico/dmmono500-latin.woff2",
-	"/estatico/dmmono500-latinext.woff2",
+	// Las cuatro caras de Inter y Roboto Mono (ADR-0108). Son cuatro y no dos
+	// porque cada familia se sirve partida por subconjunto Unicode:
+	// «unicode-range» hace que el navegador baje SOLO el que la página
+	// necesita —para una página en español, latin— y nunca latin-ext, salvo
+	// que un nombre de archivo lo exija.
+	"/estatico/inter-latin.woff2",
+	"/estatico/inter-latinext.woff2",
+	"/estatico/robotomono-latin.woff2",
+	"/estatico/robotomono-latinext.woff2",
 }
 
 // tiposPropios completa la tabla de mime.TypeByExtension.
