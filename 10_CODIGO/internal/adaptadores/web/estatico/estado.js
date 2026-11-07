@@ -106,11 +106,12 @@ function numero(texto) {
   return m ? parseFloat(m[0].replace(',', '.')) : NaN;
 }
 
-function dibujarCPU(valor) {
+// Anotar y dibujar van por separado: la muestra se anota en cuanto llega,
+// también con la página en movimiento, y se dibuja cuando se puede pintar.
+function anotarCPU(valor) {
   if (Number.isNaN(valor)) return;
   serieCPU.push(valor);
   if (serieCPU.length > MUESTRAS) serieCPU.shift();
-  redibujarCPU();
 }
 
 function redibujarCPU() {
@@ -150,8 +151,7 @@ function aplicar(indice, filas) {
     if (!destino) continue;
 
     ponerTexto(destino.cifra, fila.valor);
-    if (fila.clave === 'cpu') dibujarCPU(numero(fila.valor));
-    else if (fila.clave === 'temperatura') moverBala(numero(fila.valor));
+    if (fila.clave === 'temperatura') moverBala(numero(fila.valor));
     if (destino.pintado === null) continue;
 
     // La clase llega hecha del servidor. Componerla aquí —'p-' + veredicto—
@@ -191,8 +191,53 @@ function marcarLatido(estado, texto) {
   ponerTexto(l, texto);
 }
 
+// NADA SE ESCRIBE MIENTRAS LA PÁGINA SE MUEVE (ADR-0107). En el iPhone, cada
+// marco que toca la página manda una capa nueva al compositor, y con cuatro
+// por segundo el desplazamiento iba a tirones: el dedo soltaba y la página
+// seguía «congelada», según el responsable. Mientras el dedo o la inercia la
+// mueven, el marco se guarda —solo el último— y se pinta en cuanto lleva
+// QUIETUD_MS sin moverse. La muestra de CPU no se pierde: se anota igual.
+const QUIETUD_MS = 200;
+let movida = -Infinity; // última vez que se vio moverse la página
+let altura = 0;         // posición vista en la última comprobación
+
+addEventListener('scroll', function () { movida = performance.now(); }, { passive: true });
+
+// Se mira también la posición, y no solo el evento: así la inercia cuenta como
+// movimiento aunque el navegador espacie los avisos de desplazamiento.
+function seMueve() {
+  if (window.scrollY !== altura) {
+    altura = window.scrollY;
+    movida = performance.now();
+  }
+  return performance.now() - movida < QUIETUD_MS;
+}
+
 function arrancar() {
   const filas = indexar();
+  altura = window.scrollY;
+  let pendiente = null; // el marco más reciente sin pintar
+  let espera = 0;
+
+  function pintar() {
+    const marco = pendiente;
+    pendiente = null;
+    if (!marco) return;
+    marcarLatido('si', 'en línea');
+    aplicar(filas, marco.nodo || []);
+    aplicar(filas, marco.servicio || []);
+    redibujarCPU();
+  }
+
+  function pintarCuandoPare() {
+    if (espera) return;
+    espera = setTimeout(function () {
+      espera = 0;
+      if (seMueve()) pintarCuandoPare();
+      else pintar();
+    }, QUIETUD_MS);
+  }
+
   // Las gráficas arrancan con lo que pintó el servidor, sin esperar al primer
   // marco. La de CPU trae su historia en «data-muestras» —los últimos 30 s que
   // guarda el nodo, con la lectura de esta carga al final—: así no vuelve a
@@ -225,9 +270,12 @@ function arrancar() {
       return;
     }
     fallos = 0;
-    marcarLatido('si', 'en línea');
-    aplicar(filas, marco.nodo || []);
-    aplicar(filas, marco.servicio || []);
+    for (const f of marco.nodo || []) {
+      if (f.clave === 'cpu') anotarCPU(numero(f.valor));
+    }
+    pendiente = marco;
+    if (seMueve()) pintarCuandoPare();
+    else pintar();
   };
 
   flujo.onerror = function () {

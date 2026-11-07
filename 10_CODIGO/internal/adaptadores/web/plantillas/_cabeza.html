@@ -8,9 +8,13 @@
 
      Recibe el titulo ya compuesto, para que la pagina que lo tiene dinamico
      -listado- pueda pasarlo con printf sin que esta plantilla sepa nada de su
-     modelo de datos. */}}
+     modelo de datos.
+
+     SIN viewport-fit=cover DESDE ADR-0107: con él, los margenes seguros del
+     iPhone cambian al plegarse la barra de Safari, y con ellos el alto de las
+     barras en mitad del desplazamiento. */}}
 {{define "cabeza"}}<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#101317">
 <title>{{.}}</title>
