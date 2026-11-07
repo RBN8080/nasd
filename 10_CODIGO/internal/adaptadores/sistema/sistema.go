@@ -302,6 +302,15 @@ func analizarCPU(s string) (total, ocioso uint64, err error) {
 	return total, ocioso, nil
 }
 
+// PorcentajeCPU es el uso de CPU entre dos muestras de LeerCPU. Da falso si
+// alguna no es válida o si el reloj de jiffies no avanzó entre las dos.
+func PorcentajeCPU(previa, actual MuestraCPU) (float64, bool) {
+	if !previa.OK || !actual.OK {
+		return 0, false
+	}
+	return porcentajeCPU(previa.Total, previa.Ocioso, actual.Total, actual.Ocioso)
+}
+
 // porcentajeCPU combina dos muestras de analizarCPU.
 func porcentajeCPU(total0, ocioso0, total1, ocioso1 uint64) (float64, bool) {
 	// El contador es monótono; si no crece, la ventana fue demasiado corta

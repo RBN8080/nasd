@@ -1,11 +1,14 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"nasd/internal/adaptadores/sistema"
 )
 
 // Pruebas de la consola 2 (ADR-0105): lo que el rediseño añade o retira y que
@@ -121,6 +124,21 @@ func TestElMarcoQuedaLimpioYLaLineaDelBinarioVaSinRotulo(t *testing.T) {
 	}
 	if strings.Contains(cuerpo, ">Binario<") {
 		t.Error("la línea del binario vuelve a llevar rótulo")
+	}
+}
+
+// LA FRECUENCIA NO CAMBIA DE LARGO CON EL REGULADOR (2026-11-07). El añadido
+// «(por debajo del máximo)» entraba y salía varias veces por segundo y, en el
+// teléfono, partía la fila en dos líneas: la página saltaba en cada cambio.
+func TestLaFrecuenciaNoCambiaDeLargoConElRegulador(t *testing.T) {
+	for _, mhz := range []int{600, 1400} {
+		nodo, _ := filasVivas(sistema.Vivo{FrecuenciaMHz: mhz, FrecuenciaMaxMHz: 1400, FrecuenciaOK: true}, Instantanea{})
+		quiero := fmt.Sprintf("%d de 1400 MHz", mhz)
+		for _, f := range nodo {
+			if f.Clave == "frecuencia" && f.Valor != quiero {
+				t.Errorf("a %d MHz la fila dice «%s» y debía decir «%s»", mhz, f.Valor, quiero)
+			}
+		}
 	}
 }
 

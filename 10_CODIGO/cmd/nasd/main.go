@@ -468,6 +468,11 @@ func ejecutar() error {
 	// esperar al proveedor es trabajo de aquí y de nadie más (ADR-0073).
 	go cola.Atender(ctx)
 
+	// LA HISTORIA DE LA MINIGRÁFICA DE CPU: una lectura de /proc/stat cada
+	// 250 ms, la única medición que corre sin nadie mirando, para que la
+	// gráfica llegue dibujada (ADR-0106, web/historia_cpu.go).
+	go s.MedirCPU(ctx)
+
 	// EL LATIDO AL TESTIGO EXTERNO — ADR-0074.
 	//
 	// Se construye aquí y no arriba porque su cuerpo lo compone el servidor,

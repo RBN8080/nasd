@@ -752,6 +752,9 @@ type filaViva struct {
 	// Seleccionada marca la fila cuyo detalle está abierto. No viaja: es de
 	// esta carga y no del flujo.
 	Seleccionada bool `json:"-"`
+	// Serie es la historia de la minigráfica, solo en la fila «cpu» y solo al
+	// cargar (historia_cpu.go). No viaja: el flujo manda un punto por marco.
+	Serie string `json:"-"`
 }
 
 // conVeredictoPintado rellena Etiqueta y Clase de una tanda de filas. Se llama
@@ -824,12 +827,12 @@ func filasVivas(n sistema.Vivo, i Instantanea) (nodo, servicio []filaViva) {
 	}
 	frecuencia := sinMedida
 	if n.FrecuenciaOK {
+		// SIN «(por debajo del máximo)» DESDE ADR-0106: «600 de 1400 MHz»
+		// ya lo dice, y el añadido entraba y salía con cada cambio del
+		// regulador (ondemand, varias veces por segundo). En el teléfono la
+		// fila pasaba de una línea a dos y la página saltaba. Si es ahorro en
+		// reposo o limitación térmica lo distingue el indicador de limitación.
 		frecuencia = fmt.Sprintf("%d de %d MHz", n.FrecuenciaMHz, n.FrecuenciaMaxMHz)
-		if n.FrecuenciaMHz < n.FrecuenciaMaxMHz {
-			// Por debajo del máximo puede ser ahorro en reposo o limitación
-			// térmica; el indicador de limitación lo distingue, esto informa.
-			frecuencia += " (por debajo del máximo)"
-		}
 	}
 	encendido := sinMedida
 	if n.UptimeOK {
@@ -900,6 +903,11 @@ func (s *Servidor) verEstado(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filasNodo, filasServicio := filasVivas(n.Vivo, inst)
+	for i := range filasNodo {
+		if filasNodo[i].Clave == "cpu" {
+			filasNodo[i].Serie = s.serieCPU(n.Vivo)
+		}
+	}
 	lentos := conVeredictoPintado(comoFilas(evaluarLentos(n)))
 	salidas := conVeredictoPintado(comoFilas(evaluarSalidas(inst)))
 	// SE VUELVE A LLAMAR AQUÍ, y no se reaprovecha `indicadores`, por la misma

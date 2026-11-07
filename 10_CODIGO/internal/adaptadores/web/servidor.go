@@ -141,6 +141,10 @@ type Servidor struct {
 	// recorrido del registro de usuarios. Cada página arranca y para su propio
 	// bucle según quién la esté mirando.
 	cuentas *muestreador[marcoCuentas]
+	// historiaCPU son los últimos 30 s de uso de CPU, para que la minigráfica
+	// llegue dibujada (historia_cpu.go). Sexto punto de estado compartido: lo
+	// escribe MedirCPU y lo leen /estado y /resumen, bajo su propio cerrojo.
+	historiaCPU anilloCPU
 	// veredictosPrevios recuerda el último veredicto de cada indicador para
 	// alertar solo en los CAMBIOS. Lo toca únicamente la goroutine de
 	// mantenimiento: ver anunciar().

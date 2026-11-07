@@ -17,6 +17,9 @@
 // render en el servidor, y eso incluye el formato). Aquí solo se sustituye
 // texto. Por eso la página sin JavaScript y la página con él no pueden decir
 // cosas distintas: es literalmente el mismo texto, compuesto en el mismo sitio.
+// Dos matices: la geometría de las gráficas se dibuja aquí (ADR-0105), y un
+// veredicto nuevo se pinta con 3 s de retraso (ADR-0106, ver
+// MARCOS_PARA_CAMBIAR). Ninguno decide nada: el qué sigue viniendo hecho.
 'use strict';
 
 // Tras este número de fallos SEGUIDOS se deja de insistir.
@@ -28,6 +31,22 @@
 const FALLOS_PARA_RENDIRSE = 10;
 
 let fallos = 0;
+
+// UN VEREDICTO NUEVO ESPERA 3 s ANTES DE PINTARSE (ADR-0106). La temperatura
+// del nodo vive pegada a los 70 °C del aviso —medido ese día: 69.8, 70.4,
+// 69.8 °C varias veces por segundo— y cada cruce cambiaba la pastilla y ponía o
+// quitaba las tres líneas de «qué hacer». La fila crecía y encogía, y en el
+// iPhone, donde Safari no ancla el desplazamiento, todo lo de debajo saltaba
+// bajo el dedo: 27 saltos de hasta 87 px en 8 s, medido en marco de teléfono.
+// ISA-18.2 llama a eso una alarma que parpadea («chattering») y lo corrige con
+// un retardo. El NÚMERO sigue en vivo; el veredicto solo cambia cuando el
+// nuevo se mantiene doce marcos seguidos.
+const MARCOS_PARA_CAMBIAR = 12; // 3 s a un marco cada 250 ms
+
+// La firma de lo que se ve de un veredicto: clase, rótulo y acción.
+function firma(clase, etiqueta, accion) {
+  return clase + '\n' + etiqueta + '\n' + accion;
+}
 
 // El índice se construye UNA vez, recorriendo lo que ya pintó el servidor.
 //
@@ -45,10 +64,20 @@ let fallos = 0;
 function indexar() {
   const claves = new Map();
   for (const nodo of document.querySelectorAll('[data-clave]')) {
+    const accion = nodo.querySelector('.accion');
+    const pastilla = nodo.querySelector('.pastilla');
     claves.set(nodo.dataset.clave, {
       cifra: nodo.querySelector('.cifra'),
-      accion: nodo.querySelector('.accion'),
-      pastilla: nodo.querySelector('.pastilla'),
+      accion,
+      pastilla,
+      // Lo que pintó el servidor es lo que se ve; nulo si la fila no tiene
+      // veredicto que enseñar en esta página (las de /resumen).
+      pintado: accion || pastilla
+        ? firma(pastilla ? pastilla.className : '', pastilla ? pastilla.textContent : '',
+          accion ? accion.textContent : '')
+        : null,
+      candidato: null,
+      veces: 0,
     });
   }
   return claves;
@@ -65,9 +94,10 @@ function ponerTexto(elemento, texto) {
 }
 
 // LAS GRÁFICAS EN VIVO (consola 2, ADR-0105). La CPU dibuja su minigráfica
-// con las muestras que el flujo YA trae, y la temperatura mueve su gráfica de
-// bala: no se mide nada nuevo. Se tocan ATRIBUTOS de SVG —points, d, width—
-// y nunca «style»: la CSP descarta los estilos en línea (ADR-0060).
+// con la historia que trae la página (ADR-0106) y las muestras que el flujo YA
+// trae, y la temperatura mueve su gráfica de bala. Se tocan ATRIBUTOS de SVG
+// —points, d, width— y nunca «style»: la CSP descarta los estilos en línea
+// (ADR-0060).
 const MUESTRAS = 120; // 30 s a un marco cada 250 ms
 const serieCPU = [];
 
@@ -80,6 +110,11 @@ function dibujarCPU(valor) {
   if (Number.isNaN(valor)) return;
   serieCPU.push(valor);
   if (serieCPU.length > MUESTRAS) serieCPU.shift();
+  redibujarCPU();
+}
+
+function redibujarCPU() {
+  if (serieCPU.length === 0) return;
   // El techo nunca baja de 25 %: con un nodo casi ocioso, una escala pegada
   // al máximo convertiría un 3 % en una montaña.
   const tope = Math.max(25, ...serieCPU) * 1.15;
@@ -117,16 +152,29 @@ function aplicar(indice, filas) {
     ponerTexto(destino.cifra, fila.valor);
     if (fila.clave === 'cpu') dibujarCPU(numero(fila.valor));
     else if (fila.clave === 'temperatura') moverBala(numero(fila.valor));
-    ponerTexto(destino.accion, fila.accion || '');
-    // Vacía y no un guion: una fila sin umbral no tiene veredicto que enseñar,
-    // y el CSS esconde la pastilla en cuanto se queda sin texto. El elemento se
-    // mantiene para poder volver a escribir en él sin tocar el DOM.
-    ponerTexto(destino.pastilla, fila.etiqueta || '');
+    if (destino.pintado === null) continue;
 
     // La clase llega hecha del servidor. Componerla aquí —'p-' + veredicto—
     // pondría la traducción de veredicto a color en DOS sitios, y el día que
     // una cambiara la otra seguiría pintando lo de antes sin fallar a gritos.
     const clase = fila.clase ? 'pastilla p ' + fila.clase : 'pastilla p';
+    // Vacía y no un guion: una fila sin umbral no tiene veredicto que enseñar,
+    // y el CSS esconde la pastilla en cuanto se queda sin texto. El elemento se
+    // mantiene para poder volver a escribir en él sin tocar el DOM.
+    const nueva = firma(clase, fila.etiqueta || '', fila.accion || '');
+    if (nueva === destino.pintado) {
+      destino.candidato = null;
+      continue;
+    }
+    if (nueva !== destino.candidato) {
+      destino.candidato = nueva;
+      destino.veces = 0;
+    }
+    if (++destino.veces < MARCOS_PARA_CAMBIAR) continue;
+    destino.pintado = nueva;
+    destino.candidato = null;
+    ponerTexto(destino.accion, fila.accion || '');
+    ponerTexto(destino.pastilla, fila.etiqueta || '');
     if (destino.pastilla && destino.pastilla.className !== clase) {
       destino.pastilla.className = clase;
     }
@@ -136,19 +184,30 @@ function aplicar(indice, filas) {
 function marcarLatido(estado, texto) {
   const l = document.getElementById('latido');
   if (!l) return;
-  l.hidden = false;
-  l.className = 'p ' + (estado === 'si' ? 'p-ok' : 'p-av');
+  // Cuatro marcos por segundo: solo se toca lo que cambia.
+  const clase = 'p ' + (estado === 'si' ? 'p-ok' : 'p-av');
+  if (l.hidden) l.hidden = false;
+  if (l.className !== clase) l.className = clase;
   ponerTexto(l, texto);
 }
 
 function arrancar() {
   const filas = indexar();
-  // Las gráficas arrancan con la cifra que pintó el servidor: sin esperar al
-  // primer marco y también sin JavaScript de flujo que la mueva.
+  // Las gráficas arrancan con lo que pintó el servidor, sin esperar al primer
+  // marco. La de CPU trae su historia en «data-muestras» —los últimos 30 s que
+  // guarda el nodo, con la lectura de esta carga al final—: así no vuelve a
+  // empezar vacía en cada visita (ADR-0106).
   const temp = filas.get('temperatura');
   if (temp && temp.cifra) moverBala(numero(temp.cifra.textContent));
-  const cpu = filas.get('cpu');
-  if (cpu && cpu.cifra) dibujarCPU(numero(cpu.cifra.textContent));
+  const spark = document.querySelector('svg[data-serie="cpu"]');
+  if (spark) {
+    for (const t of (spark.dataset.muestras || '').split(' ')) {
+      const v = parseFloat(t);
+      if (!Number.isNaN(v)) serieCPU.push(v);
+    }
+    serieCPU.splice(0, Math.max(0, serieCPU.length - MUESTRAS));
+    redibujarCPU();
+  }
   const flujo = new EventSource('/estado/flujo');
 
   flujo.onopen = function () {
