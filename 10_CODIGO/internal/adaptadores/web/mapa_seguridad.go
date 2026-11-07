@@ -120,6 +120,54 @@ var elementosMapa = sync.OnceValue(func() map[string]elementoMapa {
 	return m
 })
 
+// centrosDePais es el punto del dibujo donde se enciende cada país cuando llega
+// un rechazo en vivo (vivo_seguridad.go, llegadasDesde).
+//
+// ES EL CENTRO DEL TROZO MÁS GRANDE, no el de la caja entera: con la caja,
+// Estados Unidos se encendería en Canadá por culpa de Alaska y Francia en el
+// Atlántico por la Guayana. Se calcula una vez, sobre los mismos trazos que
+// pinta el mapa.
+var centrosDePais = sync.OnceValue(func() map[string][2]float64 {
+	out := make(map[string][2]float64, 180)
+	for iso, el := range elementosMapa() {
+		if el.Punto {
+			out[iso] = [2]float64{el.CX, el.CY}
+			continue
+		}
+		if x, y, ok := centroDeTrazo(el.Trazo); ok {
+			out[iso] = [2]float64{x, y}
+		}
+	}
+	return out
+})
+
+var reNumeroTrazo = regexp.MustCompile(`-?\d+(?:\.\d+)?`)
+
+// centroDeTrazo lee un trazo de mundo.svg —solo M, L y Z, en absoluto, que es
+// lo que escribe cmd/preparar-mapa— y devuelve el centro de la caja del
+// subtrazo de mayor área.
+func centroDeTrazo(d string) (x, y float64, ok bool) {
+	mejor := -1.0
+	for trozo := range strings.SplitSeq(d, "M") {
+		nums := reNumeroTrazo.FindAllString(trozo, -1)
+		if len(nums) < 4 {
+			continue
+		}
+		x0, y0, x1, y1 := 1e9, 1e9, -1e9, -1e9
+		for i := 0; i+1 < len(nums); i += 2 {
+			px, _ := strconv.ParseFloat(nums[i], 64)
+			py, _ := strconv.ParseFloat(nums[i+1], 64)
+			x0, x1 = min(x0, px), max(x1, px)
+			y0, y1 = min(y0, py), max(y1, py)
+		}
+		if area := (x1 - x0) * (y1 - y0); area > mejor {
+			mejor = area
+			x, y, ok = (x0+x1)/2, (y0+y1)/2, true
+		}
+	}
+	return x, y, ok
+}
+
 // paisMapa es UN país con su cifra ya calculada y su geometría ya resuelta.
 type paisMapa struct {
 	ISO    string

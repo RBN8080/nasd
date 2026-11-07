@@ -85,7 +85,7 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 		PuedeAdministrar: !acotadoPorRed(r),
 		Novedades:        s.novedades.Cuantas(),
 	}
-	v.Marco = s.construirMarco(r, "archivos", tituloDeListado(ruta), "")
+	v.Marco = s.construirMarco(r, "archivos", tituloDeListado(ruta), ubicacionDeListado(ruta))
 
 	n := 0
 	for e, err := range alm.Listar(r.Context(), ruta) {
@@ -480,4 +480,15 @@ func tituloDeListado(r almacen.RutaSegura) string {
 		return "Archivos"
 	}
 	return r.Nombre()
+}
+
+// ubicacionDeListado es el subtítulo del listado: dónde se está. En el
+// teléfono la miga de pan baja con las órdenes al pulgar y deja de verse
+// arriba, así que la ubicación tiene que ir junto al título. En la raíz no
+// hace falta: el título ya dice «Archivos».
+func ubicacionDeListado(r almacen.RutaSegura) string {
+	if r.EsRaiz() {
+		return ""
+	}
+	return "Inicio / " + strings.ReplaceAll(r.Rel(), "/", " / ")
 }

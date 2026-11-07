@@ -5,12 +5,13 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
 )
 
-// Versión del binario en ejecución, para el pie de /estado.
+// Versión del binario en ejecución, para la línea del binario de /estado.
 //
 // Sale de la información que Go incrusta al compilar, NO de una constante
 // escrita a mano: una cadena de versión mantenida a mano miente el día que
@@ -20,27 +21,28 @@ import (
 // Depende de que la compilación ocurra dentro del repositorio, que es el caso:
 // el Makefile compila desde 10_CODIGO y «desplegar» exige el árbol limpio.
 
-// versionDelBinario devuelve los campos del pie por separado, en orden:
-// «nasd», «0ba159d», «2026-08-05 18:52», «sha256 b18440ec40d3».
+// versionDelBinario devuelve los campos de la línea del binario por separado,
+// en el orden que pidió el responsable el 2026-11-07:
+// «nasd b18440ec40d3» · «go1.27.3» · «linux/arm64» · «0ba159d» · «05/08/2026 - 18:52:31».
 //
 // SE DEVUELVEN SUELTOS Y NO YA UNIDOS porque cada uno tiene que poder envolver
-// entero. La línea completa mide unos 410 px y en el teléfono hay 358: unida
-// con un separador, el navegador la partía por donde le tocara y podía dejar
-// media huella en cada renglón, que es justo lo que hace ilegible una huella.
-// La plantilla los pinta con su separador y el CSS impide que se rompa uno por
-// dentro. Componer aquí la cadena y dejar que el navegador la parta sería
-// decidir el formato en el sitio donde no se sabe cuánto sitio hay.
+// entero: unida, el teléfono partiría la huella por la mitad. La plantilla los
+// une con su separador.
 //
-// Si el árbol tenía cambios sin commitear al compilar, se dice. Eso NO debería
-// verse en producción —«make desplegar» depende de verificar-limpio— así que
-// verlo ahí significa que alguien instaló un binario a mano, y es exactamente
-// lo que conviene que salte a la vista.
+// La fecha es la del commit (vcs.time), en hora local del nodo. Si el árbol
+// tenía cambios sin commitear al compilar, se dice: en producción no debería
+// verse nunca —«make desplegar» exige el árbol limpio—.
 func versionDelBinario() []string {
+	nombre := "nasd"
+	if h := huellaDelBinario(); h != "" {
+		nombre += " " + h
+	}
+	partes := []string{nombre, runtime.Version(), runtime.GOOS + "/" + runtime.GOARCH}
+
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		return []string{"nasd"}
+		return partes
 	}
-
 	var revision, cuando string
 	var sucio bool
 	for _, s := range info.Settings {
@@ -53,29 +55,24 @@ func versionDelBinario() []string {
 			sucio = s.Value == "true"
 		}
 	}
-
-	partes := []string{"nasd"}
 	if revision != "" {
-		// Siete caracteres es lo que usa git por omisión al abreviar, así que
-		// el valor se puede pegar tal cual en «git show».
+		// Siete caracteres, como abrevia git: se pega tal cual en «git show».
 		if len(revision) > 7 {
 			revision = revision[:7]
 		}
 		partes = append(partes, revision)
 	}
 	if t, err := time.Parse(time.RFC3339, cuando); err == nil {
-		// En local: quien lee esta pantalla vive en la zona del nodo, y una
-		// hora en UTC obligaría a restar seis mentalmente para nada.
-		partes = append(partes, t.Local().Format("2006-01-02 15:04"))
-	}
-	if h := huellaDelBinario(); h != "" {
-		partes = append(partes, "sha256 "+h)
+		partes = append(partes, t.Local().Format(formatoFechaBinario))
 	}
 	if sucio {
 		partes = append(partes, "ÁRBOL MODIFICADO")
 	}
 	return partes
 }
+
+// formatoFechaBinario es dd/mm/aaaa - HH:MM:SS.
+const formatoFechaBinario = "02/01/2006 - 15:04:05"
 
 // huellaDelBinario es el SHA-256 del ejecutable que está corriendo, abreviado.
 //

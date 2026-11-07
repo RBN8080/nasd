@@ -409,7 +409,7 @@ func TestSinBaseElPanelSigueEnteroSinElMapa(t *testing.T) {
 		t.Error("sin base de operadores no debería pintarse la sección de procedencia")
 	}
 	// Y lo que importa: el resto de la página sigue ahí.
-	for _, quiero := range []string{"Volumen observado", "Orígenes", "203.0.113.7"} {
+	for _, quiero := range []string{`data-cifra="rechazos"`, "Orígenes", "203.0.113.7"} {
 		if !strings.Contains(cuerpo, quiero) {
 			t.Errorf("sin base se perdió %q, que no depende de ella", quiero)
 		}

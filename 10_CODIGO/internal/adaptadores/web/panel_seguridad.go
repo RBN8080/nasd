@@ -481,6 +481,11 @@ type opcionFiltro struct {
 	Valor    string
 	Etiqueta string
 	Elegido  bool
+	// Corta y Enlace solo los llevan las ventanas: son el control segmentado
+	// de la barra de órdenes («1 h · 24 h · 7 d · Todo»), y cada uno es un
+	// enlace que conserva el resto del filtro, como la capa del mapa.
+	Corta  string
+	Enlace string
 }
 
 // topeCronologico acota la lista de eventos que se PINTA, no la que se
@@ -774,6 +779,9 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 	// salieran de sitios distintos, el rótulo podría decir «Internet» mientras
 	// el desplegable enseña otra cosa.
 	ventanas := opcionesDeVentana(int(horas))
+	for i := range ventanas {
+		ventanas[i].Enlace = enlaceDeSeguridad(q, map[string]string{"horas": ventanas[i].Valor})
+	}
 	motivos := opcionesDeMotivo(q.Get("motivo"))
 	redes := opcionesDeRed(redElegida)
 
@@ -914,6 +922,18 @@ func (s *Servidor) verSeguridad(w http.ResponseWriter, r *http.Request) {
 // opciones a mano en la plantilla dejaría un motivo nuevo sin filtro y nadie
 // se enteraría hasta necesitarlo.
 
+// ventanaCorta es el rótulo del control segmentado: cabe en el teléfono.
+func ventanaCorta(horas int) string {
+	switch {
+	case horas == 0:
+		return "Todo"
+	case horas >= 48 && horas%24 == 0:
+		return strconv.Itoa(horas/24) + " d"
+	default:
+		return strconv.Itoa(horas) + " h"
+	}
+}
+
 func opcionesDeVentana(elegida int) []opcionFiltro {
 	out := make([]opcionFiltro, 0, len(ventanas))
 	for _, v := range ventanas {
@@ -921,6 +941,7 @@ func opcionesDeVentana(elegida int) []opcionFiltro {
 			Valor:    strconv.Itoa(v.Horas),
 			Etiqueta: v.Etiqueta,
 			Elegido:  elegida == v.Horas,
+			Corta:    ventanaCorta(v.Horas),
 		})
 	}
 	return out

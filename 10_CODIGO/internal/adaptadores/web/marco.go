@@ -5,7 +5,6 @@ import (
 	"html/template"
 	"math"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -95,18 +94,17 @@ type discoRail struct {
 	Partes []parteDisco
 }
 
-// itemEstado es un elemento de la tira de estado del pie.
-type itemEstado struct {
-	Nombre string
-	Valor  string
-	// Punto es "v" (verde) o "a" (ámbar); vacío no pinta ninguno.
-	Punto string
-}
-
 // marco es lo que `_marco.html` necesita para pintar el cromo.
+//
+// SIN TIRA DE ESTADO NI VERSIÓN EN EL RAIL desde el 2026-11-07, por decisión
+// del responsable sobre la maqueta de la consola 2: el diseño tiene que quedar
+// lo más limpio posible. La línea del binario sigue entera en /estado.
 type marco struct {
 	Titulo string
 	Sub    string
+	// Modulo es la clave del módulo activo; la plantilla la escribe en
+	// data-modulo para que el CSS pueda distinguir el listado.
+	Modulo string
 	// Grupos es el rail: bloques con rótulo. Todos es la MISMA lista aplanada,
 	// para las pestañas del teléfono, que no llevan separadores.
 	Grupos []grupoMarco
@@ -123,10 +121,7 @@ type marco struct {
 
 	// Disco es nulo cuando el volumen no se pudo medir; el rail se queda sin
 	// medidor en vez de pintar ceros.
-	Disco  *discoRail
-	Estado []itemEstado
-	// Version es la revisión corta que ya publica el pie: qué binario corre.
-	Version string
+	Disco *discoRail
 }
 
 // modulo es UNA fila de la tabla del rail, antes de resolverla.
@@ -234,6 +229,7 @@ func (s *Servidor) construirMarco(r *http.Request, activo, titulo, sub string) m
 	m := marco{
 		Titulo:  titulo,
 		Sub:     sub,
+		Modulo:  activo,
 		Csrf:    s.csrfDe(r),
 		Nodo:    nombreDelNodo(r),
 		Inicial: inicialDe(usuarioDe(r)),
@@ -272,8 +268,6 @@ func (s *Servidor) construirMarco(r *http.Request, activo, titulo, sub string) m
 			m.NodoSub = "en línea · " + duracionLegible(n.Vivo.Uptime)
 		}
 		m.Disco = s.medidorDeDisco(n)
-		m.Estado = s.tiraDeEstado()
-		m.Version = revisionCorta()
 	}
 	return m
 }
@@ -354,48 +348,6 @@ func (s *Servidor) medidorDeDisco(n sistema.Nodo) *discoRail {
 		})
 	}
 	return d
-}
-
-// tiraDeEstado es el pie de la consola: qué procesos hay vivos.
-//
-// NO SE AFIRMA LO QUE NO SE PUEDE COMPROBAR. De `nasd` se sabe con certeza
-// —está sirviendo esta página—. De `nas-sensor` no: es otro proceso, y lo
-// único observable desde aquí es si su archivo se ha escrito hace poco. Por
-// eso se dice «activo» solo con esa evidencia, «sin datos» si el archivo
-// existe pero está frío, y no se pinta nada si el sensor ni siquiera está
-// configurado — un indicador permanentemente gris enseña a ignorar el panel
-// (ADR-0065).
-func (s *Servidor) tiraDeEstado() []itemEstado {
-	out := []itemEstado{{Nombre: "nasd", Valor: "activo", Punto: "v"}}
-	if s.rutaToques == "" {
-		return out
-	}
-	it := itemEstado{Nombre: "nas-sensor", Valor: "sin datos", Punto: "a"}
-	if fresco, err := archivoFresco(s.rutaToques, 10*time.Minute); err == nil && fresco {
-		it.Valor, it.Punto = "activo", "v"
-	}
-	return append(out, it)
-}
-
-// revisionCorta es la revisión de git del binario, sola. El pie de la consola
-// enseña solo eso; la línea completa —fecha, huella SHA-256— sigue estando
-// entera en /estado, que es donde se va a comprobar un despliegue.
-func revisionCorta() string {
-	partes := versionDelBinario()
-	if len(partes) < 2 {
-		return ""
-	}
-	return partes[1]
-}
-
-// archivoFresco dice si un archivo se ha escrito dentro del plazo dado. Es la
-// única forma que este proceso tiene de observar a otro sin hablar con él.
-func archivoFresco(ruta string, plazo time.Duration) (bool, error) {
-	fi, err := os.Stat(ruta)
-	if err != nil {
-		return false, err
-	}
-	return time.Since(fi.ModTime()) < plazo, nil
 }
 
 // redondear deja un porcentaje en tres decimales. Va a un atributo de SVG y

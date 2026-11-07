@@ -28,34 +28,36 @@
      repetían las filas de esta misma tabla, tres renglones más abajo. Quien
      llega a /estado viene a leer los quince indicadores, no un resumen del
      resumen. -->
-<div class="t-est">
-  <div class="th"><span>Indicador</span><span>Valor</span><span>Veredicto</span></div>
-  <div class="fls">
-    {{range .Grupos}}
-    <div class="gh"><span>{{.Rotulo}}</span></div>
-    {{range .Filas}}{{template "fila-dato" .}}{{end}}
-    {{end}}
-  </div>
+<!-- CONSOLA 2 (ADR-0105): un panel por grupo, en rejilla. «Nodo» va entero
+     arriba porque lleva las dos cifras vivas con su gráfica. -->
+<div class="tablero">
+  {{range $i, $g := .Grupos}}
+  <section class="sc {{if eq $i 0}}s12{{else}}s6{{end}}">
+    <div class="sch"><h2>{{$g.Rotulo}}</h2></div>
+    <div class="t-est">
+      <div class="th"><span>Indicador</span><span>Valor</span><span>Veredicto</span></div>
+      <div class="fls">{{range $g.Filas}}{{template "fila-dato" .}}{{end}}</div>
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Avisos}}
+  <section class="sc s12">
+    <div class="sch"><h2>Lo que no se ha podido medir</h2></div>
+    {{range .Avisos}}<p class="nota">{{.}}</p>{{end}}
+  </section>
+  {{end}}
 </div>
 
-{{if .Avisos}}
-<section class="sc">
-  <div class="sch"><h2>Lo que no se ha podido medir</h2></div>
-  {{range .Avisos}}<p class="nota">{{.}}</p>{{end}}
-</section>
-{{end}}
-
-<!-- Cada campo en su propio <span> para que el renglón pueda partirse ENTRE
-     campos y nunca por dentro de uno: media huella arriba y media abajo no se
-     puede leer ni comparar, que es para lo único que sirve una huella. -->
-<div class="notas">
-  <span class="rt">Binario</span>
-  <span class="nt">{{range $i, $campo := .Version}}{{if $i}} · {{end}}<b>{{$campo}}</b>{{end}}</span>
-</div>
+<!-- LA LÍNEA DEL BINARIO, sin rótulo (decisión del responsable, 2026-11-07):
+     nasd y su huella · Go · plataforma · commit · fecha. Cada campo en su <b>
+     para que el renglón se parta ENTRE campos y nunca por dentro de uno. -->
+<p class="binario">{{range .Version}}<b>{{.}}</b>{{end}}</p>
 
 {{template "marco-fin" .}}
 
 {{if .Detalle}}
+<a class="velo" href="/estado" aria-label="Cerrar"></a>
 <aside class="detalle">
   <div class="dvw">
     {{with .Detalle}}
@@ -108,7 +110,10 @@
 */}}
   <div class="fl{{if .Seleccionada}} sel{{end}}" data-clave="{{.Clave}}">
     <div class="cl"><span class="et">Indicador</span><a href="?ind={{.Clave}}">{{.Nombre}}</a></div>
-    <div class="cl"><span class="et">Valor</span><span class="ct2 cifra">{{.Valor}}</span><span class="accion">{{.Accion}}</span></div>
+    <div class="cl"><span class="et">Valor</span><span class="ct2 cifra">{{.Valor}}</span>
+      {{- if eq .Clave "cpu"}}<svg class="spark" data-serie="cpu" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path class="sp-a"></path><polyline class="sp-l"></polyline></svg>{{end}}
+      {{- if eq .Clave "temperatura"}}<svg class="bala" viewBox="0 0 60 12" preserveAspectRatio="none" aria-hidden="true"><rect class="b0" x="0" y="0" width="30" height="12"></rect><rect class="b1" x="30" y="0" width="10" height="12"></rect><rect class="b2" x="40" y="0" width="10" height="12"></rect><rect class="b3" x="50" y="0" width="10" height="12"></rect><rect class="med" data-bala="temperatura" x="0" y="4.5" width="0" height="3"></rect></svg>{{end}}
+      <span class="accion">{{.Accion}}</span></div>
     <div class="cl"><span class="et">Veredicto</span><span class="pls"><span class="pastilla p{{with .Veredicto.Clase}} {{.}}{{end}}">{{.Veredicto.Etiqueta}}</span></span></div>
   </div>
 {{end}}

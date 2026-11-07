@@ -74,8 +74,17 @@ func TestLaVersionSaleEnCamposSueltos(t *testing.T) {
 	if len(partes) == 0 {
 		t.Fatal("el pie no puede quedarse sin ningún campo")
 	}
-	if partes[0] != "nasd" {
-		t.Fatalf("el primer campo debe ser el nombre del binario, y es %q", partes[0])
+	if partes[0] != "nasd" && !strings.HasPrefix(partes[0], "nasd ") {
+		t.Fatalf("el primer campo debe ser el nombre del binario con su huella, y es %q", partes[0])
+	}
+	if len(partes) < 3 || !strings.HasPrefix(partes[1], "go") || !strings.Contains(partes[2], "/") {
+		t.Fatalf("tras el nombre van la versión de Go y la plataforma: %q", partes)
+	}
+	fecha := regexp.MustCompile(`^\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}$`)
+	for _, p := range partes[3:] {
+		if strings.Contains(p, "/") && !fecha.MatchString(p) {
+			t.Fatalf("la fecha %q no sigue dd/mm/aaaa - HH:MM:SS", p)
+		}
 	}
 	for _, p := range partes {
 		if strings.Contains(p, "·") {

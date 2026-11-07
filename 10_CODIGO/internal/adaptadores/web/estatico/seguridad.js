@@ -218,6 +218,38 @@
     // hace honesto: las cifras de este panel dependen del filtro —origen,
     // ventana y motivo—, así que un flujo sin filtro estaría refrescando las
     // cifras de otra vista encima de las que se están leyendo.
+    // EL MAPA SE ENCIENDE EN VIVO (consola 2): cada rechazo de Internet que
+    // trae el marco ilumina su país un instante y deja un anillo donde está.
+    // El país se colorea solo si ya tiene forma en la capa; el anillo sale
+    // siempre, porque el servidor manda el punto (llegadasDesde). Con
+    // «reducir movimiento» el país se ilumina y no hay anillo que crezca.
+    const NS = 'http://www.w3.org/2000/svg';
+    function encender(llegadas) {
+      const capa = document.querySelector('.mcapa');
+      if (!capa || !llegadas.length) return;
+      for (const l of llegadas) {
+        const forma = capa.querySelector('[data-iso="' + l.iso + '"]');
+        if (forma) {
+          forma.classList.remove('pulso');
+          void forma.getBoundingClientRect(); // reinicia la animación si ya corría
+          forma.classList.add('pulso');
+          setTimeout(() => forma.classList.remove('pulso'), 1700);
+        }
+        const anillo = document.createElementNS(NS, 'circle');
+        anillo.setAttribute('class', 'anillo');
+        anillo.setAttribute('cx', String(l.x));
+        anillo.setAttribute('cy', String(l.y));
+        anillo.setAttribute('r', '24');
+        capa.appendChild(anillo);
+        setTimeout(() => anillo.remove(), 1700);
+      }
+      const lector = document.getElementById('lector-mapa');
+      const ultima = llegadas[llegadas.length - 1];
+      if (lector && ultima.nombre && !document.querySelector('#procedencia:hover, #paises:hover')) {
+        lector.textContent = 'Ahora · ' + ultima.nombre;
+      }
+    }
+
     const flujo = new EventSource('/seguridad/flujo' + location.search);
 
     flujo.onmessage = (e) => {
@@ -239,6 +271,7 @@
       ponerVelocidad(marco.velocidad);
       recolocar();
       vigilarContencion(caja, aviso, marco.contencion || 0);
+      encender(marco.llegadas || []);
     };
 
     flujo.onerror = () => {
@@ -298,6 +331,9 @@
   // Sin mapa en la página no hay nada que enganchar. Pasa siempre que no hay
   // base de operadores instalada, que es un estado normal y no un fallo.
   if (!lector || !seccion) return;
+  // DOS RAÍCES desde la consola 2: la lista de países vive en su propio panel
+  // (#paises), y posar sobre una fila tiene que seguir marcando su país.
+  const raices = [seccion, document.getElementById('paises')].filter(Boolean);
 
   const reposo = lector.dataset.reposo || '';
 
@@ -307,8 +343,10 @@
   function marcar(iso) {
     if (marcado === iso) return;
     marcado = iso;
-    for (const el of seccion.querySelectorAll('[data-iso]')) {
-      el.classList.toggle('act', iso !== null && el.dataset.iso === iso);
+    for (const raiz of raices) {
+      for (const el of raiz.querySelectorAll('[data-iso]')) {
+        el.classList.toggle('act', iso !== null && el.dataset.iso === iso);
+      }
     }
   }
 
@@ -329,22 +367,24 @@
   // «data-iso», así que posar sobre China o sobre su fila hacen lo mismo — y
   // se realzan las dos a la vez, que es lo que las relaciona sin una leyenda
   // que lo explique.
-  seccion.addEventListener('pointerover', (e) => {
-    const el = e.target.closest('[data-lectura]');
-    if (el) leer(el);
-  });
-  // focusin y no focus: focus no burbujea, y sin esto el tabulador movería el
-  // realce sin escribir la línea.
-  seccion.addEventListener('focusin', (e) => {
-    const el = e.target.closest('[data-lectura]');
-    if (el) leer(el);
-  });
-  seccion.addEventListener('pointerleave', soltar);
+  for (const raiz of raices) {
+    raiz.addEventListener('pointerover', (e) => {
+      const el = e.target.closest('[data-lectura]');
+      if (el) leer(el);
+    });
+    // focusin y no focus: focus no burbujea, y sin esto el tabulador movería
+    // el realce sin escribir la línea.
+    raiz.addEventListener('focusin', (e) => {
+      const el = e.target.closest('[data-lectura]');
+      if (el) leer(el);
+    });
+    raiz.addEventListener('pointerleave', soltar);
+  }
 
   // En un teléfono no hay «salir» de un elemento: se toca otro o se toca
   // fuera. Sin esto, la línea se quedaría con el último país tocado para
   // siempre, diciendo algo que ya no se está mirando.
   document.addEventListener('pointerdown', (e) => {
-    if (!seccion.contains(e.target)) soltar();
+    if (!raices.some((raiz) => raiz.contains(e.target))) soltar();
   });
 })();

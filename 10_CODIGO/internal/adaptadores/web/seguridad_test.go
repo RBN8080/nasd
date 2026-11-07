@@ -475,7 +475,9 @@ func TestUnFiltroConBasuraNoRompeNiInyecta(t *testing.T) {
 	// pasado aunque el cuerpo entero se hubiera quedado sin renderizar. Se vio al
 	// renombrar la sección el 2026-09-10 —el fallo esperado no llegó— y por eso
 	// queda anclada a algo que solo puede venir del cuerpo de esta página.
-	if !strings.Contains(cuerpo, "<h2>Volumen observado</h2>") {
+	// Desde la consola 2 la banda de cifras no lleva título; el ancla pasa al
+	// primer panel, que tampoco lo pinta nadie más.
+	if !strings.Contains(cuerpo, "<h2>Contención activa</h2>") {
 		t.Error("con parámetros inválidos la página no se renderizó entera")
 	}
 }
@@ -653,15 +655,24 @@ func TestElPanelDeSeguridadSeRenderizaEntero(t *testing.T) {
 	// buscarlo suelto habría seguido en verde para siempre sin comprobar nada.
 	// Por eso todas van con su «<h2>» pegado.
 	for _, seccion := range []string{
-		"Contención activa", "Volumen observado",
-		"Actividad por día", "Orígenes", "Cronología",
+		"Contención activa", "Actividad por día", "Orígenes", "Cronología",
 	} {
 		if !strings.Contains(cuerpo, "<h2>"+seccion+"</h2>") {
 			t.Errorf("falta la sección %q", seccion)
 		}
 	}
-	if !strings.Contains(cuerpo, `<label class="fbtn" for="f-abre">`) {
-		t.Error("falta el control de filtros en la barra de órdenes")
+	// La banda de cifras (antes «Volumen observado») con sus cinco anclas.
+	for _, cifra := range []string{"paquetes", "conexiones", "rechazos", "direcciones", "paises"} {
+		if !strings.Contains(cuerpo, `data-cifra="`+cifra+`"`) {
+			t.Errorf("falta la cifra %q en la banda", cifra)
+		}
+	}
+	// El filtro: la ventana como control segmentado y el resto en un menú.
+	if !strings.Contains(cuerpo, `<nav class="sgg" aria-label="Ventana">`) {
+		t.Error("falta el control de la ventana en la barra de órdenes")
+	}
+	if !strings.Contains(cuerpo, `<form method="get" action="/seguridad" class="filtros">`) {
+		t.Error("falta el formulario de filtros en la barra de órdenes")
 	}
 }
 
