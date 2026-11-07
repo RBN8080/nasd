@@ -16,24 +16,20 @@
    4. Tokens en OKLCH: la luminosidad sube en pasos que el ojo percibe iguales.
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* Archivo — variable, 400..700 en un solo archivo por subconjunto. */
-@font-face{font-family:'Archivo';font-style:normal;font-weight:400 700;font-display:swap;
-  src:url(/estatico/archivo-latinext.woff2) format('woff2');
-  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
-@font-face{font-family:'Archivo';font-style:normal;font-weight:400 700;font-display:swap;
-  src:url(/estatico/archivo-latin.woff2) format('woff2');
+/* LETRA (ADR-0108): Inter para la interfaz y los valores, Roboto Mono para
+   identificadores (huella, commit, IP). Es la pareja de Grafana y Kibana.
+   Variables, un archivo por subconjunto; las dos con licencia SIL OFL. */
+@font-face{font-family:'Inter';font-style:normal;font-weight:400 800;font-display:swap;
+  src:url(/estatico/inter-latinext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Inter';font-style:normal;font-weight:400 800;font-display:swap;
+  src:url(/estatico/inter-latin.woff2) format('woff2');
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
-@font-face{font-family:'DM Mono';font-style:normal;font-weight:400;font-display:swap;
-  src:url(/estatico/dmmono400-latinext.woff2) format('woff2');
-  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
-@font-face{font-family:'DM Mono';font-style:normal;font-weight:400;font-display:swap;
-  src:url(/estatico/dmmono400-latin.woff2) format('woff2');
-  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
-@font-face{font-family:'DM Mono';font-style:normal;font-weight:500;font-display:swap;
-  src:url(/estatico/dmmono500-latinext.woff2) format('woff2');
-  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
-@font-face{font-family:'DM Mono';font-style:normal;font-weight:500;font-display:swap;
-  src:url(/estatico/dmmono500-latin.woff2) format('woff2');
+@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400 500;font-display:swap;
+  src:url(/estatico/robotomono-latinext.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Roboto Mono';font-style:normal;font-weight:400 500;font-display:swap;
+  src:url(/estatico/robotomono-latin.woff2) format('woff2');
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
 
 /* ═════ TOKENS ═════ */
@@ -58,8 +54,8 @@
   --m1:oklch(0.36 0.045 257); --m2:oklch(0.47 0.062 257); --m3:oklch(0.59 0.074 257);
   --m4:oklch(0.71 0.068 257); --m5:oklch(0.843 0.046 257);
   /* Letra (D7, D9). */
-  --f-txt:Archivo, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --f-dat:"DM Mono", ui-monospace, monospace;
+  --f-txt:Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-dat:"Roboto Mono", ui-monospace, monospace;
   /* Espacio (D11) y forma (D10): cápsula, pieza, hoja, dato. */
   --e1:4px; --e2:8px; --e3:12px; --e4:16px; --e5:24px; --e6:32px; --e7:48px;
   --r-dato:4px; --r-pozo:8px; --r-pieza:12px; --r-hoja:20px; --rc:999px;
@@ -116,7 +112,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
   background:color-mix(in oklch, var(--s1) 80%, transparent); -webkit-backdrop-filter:blur(20px) saturate(150%); backdrop-filter:blur(20px) saturate(150%);
   box-shadow:inset 0 -1px 0 color-mix(in oklch, var(--ln) 55%, transparent);}
 .tv{display:flex; flex-direction:column; min-width:0; flex:1 1 auto;}
-.tv h1{margin:0; font-size:var(--f6); font-weight:720; font-stretch:112%; letter-spacing:-.015em; line-height:1.15;
+.tv h1{margin:0; font-size:var(--f6); font-weight:720; letter-spacing:-.015em; line-height:1.15;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;}
 .tv .sb{font-family:var(--f-dat); font-size:var(--f2); color:var(--tx3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .tv > .p{align-self:flex-start;}
@@ -199,7 +195,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .cf{display:flex; flex-direction:column; gap:var(--e1); padding:var(--e4) var(--e3); background:var(--s2); border-radius:var(--r-pieza); min-width:0;
   box-shadow:var(--brillo); transition:background-color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
 .cf:active{transform:scale(.97);}
-.cf .n{font-family:var(--f-dat); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+.cf .n{font-family:var(--f-txt); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
 .cf .r{display:flex; align-items:center; gap:6px; font-size:var(--f2); color:var(--tx2);}
 .cf.mk{background:var(--avT);}
 .cf.mk .n{color:var(--av);}
@@ -207,7 +203,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .pl{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); min-width:0;}
 .metricas .pl + .pl{box-shadow:inset 0 1px 0 var(--lnT);}
 .pl .q{display:flex; justify-content:space-between; align-items:center; gap:var(--e2); font-size:var(--f2); font-weight:600; color:var(--tx2);}
-.pl .n{font-family:var(--f-dat); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+.pl .n{font-family:var(--f-txt); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
 .pl .d{font-size:var(--f2); color:var(--tx3);}
 /* D12: gráfica de bala de la temperatura (30–90 °C; blando 60, aviso 70, fallo 80). */
 .bala{display:block; width:100%; height:12px; border-radius:3px; overflow:hidden;}
@@ -290,6 +286,10 @@ details.plg[open] > summary::before{transform:rotate(45deg);}
 .t-est .cl:has(> .et) > :not(.et){grid-column:1;}
 .t-est .cl > a{font-size:var(--f3); font-weight:500; color:var(--tx);}
 .t-est .cifra{font-size:var(--f3); color:var(--tx);}
+/* Los valores de Estado van en la letra de texto con cifras tabulares (ADR-0108):
+   no bailan al refrescarse y no parecen una terminal. La monoespaciada queda
+   para identificadores, como en Grafana y Kibana. */
+.t-est .ct2{font-family:var(--f-txt); font-variant-numeric:tabular-nums;}
 .t-est .spark{height:28px; margin-top:4px;}
 .t-est .bala{height:8px; margin-top:6px;}
 
@@ -340,7 +340,7 @@ details.plg[open] > summary::before{transform:rotate(45deg);}
   box-shadow:0 0 0 1px var(--ln), 0 24px 64px rgb(0 0 0 / .6); animation:hoja-in var(--d4) var(--c-ent) both;}
 .dvw{display:flex; flex-direction:column; gap:var(--e4);}
 .dc{display:flex; align-items:flex-start; justify-content:space-between; gap:var(--e3);}
-.dc h3{margin:0 0 2px; font-size:var(--f5); font-weight:700; font-stretch:108%;}
+.dc h3{margin:0 0 2px; font-size:var(--f5); font-weight:700;}
 .dip{font-family:var(--f-dat); font-size:var(--f2); color:var(--ac); overflow-wrap:anywhere;}
 .x{flex:0 0 44px; width:44px; height:44px; display:grid; place-items:center; border-radius:var(--rc); background:var(--s3); color:var(--tx); font-size:16px;}
 .db{display:flex; flex-direction:column; gap:var(--e1); min-width:0;}
@@ -420,7 +420,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .kpis > .kpi:last-child:nth-child(odd){grid-column:1 / -1;}
 .kpi{display:flex; flex-direction:column; gap:2px; padding:var(--e3) var(--e4); background:var(--s2); border-radius:var(--r-pieza); min-width:0; box-shadow:var(--brillo);}
 .kpi .q{font-size:var(--f2); font-weight:600; color:var(--tx2);}
-.kpi .n{font-family:var(--f-dat); font-size:var(--f6); font-weight:500; letter-spacing:-.02em; line-height:1.2; font-variant-numeric:tabular-nums;}
+.kpi .n{font-family:var(--f-txt); font-size:var(--f6); font-weight:500; letter-spacing:-.02em; line-height:1.2; font-variant-numeric:tabular-nums;}
 .kpi .d{font-size:var(--f1); color:var(--tx3);}
 .kpi .sp{display:block; width:100%; height:28px; margin-top:4px;}
 .kpi .sp polyline{fill:none; stroke:var(--ac); stroke-width:1.5; vector-effect:non-scaling-stroke; stroke-linejoin:round;}
@@ -523,12 +523,12 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .tarjeta{width:100%; max-width:24rem; display:flex; flex-direction:column; gap:var(--e3); padding:var(--e5); background:var(--s2); border-radius:28px;
   box-shadow:var(--brillo), 0 24px 64px rgb(0 0 0 / .35);}
 .tarjeta.ancha{max-width:34rem;}
-.tarjeta h1{margin:0; font-size:var(--f6); font-weight:720; font-stretch:112%; letter-spacing:-.015em;}
+.tarjeta h1{margin:0; font-size:var(--f6); font-weight:720; letter-spacing:-.015em;}
 .tarjeta > p{margin:0; font-size:var(--f2); color:var(--tx2); line-height:1.55;}
 .tarjeta > p b{color:var(--tx);}
 .tarjeta .sch h2{font-size:var(--f3);}
 .marca-sola{display:flex; flex-direction:column; align-items:center; gap:var(--e1); padding:var(--e2) 0 var(--e3);}
-.marca-sola b{font-size:var(--f6); font-weight:760; font-stretch:118%; letter-spacing:-.01em;}
+.marca-sola b{font-size:var(--f6); font-weight:760; letter-spacing:-.01em;}
 .acc{display:flex; flex-direction:column; gap:var(--e3);}
 .acc .bt{margin-top:var(--e2); background:var(--ac); color:var(--s0);}
 .ruta-grande{margin:0; padding:var(--e4); font-family:var(--f-dat); font-size:var(--f4); text-align:center; line-height:1.45; overflow-wrap:anywhere;
@@ -619,7 +619,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .rail{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4) var(--e3); overflow-y:auto;}
   .marca{display:flex; flex-direction:column; gap:2px; padding:var(--e2) var(--e3) var(--e3);}
   .marca .nm{display:flex; flex-direction:column; gap:2px; min-width:0;}
-  .marca .nm b{font-size:var(--f4); font-weight:700; font-stretch:108%; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis;}
+  .marca .nm b{font-size:var(--f4); font-weight:700; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis;}
   .marca .nm span{display:flex; align-items:center; gap:6px; font-family:var(--f-dat); font-size:var(--f2); color:var(--tx3);}
   .marca .nm span i{width:8px; height:8px; border-radius:2px; background:var(--ok); display:block;}
   .gr{display:flex; flex-direction:column; gap:2px;}
