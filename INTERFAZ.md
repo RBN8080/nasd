@@ -1,43 +1,53 @@
-[🇬🇧 English](INTERFACE.md) · 🇪🇸 Español · [← Volver](README.es.md)
+[English](INTERFACE.md) · Español · [← Volver](README.es.md)
 
-# La interfaz
+# La interfaz actual
 
-Los cinco módulos del panel. Las imágenes son maquetas con datos inventados,
-no capturas de ningún nodo: cada una enseña un caso distinto, que es lo que una
-captura no puede hacer.
+Referencia: consola v1.134.0, revisada el 2026-11-07. Capturas de las
+plantillas y CSS reales con datos ficticios de pruebas. No proceden del nodo
+ni acreditan su salud. Son vistas estáticas: no ejecutan acciones ni el flujo
+en vivo. Inter y Roboto Mono se cargan desde los recursos del producto.
 
 ## Resumen
 
-Lo ocurrido en el día, con el detalle de cada movimiento y desde qué red llegó.
+Temperatura, CPU, almacenamiento, cuentas y subidas interrumpidas.
 
-![Resumen: contadores del día y actividad reciente](imagenes/ui-resumen.svg)
+![Resumen de ejemplo](imagenes/ui-resumen.png)
 
 ## Archivos
 
-El almacén. Aquí con una subida en curso, que es el estado que casi nunca
-aparece en una captura.
+Listado de ejemplo; las operaciones disponibles dependen de la sesión y red.
 
-![Archivos: listado con una subida al 60 %](imagenes/ui-archivos.svg)
+![Archivos de ejemplo](imagenes/ui-archivos.png)
 
 ## Estado
 
-La salud del nodo. Dos indicadores en ámbar: el disco al 71 % y un respaldo más
-viejo que el umbral que publica el propio cliente.
+Indicadores agrupados en paneles. «No disponible» y «sin muestras» conservan
+su significado: no se convierten en ceros ni en señales de éxito.
 
-![Estado: siete indicadores, dos de ellos en ámbar](imagenes/ui-estado.svg)
+![Estado de ejemplo](imagenes/ui-estado.png)
+
+Vista a 390 × 844 CSS px en Chromium; no sustituye la comprobación en Safari.
+
+![Estado en vista móvil](imagenes/ui-estado-movil.png)
 
 ## Seguridad
 
-Quién ha llamado y desde dónde, sobre el mismo mapa que sirve el nodo —174
-países, generado fuera de línea y embebido en el binario—. Arriba, la cinta en
-vivo alimentada por el flujo que ya existe. Abajo, el desglose por red y las
-direcciones en cuarentena, que caducan solas.
+Filtros de tiempo, contención, actividad y orígenes. El ejemplo muestra el
+estado vacío, sin sensor ni base de operadores; por eso no presenta países
+ni un mapa con actividad inventada. La cinta indica que la foto no se refresca.
 
-![Seguridad: mapa de orígenes, cinta en vivo, desglose por red y dos direcciones en cuarentena](imagenes/ui-seguridad.svg)
+![Seguridad sin eventos](imagenes/ui-seguridad.png)
 
 ## Cuentas
 
-Quién puede entrar y cuánto ocupa. Dar de alta y de baja solo se puede desde la
-red local o el túnel: la regla vive en la tabla de rutas, no en esta página.
+Cuentas de prueba. La administración requiere superusuario desde LAN o túnel;
+una cuenta normal solo accede a Archivos.
 
-![Cuentas: tres cuentas con su última entrada y su uso de disco](imagenes/ui-cuentas.svg)
+![Cuentas de prueba](imagenes/ui-cuentas.png)
+
+## Mantener estas imágenes
+
+Se regeneran desde las plantillas del mismo cambio. El exportador documental
+está separado del binario mediante la etiqueta de compilación `documentacion`.
+Los PNG se revisan antes de publicar; las capturas no prueban SSE, subida,
+reconexión ni restauración. Véase [mantenimiento ligero](MANTENIMIENTO.md).

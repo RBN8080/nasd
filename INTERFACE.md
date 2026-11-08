@@ -1,45 +1,50 @@
-🇬🇧 English · [🇪🇸 Español](INTERFAZ.md) · [← Back](README.md)
+English · [Español](INTERFAZ.md) · [← Back](README.md)
 
-# The interface
+# Current interface
 
-The five modules of the panel. **The interface is in Spanish, and so are these
-images: that is what the product actually shows.** They are mockups with
-invented data, not screenshots of any node — each one shows a different case,
-which a screenshot cannot do.
+Console v1.134.0, reviewed 2026-11-07. These images render the actual templates
+and CSS using fictional test data. They do not show a production node or
+prove its health. JavaScript and live updates are disabled for these static
+examples. The product is in Spanish and uses locally bundled Inter and Roboto Mono.
 
 ## Resumen — overview
 
-What happened today, with each event and the network it came from.
+Temperature, CPU, storage, accounts and interrupted uploads.
 
-![Overview: daily counters and recent activity](imagenes/ui-resumen.svg)
+![Example overview](imagenes/ui-resumen.png)
 
 ## Archivos — files
 
-The store, here with an upload in progress: the state a screenshot almost never
-catches.
+A test listing. Available actions depend on the session and network.
 
-![Files: a listing with an upload at 60 %](imagenes/ui-archivos.svg)
+![Example files](imagenes/ui-archivos.png)
 
 ## Estado — health
 
-Node health. Two indicators in amber: the disk at 71 %, and a backup older than
-the threshold the client itself publishes.
+Grouped indicators; unavailable measurements remain unavailable.
 
-![Health: seven indicators, two of them amber](imagenes/ui-estado.svg)
+![Example health](imagenes/ui-estado.png)
+
+390 × 844 CSS pixel Chromium viewport; this is not a Safari device test.
+
+![Mobile health](imagenes/ui-estado-movil.png)
 
 ## Seguridad — security
 
-Who called and from where, over the same map the node serves — 174 countries,
-generated offline and embedded in the binary. On top, the live ribbon fed by
-the stream that already exists. Below, the breakdown by network and the
-quarantined addresses, which expire on their own.
+Time filters, containment, activity and origins. This empty example has no
+sensor or operator database, so it shows neither country data nor a populated
+map. The ribbon explicitly says the snapshot does not refresh.
 
-![Security: origin map, live ribbon, per-network breakdown and two quarantined addresses](imagenes/ui-seguridad.svg)
+![Security with no events](imagenes/ui-seguridad.png)
 
 ## Cuentas — accounts
 
-Who may sign in, and how much they hold. Creating and removing accounts works
-only from the local network or the tunnel: that rule lives in the route table,
-not in this page.
+Test accounts. Account administration requires the superuser on LAN or VPN.
+Ordinary accounts only have access to Files.
 
-![Accounts: three accounts with last sign-in and disk usage](imagenes/ui-cuentas.svg)
+![Test accounts](imagenes/ui-cuentas.png)
+
+Images must be regenerated when the interface changes. The documentation
+exporter is isolated behind the `documentacion` build tag. Screenshots do not
+test live streams, uploads, reconnection or recovery. The lightweight
+[maintenance policy and priorities](MANTENIMIENTO.md) are maintained in Spanish.

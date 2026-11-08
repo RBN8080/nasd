@@ -4,8 +4,7 @@
 
 Un servidor de archivos para un nodo Linux de placa única. Sirve un mismo
 almacén por dos vías —SMB y su propia interfaz web— con un panel de control de
-acceso y vigilancia encima. Unas 48.000 líneas de Go **sin dependencias
-externas**, dos auxiliares en C y un cliente de respaldo para Windows en
+acceso y vigilancia encima. Go **sin dependencias externas**, dos auxiliares en C y un cliente de respaldo para Windows en
 PowerShell.
 
 En producción desde julio de 2026.
@@ -32,9 +31,9 @@ En producción desde julio de 2026.
 
 ## La interfaz
 
-![Seguridad: mapa de orígenes, cinta en vivo, desglose por red y direcciones en cuarentena](imagenes/ui-seguridad.svg)
+![Seguridad: consola actual con datos de ejemplo](imagenes/ui-seguridad.png)
 
-El panel de seguridad, sobre el mismo mapa que sirve el nodo. Los otros cuatro
+El panel de seguridad actual, con datos ficticios y sin eventos. Los otros cuatro
 módulos —Resumen, Archivos, Estado y Cuentas— están en
 [**La interfaz**](INTERFAZ.md).
 
@@ -70,8 +69,8 @@ de GeoIP, el mapa del mundo del panel y las métricas están hechos dentro del
 nada en tiempo de ejecución, lo que importa en un nodo cuya razón de ser es
 seguir funcionando en la red local cuando no hay internet.
 
-686 pruebas de Go, un corpus en C bajo los desinfectantes de direcciones y de
-comportamiento indefinido, y 333 pruebas de PowerShell. La puerta es
+Pruebas de Go, corpus en C bajo desinfectantes de direcciones y de
+comportamiento indefinido, y pruebas de PowerShell. La puerta es
 `make verificar`: formato, `go vet`, la suite entera y `staticcheck`
 **compilado para linux/arm64**, la plataforma del nodo, porque hay diagnósticos
 que solo existen ahí. No hay CI: la puerta está en el camino diario.
@@ -155,3 +154,7 @@ subconjuntos `.woff2` en `internal/adaptadores/web/estatico/`. No son mías y la
 línea de arriba no las cubre: provienen de Google Fonts bajo la **SIL Open Font
 License 1.1**, que es la que rige su uso, y su copyright pertenece a sus
 autores. El texto de la licencia está en [`OFL.txt`](OFL.txt).
+
+## Mantenimiento
+
+[Reglas breves, prioridades y referencias](MANTENIMIENTO.md).

@@ -4,7 +4,7 @@
 
 A file server for a single-board Linux node. It serves one store over two
 paths — SMB and its own web interface — with an access-control and monitoring
-panel on top. About 48,000 lines of Go with **no external dependencies**, two C
+panel on top. Go with **no external dependencies**, two C
 helpers, and a Windows backup client in PowerShell.
 
 In production since July 2026.
@@ -31,9 +31,9 @@ In production since July 2026.
 
 ## The interface
 
-![Security: origin map, live ribbon, per-network breakdown and quarantined addresses](imagenes/ui-seguridad.svg)
+![Security: current console with test data](imagenes/ui-seguridad.png)
 
-The security panel, over the same map the node serves. The interface is in
+The current security panel with fictional test data and no events. The interface is in
 Spanish, as the product is. The other four modules are in
 [**The interface**](INTERFACE.md).
 
@@ -69,8 +69,8 @@ offline and embedded with `go:embed`. Nothing is fetched at runtime, which
 matters on a node whose purpose is to keep working on the local network when
 the internet is down.
 
-686 Go tests, a C corpus under the address and undefined-behaviour sanitizers,
-and 333 PowerShell tests. The gate is `make verificar`: formatting, `go vet`,
+Go tests, a C corpus under the address and undefined-behaviour sanitizers,
+and PowerShell tests. The gate is `make verificar`: formatting, `go vet`,
 the full suite, and `staticcheck` **compiled for linux/arm64**, the platform
 the node runs, because some diagnostics exist only there. There is no CI: the
 gate sits on the daily path.
@@ -146,8 +146,12 @@ file is a decision, not an oversight.
 
 ### Third-party material
 
-The web interface embeds two typefaces, **Archivo** and **DM Mono**, as
+The web interface embeds two typefaces, **Inter** and **Roboto Mono**, as
 `.woff2` subsets under `internal/adaptadores/web/estatico/`. They are not mine
 and the line above does not cover them: they come from Google Fonts under the
 **SIL Open Font License 1.1**, which governs their use, and their copyright
 belongs to their authors. The license text is in [`OFL.txt`](OFL.txt).
+
+## Maintenance
+
+[Lightweight workflow, priorities and references (Spanish)](MANTENIMIENTO.md).
