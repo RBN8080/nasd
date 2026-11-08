@@ -10,8 +10,8 @@ helpers, and a Windows backup client in PowerShell.
 In production since July 2026.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imagenes/nodo-dark.svg">
-  <img alt="What runs on the node: three ways in, one firewall, three listeners, six scheduled units, one disk" src="imagenes/nodo-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="nodo-dark.svg">
+  <img alt="What runs on the node: three ways in, one firewall, three listeners, six scheduled units, one disk" src="nodo-light.svg">
 </picture>
 
 <!-- The diagrams are generated. Do not edit them by hand. -->
@@ -31,7 +31,7 @@ In production since July 2026.
 
 ## The interface
 
-![Security: current console with test data](imagenes/ui-seguridad.png)
+![Security: current console with test data](ui-seguridad.png)
 
 The current security panel with fictional test data and no events. The interface is in
 Spanish, as the product is. The other four modules are in
@@ -40,8 +40,8 @@ Spanish, as the product is. The other four modules are in
 ## Access control
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imagenes/clasificacion-dark.svg">
-  <img alt="A request is classified by origin in fixed order, and the classification gates what the superuser may do" src="imagenes/clasificacion-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="clasificacion-dark.svg">
+  <img alt="A request is classified by origin in fixed order, and the classification gates what the superuser may do" src="clasificacion-light.svg">
 </picture>
 
 Classification is fail-closed: an unrecognised address is treated as external,
@@ -53,8 +53,8 @@ the server will reject.
 ## Remote access
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imagenes/acceso-remoto-dark.svg">
-  <img alt="Dynamic DNS, a certificate issued over DNS-01 without opening a port, and two ways in: WireGuard on 443/UDP and HTTPS on 443/TCP" src="imagenes/acceso-remoto-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="acceso-remoto-dark.svg">
+  <img alt="Dynamic DNS, a certificate issued over DNS-01 without opening a port, and two ways in: WireGuard on 443/UDP and HTTPS on 443/TCP" src="acceso-remoto-light.svg">
 </picture>
 
 Both paths are optional and off until configured. The firewall emits the TLS
@@ -154,4 +154,4 @@ belongs to their authors. The license text is in [`OFL.txt`](OFL.txt).
 
 ## Maintenance
 
-[Lightweight workflow, priorities and references (Spanish)](MANTENIMIENTO.md).
+[Lightweight workflow, priorities and references (Spanish)](README.es.md#mantenimiento).

@@ -10,8 +10,8 @@ PowerShell.
 En producción desde julio de 2026.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imagenes/nodo-dark.svg">
-  <img alt="Lo que corre en el nodo: tres vías de entrada, un cortafuegos, tres servicios que escuchan, seis unidades programadas y un disco" src="imagenes/nodo-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="nodo-dark.svg">
+  <img alt="Lo que corre en el nodo: tres vías de entrada, un cortafuegos, tres servicios que escuchan, seis unidades programadas y un disco" src="nodo-light.svg">
 </picture>
 
 <!-- Los diagramas se generan. No los edite a mano. -->
@@ -31,7 +31,7 @@ En producción desde julio de 2026.
 
 ## La interfaz
 
-![Seguridad: consola actual con datos de ejemplo](imagenes/ui-seguridad.png)
+![Seguridad: consola actual con datos de ejemplo](ui-seguridad.png)
 
 El panel de seguridad actual, con datos ficticios y sin eventos. Los otros cuatro
 módulos —Resumen, Archivos, Estado y Cuentas— están en
@@ -40,8 +40,8 @@ módulos —Resumen, Archivos, Estado y Cuentas— están en
 ## Control de acceso
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imagenes/clasificacion-dark.svg">
-  <img alt="Una petición se clasifica por su origen en orden fijo, y esa clasificación acota lo que el superusuario puede hacer" src="imagenes/clasificacion-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="clasificacion-dark.svg">
+  <img alt="Una petición se clasifica por su origen en orden fijo, y esa clasificación acota lo que el superusuario puede hacer" src="clasificacion-light.svg">
 </picture>
 
 La clasificación es de fallo cerrado: una dirección no reconocida se trata como
@@ -53,8 +53,8 @@ página no ofrece un control que el servidor vaya a rechazar.
 ## Acceso remoto
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imagenes/acceso-remoto-dark.svg">
-  <img alt="DNS dinámico, un certificado emitido por DNS-01 sin abrir ningún puerto, y dos vías de entrada: WireGuard en 443/UDP y HTTPS en 443/TCP" src="imagenes/acceso-remoto-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="acceso-remoto-dark.svg">
+  <img alt="DNS dinámico, un certificado emitido por DNS-01 sin abrir ningún puerto, y dos vías de entrada: WireGuard en 443/UDP y HTTPS en 443/TCP" src="acceso-remoto-light.svg">
 </picture>
 
 Las dos vías son opcionales y están apagadas mientras no se configuren. El
@@ -149,7 +149,7 @@ archivo de licencia es una decisión, no un descuido.
 
 ### Material de terceros
 
-La interfaz web incrusta dos tipografías, **Archivo** y **DM Mono**, como
+La interfaz web incrusta dos tipografías, **Inter** y **Roboto Mono**, como
 subconjuntos `.woff2` en `internal/adaptadores/web/estatico/`. No son mías y la
 línea de arriba no las cubre: provienen de Google Fonts bajo la **SIL Open Font
 License 1.1**, que es la que rige su uso, y su copyright pertenece a sus
@@ -157,4 +157,36 @@ autores. El texto de la licencia está en [`OFL.txt`](OFL.txt).
 
 ## Mantenimiento
 
-[Reglas breves, prioridades y referencias](MANTENIMIENTO.md).
+Referencia revisada: consola v1.134.0, 2026-11-07. El historial queda en Git;
+las instrucciones se actualizan aquí y en la guía de interfaz existente.
+
+1. Describir el problema observable y el resultado que permitirá cerrarlo.
+2. Hacer un cambio acotado; refactorizar cuando reduzca un coste concreto.
+3. Verificar según el riesgo: `cd 10_CODIGO && make verificar` para el servicio;
+   añadir `-race` en Linux/WSL si cambia concurrencia. En interfaz, comprobar
+   escritorio, móvil, teclado, error, desconexión y permisos del servidor.
+4. Actualizar solo la explicación y las capturas afectadas. En el commit/PR
+   dejar problema, cambio, comprobación y límite; sin repetirlo en varios archivos.
+5. Publicar la copia filtrada y comprobar la revisión remota. El despliegue
+   es una acción separada. Un cambio documental no incrementa la versión del servicio.
+
+**ADR solo para hitos:** arquitectura, durabilidad, límites de confianza,
+contratos públicos o dependencias difíciles de retirar. Una página con contexto,
+decisión, alternativa importante y consecuencias. Correcciones y ajustes visuales
+se explican en el commit/PR; si sustituyen una decisión, identificar el ADR afectado.
+
+**Pendiente de priorizar con el responsable:** regresiones de conexión SSE,
+desplazamiento móvil y foco; restauración de una muestra de respaldo en destino
+aislado; CI sobre la copia pública. Son propuestas, no fallos demostrados ni
+trabajo iniciado. La nota de Seguridad sigue pendiente de acordar.
+
+Las [capturas](INTERFAZ.md) muestran plantillas reales con datos ficticios.
+No prueban Safari real, SSE, restauración ni salud de producción. Las mediciones
+operativas deben llevar fecha; no copiarse como un estado permanentemente vigente.
+
+El método adapta [DORA: calidad documental](https://dora.dev/capabilities/documentation-quality/)
+y [lotes pequeños](https://dora.dev/capabilities/working-in-small-batches/),
+[Software Engineering at Google, capítulo 10](https://abseil.io/resources/swe-book/html/ch10.html)
+y el estudio de [Bacchelli y Bird, ICSE 2013, Microsoft Research](https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/).
+Sustentan claridad, documentación junto al código y revisión de cambios acotados;
+no certifican ausencia de fallos. Referencias consultadas el 2026-11-07.

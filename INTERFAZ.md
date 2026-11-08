@@ -11,24 +11,24 @@ en vivo. Inter y Roboto Mono se cargan desde los recursos del producto.
 
 Temperatura, CPU, almacenamiento, cuentas y subidas interrumpidas.
 
-![Resumen de ejemplo](imagenes/ui-resumen.png)
+![Resumen de ejemplo](ui-resumen.png)
 
 ## Archivos
 
 Listado de ejemplo; las operaciones disponibles dependen de la sesión y red.
 
-![Archivos de ejemplo](imagenes/ui-archivos.png)
+![Archivos de ejemplo](ui-archivos.png)
 
 ## Estado
 
 Indicadores agrupados en paneles. «No disponible» y «sin muestras» conservan
 su significado: no se convierten en ceros ni en señales de éxito.
 
-![Estado de ejemplo](imagenes/ui-estado.png)
+![Estado de ejemplo](ui-estado.png)
 
 Vista a 390 × 844 CSS px en Chromium; no sustituye la comprobación en Safari.
 
-![Estado en vista móvil](imagenes/ui-estado-movil.png)
+![Estado en vista móvil](ui-estado-movil.png)
 
 ## Seguridad
 
@@ -36,18 +36,18 @@ Filtros de tiempo, contención, actividad y orígenes. El ejemplo muestra el
 estado vacío, sin sensor ni base de operadores; por eso no presenta países
 ni un mapa con actividad inventada. La cinta indica que la foto no se refresca.
 
-![Seguridad sin eventos](imagenes/ui-seguridad.png)
+![Seguridad sin eventos](ui-seguridad.png)
 
 ## Cuentas
 
 Cuentas de prueba. La administración requiere superusuario desde LAN o túnel;
 una cuenta normal solo accede a Archivos.
 
-![Cuentas de prueba](imagenes/ui-cuentas.png)
+![Cuentas de prueba](ui-cuentas.png)
 
 ## Mantener estas imágenes
 
 Se regeneran desde las plantillas del mismo cambio. El exportador documental
 está separado del binario mediante la etiqueta de compilación `documentacion`.
 Los PNG se revisan antes de publicar; las capturas no prueban SSE, subida,
-reconexión ni restauración. Véase [mantenimiento ligero](MANTENIMIENTO.md).
+reconexión ni restauración. Véase [mantenimiento](README.es.md#mantenimiento).
