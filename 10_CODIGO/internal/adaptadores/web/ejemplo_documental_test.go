@@ -4,13 +4,28 @@ package web
 
 import (
 	"bytes"
+	"context"
+	"iter"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"nasd/internal/almacen"
 )
+
+type almacenDocumental struct{ almacenVacio }
+
+func (almacenDocumental) Listar(context.Context, almacen.RutaSegura) iter.Seq2[almacen.Entrada, error] {
+	return func(yield func(almacen.Entrada, error) bool) {
+		ruta, _ := almacen.NuevaRuta("ejemplo.txt")
+		yield(almacen.Entrada{Ruta: ruta, Nombre: "ejemplo.txt", Tamano: 1024,
+			Modificado: time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)}, nil)
+	}
+}
 
 // Exporta las plantillas reales con datos de prueba, sin arrancar el NAS.
 // Solo se compila al regenerar la documentación; no entra en el binario.
@@ -20,6 +35,7 @@ func TestExportarEjemploDocumental(t *testing.T) {
 		t.Skip("exportación documental no solicitada")
 	}
 	s, _ := servidorMultiusuario(t)
+	s.almacenRaiz = almacenDocumental{}
 	s.anotarVolumen(nodoSano())
 	cookie := superusuarioEn(t, s)
 	quitarScripts := regexp.MustCompile(`(?s)<script\b[^>]*>.*?</script>`)
@@ -35,18 +51,25 @@ func TestExportarEjemploDocumental(t *testing.T) {
 			for _, mod := range modulos {
 				item := itemMarco{Rotulo: mod.rotulo, Ruta: mod.ruta, Icono: mod.icono, Activo: mod.clave == nombre}
 				m.Todos = append(m.Todos, item)
+				if len(m.Grupos) == 0 || m.Grupos[len(m.Grupos)-1].Rotulo != mod.grupo {
+					m.Grupos = append(m.Grupos, grupoMarco{Rotulo: mod.grupo})
+				}
+				g := &m.Grupos[len(m.Grupos)-1]
+				g.Items = append(g.Items, item)
 			}
-			m.Grupos = []grupoMarco{{Items: m.Todos}}
+			m.Disco = s.medidorDeDisco(nodoSano())
 			var vista any
 			if nombre == "estado" {
 				n := nodoSano()
-				nodo, servicio := filasVivas(n.Vivo, Instantanea{})
+				n.Vivo.CPU, n.Vivo.CPUOK = 12, true
+				n.Vivo.Uptime, n.Vivo.UptimeOK = 4*24*time.Hour, true
+				nodo, servicio := filasVivas(n.Vivo, Instantanea{UptimeSegundos: 86400})
 				vista = vistaEstado{Marco: m, Version: []string{"nasd · ejemplo", "datos ficticios"}, Grupos: []grupoEstado{
 					{"Nodo", nodo}, {"Servicio", servicio},
 					{"Almacenamiento y hardware", conVeredictoPintado(comoFilas(evaluarLentos(n)))},
 				}}
 			} else {
-				vista = vistaResumen{Marco: m, DiscoOK: true, DiscoUsado: "16 GB", DiscoPorcentaje: "2", Cuentas: 2, Temperatura: "55.8 °C", CPU: "12 %", CPUPie: "ejemplo", TemperaturaPie: "sin limitación", Interrumpidas: []subidaInterrumpida{{Ruta: "fotos/ejemplo.jpg", Progreso: "60 %", Porcentaje: 60}}}
+				vista = vistaResumen{Marco: m, DiscoOK: true, DiscoUsado: "16 GB", DiscoPorcentaje: "2 %", Cuentas: 2, Temperatura: "55.8 °C", CPU: "12 %", CPUPie: "ejemplo", TemperaturaPie: "sin limitación", Interrumpidas: []subidaInterrumpida{{Ruta: "fotos/ejemplo.jpg", Progreso: "60 %", Porcentaje: 60}}}
 			}
 			var b bytes.Buffer
 			if err := s.plantillas.ExecuteTemplate(&b, nombre+".html", vista); err != nil {
