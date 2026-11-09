@@ -32,3 +32,19 @@ func TestLasBarrasPegadasNoDesenfocan(t *testing.T) {
 		t.Errorf("solo se encontraron %d reglas de barras; ¿cambiaron los selectores?", vistas)
 	}
 }
+
+// LA PÁGINA NO SE ANCLA (v1.137.0). Safari 27 activó el anclaje de
+// desplazamiento por omisión y, con las cifras en vivo, movía la página sola en
+// el iPhone. Quitar esta línea no rompe nada que se vea en el ordenador: por eso
+// la vigila una prueba.
+func TestLaPaginaNoSeAncla(t *testing.T) {
+	hoja, ok := estaticos()["/estatico/estilo.css"]
+	if !ok {
+		t.Fatal("no está la hoja de estilos entre los recursos incrustados")
+	}
+	regla := regexp.MustCompile(`(?m)^html, body, \.cuerpo\{overflow-anchor:none;\}`)
+	if !regla.Match(hoja.crudo) {
+		t.Error("falta «html, body, .cuerpo{overflow-anchor:none;}»: sin ella, Safari 27 mueve la página " +
+			"cada vez que se refrescan las cifras")
+	}
+}
