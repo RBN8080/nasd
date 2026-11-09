@@ -195,14 +195,30 @@ function marcarLatido(estado, texto) {
 // marco que toca la página manda una capa nueva al compositor, y con cuatro
 // por segundo el desplazamiento iba a tirones: el dedo soltaba y la página
 // seguía «congelada», según el responsable. Mientras el dedo o la inercia la
-// mueven, el marco se guarda —solo el último— y se pinta en cuanto lleva
-// QUIETUD_MS sin moverse. La muestra de CPU no se pierde: se anota igual.
+// mueven, el marco se guarda —solo el último— y se pinta en cuanto la página
+// para. La muestra de CPU no se pierde: se anota igual.
+//
+// LO QUE MOVÍA LA PÁGINA ERA EL ANCLAJE DE SAFARI 27, y eso se corta en la
+// hoja (overflow-anchor, v1.137.0). Esta pausa queda solo para el gesto, y
+// termina en cuanto el navegador avisa con «scrollend» de que la página paró,
+// inercia incluida (Safari 26.2+). Donde no hay «scrollend», QUIETUD_MS sin
+// moverse.
 const QUIETUD_MS = 300;
+const HAY_SCROLLEND = 'onscrollend' in window;
 let movida = -Infinity; // última vez que se vio moverse la página
 let altura = 0;         // posición vista en la última comprobación
 let dedos = 0;          // dedos apoyados en la pantalla
+let enMarcha = false;   // un desplazamiento que aún no ha avisado de su fin
+let alParar = null;     // lo que se hace en cuanto la página para
 
-addEventListener('scroll', function () { movida = performance.now(); }, { passive: true });
+addEventListener('scroll', function () {
+  enMarcha = true;
+  movida = performance.now();
+}, { passive: true });
+addEventListener('scrollend', function () {
+  enMarcha = false;
+  if (dedos === 0 && alParar) alParar();
+}, { passive: true });
 
 // UN DEDO APOYADO YA ES MOVIMIENTO (v1.136.0). El primer aviso de
 // desplazamiento llega cuando la página ya se mueve, y un marco pintado justo
@@ -211,6 +227,8 @@ addEventListener('scroll', function () { movida = performance.now(); }, { passiv
 function tocar(e) {
   dedos = e.touches.length;
   movida = performance.now();
+  // Soltar sin haber desplazado nada —un toque— también es parar.
+  if (dedos === 0 && !enMarcha && alParar) alParar();
 }
 for (const tipo of ['touchstart', 'touchend', 'touchcancel']) {
   addEventListener(tipo, tocar, { passive: true });
@@ -219,7 +237,8 @@ for (const tipo of ['touchstart', 'touchend', 'touchcancel']) {
 // Se mira también la posición, y no solo el evento: así la inercia cuenta como
 // movimiento aunque el navegador espacie los avisos de desplazamiento. Un dedo
 // que lleva diez segundos quieto ya no frena nada: si se perdió su «touchend»,
-// la página no se queda congelada.
+// la página no se queda congelada. Lo mismo con un «scrollend» perdido: tres
+// segundos sin noticias de movimiento cuentan como parada.
 function seMueve() {
   const ahora = performance.now();
   if (window.scrollY !== altura) {
@@ -227,6 +246,8 @@ function seMueve() {
     movida = ahora;
   }
   if (dedos > 0 && ahora - movida < 10000) return true;
+  if (HAY_SCROLLEND && enMarcha && ahora - movida < 3000) return true;
+  if (HAY_SCROLLEND && !enMarcha) return false;
   return ahora - movida < QUIETUD_MS;
 }
 
@@ -254,6 +275,15 @@ function arrancar() {
       else pintar();
     }, QUIETUD_MS);
   }
+
+  // En cuanto la página para, el marco guardado se pinta sin esperar más.
+  alParar = function () {
+    if (espera) {
+      clearTimeout(espera);
+      espera = 0;
+    }
+    pintar();
+  };
 
   // Las gráficas arrancan con lo que pintó el servidor, sin esperar al primer
   // marco. La de CPU trae su historia en «data-muestras» —los últimos 30 s que

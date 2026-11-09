@@ -73,6 +73,16 @@
 
 /* ═════ BASE ═════ */
 *,*::before,*::after{box-sizing:border-box;}
+/* SIN ANCLAJE DE DESPLAZAMIENTO (v1.137.0). Safari 27 (septiembre de 2026) lo
+   activó por omisión y corrige la posición de la página cuando su contenido
+   cambia, incluso sin que cambie ningún tamaño. Con cifras y gráficas que se
+   rehacen cuatro veces por segundo, en el iPhone la página «se baja sola» y
+   «se va cortando». Otros lo han documentado con Safari 27 —saltos con paneles
+   container-type, saltos al arrancar una animación— y el remedio que aplican
+   es este. La consola nunca contó con el anclaje: ADR-0106 ya evita que cambie
+   el alto de lo que queda encima. «html» y «body» cubren el desplazamiento del
+   teléfono; «.cuerpo», el del navegador. */
+html, body, .cuerpo{overflow-anchor:none;}
 body{margin:0; background:var(--s1); color:var(--tx); font-family:var(--f-txt); font-size:1rem; line-height:1.5;
   -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;}
 a{color:inherit; text-decoration:none;}
