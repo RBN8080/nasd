@@ -67,11 +67,11 @@ type vistaResumen struct {
 	Latido    string
 	LatidoPie string
 
-	// Interrumpidas son las subidas que quedaron a medias en CUALQUIER cuenta
+	// Pendientes son las subidas que quedaron a medias en CUALQUIER cuenta
 	// — s.almacenRaiz.Reanudables, la misma consulta que Nuevo() ya hace una
 	// vez al arrancar (servidor.go). Aquí se repite al abrir la página, no en
-	// un flujo en vivo.
-	Interrumpidas []subidaInterrumpida
+	// un flujo en vivo. Se pintan como en Archivos (pendientes.go).
+	Pendientes []subidaPendiente
 
 	// CanalConfigurado y los suyos resumen la salud del canal externo con los
 	// mismos datos de /estado, sin repetir su tabla entera: solo si está
@@ -86,15 +86,6 @@ type vistaResumen struct {
 	Marco marco
 	// ConDetalle es siempre falso: Resumen no tiene panel de detalle propio.
 	ConDetalle bool
-}
-
-type subidaInterrumpida struct {
-	Ruta     string
-	Progreso string
-	// Porcentaje va al ancho de un <rect> de SVG, y NO a un «style="width:…%"»:
-	// la CSP no admite estilos en línea (ADR-0060) y uno se descartaría en
-	// silencio, dejando la barra vacía sin que nada fallara a gritos.
-	Porcentaje int
 }
 
 func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
@@ -163,21 +154,7 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 		v.LatidoPie = "sin testigo configurado"
 	}
 
-	if ps, err := s.almacenRaiz.Reanudables(r.Context()); err != nil {
-		s.reg.Warn("resumen: no se pudo revisar las subidas a medias", "error", err)
-	} else {
-		for _, p := range ps {
-			pct := 0
-			if p.Total > 0 {
-				pct = int(p.Escrito * 100 / p.Total)
-			}
-			v.Interrumpidas = append(v.Interrumpidas, subidaInterrumpida{
-				Ruta:       p.Ruta.Rel(),
-				Progreso:   fmt.Sprintf("%s de %s", legibleBytes(uint64(p.Escrito)), legibleBytes(uint64(p.Total))),
-				Porcentaje: pct,
-			})
-		}
-	}
+	v.Pendientes = s.subidasPendientes(r.Context(), s.almacenRaiz, cuentaDeQuienMira(r), false)
 
 	if c := inst.Canal; c.Configurado {
 		v.CanalConfigurado = true

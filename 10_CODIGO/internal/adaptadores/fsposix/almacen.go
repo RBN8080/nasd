@@ -392,6 +392,9 @@ func (e *escritura) Confirmar() error {
 	//    mientras subíamos. No se sobrescribe.
 	if _, err := e.a.raiz.Stat(e.destino); err == nil {
 		e.a.raiz.Remove(e.temporal)
+		// Sin su .part, el .meta no lo ve Reanudables ni, por tanto, la
+		// expiración: se quedaba en el disco para siempre.
+		e.retirarMeta()
 		return almacen.ErrYaExiste
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return traducir(err)

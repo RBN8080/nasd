@@ -24,9 +24,9 @@
       <div class="n mono">{{.Cuentas}}</div>
       <div class="r">Cuentas</div>
     </a>
-    <a class="cf{{if .Interrumpidas}} mk{{end}}" href="/estado">
-      <div class="n mono">{{len .Interrumpidas}}</div>
-      <div class="r">{{if .Interrumpidas}}<i class="forma f-av" aria-hidden="true"></i>{{end}}A medias</div>
+    <a class="cf{{if .Pendientes}} mk{{end}}" href="{{if .Pendientes}}#pendientes{{else}}/{{end}}">
+      <div class="n mono">{{len .Pendientes}}</div>
+      <div class="r">{{if .Pendientes}}<i class="forma f-av" aria-hidden="true"></i>{{end}}A medias</div>
     </a>
   </div>
 
@@ -65,28 +65,16 @@
     </div>
   </section>
 
-  <!-- SUBIDAS INTERRUMPIDAS, de cualquier cuenta. Se reanudan solas (RF-12):
-       es un aviso, no una acción. La barra va en SVG y no con «style»: la CSP
-       descarta los estilos en línea (ADR-0060). -->
-  {{if .Interrumpidas}}
-  <section class="sc {{if .CanalConfigurado}}s7{{else}}s12{{end}}">
-    <div class="sch"><h2>Subidas interrumpidas</h2><span class="ms">reanudación automática</span></div>
-    {{range .Interrumpidas}}
-    <div class="tarj">
-      <div class="t1"><b>{{.Ruta}}</b><span>{{.Progreso}}</span></div>
-      <svg class="prog" viewBox="0 0 100 5" preserveAspectRatio="none" aria-hidden="true">
-        <rect class="v" x="0" y="0" width="{{.Porcentaje}}" height="5"></rect>
-      </svg>
-      <p>Se conserva 7 días y se reanuda en el punto alcanzado, no desde cero.</p>
-    </div>
-    {{end}}
-  </section>
+  <!-- SUBIDAS A MEDIAS, de cualquier cuenta, con Reintentar y Descartar
+       (pendientes.go). Aquí decía «reanudación automática», y no la había. -->
+  {{if .Pendientes}}
+  <section class="sc {{if .CanalConfigurado}}s7{{else}}s12{{end}}" id="pendientes" data-csrf="{{.Marco.Csrf}}">{{template "pendientes" .Pendientes}}</section>
   {{end}}
 
   <!-- CANAL DE AVISOS: una sola línea, que es toda la pregunta que el resumen
        contesta — «¿salen los avisos?». -->
   {{if .CanalConfigurado}}
-  <section class="sc {{if .Interrumpidas}}s5{{else}}s12{{end}}">
+  <section class="sc {{if .Pendientes}}s5{{else}}s12{{end}}">
     <div class="sch"><h2>Canal de avisos</h2></div>
     <div class="tarj">
       <div class="t1"><b>{{if .CanalOK}}Entregando{{else}}Con fallos{{end}}</b><span class="pls"><span class="p {{if .CanalOK}}p-ok{{else}}p-av{{end}}">{{if .CanalOK}}Correcto{{else}}Atención{{end}}</span></span></div>
@@ -98,6 +86,7 @@
 {{template "marco-fin" .}}
 {{template "marco-cierra" .}}
 <script src="/estatico/estado.js"></script>
+{{if .Pendientes}}<script src="/estatico/subida.js"></script>{{end}}
 </body>
 </html>
 {{end}}

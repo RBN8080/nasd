@@ -30,6 +30,9 @@ type Parcial struct {
 	// por INACTIVIDAD, no por antigüedad: una subida legítima de 5 GB puede
 	// durar días con pausas, y la antigüedad castigaría justo ese caso.
 	Modificado time.Time
+	// Cuenta es quién la empezó: vacío para el superusuario, el nombre de la
+	// cuenta si no. Solo el almacén del superusuario ve parciales ajenos.
+	Cuenta string
 }
 
 // Conteo describe lo que cuelga de una ruta. Alimenta la confirmación de

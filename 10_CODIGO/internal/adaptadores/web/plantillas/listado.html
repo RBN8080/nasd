@@ -23,8 +23,8 @@
      Los menús son <details>/<summary>: abrir y cerrar es HTML puro. No es
      purismo — ADR-0027 mantiene un camino de subida SIN JavaScript, y si
      estos menús dependieran de JS, un navegador sin él se quedaría sin poder
-     crear carpetas ni usar el formulario de respaldo. menus.js solo añade el
-     cierre al pulsar fuera. -->
+     crear carpetas ni usar el formulario de respaldo. menus.js (lo carga el
+     marco) solo añade el cierre al pulsar fuera, con Escape y con «Cerrar». -->
 <div class="ordenes">
   <details class="menu">
     <summary class="od pri">
@@ -94,6 +94,8 @@
 {{template "marco-cuerpo" .}}
 
 {{if .Mensaje}}<p class="msg {{if .EsError}}mal{{end}}">{{.Mensaje}}</p>{{end}}
+
+{{if .Pendientes}}<section class="sc" id="pendientes" data-csrf="{{.Csrf}}">{{template "pendientes" .Pendientes}}</section>{{end}}
 
 <div class="t-arc">
   <!-- LOS ENCABEZADOS ORDENAN, Y CADA UNO TIENE UNA SOLA DIRECCIÓN (P-3).
@@ -208,7 +210,6 @@
 {{template "marco-fin" .}}
 {{template "marco-cierra" .}}
 
-<script src="/estatico/menus.js"></script>
 <script src="/estatico/subida.js"></script>
 </body>
 </html>

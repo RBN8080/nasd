@@ -56,6 +56,9 @@ type vistaListado struct {
 	// arma construirMarco a partir de las MISMAS EsSuperusuario/
 	// PuedeAdministrar/Novedades de arriba, así que las dos no pueden discrepar.
 	Marco marco
+	// Pendientes son las subidas a medias de quien mira, en cualquier
+	// carpeta: es aquí donde se sube, y aquí se reintentan o descartan.
+	Pendientes []subidaPendiente
 }
 
 // maxEntradasPorPagina acota lo que se envía al navegador.
@@ -131,6 +134,8 @@ func (s *Servidor) verListado(w http.ResponseWriter, r *http.Request, alm almace
 	// el límite que tiene ordenar DESPUÉS de haber recortado a
 	// maxEntradasPorPagina.
 	ordenarPor(v.Entradas, v.Orden)
+
+	v.Pendientes = s.subidasPendientes(r.Context(), alm, cuentaDeQuienMira(r), true)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
