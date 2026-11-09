@@ -316,14 +316,30 @@ details.plg[open] > summary::before{transform:rotate(45deg);}
 #progreso li{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--e2); align-items:center; padding:var(--e3); background:var(--s1); border-radius:var(--r-pieza); font-size:var(--f2);}
 #progreso li span:first-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 #progreso button{min-height:44px; padding:0 var(--e4); border:0; border-radius:var(--rc); background:var(--s3); color:var(--tx); font-size:var(--f2); font-weight:600; cursor:pointer;}
+#progreso button.pel{background:var(--faT); color:var(--fa);}
+#progreso li > span:nth-child(2){overflow-wrap:anywhere; text-align:right;}
+#progreso li > span:nth-child(3){grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:var(--e2);}
+#progreso li > span:nth-child(3):empty{display:none;}
 #zona-subida{display:flex; flex-direction:column; gap:var(--e3);}
+/* Subidas a medias (_pendientes.html), en Archivos y en Resumen. */
+.pend a{color:var(--ac);}
+.pend [data-estado]:empty{display:none;}
+/* El selector de «Reintentar» va oculto pero en el DOM: Safari no abre uno
+   con display:none. Sin esto heredaba width:100 % de input[type=file] y
+   ensanchaba la página 44 px en el teléfono. */
+input[type=file].ctl{width:0; height:0; min-height:0; padding:0; border:0; margin:0; overflow:hidden;}
 
 /* ═════ MENÚS Y HOJAS (D14): hoja que sube en el teléfono, menú que cae en el navegador ═════ */
 .menu{position:relative;}
 .menu > summary{list-style:none; cursor:pointer;}
 .menu > summary::-webkit-details-marker{display:none;}
 .menu[open]::before{content:""; position:fixed; inset:0; z-index:40; background:rgb(0 0 0 / .45); animation:fundido var(--d3) var(--c-ent);}
-.menu-panel{position:absolute; z-index:41; display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); background:var(--s2); text-align:left;
+/* El botón que abrió el menú queda POR ENCIMA del velo: pulsarlo otra vez lo
+   cierra aunque no cargue menus.js. Bajo el velo, el menú no tenía salida. */
+.menu[open] > summary{position:relative; z-index:41;}
+.menu[open] > .menu-p{background:var(--s3); color:var(--tx);}
+.menu-cerrar{margin-top:var(--e1);}
+.menu-panel{position:absolute; z-index:42; display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); background:var(--s2); text-align:left;
   border-radius:28px; box-shadow:0 0 0 1px var(--ln), 0 18px 48px rgb(0 0 0 / .55);}
 .menu[open] > .menu-panel{animation:hoja-in var(--d4) var(--c-ent) both;}
 .menu-panel form{display:flex; flex-direction:column; gap:var(--e2);}
@@ -570,6 +586,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .sola .menu-fila .menu-panel{position:absolute; left:0; right:auto; bottom:auto; top:calc(100% + var(--e1)); width:20rem; border-radius:var(--r-hoja);}
   .sola .menu-fila .menu-panel::before{content:none;}
   .sola .menu[open]::before{background:transparent;}
+  .sola .menu-cerrar{display:none;}
 }
 
 /* ═════ PANEL ANCHO (cada .sc es un contenedor) ═════ */
@@ -583,6 +600,8 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 }
 @container (min-width:520px){
   .t-est .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) auto; grid-template-areas:"nom val ver";}
+  /* Botones a su medida en cuanto el panel tiene sitio; a lo ancho, en el teléfono. */
+  .pend .fila-bt > *{flex:0 0 auto;}
 }
 @container (min-width:720px){
   .th{display:grid; gap:var(--e3); padding:0 var(--e3) var(--e2); box-shadow:inset 0 -1px 0 var(--lnT);}
@@ -691,6 +710,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .menu-fila .menu-panel{position:absolute; left:auto; right:0; bottom:auto; top:calc(100% + var(--e1)); width:17rem; max-height:none;}
   .menu-fila .menu-panel::before, .detalle::before{content:none;}
   .menu-panel .bt{min-height:36px; font-size:var(--f2);}
+  .menu-cerrar{display:none;}
   .bt{min-height:36px; padding:0 var(--e4); font-size:var(--f2);}
   input[type=text], input[type=password], input[type=file], select, textarea{min-height:38px; font-size:var(--f2);}
   #progreso button{min-height:32px;}

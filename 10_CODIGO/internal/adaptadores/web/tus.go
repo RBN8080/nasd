@@ -202,10 +202,30 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request, alm almacen.
 	}
 
 	id := parcial.ID
-	s.subidas.guardar(id, &subidaEnCurso{escritor: escritor, ruta: ruta, total: total})
 	s.contadores.subidasCreadas.Add(1)
-	s.reg.Info("subida creada", "id", id, "ruta", ruta.Rel(), "bytes", total)
 
+	// UN ARCHIVO VACÍO ESTÁ COMPLETO AL CREARSE. Publicar solo ocurría al
+	// final de un PATCH, y sin bytes el cliente no manda ninguno: la subida
+	// se quedaba a medias para siempre mientras el navegador decía
+	// «completado». Así quedaron dos «PORTAPAPELES.txt» de 0 B en el nodo
+	// (2026-11-08).
+	if total == 0 {
+		if err := escritor.Confirmar(); err != nil {
+			s.contadores.subidasFallidas.Add(1)
+			s.fallo(w, r, err)
+			return
+		}
+		s.contadores.subidasConfirmadas.Add(1)
+		s.reg.Info("subida confirmada", "id", id, "ruta", ruta.Rel(), "bytes", 0)
+		w.Header().Set("Location", "/subidas/"+id)
+		w.Header().Set("Upload-Offset", "0")
+		w.Header().Set("Nas-Completada", "1")
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
+
+	s.subidas.guardar(id, &subidaEnCurso{escritor: escritor, ruta: ruta, total: total})
+	s.reg.Info("subida creada", "id", id, "ruta", ruta.Rel(), "bytes", total)
 	w.Header().Set("Location", "/subidas/"+id)
 	w.Header().Set("Upload-Offset", "0")
 	w.WriteHeader(http.StatusCreated)

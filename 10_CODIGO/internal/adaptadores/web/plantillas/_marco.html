@@ -177,4 +177,8 @@
 
   </div>
 </div>
+{{/* El cierre de los menús va en el marco y no en cada página: Seguridad
+     tenía un menú y no cargaba este archivo, así que no se cerraba al pulsar
+     fuera. Así ningún módulo puede quedarse sin él. */}}
+<script src="/estatico/menus.js"></script>
 {{end}}

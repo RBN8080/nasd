@@ -69,7 +69,7 @@ func TestExportarEjemploDocumental(t *testing.T) {
 					{"Almacenamiento y hardware", conVeredictoPintado(comoFilas(evaluarLentos(n)))},
 				}}
 			} else {
-				vista = vistaResumen{Marco: m, DiscoOK: true, DiscoUsado: "16 GB", DiscoPorcentaje: "2 %", Cuentas: 2, Temperatura: "55.8 °C", CPU: "12 %", CPUPie: "ejemplo", TemperaturaPie: "sin limitación", Interrumpidas: []subidaInterrumpida{{Ruta: "fotos/ejemplo.jpg", Progreso: "60 %", Porcentaje: 60}}}
+				vista = vistaResumen{Marco: m, DiscoOK: true, DiscoUsado: "16 GB", DiscoPorcentaje: "2 %", Cuentas: 2, Temperatura: "55.8 °C", CPU: "12 %", CPUPie: "ejemplo", TemperaturaPie: "sin limitación", Pendientes: []subidaPendiente{{ID: "0123456789abcdef0123456789abcdef", Nombre: "ejemplo.jpg", Carpeta: "fotos", Enlace: "/ver/fotos", Progreso: "3 MB de 5 MB", Total: 5000000, Porcentaje: 60, Hace: "hace 2h 5min", Caduca: "se borra sola en 6d 21h"}}}
 			}
 			var b bytes.Buffer
 			if err := s.plantillas.ExecuteTemplate(&b, nombre+".html", vista); err != nil {

@@ -20,8 +20,33 @@ const sufijoMeta = ".meta"
 // metaEnDisco es lo que se serializa junto al parcial. Deliberadamente
 // mínimo: cuanto menos se guarde, menos puede mentir.
 type metaEnDisco struct {
-	Ruta  string `json:"ruta"`  // destino final, relativo a la raíz de datos
+	Ruta  string `json:"ruta"`  // destino final, relativo a la raíz de quien sube
 	Total int64  `json:"total"` // tamaño anunciado por el cliente
+	// Prefijo es la carpeta de la cuenta que la creó («homeUsers/juan»);
+	// vacío para el superusuario. Sin él, «foto.jpg» no dice de quién es, y
+	// estado/parciales/ es uno para todas las cuentas. Los .meta de antes de
+	// v1.135.0 no lo llevan y cuentan como del superusuario: en el nodo solo
+	// había dos, y eran suyos (2026-11-09).
+	Prefijo string `json:"prefijo,omitempty"`
+}
+
+// ve dice si este almacén alcanza un parcial de la cuenta con ese prefijo:
+// el del superusuario los ve todos; el de un usuario, solo los suyos.
+func (a *Almacen) ve(prefijo string) bool {
+	return a.prefijo == "" || a.prefijo == prefijo
+}
+
+// prefijoValido acota lo que se lee del .meta a lo que escribe ParaUsuario.
+func prefijoValido(p string) bool {
+	if p == "" {
+		return true
+	}
+	nombre, ok := strings.CutPrefix(p, SubHomeUsers+"/")
+	return ok && componenteSeguro(nombre) == nil
+}
+
+func cuentaDe(prefijo string) string {
+	return strings.TrimPrefix(prefijo, SubHomeUsers+"/")
 }
 
 func (a *Almacen) rutaMeta(id string) string {
@@ -64,7 +89,7 @@ func (a *Almacen) CrearReanudable(ctx context.Context, r almacen.RutaSegura, tot
 		return almacen.Parcial{}, nil, err
 	}
 
-	if err := a.escribirMeta(id, metaEnDisco{Ruta: r.Rel(), Total: total}); err != nil {
+	if err := a.escribirMeta(id, metaEnDisco{Ruta: r.Rel(), Total: total, Prefijo: a.prefijo}); err != nil {
 		return almacen.Parcial{}, nil, err
 	}
 
@@ -75,7 +100,7 @@ func (a *Almacen) CrearReanudable(ctx context.Context, r almacen.RutaSegura, tot
 	}
 	e.id = id
 
-	return almacen.Parcial{ID: id, Ruta: r, Total: total, Escrito: 0}, e, nil
+	return almacen.Parcial{ID: id, Ruta: r, Total: total, Escrito: 0, Cuenta: cuentaDe(a.prefijo)}, e, nil
 }
 
 // ReabrirParcial recupera una subida por su identificador, colocando el
@@ -92,6 +117,14 @@ func (a *Almacen) ReabrirParcial(ctx context.Context, id string) (almacen.Parcia
 	m, err := a.leerMeta(id)
 	if err != nil {
 		return almacen.Parcial{}, nil, err
+	}
+	if !prefijoValido(m.Prefijo) {
+		return almacen.Parcial{}, nil, almacen.ErrRutaInvalida
+	}
+	// Una subida ajena no existe para quien la pide, aunque conozca el
+	// identificador.
+	if !a.ve(m.Prefijo) {
+		return almacen.Parcial{}, nil, almacen.ErrNoExiste
 	}
 	ruta, err := almacen.NuevaRuta(m.Ruta)
 	if err != nil {
@@ -113,18 +146,22 @@ func (a *Almacen) ReabrirParcial(ctx context.Context, id string) (almacen.Parcia
 		f:        f,
 		id:       id,
 		temporal: a.rutaParte(id),
-		destino:  a.real(ruta),
+		// Con el prefijo de QUIEN LA CREÓ, no el de este almacén: si el
+		// superusuario termina la subida de otra cuenta, se publica en la
+		// carpeta de esa cuenta y no en la raíz.
+		destino: path.Join(subDatos, m.Prefijo, ruta.Rel()),
 		// El desplazamiento se toma del TAMAÑO REAL del archivo, nunca de un
 		// metadato. Es la garantía de ADR-0027.
 		escrito: fi.Size(),
 	}
 	return almacen.Parcial{
 		ID: id, Ruta: ruta, Total: m.Total,
-		Escrito: fi.Size(), Modificado: fi.ModTime(),
+		Escrito: fi.Size(), Modificado: fi.ModTime(), Cuenta: cuentaDe(m.Prefijo),
 	}, e, nil
 }
 
-// Reanudables recorre estado/parciales/ y devuelve lo que sobrevivió.
+// Reanudables recorre estado/parciales/ y devuelve lo que sobrevivió: todo
+// para el almacén del superusuario, solo lo propio para el de un usuario.
 //
 // Un .part sin .meta no se puede reanudar —no se sabe adónde iba— y se
 // informa como basura para que ADR-0029 lo expire; NO se borra aquí.
@@ -153,6 +190,9 @@ func (a *Almacen) Reanudables(ctx context.Context) ([]almacen.Parcial, error) {
 		if err != nil {
 			continue // .meta ilegible: se ignora, lo barrerá la expiración
 		}
+		if !prefijoValido(m.Prefijo) || !a.ve(m.Prefijo) {
+			continue
+		}
 		ruta, err := almacen.NuevaRuta(m.Ruta)
 		if err != nil {
 			continue
@@ -163,7 +203,7 @@ func (a *Almacen) Reanudables(ctx context.Context) ([]almacen.Parcial, error) {
 		}
 		out = append(out, almacen.Parcial{
 			ID: id, Ruta: ruta, Total: m.Total,
-			Escrito: fi.Size(), Modificado: fi.ModTime(),
+			Escrito: fi.Size(), Modificado: fi.ModTime(), Cuenta: cuentaDe(m.Prefijo),
 		})
 	}
 	return out, nil
