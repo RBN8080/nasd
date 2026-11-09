@@ -349,7 +349,10 @@ async function iniciarSubida() {
   recargarSiTermino();
 }
 
-// ── Subidas a medias (Archivos y Resumen, _pendientes.html) ───────────────
+// ── Subidas a medias (Resumen, _pendientes.html) ──────────────────────────
+//
+// Cada una lleva su menú ⋯. Al pulsar una orden el menú se cierra, y lo que
+// pasa se cuenta debajo de la tarjeta, en «data-estado».
 
 function prepararPendiente(t) {
   const acciones = t.querySelector('[data-acciones]');
@@ -361,7 +364,8 @@ function prepararPendiente(t) {
 
   function ocupada(si) {
     t.toggleAttribute('data-ocupada', si);
-    for (const b of acciones.querySelectorAll('button')) b.disabled = si;
+    acciones.open = false;
+    acciones.hidden = si;
   }
 
   async function continuar(archivo) {
@@ -393,6 +397,7 @@ function prepararPendiente(t) {
       }
       // Si no, hace falta el archivo. El selector se abre AQUÍ, dentro del
       // clic: los navegadores solo lo abren en respuesta directa a un gesto.
+      acciones.open = false;
       elegir.value = '';
       elegir.click();
     });

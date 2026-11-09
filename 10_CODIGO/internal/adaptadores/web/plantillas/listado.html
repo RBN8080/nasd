@@ -95,8 +95,6 @@
 
 {{if .Mensaje}}<p class="msg {{if .EsError}}mal{{end}}">{{.Mensaje}}</p>{{end}}
 
-{{if .Pendientes}}<section class="sc" id="pendientes" data-csrf="{{.Csrf}}">{{template "pendientes" .Pendientes}}</section>{{end}}
-
 <div class="t-arc">
   <!-- LOS ENCABEZADOS ORDENAN, Y CADA UNO TIENE UNA SOLA DIRECCIÓN (P-3).
        No alternan: pulsar dos veces «Tamaño» no invierte nada. Lo pidió así

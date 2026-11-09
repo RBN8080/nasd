@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,6 +89,21 @@ func (a *almacenDeSubidas) Reanudables(context.Context) ([]almacen.Parcial, erro
 	}
 	return out, nil
 }
+
+// Abrir solo sirve aquí para saber si un destino está ocupado (pendientes.go).
+func (a *almacenDeSubidas) Abrir(_ context.Context, r almacen.RutaSegura) (io.ReadSeekCloser, almacen.Entrada, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	c, ok := a.publicados[r.Rel()]
+	if !ok {
+		return nil, almacen.Entrada{}, almacen.ErrNoExiste
+	}
+	return lectorEnMemoria{strings.NewReader(c)}, almacen.Entrada{Ruta: r, Nombre: r.Nombre(), Tamano: int64(len(c))}, nil
+}
+
+type lectorEnMemoria struct{ *strings.Reader }
+
+func (lectorEnMemoria) Close() error { return nil }
 
 type escrituraEnMemoria struct {
 	a  *almacenDeSubidas
@@ -193,44 +209,66 @@ func TestUnPatchVacioPublicaLoQueYaLlegoEntero(t *testing.T) {
 	}
 }
 
-// Archivos enseña las subidas a medias PROPIAS con sus dos órdenes; Resumen,
-// las de todas las cuentas, y solo ofrece Reintentar en las propias: el
-// superusuario no tiene el archivo de otra cuenta.
-func TestLasSubidasAMediasSeVenConSusOrdenes(t *testing.T) {
+// Las subidas a medias viven SOLO en Resumen (decisión del responsable,
+// 2026-11-09), cada una con su menú ⋯. Reintentar solo donde puede salir
+// bien: en las propias y con el destino libre. Descartar, en todas.
+func TestLasSubidasAMediasSoloEnResumenConSuMenu(t *testing.T) {
 	s, alm, cookie, _ := servidorDeSubidas(t)
 	propia := alm.parcial(t, "", "fotos/a.jpg", 10, "1234")
 	ajena := alm.parcial(t, "juan", "b.jpg", 5, "12345")
+	ocupada := alm.parcial(t, "", "PORTAPAPELES.txt", 0, "")
+	alm.publicados["PORTAPAPELES.txt"] = "ya estaba"
 
 	archivos := pedirDesde(t, s.Rutas(), http.MethodGet, "/", "192.168.1.18:5000", cookie).Body.String()
-	if !strings.Contains(archivos, `data-subida="/subidas/`+propia+`"`) {
-		t.Error("Archivos no enseña la subida a medias propia")
-	}
-	if strings.Contains(archivos, ajena) {
-		t.Error("Archivos enseña la subida a medias de otra cuenta")
-	}
-	for _, orden := range []string{`data-accion="reintentar"`, `data-accion="descartar"`, `data-elegir`, `href="/ver/fotos"`} {
-		if !strings.Contains(archivos, orden) {
-			t.Errorf("a la subida a medias de Archivos le falta %s", orden)
-		}
+	if strings.Contains(archivos, "data-subida=") || strings.Contains(archivos, "Subidas a medias") {
+		t.Error("Archivos vuelve a enseñar subidas a medias encima de los archivos")
 	}
 
 	resumen := pedirDesde(t, s.Rutas(), http.MethodGet, "/resumen", "192.168.1.18:5000", cookie).Body.String()
-	for _, id := range []string{propia, ajena} {
+	for _, id := range []string{propia, ajena, ocupada} {
 		if !strings.Contains(resumen, `data-subida="/subidas/`+id+`"`) {
 			t.Errorf("Resumen no enseña la subida %s", id)
 		}
 	}
+	if n := strings.Count(resumen, `<details class="menu menu-fila" data-acciones hidden>`); n != 3 {
+		t.Errorf("Resumen trae %d menús ⋯; se esperaba uno por subida (3)", n)
+	}
 	if n := strings.Count(resumen, `data-accion="reintentar"`); n != 1 {
-		t.Errorf("Resumen ofrece Reintentar %d veces; se esperaba 1, solo en la propia", n)
+		t.Errorf("Resumen ofrece Reintentar %d veces; se esperaba 1, solo en la propia con destino libre", n)
 	}
-	if n := strings.Count(resumen, `data-accion="descartar"`); n != 2 {
-		t.Errorf("Resumen ofrece Descartar %d veces; se esperaban 2", n)
+	if n := strings.Count(resumen, `data-accion="descartar"`); n != 3 {
+		t.Errorf("Resumen ofrece Descartar %d veces; se esperaban 3", n)
 	}
-	if !strings.Contains(resumen, "De <b>juan</b>") {
-		t.Error("Resumen no dice de quién es la subida ajena")
+	for _, texto := range []string{"De <b>juan</b>", "y no se sobrescribe", `href="/ver/fotos"`, "data-elegir"} {
+		if !strings.Contains(resumen, texto) {
+			t.Errorf("a Resumen le falta %q", texto)
+		}
 	}
 	if strings.Contains(resumen, "reanudación automática") {
 		t.Error("Resumen vuelve a prometer una reanudación automática que no existe")
+	}
+}
+
+// EL AVISO CRÍTICO FALSO DEL 2026-11-09: reintentar una subida cuyo archivo ya
+// estaba en el disco acaba en 409 (RF-23), y eso no es una publicación perdida.
+// Contarlo puso el SLI-2 a 0 % y mandó «🔴 NAS · CRÍTICO» al teléfono.
+func TestYaExisteNoCuentaComoSubidaFallida(t *testing.T) {
+	s, alm, cookie, csrf := servidorDeSubidas(t)
+	id := alm.parcial(t, "", "PORTAPAPELES.txt", 0, "")
+	alm.publicados["PORTAPAPELES.txt"] = "ya estaba"
+	w := tus(t, s, cookie, csrf, http.MethodPatch, "/subidas/"+id, map[string]string{
+		"Upload-Offset": "0", "Content-Type": "application/offset+octet-stream",
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("publicar sobre un archivo que ya existe -> %d; se esperaba 409", w.Code)
+	}
+	if n := s.contadores.subidasFallidas.Load(); n != 0 {
+		t.Errorf("subidas fallidas = %d; un «ya existe» no es un fallo del SLI-2", n)
+	}
+	// Sin publicaciones ni fallos, el SLI-2 no tiene muestras (-1): ni aprueba
+	// ni suspende. Lo que no puede es bajar del 100 %.
+	if v := s.instantaneaCompleta().IntegridadDeSubida(); v >= 0 && v < 100 {
+		t.Errorf("SLI-2 = %.2f %% tras un «ya existe»; no debía bajar", v)
 	}
 }
 

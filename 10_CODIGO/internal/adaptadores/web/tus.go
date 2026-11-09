@@ -211,7 +211,7 @@ func (s *Servidor) tusCrear(w http.ResponseWriter, r *http.Request, alm almacen.
 	// (2026-11-08).
 	if total == 0 {
 		if err := escritor.Confirmar(); err != nil {
-			s.contadores.subidasFallidas.Add(1)
+			s.anotarFalloDePublicacion(err)
 			s.fallo(w, r, err)
 			return
 		}
@@ -317,7 +317,7 @@ func (s *Servidor) tusEnviar(w http.ResponseWriter, r *http.Request, alm almacen
 			// SLI-2. Una publicación que falla es lo más grave que puede
 			// contar este servicio: el usuario transfirió el archivo entero y
 			// no quedó publicado. Su SLO es 100 % — ver 05_OPERACION.md.
-			s.contadores.subidasFallidas.Add(1)
+			s.anotarFalloDePublicacion(err)
 			s.subidas.borrar(id)
 			s.fallo(w, r, err)
 			return
@@ -366,6 +366,17 @@ func (s *Servidor) tusDescartar(w http.ResponseWriter, r *http.Request, alm alma
 	s.reg.Info("subida descartada por el usuario",
 		"id", id, "ruta", sub.ruta.Rel(), "remoto", origenDe(r))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// anotarFalloDePublicacion cuenta para el SLI-2 solo lo que es un fallo. Un
+// destino que ya existe (RF-23) es una negativa deliberada a sobrescribir, y
+// el usuario recibe su 409: no es una publicación perdida. Contarla puso el
+// SLI-2 a 0 % y mandó un aviso crítico falso el 2026-11-09, al reintentar dos
+// subidas a medias cuyo archivo ya estaba en el disco.
+func (s *Servidor) anotarFalloDePublicacion(err error) {
+	if !errors.Is(err, almacen.ErrYaExiste) {
+		s.contadores.subidasFallidas.Add(1)
+	}
 }
 
 // decodificar deshace el encodeURIComponent del cliente.
