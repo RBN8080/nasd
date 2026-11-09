@@ -95,7 +95,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .f-fa{background:var(--fa); border-radius:50%;}
 
 /* ═════ MARCO — teléfono primero ═════ */
-.app{container-type:inline-size; --rail:232px;}
+.app{container:app / inline-size; --rail:232px;}
 .marco{--f1:.8125rem; --f2:.875rem; --f3:1rem; --f4:1.0625rem; --f5:1.25rem; --f6:1.5rem; --f7:1.75rem;
   display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"f1" "cuerpo" "ordenes" "tabs";
   grid-template-rows:auto 1fr auto auto; min-height:100svh; font-size:var(--f3); background:var(--s1);}
@@ -106,11 +106,14 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .rail{display:none; grid-area:rail;}
 .top{display:contents;}
 
-/* D20: la barra superior se pega y deja ver lo que pasa por debajo. */
+/* D20: la barra superior se pega. LAS BARRAS PEGADAS DEL TELÉFONO SON OPACAS
+   (v1.136.0, el paso que ADR-0107 dejó escrito): con backdrop-filter, Safari
+   en el iPhone vuelve a desenfocar lo de debajo en cada fotograma del
+   desplazamiento, y /estado seguía bajando a tirones (WebKit 298709). Lo
+   mismo vale para las pestañas, las órdenes y el control segmentado. */
 .f1{grid-area:f1; position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:var(--e3); padding:var(--e3) var(--e4);
   padding-top:calc(var(--e3) + env(safe-area-inset-top, 0px)); height:var(--alto-f1);
-  background:color-mix(in oklch, var(--s1) 80%, transparent); -webkit-backdrop-filter:blur(20px) saturate(150%); backdrop-filter:blur(20px) saturate(150%);
-  box-shadow:inset 0 -1px 0 color-mix(in oklch, var(--ln) 55%, transparent);}
+  background:var(--s1); box-shadow:inset 0 -1px 0 color-mix(in oklch, var(--ln) 55%, transparent);}
 .tv{display:flex; flex-direction:column; min-width:0; flex:1 1 auto;}
 .tv h1{margin:0; font-size:var(--f6); font-weight:720; letter-spacing:-.015em; line-height:1.15;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;}
@@ -128,8 +131,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .ordenes > *{pointer-events:auto;}
 .ordenes > details, .ordenes > form{position:static; margin:0;}
 .od{display:inline-flex; align-items:center; gap:var(--e2); min-height:48px; padding:0 var(--e5); border:0; border-radius:var(--rc);
-  background:color-mix(in oklch, var(--s3) 86%, transparent); -webkit-backdrop-filter:blur(16px) saturate(150%); backdrop-filter:blur(16px) saturate(150%);
-  color:var(--tx); font-size:var(--f3); font-weight:600; cursor:pointer; white-space:nowrap; list-style:none;
+  background:var(--s3); color:var(--tx); font-size:var(--f3); font-weight:600; cursor:pointer; white-space:nowrap; list-style:none;
   box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 8px 24px rgb(0 0 0 / .35);
   transition:transform var(--d1) var(--c-std), background-color var(--d1) var(--c-std);}
 .od::-webkit-details-marker{display:none;}
@@ -137,8 +139,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .od.pri{background:var(--ac); color:var(--s0);}
 .ordenes .miga, .ordenes .rango{display:none;}
 /* Control segmentado: la ventana de Seguridad y la capa del mapa. */
-.sgg{display:inline-flex; padding:3px; gap:2px; border-radius:var(--rc); background:color-mix(in oklch, var(--s3) 86%, transparent);
-  -webkit-backdrop-filter:blur(16px) saturate(150%); backdrop-filter:blur(16px) saturate(150%);
+.sgg{display:inline-flex; padding:3px; gap:2px; border-radius:var(--rc); background:var(--s3);
   box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 8px 24px rgb(0 0 0 / .35);}
 .sgg a{display:inline-flex; align-items:center; min-height:42px; padding:0 var(--e3); border-radius:var(--rc); font-size:var(--f2); font-weight:600; color:var(--tx2); white-space:nowrap;
   transition:background-color var(--d1) var(--c-std), color var(--d1) var(--c-std);}
@@ -147,8 +148,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 /* D20: pestañas flotantes en cápsula, sobre la zona segura. */
 .tabs{grid-area:tabs; position:sticky; bottom:calc(var(--inset-inf) * .5); z-index:30; display:flex; gap:2px; height:64px;
   margin:0 var(--e3) max(var(--e3), calc(var(--inset-inf) * .5)); padding:6px; border-radius:var(--rc);
-  background:color-mix(in oklch, var(--s3) 82%, transparent); -webkit-backdrop-filter:blur(24px) saturate(160%); backdrop-filter:blur(24px) saturate(160%);
-  box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 12px 32px rgb(0 0 0 / .5);}
+  background:var(--s3); box-shadow:0 0 0 1px color-mix(in oklch, var(--ln) 70%, transparent), 0 12px 32px rgb(0 0 0 / .5);}
 .tb{position:relative; flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
   border-radius:var(--rc); color:var(--tx2); font-size:var(--f1); font-weight:600; line-height:1.2; white-space:nowrap;
   transition:color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
@@ -321,9 +321,12 @@ details.plg[open] > summary::before{transform:rotate(45deg);}
 #progreso li > span:nth-child(3){grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:var(--e2);}
 #progreso li > span:nth-child(3):empty{display:none;}
 #zona-subida{display:flex; flex-direction:column; gap:var(--e3);}
-/* Subidas a medias (_pendientes.html), en Archivos y en Resumen. */
+/* Subidas a medias (_pendientes.html), en Resumen, con su menú ⋯. */
 .pend a{color:var(--ac);}
 .pend [data-estado]:empty{display:none;}
+.pend-d{display:inline-flex; align-items:center; gap:var(--e2);}
+.pend-d .menu-p{margin-block:-8px;}
+.pend-d .menu-panel{font-family:var(--f-txt); color:var(--tx);}
 /* El selector de «Reintentar» va oculto pero en el DOM: Safari no abre uno
    con display:none. Sin esto heredaba width:100 % de input[type=file] y
    ensanchaba la página 44 px en el teléfono. */
@@ -471,7 +474,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 #procedencia .ley .mx{margin-left:auto; color:var(--tx2);}
 .mctl{display:flex; align-items:center; gap:var(--e2);}
 .mctl .sgl{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3);}
-.mctl .sgg{background:var(--s1); box-shadow:none; -webkit-backdrop-filter:none; backdrop-filter:none;}
+.mctl .sgg{background:var(--s1); box-shadow:none;}
 .mctl .sgg a{min-height:32px;}
 /* La lista de países, en su propio panel. */
 .mlista{display:flex; flex-direction:column; min-width:0;}
@@ -600,8 +603,6 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 }
 @container (min-width:520px){
   .t-est .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) auto; grid-template-areas:"nom val ver";}
-  /* Botones a su medida en cuanto el panel tiene sitio; a lo ancho, en el teléfono. */
-  .pend .fila-bt > *{flex:0 0 auto;}
 }
 @container (min-width:720px){
   .th{display:grid; gap:var(--e3); padding:0 var(--e3) var(--e2); box-shadow:inset 0 -1px 0 var(--lnT);}
@@ -664,16 +665,16 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .salir-rail .od{min-height:40px;}
   .top{grid-area:top; display:flex; flex-direction:column; gap:var(--e3); margin:var(--e2) var(--e2) 0 0; padding:var(--e4) var(--e5) var(--e3);
     background:var(--s1); border-radius:var(--r-hoja) var(--r-hoja) 0 0;}
-  .f1{position:static; height:auto; padding:0; background:none; -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:none;}
+  .f1{position:static; height:auto; padding:0; background:none; box-shadow:none;}
   .vw > .marq{top:0;}
   .tv{flex-direction:row; align-items:baseline; gap:var(--e3);}
   .app[data-modulo="archivos"] .tv .sb{display:none;}
   .cuerpo{overflow-y:auto; margin:0 var(--e2) var(--e2) 0; padding:var(--e2) var(--e5) var(--e6); background:var(--s1); border-radius:0 0 var(--r-hoja) var(--r-hoja);}
   .tabs{display:none;}
   .ordenes{position:relative; bottom:auto; z-index:auto; padding:0; margin:0; pointer-events:auto; align-items:center;}
-  .od{min-height:36px; padding:0 var(--e4); font-size:var(--f2); color:var(--tx2); background:var(--s2); -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:none;}
+  .od{min-height:36px; padding:0 var(--e4); font-size:var(--f2); color:var(--tx2); background:var(--s2); box-shadow:none;}
   .od.pri{background:var(--ac); color:var(--s0);}
-  .sgg{background:var(--s2); -webkit-backdrop-filter:none; backdrop-filter:none; box-shadow:none;}
+  .sgg{background:var(--s2); box-shadow:none;}
   .sgg a{min-height:30px;}
   .ordenes .miga{display:flex; margin-left:auto; align-items:center; gap:6px; font-size:var(--f2); color:var(--tx3);}
   .ordenes .miga a + a::before{content:"/"; margin-right:6px; color:var(--tx3);}
@@ -702,15 +703,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .t-arc .fl > .cl:nth-child(3) .ct2::before{content:none;}
   .t-arc .ico-f{width:32px; height:32px; flex-basis:32px; border-radius:8px;}
   .t-arc .nomb{min-height:40px;}
-  .menu-p{width:36px; height:36px; font-size:18px;}
-  .menu[open]::before{background:transparent; animation:none;}
-  .menu-panel{border-radius:var(--r-hoja); padding:var(--e3);}
-  .menu[open] > .menu-panel{animation:menu-in var(--d3) var(--c-ent) both;}
-  .ordenes .menu-panel{left:0; right:auto; bottom:auto; top:calc(100% + var(--e2)); width:22rem;}
-  .menu-fila .menu-panel{position:absolute; left:auto; right:0; bottom:auto; top:calc(100% + var(--e1)); width:17rem; max-height:none;}
-  .menu-fila .menu-panel::before, .detalle::before{content:none;}
-  .menu-panel .bt{min-height:36px; font-size:var(--f2);}
-  .menu-cerrar{display:none;}
+  .detalle::before{content:none;}
   .bt{min-height:36px; padding:0 var(--e4); font-size:var(--f2);}
   input[type=text], input[type=password], input[type=file], select, textarea{min-height:38px; font-size:var(--f2);}
   #progreso button{min-height:32px;}
@@ -720,6 +713,21 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 }
 @container (max-width:879px){
   .prim{order:-1;}
+}
+/* LOS MENÚS MIDEN LA VENTANA, NO EL PANEL (v1.136.0). Cada .sc es un
+   contenedor, y un menú dentro de uno —las subidas a medias de Resumen—
+   preguntaba por el ancho del panel: en el navegador salía la hoja del
+   teléfono, a todo lo ancho. «app» es el contenedor de .app. */
+@container app (min-width:880px){
+  .menu-p{width:36px; height:36px; font-size:18px;}
+  .menu[open]::before{background:transparent; animation:none;}
+  .menu-panel{border-radius:var(--r-hoja); padding:var(--e3);}
+  .menu[open] > .menu-panel{animation:menu-in var(--d3) var(--c-ent) both;}
+  .ordenes .menu-panel{left:0; right:auto; bottom:auto; top:calc(100% + var(--e2)); width:22rem;}
+  .menu-fila .menu-panel{position:absolute; left:auto; right:0; bottom:auto; top:calc(100% + var(--e1)); width:17rem; max-height:none;}
+  .menu-fila .menu-panel::before{content:none;}
+  .menu-panel .bt{min-height:36px; font-size:var(--f2);}
+  .menu-cerrar{display:none;}
 }
 
 /* Efecto de pasar el ratón solo donde hay ratón (D16): en el teléfono se quedaría pegado. */

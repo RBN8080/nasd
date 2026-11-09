@@ -1,29 +1,42 @@
-{{/* _pendientes.html — las subidas a medias, igual en Archivos y en Resumen
-     (pendientes.go). Recibe la lista; la <section> la pone cada página, que
-     es quien sabe cuánto ancho le toca.
+{{/* _pendientes.html — las subidas a medias de Resumen (pendientes.go).
+     Recibe la lista; la <section> la pone la página, que es quien sabe
+     cuánto ancho le toca.
 
-     Las órdenes nacen ocultas y las enseña subida.js: sin JavaScript no
-     harían nada, y un botón que no hace nada es peor que ninguno. */}}
+     Cada subida lleva su menú ⋯, como cada fila de Archivos: en el teléfono
+     es la misma hoja que sube, con «Cerrar». El menú nace oculto y lo enseña
+     subida.js: sin JavaScript sus botones no harían nada, y un botón que no
+     hace nada es peor que ninguno.
+
+     El selector de archivo va FUERA del menú: con el <details> cerrado no es
+     seguro que el navegador lo abra. */}}
 {{define "pendientes"}}
 <div class="sch"><h2>Subidas a medias</h2><span class="ms">{{len .}}</span></div>
 {{range .}}
 <div class="tarj pend" data-subida="/subidas/{{.ID}}" data-nombre="{{.Nombre}}" data-total="{{.Total}}"{{if .Completa}} data-completa{{end}}>
-  <div class="t1"><b>{{.Nombre}}</b><span>{{.Progreso}}</span></div>
+  <div class="t1"><b>{{.Nombre}}</b>
+    <span class="pend-d"><span>{{.Progreso}}</span>
+    {{- if not .EnCurso}}
+      <details class="menu menu-fila" data-acciones hidden>
+        <summary class="menu-p" title="Acciones" aria-label="Acciones de {{.Nombre}}">⋯</summary>
+        <div class="menu-panel">
+          {{if .Ocupado}}<p class="nota">Ya hay un «{{.Nombre}}» en {{.Carpeta}}, y no se sobrescribe: esta subida no puede terminarse.</p>
+          {{else if .Cuenta}}<p class="nota">Es de {{.Cuenta}}: solo esa cuenta tiene el archivo para terminarla.</p>
+          {{else if .Completa}}<button type="button" class="bt" data-accion="reintentar">Reintentar</button>
+          <p class="nota">Llegó entera; falta publicarla.</p>
+          {{else}}<button type="button" class="bt" data-accion="reintentar">Reintentar…</button>
+          <p class="nota">Pide otra vez el mismo archivo y sigue donde se quedó.</p>{{end}}
+          <button type="button" class="bt pel" data-accion="descartar">Descartar</button>
+          <p class="nota">{{.Caduca}}</p>
+        </div>
+      </details>
+    {{- end}}</span>
+  </div>
   <svg class="prog" viewBox="0 0 100 5" preserveAspectRatio="none" aria-hidden="true">
     <rect class="v" x="0" y="0" width="{{.Porcentaje}}" height="5"></rect>
   </svg>
-  <p>{{if .Cuenta}}De <b>{{.Cuenta}}</b> · {{end}}En {{if .Enlace}}<a href="{{.Enlace}}">{{.Carpeta}}</a>{{else}}{{.Carpeta}}{{end}} · {{.Hace}} · {{.Caduca}}</p>
-  {{if .EnCurso}}
-  <p class="nota">Se está subiendo ahora.</p>
-  {{else}}
-  {{if not .Cuenta}}<p class="nota">{{if .Completa}}Llegó entera; falta publicarla.{{else}}Para seguir donde se quedó, elija otra vez el mismo archivo.{{end}}</p>{{end}}
-  <div class="fila-bt" data-acciones hidden>
-    {{if not .Cuenta}}<button type="button" class="bt" data-accion="reintentar">Reintentar</button>
-    {{if not .Completa}}<input type="file" class="ctl" tabindex="-1" aria-hidden="true" data-elegir>{{end}}{{end}}
-    <button type="button" class="bt pel" data-accion="descartar">Descartar</button>
-  </div>
+  <p>{{if .Cuenta}}De <b>{{.Cuenta}}</b> · {{end}}En {{if .Enlace}}<a href="{{.Enlace}}">{{.Carpeta}}</a>{{else}}{{.Carpeta}}{{end}} · {{.Hace}}{{if .EnCurso}} · subiéndose ahora{{end}}</p>
+  {{if and (not .Cuenta) (not .Completa) (not .Ocupado) (not .EnCurso)}}<input type="file" class="ctl" tabindex="-1" aria-hidden="true" data-elegir>{{end}}
   <p class="nota" data-estado aria-live="polite"></p>
-  {{end}}
 </div>
 {{end}}
 {{end}}

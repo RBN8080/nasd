@@ -70,7 +70,7 @@ type vistaResumen struct {
 	// Pendientes son las subidas que quedaron a medias en CUALQUIER cuenta
 	// — s.almacenRaiz.Reanudables, la misma consulta que Nuevo() ya hace una
 	// vez al arrancar (servidor.go). Aquí se repite al abrir la página, no en
-	// un flujo en vivo. Se pintan como en Archivos (pendientes.go).
+	// un flujo en vivo. Cada una lleva su menú ⋯ (pendientes.go).
 	Pendientes []subidaPendiente
 
 	// CanalConfigurado y los suyos resumen la salud del canal externo con los
@@ -154,7 +154,7 @@ func (s *Servidor) verResumen(w http.ResponseWriter, r *http.Request) {
 		v.LatidoPie = "sin testigo configurado"
 	}
 
-	v.Pendientes = s.subidasPendientes(r.Context(), s.almacenRaiz, cuentaDeQuienMira(r), false)
+	v.Pendientes = s.subidasPendientes(r.Context(), cuentaDeQuienMira(r))
 
 	if c := inst.Canal; c.Configurado {
 		v.CanalConfigurado = true

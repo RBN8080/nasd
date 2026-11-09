@@ -197,20 +197,37 @@ function marcarLatido(estado, texto) {
 // seguía «congelada», según el responsable. Mientras el dedo o la inercia la
 // mueven, el marco se guarda —solo el último— y se pinta en cuanto lleva
 // QUIETUD_MS sin moverse. La muestra de CPU no se pierde: se anota igual.
-const QUIETUD_MS = 200;
+const QUIETUD_MS = 300;
 let movida = -Infinity; // última vez que se vio moverse la página
 let altura = 0;         // posición vista en la última comprobación
+let dedos = 0;          // dedos apoyados en la pantalla
 
 addEventListener('scroll', function () { movida = performance.now(); }, { passive: true });
 
+// UN DEDO APOYADO YA ES MOVIMIENTO (v1.136.0). El primer aviso de
+// desplazamiento llega cuando la página ya se mueve, y un marco pintado justo
+// en ese hueco tocaba la página al arrancar el gesto. Los oyentes son pasivos:
+// no frenan el desplazamiento.
+function tocar(e) {
+  dedos = e.touches.length;
+  movida = performance.now();
+}
+for (const tipo of ['touchstart', 'touchend', 'touchcancel']) {
+  addEventListener(tipo, tocar, { passive: true });
+}
+
 // Se mira también la posición, y no solo el evento: así la inercia cuenta como
-// movimiento aunque el navegador espacie los avisos de desplazamiento.
+// movimiento aunque el navegador espacie los avisos de desplazamiento. Un dedo
+// que lleva diez segundos quieto ya no frena nada: si se perdió su «touchend»,
+// la página no se queda congelada.
 function seMueve() {
+  const ahora = performance.now();
   if (window.scrollY !== altura) {
     altura = window.scrollY;
-    movida = performance.now();
+    movida = ahora;
   }
-  return performance.now() - movida < QUIETUD_MS;
+  if (dedos > 0 && ahora - movida < 10000) return true;
+  return ahora - movida < QUIETUD_MS;
 }
 
 function arrancar() {
