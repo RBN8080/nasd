@@ -67,20 +67,22 @@
 
   <!-- SUBIDAS A MEDIAS, de cualquier cuenta, con Reintentar y Descartar
        (pendientes.go). Aquí decía «reanudación automática», y no la había. -->
-  {{if .Pendientes}}
-  <section class="sc {{if .CanalConfigurado}}s7{{else}}s12{{end}}" id="pendientes" data-csrf="{{.Marco.Csrf}}">{{template "pendientes" .Pendientes}}</section>
-  {{end}}
+  {{/* LOS DOS CUADROS DE ABAJO SE QUEDAN SIEMPRE (v1.138.0): antes aparecían
+       y cambiaban de ancho según hubiera subidas a medias o canal, y la página
+       tenía cuatro formas distintas. Vacíos, lo dicen. */}}
+  <section class="sc s7" id="pendientes" data-csrf="{{.Marco.Csrf}}">{{template "pendientes" .Pendientes}}
+    {{if not .Pendientes}}<p class="nota">Ninguna subida a medias.</p>{{end}}</section>
 
   <!-- CANAL DE AVISOS: una sola línea, que es toda la pregunta que el resumen
        contesta — «¿salen los avisos?». -->
-  {{if .CanalConfigurado}}
-  <section class="sc {{if .Pendientes}}s5{{else}}s12{{end}}">
+  <section class="sc s5">
     <div class="sch"><h2>Canal de avisos</h2></div>
+    {{if .CanalConfigurado}}
     <div class="tarj">
       <div class="t1"><b>{{if .CanalOK}}Entregando{{else}}Con fallos{{end}}</b><span class="pls"><span class="p {{if .CanalOK}}p-ok{{else}}p-av{{end}}">{{if .CanalOK}}Correcto{{else}}Atención{{end}}</span></span></div>
     </div>
+    {{else}}<p class="nota">Sin configurar: los avisos se quedan en el nodo.</p>{{end}}
   </section>
-  {{end}}
 </div>
 
 {{template "marco-fin" .}}

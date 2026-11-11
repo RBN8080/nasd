@@ -180,5 +180,9 @@
 {{/* El cierre de los menús va en el marco y no en cada página: Seguridad
      tenía un menú y no cargaba este archivo, así que no se cerraba al pulsar
      fuera. Así ningún módulo puede quedarse sin él. */}}
+{{/* quieto.js va ANTES que el archivo de cada módulo: es la pausa que usan
+     estado.js, seguridad.js y cuentas.js para no escribir mientras la página
+     se mueve, y lo que conserva la posición al abrir un detalle. */}}
+<script src="/estatico/quieto.js"></script>
 <script src="/estatico/menus.js"></script>
 {{end}}

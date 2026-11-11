@@ -83,6 +83,13 @@ function arrancar() {
   // abrir el flujo solo pondría al nodo a muestrear para nadie.
   if (cuentas.size === 0) return;
 
+  // La misma pausa que Estado y Seguridad (quieto.js): nada se escribe
+  // mientras la página se mueve.
+  const pintar = (window.nasQuieto ? window.nasQuieto.pintor : function (f) { return f; })(function (marco) {
+    marcarLatido('si', 'en línea');
+    aplicar(cuentas, marco.cuentas || []);
+  });
+
   const flujo = new EventSource('/administracion/flujo');
 
   flujo.onopen = function () {
@@ -100,8 +107,7 @@ function arrancar() {
       return;
     }
     fallos = 0;
-    marcarLatido('si', 'en línea');
-    aplicar(cuentas, marco.cuentas || []);
+    pintar(marco);
   };
 
   flujo.onerror = function () {

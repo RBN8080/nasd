@@ -333,8 +333,9 @@ func TestCuarentenaYListaSobreLaMismaIPNoCuentanDosVeces(t *testing.T) {
 			deLista, deCuarentena)
 	}
 	// Y EL PANEL LO EXPLICA, en vez de dejar que el cero de la cuarentena se
-	// lea como «no ha servido de nada».
-	cuerpo := panelSeguridad(t, s, "")
+	// lea como «no ha servido de nada». Desde la v1.138.0 la explicación vive
+	// en el detalle del origen, no dentro de su fila.
+	cuerpo := panelSeguridad(t, s, "?origen="+dir.String())
 	if !strings.Contains(cuerpo, "Coinciden los dos controles") {
 		t.Error("el panel no explica por qué un control coincidente enseña cero frenados")
 	}

@@ -38,6 +38,9 @@
   /* Superficies por luz (D2, D3): hundido, base, elevado, superpuesto. */
   --s0:oklch(0.150 0.008 255); --s1:oklch(0.185 0.010 255);
   --s2:oklch(0.235 0.012 255); --s3:oklch(0.285 0.013 255);
+  /* El fondo de los cuadros (v1.138.0): un paso entre la hoja (s1) y lo elevado
+     (s2). Menos escalón con la hoja y ninguna caja dentro de otra caja. */
+  --pan:oklch(0.218 0.011 255);
   --ln:oklch(0.360 0.013 255); --lnT:oklch(0.300 0.012 255);
   --ctl:oklch(0.600 0.016 255);                 /* contorno de control ≥ 3:1 (D5) */
   /* Texto (D4): los tres pasan de 4.5:1 sobre cualquier superficie. */
@@ -83,6 +86,11 @@
    el alto de lo que queda encima. «html» y «body» cubren el desplazamiento del
    teléfono; «.cuerpo», el del navegador. */
 html, body, .cuerpo{overflow-anchor:none;}
+/* Y TODO LO DEMÁS QUE SE DESPLAZA (v1.138.0): los cuadros con barra propia, el
+   rail, los menús, el cajón y la lista de carpetas. «overflow-anchor» no se
+   hereda, así que la regla de arriba no los cubría. Lo vigila
+   TestTodoLoQueSeDesplazaNoSeAncla. */
+.sc-cuerpo, .rail, .menu-panel, .detalle, .carpetas{overflow-anchor:none;}
 body{margin:0; background:var(--s1); color:var(--tx); font-family:var(--f-txt); font-size:1rem; line-height:1.5;
   -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;}
 a{color:inherit; text-decoration:none;}
@@ -170,11 +178,13 @@ button,input,select,textarea{font:inherit; color:inherit;}
 /* ═════ PANELES ═════ */
 .tablero{display:grid; grid-template-columns:minmax(0,1fr); gap:var(--e3);}
 .tablero > *{min-width:0;}
-.sc{container-type:inline-size; display:flex; flex-direction:column; gap:var(--e3); padding:var(--e4); background:var(--s2);
+.sc{container-type:inline-size; display:flex; flex-direction:column; gap:var(--e3); padding:var(--e4); background:var(--pan);
   border-radius:var(--r-pieza); min-width:0; box-shadow:var(--brillo);}
 .sch{display:flex; align-items:center; justify-content:space-between; gap:var(--e2) var(--e3); flex-wrap:wrap; min-height:24px;}
 .sch h2{margin:0; font-size:var(--f3); font-weight:650;}
 .sch .ms{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
+/* El encabezado no cede alto: en un cuadro de alto fijo se encogía y su segunda línea caía sobre la lista. */
+.sc > .sch{flex:0 0 auto;}
 .sch h3.sub, .sub{margin:0; font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3);}
 .sch:has(h3.sub){margin-top:var(--e2);}
 /* Paneles con barra propia: el contenido se desplaza DENTRO y la página no crece. */
@@ -191,26 +201,31 @@ button,input,select,textarea{font:inherit; color:inherit;}
   font-size:var(--f1); font-weight:600; line-height:1.4; overflow-wrap:anywhere; background:var(--s3); color:var(--tx2);}
 .p:empty{display:none;}
 .p::before{content:""; width:8px; height:8px; flex:0 0 8px; background:currentColor; border-radius:50%;}
-.p-ok{color:var(--ok); background:var(--okT);} .p-ok::before{border-radius:2px;}
+/* LO NORMAL VA CALLADO (v1.138.0, decisión del responsable): «Correcto»,
+   «Apartado» y «Bloqueado» son una marca —forma de color y texto neutro—, sin
+   pastilla. El color lleno queda para lo que pide atención: aviso y fallo. Con
+   quince «Correcto» en verde, el único «Atención» de la página no destacaba. */
+.p-ok, .p-ll, .p-na{padding-inline:0; background:none; color:var(--tx2);}
+.p-ok::before{border-radius:2px; background:var(--ok);}
+.p-ll::before{border-radius:2px; background:var(--ac);}
 .p-av{color:var(--av); background:var(--avT);} .p-av::before{border-radius:0; clip-path:polygon(50% 0, 100% 100%, 0 100%);}
 .p-fa{color:var(--fa); background:var(--faT);}
-.p-na{color:var(--tx3); background:var(--s3);} .p-na::before{background:none; border:1.5px solid currentColor; width:7px; height:7px;}
-.p-ll{color:var(--ac); background:var(--acT);} .p-ll::before{border-radius:2px;}
+.p-na{color:var(--tx3);} .p-na::before{background:none; border:1.5px solid currentColor; width:7px; height:7px;}
 .vw > .p{align-self:flex-start;}
 
 /* ═════ RESUMEN ═════ */
 /* En el teléfono el disco ocupa la fila entera: «342.1 GB» no cabe en un tercio. */
 .cif{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--e2);}
 .cif > .cf:first-child{grid-column:1 / -1;}
-.cf{display:flex; flex-direction:column; gap:var(--e1); padding:var(--e4) var(--e3); background:var(--s2); border-radius:var(--r-pieza); min-width:0;
+.cf{display:flex; flex-direction:column; gap:var(--e1); padding:var(--e4) var(--e3); background:var(--pan); border-radius:var(--r-pieza); min-width:0;
   box-shadow:var(--brillo); transition:background-color var(--d1) var(--c-std), transform var(--d1) var(--c-std);}
 .cf:active{transform:scale(.97);}
 .cf .n{font-family:var(--f-txt); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
 .cf .r{display:flex; align-items:center; gap:6px; font-size:var(--f2); color:var(--tx2);}
 .cf.mk{background:var(--avT);}
 .cf.mk .n{color:var(--av);}
-.metricas{display:grid; grid-template-columns:minmax(0,1fr); background:var(--s1); border-radius:var(--r-pozo);}
-.pl{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e4); min-width:0;}
+.metricas{display:grid; grid-template-columns:minmax(0,1fr);}
+.pl{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e3) 0; min-width:0;}
 .metricas .pl + .pl{box-shadow:inset 0 1px 0 var(--lnT);}
 .pl .q{display:flex; justify-content:space-between; align-items:center; gap:var(--e2); font-size:var(--f2); font-weight:600; color:var(--tx2);}
 .pl .n{font-family:var(--f-txt); font-size:var(--f7); font-weight:500; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
@@ -231,7 +246,8 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .spark{display:block; width:100%; height:40px;}
 .spark .sp-a{fill:var(--acT);}
 .spark .sp-l{fill:none; stroke:var(--ac); stroke-width:1.75; vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round;}
-.tarj{display:flex; flex-direction:column; gap:var(--e2); padding:var(--e3) var(--e4); background:var(--s1); border-radius:var(--r-pozo);}
+.tarj{display:flex; flex-direction:column; gap:var(--e2); min-width:0;}
+.tarj + .tarj{padding-top:var(--e3); box-shadow:inset 0 1px 0 var(--lnT);}
 .tarj .t1{display:flex; align-items:center; justify-content:space-between; gap:var(--e2) var(--e3); flex-wrap:wrap;}
 .tarj .t1 b{font-size:var(--f3); font-weight:600; overflow-wrap:anywhere;}
 .tarj .t1 > span:not(.pls):not(.p){font-family:var(--f-dat); font-size:var(--f2); color:var(--tx2);}
@@ -266,7 +282,7 @@ button,input,select,textarea{font:inherit; color:inherit;}
 .notas{display:flex; flex-direction:column; gap:var(--e1); font-size:var(--f2); color:var(--tx3);}
 .notas .rt{font-size:var(--f1); font-weight:600; letter-spacing:.07em; text-transform:uppercase;}
 .notas b{color:var(--tx2); font-weight:600;}
-.binario{margin:0; padding:var(--e3) var(--e4); background:var(--s2); border-radius:var(--r-pieza); font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);
+.binario{margin:0; padding:var(--e3) var(--e4); background:var(--pan); border-radius:var(--r-pieza); font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);
   display:flex; flex-wrap:wrap; gap:2px 0;}
 .binario b{font-weight:500; color:var(--tx2); white-space:nowrap;}
 .binario b + b::before{content:"·"; padding:0 .5em; color:var(--tx3);}
@@ -420,9 +436,17 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .marq-nvo{flex:0 0 auto; display:inline-flex; align-items:center; padding:3px 10px; border-radius:var(--rc); font-size:var(--f1); font-weight:600;
   color:var(--av); background:var(--avT); white-space:nowrap;}
 .marq-nvo[hidden]{display:none;}
-.marq-caja{flex:1 1 auto; min-width:0; overflow:hidden;
-  -webkit-mask-image:linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);
-  mask-image:linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);}
+/* LOS BORDES DIFUMINADOS SON DOS DEGRADADOS FIJOS, NO UNA MÁSCARA (v1.138.0).
+   La cinta corre siempre —así la quiere el responsable— y va pegada arriba.
+   Con «mask-image», el navegador vuelve a componer la capa enmascarada en cada
+   fotograma de la animación; es la misma clase de carga que hubo que quitar de
+   las barras pegadas por el iPhone (WebKit 298709). Dos degradados encima se
+   pintan una vez. La pista se mueve solo con «transform». Lo vigila
+   TestLoPegadoNoDesenfocaNiEnmascara. */
+.marq-caja{position:relative; flex:1 1 auto; min-width:0; overflow:hidden;}
+.marq-caja::before, .marq-caja::after{content:""; position:absolute; top:0; bottom:0; z-index:1; width:20px; pointer-events:none;}
+.marq-caja::before{left:0; background:linear-gradient(90deg, var(--s0), oklch(0.150 0.008 255 / 0));}
+.marq-caja::after{right:0; background:linear-gradient(270deg, var(--s0), oklch(0.150 0.008 255 / 0));}
 .marq-pista{display:flex; width:max-content; animation-name:correr; animation-timing-function:linear; animation-iteration-count:infinite;}
 .marq:hover .marq-pista, .marq:focus-within .marq-pista{animation-play-state:paused;}
 @keyframes correr{from{transform:translateX(0);} to{transform:translateX(-50%);}}
@@ -447,7 +471,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 /* Cifras con su minigráfica (D12). */
 .kpis{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--e2);}
 .kpis > .kpi:last-child:nth-child(odd){grid-column:1 / -1;}
-.kpi{display:flex; flex-direction:column; gap:2px; padding:var(--e3) var(--e4); background:var(--s2); border-radius:var(--r-pieza); min-width:0; box-shadow:var(--brillo);}
+.kpi{display:flex; flex-direction:column; gap:2px; padding:var(--e3) var(--e4); background:var(--pan); border-radius:var(--r-pieza); min-width:0; box-shadow:var(--brillo);}
 .kpi .q{font-size:var(--f2); font-weight:600; color:var(--tx2);}
 .kpi .n{font-family:var(--f-txt); font-size:var(--f6); font-weight:500; letter-spacing:-.02em; line-height:1.2; font-variant-numeric:tabular-nums;}
 .kpi .d{font-size:var(--f1); color:var(--tx3);}
@@ -472,7 +496,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   pointer-events:none; animation:anillo 1.6s var(--c-sal) forwards;}
 @keyframes anillo{from{transform:scale(.15); opacity:1;} to{transform:scale(1); opacity:0;}}
 .lect{position:absolute; left:var(--e3); bottom:var(--e3); max-width:calc(100% - 24px); margin:0; padding:4px 10px; border-radius:var(--rc);
-  background:color-mix(in oklch, var(--s0) 82%, transparent); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  background:var(--s0);
   font-family:var(--f-dat); font-size:var(--f1); color:var(--tx2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .mcaja .ley, #procedencia .ley{display:flex; align-items:center; gap:6px var(--e2); flex-wrap:wrap; font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
 #procedencia .ley .cap{font-family:var(--f-txt); font-weight:600; letter-spacing:.07em; text-transform:uppercase;}
@@ -520,7 +544,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .grh{display:flex; align-items:baseline; justify-content:space-between; gap:var(--e2);}
 .grh b{font-size:var(--f2); font-weight:600; color:var(--tx2);}
 .grh .ms{font-family:var(--f-dat); font-size:var(--f1); color:var(--tx3);}
-.grc{display:grid; grid-template-columns:46px minmax(0,1fr); align-items:start; padding:var(--e2) var(--e2) var(--e1) 0; background:var(--s1); border-radius:var(--r-pozo);}
+.grc{display:grid; grid-template-columns:46px minmax(0,1fr); align-items:start; padding:var(--e2) 0 0;}
 .grl, .gry{display:block; height:112px;}
 .grl{width:100%;}
 .gry{width:46px;}
@@ -538,6 +562,22 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .t-apa .fls > .fl + .fl, .t-blo .fls > .fl + .fl{box-shadow:none;}
 .t-apa .cl:has(> .et), .t-blo .cl:has(> .et){grid-template-columns:5rem minmax(0,1fr);}
 .t-apa form, .t-blo form, .t-seg form{margin:0;}
+/* Contención, dos líneas por elemento (v1.138.0): quién y su estado, con el
+   menú a la derecha; debajo, por qué y cuánto. */
+.its{display:flex; flex-direction:column;}
+.it{display:flex; flex-direction:column; gap:4px; padding:var(--e2) 0; min-width:0;}
+.it + .it{box-shadow:inset 0 1px 0 var(--lnT);}
+.it1{display:flex; align-items:center; gap:var(--e3); min-height:36px; min-width:0;}
+.it1 .ip{font-family:var(--f-dat); font-size:var(--f2); color:var(--tx); overflow-wrap:anywhere; min-width:0;}
+.it1 .menu{margin-left:auto;}
+.it1 .menu-p{margin-block:-4px;}
+.it2{display:flex; flex-wrap:wrap; align-items:center; gap:4px var(--e3); min-width:0;}
+.it2 .op{font-size:var(--f2); color:var(--tx3);}
+/* Orígenes en el teléfono: el menú de la fila, arriba a la derecha. */
+.t-seg .fl{grid-template-columns:minmax(0,1fr) auto;}
+.t-seg .fl > .cl{grid-column:1 / -1;}
+.t-seg .fl > .cl:first-child{grid-column:1;}
+.t-seg .fl > .cl:last-child{grid-column:2; grid-row:1; justify-self:end;}
 
 /* ═════ CUENTAS ═════ */
 .t-cta .ico-f{border-radius:var(--rc); background:var(--s3); color:var(--tx);}
@@ -577,7 +617,7 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .tarjeta .t-blo .fl{background:var(--s1);}
 .visor-barra{position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:var(--e2); padding:var(--e2) var(--e3);
   padding-top:max(var(--e2), env(safe-area-inset-top, 0px));
-  background:color-mix(in oklch, var(--s0) 82%, transparent); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);}
+  background:var(--s0);}
 .visor-barra .nom{flex:1 1 auto; min-width:0; font-family:var(--f-dat); font-size:.875rem; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--tx2);}
 .visor-barra .bt{flex:0 0 auto; min-height:40px; padding:0 var(--e4); font-size:.875rem;}
 .visor{display:flex; align-items:center; justify-content:center; padding:var(--e3); min-height:calc(100dvh - 56px); background:var(--s0);}
@@ -586,8 +626,8 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
 .visor audio{width:min(100%, 30rem);}
 .visor object, .visor iframe{width:100%; height:calc(100dvh - 88px); border:0; border-radius:var(--r-pieza); background:var(--s1);}
 .paso{position:fixed; top:50%; z-index:20; width:48px; height:48px; margin-top:-24px; display:grid; place-items:center; border-radius:var(--rc);
-  font-size:1.5rem; line-height:1; color:var(--tx); background:color-mix(in oklch, var(--s2) 75%, transparent);
-  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); box-shadow:0 0 0 1px var(--ln);
+  font-size:1.5rem; line-height:1; color:var(--tx); background:var(--s2);
+  box-shadow:0 0 0 1px var(--ln);
   transition:transform var(--d1) var(--c-std), background-color var(--d1) var(--c-std);}
 .paso:active{transform:scale(.94);}
 .paso-anterior{left:calc(var(--e2) + env(safe-area-inset-left, 0px));}
@@ -608,6 +648,8 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .cif > .cf:first-child{grid-column:auto;}
   .metricas{grid-template-columns:repeat(3, minmax(0,1fr));}
   .metricas .pl + .pl{box-shadow:inset 1px 0 0 var(--lnT);}
+  .metricas .pl{padding:0 var(--e5);}
+  .metricas .pl:first-child{padding-left:0;}
   .filtros{display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); align-items:end;}
   .filtros > div:last-child{grid-column:1 / -1;}
 }
@@ -624,9 +666,15 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .fl.sel{box-shadow:inset 3px 0 0 var(--ac);}
   .cl{display:block;}
   .cl > .et{display:none;}
-  .t-seg .ct2 .cp{display:block;}
-  .t-seg .ct2 .cp + .cp::before{content:none;}
-  .t-seg .th, .t-seg .fl{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 136px minmax(0,2fr);}
+  /* Orígenes, una línea por fila (v1.138.0). El lapso se lee en el detalle,
+     como Primera y Última. */
+  .t-seg .ct2 .lapso{display:none;}
+  .t-seg .th, .t-seg .fl{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 200px minmax(0,2.2fr) 44px;}
+  .t-seg .fl, .t-cro .fl{align-items:center; min-height:44px;}
+  .t-seg .fl > .cl:nth-child(n){grid-column:auto; grid-row:auto; justify-self:stretch;}
+  .t-seg .menu-p{width:36px; height:36px;}
+  /* El encabezado se queda a la vista al desplazar dentro del cuadro. */
+  .desliza .th{position:sticky; top:0; z-index:1; background:var(--pan);}
   .t-cro .th, .t-cro .fl{grid-template-columns:132px minmax(0,1.1fr) minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,1.2fr);}
   .t-est .th, .t-est .fl{grid-template-columns:minmax(0,1.4fr) minmax(0,1.6fr) 120px;}
   .t-est .th{grid-template-areas:"nom val ver";}
@@ -699,10 +747,19 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
      Solo cuando hay mapa dibujado: sin él, «contain:size» la dejaría en cero. */
   .tablero:has(#procedencia .mfig) .iguala{contain:size; max-height:none;}
   .desliza{max-height:24rem;}
-  .fila-3{height:22rem; max-height:none;}
-  .cif{gap:var(--e3);}
+  /* LA FILA DE TRES MIDE LO QUE MIDAN LAS GRÁFICAS (v1.138.0). «Actividad por
+     día» se ve entera y da el alto; Países y Rutas no aportan alto propio
+     («contain:size») y desplazan su lista por dentro. Antes los tres medían
+     22rem fijos y las dos gráficas no cabían. «#actividad» se pinta siempre:
+     sin él, estos dos cuadros se quedarían en cero. */
+  .fila-3.desliza{contain:size; max-height:none;}
+  #actividad{min-height:22rem;}
+  /* Más aire entre cuadros y dentro de ellos (v1.138.0). */
+  .tablero, .vw{gap:var(--e4);}
+  .sc{padding:20px;}
+  .cif{gap:var(--e4);}
   .cf{padding:var(--e4);}
-  .kpis{grid-template-columns:repeat(5, minmax(0,1fr)); gap:var(--e3);}
+  .kpis{grid-template-columns:repeat(5, minmax(0,1fr)); gap:var(--e4);}
   .kpis > .kpi:last-child:nth-child(odd){grid-column:auto;}
   .t-arc .th, .t-arc .fl{grid-template-columns:minmax(0,3fr) 110px 130px 44px;}
   .t-arc .th{display:grid; gap:var(--e3); padding:0 var(--e3) var(--e2); box-shadow:inset 0 -1px 0 var(--lnT);}
@@ -738,6 +795,11 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .menu-fila .menu-panel::before{content:none;}
   .menu-panel .bt{min-height:36px; font-size:var(--f2);}
   .menu-cerrar{display:none;}
+  /* «.flota» lo pone menus.js, que coloca el panel junto a su botón: dentro de
+     un cuadro con barra propia, «absolute» quedaba recortado. Sin el salto de
+     entrada: mover el panel mientras se mide lo descolocaría. */
+  .menu-fila.flota > .menu-panel{position:fixed; right:auto; bottom:auto;}
+  .menu.flota[open] > .menu-panel{animation:fundido var(--d3) var(--c-ent) both;}
 }
 
 /* Efecto de pasar el ratón solo donde hay ratón (D16): en el teléfono se quedaría pegado. */
@@ -787,7 +849,8 @@ input:focus, select:focus, textarea:focus{border-color:var(--ac); box-shadow:0 0
   .mcapa .pulso{animation-duration:.6s;}
   .mcapa .anillo{display:none;}
   .marq{flex-wrap:wrap; border-radius:var(--r-pieza); padding:var(--e2);}
-  .marq-caja{-webkit-mask-image:none; mask-image:none; flex-basis:100%; overflow:visible;}
+  .marq-caja{flex-basis:100%; overflow:visible;}
+  .marq-caja::before, .marq-caja::after{content:none;}
   .marq-pista{animation:none; width:auto;}
   .marq-copia{display:none;}
   .tira{flex-wrap:wrap; row-gap:4px;}

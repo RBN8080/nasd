@@ -80,7 +80,18 @@
       <div class="cl"><span class="et">Disco</span><div class="uso">
         {{- if .Barra}}<svg class="barra" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="v" x="0" y="0" width="{{.Barra}}" height="6"></rect></svg>{{end}}
         <span class="ct2">{{if .Medido.IsZero}}sin medir todavía{{else}}{{.UsoDisco}} <small>· medido {{fecha .Medido}}</small>{{end}}</span></div></div>
-      <div class="cl"><a class="bt pel" href="/administracion/baja/{{.Nombre}}">Dar de baja</a></div>
+      {{/* LA BAJA VA EN EL MENÚ DE LA FILA (v1.138.0), como las acciones de
+           Archivos: un botón rojo siempre a la vista estaba a un clic por
+           accidente. Lleva a la página de confirmación, igual que antes. */}}
+      <div class="cl">
+        <details class="menu menu-fila">
+          <summary class="menu-p" title="Acciones" aria-label="Acciones de {{.Nombre}}">⋯</summary>
+          <div class="menu-panel">
+            <a class="bt" href="?cuenta={{.Nombre}}">Ver detalle</a>
+            <a class="bt pel" href="/administracion/baja/{{.Nombre}}">Dar de baja</a>
+          </div>
+        </details>
+      </div>
     </div>
     {{else}}
     <div class="vacio">Todavía no hay ninguna cuenta dada de alta.</div>
