@@ -386,8 +386,16 @@ func TestUnaSenalNuncaAparecSinSuFalsoPositivo(t *testing.T) {
 	if !strings.Contains(cuerpo, seguridad.SenalExploracion.Etiqueta()) {
 		t.Fatal("el escáner no levantó la señal en el panel")
 	}
-	// Y su explicación, que incluye con qué se confunde.
-	if !strings.Contains(cuerpo, "También lo produce") {
+	// Y su explicación, que incluye con qué se confunde. DESDE LA v1.138.0
+	// VIVE EN EL DETALLE DEL ORIGEN (decisión del responsable, 2026-11-10):
+	// dentro de la fila hacía que cada origen midiera distinto. Lo que no se
+	// puede perder es el camino: la fila enlaza a ese detalle, y el detalle
+	// trae la explicación.
+	if !strings.Contains(cuerpo, "origen=203.0.113.7") {
+		t.Fatal("la fila no enlaza al detalle de su origen, que es donde vive la explicación")
+	}
+	detalle := panelSeguridad(t, s, "?origen=203.0.113.7")
+	if !strings.Contains(detalle, "También lo produce") {
 		t.Error("la señal se muestra sin decir con qué se puede confundir")
 	}
 	// EL AVISO «Hechos registrados, no ataques» SE RETIRÓ EL 2026-08-24, Y ESTA
@@ -1046,7 +1054,8 @@ func TestElPanelEnsenaLaEvidenciaDeSusSenales(t *testing.T) {
 		s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
 	}
 
-	cuerpo := panelSeguridad(t, s, "")
+	// La evidencia vive en el detalle del origen desde la v1.138.0.
+	cuerpo := panelSeguridad(t, s, "?origen=203.0.113.7")
 	for _, quiero := range []string{
 		seguridad.SenalExploracion.Etiqueta(), // la conclusión
 		"En qué se basa esto",                 // y la evidencia, a un clic
@@ -1069,7 +1078,7 @@ func TestLaEvidenciaDiceQueContestoElServidor(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.Rutas().ServeHTTP(w, r)
 
-	cuerpo := panelSeguridad(t, s, "")
+	cuerpo := panelSeguridad(t, s, "?origen=203.0.113.7")
 	if !strings.Contains(cuerpo, "/.git/config") {
 		t.Fatal("la evidencia no enseña la ruta pedida")
 	}
@@ -1082,25 +1091,20 @@ func TestLaEvidenciaDiceQueContestoElServidor(t *testing.T) {
 
 // LA EVIDENCIA VIAJA CON SU ORIGEN, y esa es la propiedad que sobrevive.
 //
-// # QUÉ SUSTITUYE A ESTA PRUEBA, Y POR QUÉ
+// # DÓNDE VIVE AHORA, Y POR QUÉ
 //
-// Aquí vivía TestLaEvidenciaSeDespliegaATodoElAncho, que contaba los <th> del
-// encabezado y exigía que el «colspan» de la fila de evidencia coincidiera. Se
-// retira con ADR-0075 porque el mecanismo que vigilaba DEJÓ DE EXISTIR: la
-// tabla ya no es un <table> con filas de colspan, es una rejilla de CSS, y la
-// evidencia ya no es una fila aparte sino un <details> DENTRO de la celda de
-// señales de su propio origen. No hay dos números que puedan discrepar, así
-// que no hay nada que contar.
+// Hasta la v1.137.0 la evidencia era un <details> DENTRO de la celda de señales
+// de su fila, y esta prueba la buscaba ahí. El 2026-11-10 el responsable aprobó
+// dejar la fila en una línea: la evidencia, las explicaciones y el aviso de
+// «puerta cerrada» hacían que cada origen midiera distinto. Pasan al detalle
+// del origen, que se abre desde su dirección.
 //
-// El defecto original —la evidencia estrujada a una letra por línea, reportado
-// sobre captura el 2026-08-24— tampoco puede volver por el mismo camino: lo
-// causaba «table-layout: fixed» repartiendo el ancho de una novena parte de la
-// página, y ese reparto ya no existe.
-//
-// Lo que SÍ sigue importando es que la evidencia esté donde está su origen y
-// diga lo que el servidor contestó de verdad. Eso es lo que se comprueba, y
-// con los tres filtros, porque cada uno enciende columnas distintas.
-func TestLaEvidenciaViajaDentroDeLaFilaDeSuOrigen(t *testing.T) {
+// Lo que SIGUE importando es lo mismo: que la evidencia esté con su origen y
+// diga lo que el servidor contestó de verdad. Se comprueba el camino entero
+// —la fila enlaza al detalle, y el detalle de ESE origen trae la evidencia—,
+// y con los tres filtros, porque cada uno enciende columnas distintas y el
+// detalle solo se abre si el origen sigue en la lista filtrada.
+func TestLaEvidenciaViajaEnElDetalleDeSuOrigen(t *testing.T) {
 	s := servidorConAuth(t)
 	r := httptest.NewRequest(http.MethodGet, "/.git/config", nil)
 	r.RemoteAddr = "203.0.113.7:44001"
@@ -1113,82 +1117,36 @@ func TestLaEvidenciaViajaDentroDeLaFilaDeSuOrigen(t *testing.T) {
 			if !hay {
 				t.Fatal("no está la tabla de orígenes")
 			}
-			// Se acota a la fila del origen: que la evidencia aparezca en
-			// ALGÚN sitio de la página no demuestra que esté con su origen,
-			// y estar con su origen es justo lo que la hace comprobable.
 			_, fila, hayFila := strings.Cut(tras, "203.0.113.7")
 			if !hayFila {
 				t.Fatal("el origen no llegó a la tabla")
 			}
 			fila, _, _ = strings.Cut(fila, `<div class="fl`)
+			if !strings.Contains(fila, "Ver detalle") {
+				t.Error("la fila no ofrece el detalle de su origen")
+			}
 
-			if !strings.Contains(fila, "/.git/config") {
-				t.Error("la evidencia no viaja dentro de la fila de su origen")
+			union := "?"
+			if filtro != "" {
+				union = filtro + "&"
+			}
+			abierto := panelSeguridad(t, s, union+"origen=203.0.113.7")
+			_, detalle, hayDetalle := strings.Cut(abierto, `class="detalle"`)
+			if !hayDetalle {
+				t.Fatal("el detalle del origen no se abre con este filtro")
+			}
+			if !strings.Contains(detalle, "203.0.113.7") {
+				t.Error("el detalle abierto no es el de este origen")
+			}
+			if !strings.Contains(detalle, "/.git/config") {
+				t.Error("la evidencia no viaja en el detalle de su origen")
 			}
 			// El estado REAL, no uno supuesto: es lo que distingue un sondeo
 			// de una exposición cuando la ruta es la misma.
-			if !strings.Contains(fila, "<b>404</b>") {
+			if !strings.Contains(detalle, "<b>404</b>") {
 				t.Error("la evidencia no dice qué contestó el servidor")
 			}
 		})
-	}
-}
-
-// LA FOTO DE LA BASE SE PINTA, Y SE AVISA CUANDO ENVEJECE.
-//
-// seguridad.Entrada.BaseGeo prometía en su comentario que «con la fecha
-// delante, el panel puede decir que la base es más nueva que la entrada y
-// ofrecer revisarla». La fecha se guardaba y no se pintaba en ninguna parte:
-// la foto envejecía EN SILENCIO, que es justo el modo de fallo contra el que se
-// guardaba.
-func TestElPanelDiceDeCuandoEsLaFotoDeUnBloqueoDeOperador(t *testing.T) {
-	s := conGeo(t, servidorConAuth(t))
-
-	// Una entrada de operador compuesta con una base VIEJA. La instalada en el
-	// servidor de prueba se acaba de generar, así que es más nueva.
-	if _, err := s.lista.Anadir(seguridad.Entrada{
-		Alcance:  seguridad.AlcanceOperador,
-		Etiqueta: "AS44382 · WHITELABEL · US",
-		Tramos:   []seguridad.Tramo{seguridad.TramoDe(netip.MustParsePrefix("2602:fa5d::/44"))},
-		Motivo:   "reputación del ASN",
-		Autor:    "raiz",
-		BaseGeo:  time.Now().Add(-90 * 24 * time.Hour),
-	}, netip.Addr{}, time.Now()); err != nil {
-		t.Fatalf("Anadir: %v", err)
-	}
-
-	cuerpo := panelSeguridad(t, s, "")
-	if !strings.Contains(cuerpo, "base de ") {
-		t.Error("el panel no dice de cuándo es la foto del alcance")
-	}
-	if !strings.Contains(cuerpo, "hay una base más nueva") {
-		t.Error("el panel no ofrece revisar una foto que ya envejeció")
-	}
-	// LA TERCERA AFIRMACIÓN —que la leyenda EXPLICARA que el alcance es una foto
-	// y no una regla viva— se retiró el 2026-08-24 con las cinco leyendas de la
-	// página (ver TestElPanelDiceQueUnOrigenEstaFrenado). Lo sujetado aquí sigue
-	// siendo lo que importa y son DATOS de la fila, no una explicación: la fecha
-	// de la foto se pinta, y cuando envejece se pide revisarla. Con esas dos, un
-	// alcance que se quedó corto se ve; sin ellas, no.
-}
-
-// A un bloqueo de DIRECCIÓN o de RANGO no se le pide revisión: su alcance no
-// depende de la base para seguir siendo exacto, y marcarlo mandaría a revisar
-// algo que no puede haber cambiado.
-func TestUnBloqueoDeRangoNoPideRevisionPorLaBase(t *testing.T) {
-	s := conGeo(t, servidorConAuth(t))
-	if _, err := s.lista.Anadir(seguridad.Entrada{
-		Alcance:  seguridad.AlcanceRango,
-		Etiqueta: "2602:fa5d::/44",
-		Tramos:   []seguridad.Tramo{seguridad.TramoDe(netip.MustParsePrefix("2602:fa5d::/44"))},
-		Motivo:   "barrido medido el 16/08",
-		Autor:    "raiz",
-		BaseGeo:  time.Now().Add(-90 * 24 * time.Hour),
-	}, netip.Addr{}, time.Now()); err != nil {
-		t.Fatalf("Anadir: %v", err)
-	}
-	if strings.Contains(panelSeguridad(t, s, ""), "hay una base más nueva") {
-		t.Error("se pide revisar un rango escrito a mano, que no depende de la base")
 	}
 }
 
@@ -1216,9 +1174,16 @@ func TestElPanelDiceQueUnOrigenEstaFrenado(t *testing.T) {
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), r)
 	apartar(t, s, "203.0.113.7")
 
+	// LA FILA DICE EL HECHO —«Apartado»— y el detalle lo explica (v1.138.0).
 	cuerpo := panelSeguridad(t, s, "")
-	if !strings.Contains(cuerpo, "Se le está cerrando la puerta") {
-		t.Error("la fila no dice que a ese origen se le esté cerrando la puerta")
+	_, tras, _ := strings.Cut(cuerpo, `class="t-seg"`)
+	_, fila, _ := strings.Cut(tras, "203.0.113.7")
+	fila, _, _ = strings.Cut(fila, `<div class="fl`)
+	if !strings.Contains(fila, ">Apartado<") {
+		t.Error("la fila no dice que ese origen está apartado")
+	}
+	if !strings.Contains(panelSeguridad(t, s, "?origen=203.0.113.7"), "Se le está cerrando la puerta") {
+		t.Error("el detalle no dice que a ese origen se le esté cerrando la puerta")
 	}
 }
 

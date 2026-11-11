@@ -444,7 +444,9 @@ func capaElegida(q url.Values, permitePaquetes bool) string {
 
 func opcionesDeCapa(q url.Values, elegida string, permitePaquetes bool) []opcionCapa {
 	out := []opcionCapa{{
-		Valor: "rechazos", Etiqueta: "Rechazos",
+		// «Rechazos HTTP» y no «Tráfico HTTP» (v1.138.0): la capa cuenta solo
+		// lo que nasd rechazó; lo servido con éxito no entra en el anillo.
+		Valor: "rechazos", Etiqueta: "Rechazos HTTP",
 		Enlace: enlaceConCapa(q, "rechazos"), Elegido: elegida == "rechazos",
 	}}
 	// El botón de paquetes NO se pinta deshabilitado cuando no se puede:

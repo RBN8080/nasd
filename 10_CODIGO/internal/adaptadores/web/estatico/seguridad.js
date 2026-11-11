@@ -89,16 +89,21 @@
   // por Go y esto solo lo copia a su ancla: ni una decisión de redacción vive
   // en este archivo (ADR-0017). La clase sí cambia —la contención se pinta en
   // ámbar solo cuando hay algo que contener— y por eso viaja con el valor.
+  // Devuelve si cambió algún texto: solo entonces puede cambiar el ancho de
+  // la cinta, y solo entonces hace falta volver a medirla.
   function aplicarCinta(indice, segmentos) {
+    let cambio = false;
     for (const sg of segmentos) {
       const donde = indice.get(sg.clave);
       if (!donde) continue;
       const clase = ('sg ' + (sg.clase || '')).trim();
       for (const d of donde) {
+        if (d.valor && d.valor.textContent !== sg.valor) cambio = true;
         ponerTexto(d.valor, sg.valor);
         if (d.caja.className !== clase) d.caja.className = clase;
       }
     }
+    return cambio;
   }
 
   // La duración de la animación también viaja como clase, nunca como estilo:
@@ -250,6 +255,22 @@
       }
     }
 
+    // NADA SE ESCRIBE MIENTRAS ALGO SE MUEVE (quieto.js, la misma pausa que
+    // Estado): el marco se guarda —solo el último— y se pinta al parar. La
+    // cinta se vuelve a medir solo si cambió su texto: medirla obliga al
+    // navegador a recalcular la página, y hacerlo en cada marco era gratis en
+    // el ordenador y caro en el teléfono.
+    const quieto = window.nasQuieto;
+    const pintar = (quieto ? quieto.pintor : function (f) { return f; })(function (marco) {
+      marcarPiloto('vivo', 'en vivo');
+      aplicarCifras(cifras, marco.cifras || []);
+      const cambio = aplicarCinta(cinta, marco.cinta || []);
+      ponerVelocidad(marco.velocidad);
+      if (cambio) recolocar();
+      vigilarContencion(caja, aviso, marco.contencion || 0);
+      encender(marco.llegadas || []);
+    });
+
     const flujo = new EventSource('/seguridad/flujo' + location.search);
 
     flujo.onmessage = (e) => {
@@ -265,13 +286,7 @@
       vivo = true;
       ultimoMarco = Date.now();
       sincronizarReloj(marco.hora);
-      marcarPiloto('vivo', 'en vivo');
-      aplicarCifras(cifras, marco.cifras || []);
-      aplicarCinta(cinta, marco.cinta || []);
-      ponerVelocidad(marco.velocidad);
-      recolocar();
-      vigilarContencion(caja, aviso, marco.contencion || 0);
-      encender(marco.llegadas || []);
+      pintar(marco);
     };
 
     flujo.onerror = () => {
@@ -302,6 +317,8 @@
         return;
       }
       avanzarReloj();
+      // El reloj avanza siempre; se escribe cuando la página está quieta.
+      if (quieto && quieto.seMueve()) return;
       marcarPiloto('vivo', 'en vivo');
     }, 1000);
   }

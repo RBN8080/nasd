@@ -8,7 +8,8 @@
 //   - Escape lo cierra y devuelve el foco al botón;
 //   - una orden que no cambia de página (Descargar) también lo cierra;
 //   - en el teléfono, un botón «Cerrar» al pie de la hoja;
-//   - abrir uno cierra el otro.
+//   - abrir uno cierra el otro;
+//   - en el navegador, el menú ⋯ de una fila flota junto a su botón.
 //
 // EL VELO ES PARTE DEL MENÚ. Es el ::before del propio <details>, así que un
 // clic sobre él llega con target === menu. Hasta v1.134.0 se cerraba con
@@ -26,6 +27,39 @@
     if (devolverFoco && boton) boton.focus();
   }
 
+  // EN EL NAVEGADOR, EL MENÚ DE UNA FILA FLOTA (v1.138.0). Las filas de
+  // Seguridad viven dentro de cuadros con barra propia, y un menú «absolute»
+  // ahí dentro quedaba recortado por el cuadro. Se coloca «fixed» junto a su
+  // botón. La posición va por CSSOM (style.left), que la CSP permite: lo que
+  // descarta es el atributo style del HTML (ADR-0060). Antes de colocar se
+  // mide dónde cae el origen, porque un panel «container-type» puede ser el
+  // bloque contenedor de lo «fixed» y entonces el origen no es la ventana.
+  const ANCHO = window.matchMedia('(min-width: 880px)');
+
+  function colocar(menu) {
+    if (!menu.classList.contains('menu-fila')) return;
+    const panel = menu.querySelector(':scope > .menu-panel');
+    const boton = menu.querySelector(':scope > summary');
+    if (!panel || !boton) return;
+    if (!ANCHO.matches) {
+      menu.classList.remove('flota');
+      panel.style.left = '';
+      panel.style.top = '';
+      return;
+    }
+    menu.classList.add('flota');
+    panel.style.left = '0px';
+    panel.style.top = '0px';
+    const origen = panel.getBoundingClientRect();
+    const b = boton.getBoundingClientRect();
+    let x = b.right - origen.width;
+    let y = b.bottom + 4;
+    if (y + origen.height > window.innerHeight - 8) y = Math.max(8, b.top - 4 - origen.height);
+    x = Math.max(8, Math.min(x, window.innerWidth - origen.width - 8));
+    panel.style.left = (x - origen.left) + 'px';
+    panel.style.top = (y - origen.top) + 'px';
+  }
+
   function cerrarSalvo(menu) {
     for (const m of document.querySelectorAll(ABIERTOS)) {
       if (m !== menu) cerrar(m, false);
@@ -39,7 +73,9 @@
       if (e.target === menu) cerrar(menu, false);
     });
     menu.addEventListener('toggle', () => {
-      if (menu.open) cerrarSalvo(menu);
+      if (!menu.open) return;
+      cerrarSalvo(menu);
+      colocar(menu);
     });
     // Descargar responde con un adjunto y la página se queda donde está.
     menu.addEventListener('submit', () => {
@@ -68,6 +104,14 @@
       if (!recorrido.includes(m)) cerrar(m, false);
     }
   });
+
+  // Un menú que flota no sigue a su fila: si algo se desplaza, se cierra. El
+  // desplazamiento de dentro del propio menú no cuenta.
+  document.addEventListener('scroll', (e) => {
+    for (const m of document.querySelectorAll('details.menu.flota[open]')) {
+      if (!(e.target instanceof Node) || !m.contains(e.target)) cerrar(m, false);
+    }
+  }, { passive: true, capture: true });
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
