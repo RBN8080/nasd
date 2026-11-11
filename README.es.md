@@ -10,8 +10,8 @@ PowerShell.
 En producción desde julio de 2026.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="nodo-dark.svg">
-  <img alt="Lo que corre en el nodo: tres vías de entrada, un cortafuegos, tres servicios que escuchan, seis unidades programadas y un disco" src="nodo-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagramas/nodo-dark.svg">
+  <img alt="Lo que corre en el nodo: tres vías de entrada, un cortafuegos, tres servicios que escuchan, seis unidades programadas y un disco" src="docs/diagramas/nodo-light.svg">
 </picture>
 
 <!-- Los diagramas se generan. No los edite a mano. -->
@@ -31,17 +31,18 @@ En producción desde julio de 2026.
 
 ## La interfaz
 
-![Seguridad: consola actual con datos de ejemplo](ui-seguridad.png)
+![Panel de seguridad: cinta en vivo, contención vigente, rutas más rechazadas y actividad por día](docs/capturas/seguridad.png)
 
-El panel de seguridad actual, con datos ficticios y sin eventos. Los otros cuatro
-módulos —Resumen, Archivos, Estado y Cuentas— están en
-[**La interfaz**](INTERFAZ.md).
+El panel de seguridad de la consola v1.138.0, en un nodo de laboratorio con
+datos ficticios: las visitas salen de direcciones de documentación (RFC 5737).
+Los otros cuatro módulos —Resumen, Archivos, Estado y Cuentas— y la vista de
+teléfono están en [**La interfaz**](docs/INTERFAZ.md).
 
 ## Control de acceso
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="clasificacion-dark.svg">
-  <img alt="Una petición se clasifica por su origen en orden fijo, y esa clasificación acota lo que el superusuario puede hacer" src="clasificacion-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagramas/clasificacion-dark.svg">
+  <img alt="Una petición se clasifica por su origen en orden fijo, y esa clasificación acota lo que el superusuario puede hacer" src="docs/diagramas/clasificacion-light.svg">
 </picture>
 
 La clasificación es de fallo cerrado: una dirección no reconocida se trata como
@@ -53,8 +54,8 @@ página no ofrece un control que el servidor vaya a rechazar.
 ## Acceso remoto
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="acceso-remoto-dark.svg">
-  <img alt="DNS dinámico, un certificado emitido por DNS-01 sin abrir ningún puerto, y dos vías de entrada: WireGuard en 443/UDP y HTTPS en 443/TCP" src="acceso-remoto-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagramas/acceso-remoto-dark.svg">
+  <img alt="DNS dinámico, un certificado emitido por DNS-01 sin abrir ningún puerto, y dos vías de entrada: WireGuard en 443/UDP y HTTPS en 443/TCP" src="docs/diagramas/acceso-remoto-light.svg">
 </picture>
 
 Las dos vías son opcionales y están apagadas mientras no se configuren. El
@@ -153,7 +154,7 @@ La interfaz web incrusta dos tipografías, **Inter** y **Roboto Mono**, como
 subconjuntos `.woff2` en `internal/adaptadores/web/estatico/`. No son mías y la
 línea de arriba no las cubre: provienen de Google Fonts bajo la **SIL Open Font
 License 1.1**, que es la que rige su uso, y su copyright pertenece a sus
-autores. El texto de la licencia está en [`OFL.txt`](OFL.txt).
+autores. El texto de la licencia está en [`docs/OFL.txt`](docs/OFL.txt).
 
 ## Mantenimiento
 
@@ -180,8 +181,8 @@ desplazamiento móvil y foco; restauración de una muestra de respaldo en destin
 aislado; CI sobre la copia pública. Son propuestas, no fallos demostrados ni
 trabajo iniciado. La nota de Seguridad sigue pendiente de acordar.
 
-Las [capturas](INTERFAZ.md) muestran plantillas reales con datos ficticios.
-No prueban Safari real, SSE, restauración ni salud de producción. Las mediciones
+Las [capturas](docs/INTERFAZ.md) son de la consola real en un nodo de laboratorio
+con datos ficticios. No prueban Safari real, restauración ni salud de producción. Las mediciones
 operativas deben llevar fecha; no copiarse como un estado permanentemente vigente.
 
 El método adapta [DORA: calidad documental](https://dora.dev/capabilities/documentation-quality/)

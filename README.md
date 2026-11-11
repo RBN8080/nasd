@@ -10,8 +10,8 @@ helpers, and a Windows backup client in PowerShell.
 In production since July 2026.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="nodo-dark.svg">
-  <img alt="What runs on the node: three ways in, one firewall, three listeners, six scheduled units, one disk" src="nodo-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagramas/nodo-dark.svg">
+  <img alt="What runs on the node: three ways in, one firewall, three listeners, six scheduled units, one disk" src="docs/diagramas/nodo-light.svg">
 </picture>
 
 <!-- The diagrams are generated. Do not edit them by hand. -->
@@ -31,17 +31,18 @@ In production since July 2026.
 
 ## The interface
 
-![Security: current console with test data](ui-seguridad.png)
+![Security panel: live ribbon, active containment, most rejected paths and daily activity](docs/capturas/seguridad.png)
 
-The current security panel with fictional test data and no events. The interface is in
-Spanish, as the product is. The other four modules are in
-[**The interface**](INTERFACE.md).
+The security panel of console v1.138.0, running on a lab node with fictional
+data: the visits come from documentation addresses (RFC 5737). The interface is
+in Spanish, as the product is. The other four modules and the phone layout are
+in [**The interface**](docs/INTERFACE.md).
 
 ## Access control
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="clasificacion-dark.svg">
-  <img alt="A request is classified by origin in fixed order, and the classification gates what the superuser may do" src="clasificacion-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagramas/clasificacion-dark.svg">
+  <img alt="A request is classified by origin in fixed order, and the classification gates what the superuser may do" src="docs/diagramas/clasificacion-light.svg">
 </picture>
 
 Classification is fail-closed: an unrecognised address is treated as external,
@@ -53,8 +54,8 @@ the server will reject.
 ## Remote access
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="acceso-remoto-dark.svg">
-  <img alt="Dynamic DNS, a certificate issued over DNS-01 without opening a port, and two ways in: WireGuard on 443/UDP and HTTPS on 443/TCP" src="acceso-remoto-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagramas/acceso-remoto-dark.svg">
+  <img alt="Dynamic DNS, a certificate issued over DNS-01 without opening a port, and two ways in: WireGuard on 443/UDP and HTTPS on 443/TCP" src="docs/diagramas/acceso-remoto-light.svg">
 </picture>
 
 Both paths are optional and off until configured. The firewall emits the TLS
@@ -150,7 +151,7 @@ The web interface embeds two typefaces, **Inter** and **Roboto Mono**, as
 `.woff2` subsets under `internal/adaptadores/web/estatico/`. They are not mine
 and the line above does not cover them: they come from Google Fonts under the
 **SIL Open Font License 1.1**, which governs their use, and their copyright
-belongs to their authors. The license text is in [`OFL.txt`](OFL.txt).
+belongs to their authors. The license text is in [`docs/OFL.txt`](docs/OFL.txt).
 
 ## Maintenance
 
