@@ -91,6 +91,7 @@ $ErrorActionPreference = 'Stop'
 
 $nucleo = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo'
 . "$nucleo\comun.ps1"
+. "$nucleo\clasificar.ps1"
 . "$nucleo\testigo.ps1"
 . "$PSScriptRoot\estilo.ps1"
 
@@ -329,10 +330,13 @@ function Write-CuerpoDeTabla {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
         [Parameter(Mandatory)][hashtable] $Paleta,
-        [ValidateRange(1, 720)][double] $HorasParaAmbar = 12
+        [ValidateRange(1, 720)][double] $HorasParaAmbar = 12,
+        [AllowEmptyCollection()][psobject[]] $RaicesActuales = @(),
+        [AllowEmptyCollection()][psobject[]] $Centinelas = @()
     )
 
-    $modelo = @(Get-FilasDeTabla -Filas $Filas -HorasParaAmbar $HorasParaAmbar)
+    $modelo = @(Get-FilasDeTabla -Filas $Filas -HorasParaAmbar $HorasParaAmbar `
+            -RaicesActuales $RaicesActuales -Centinelas $Centinelas)
     if ($modelo.Count -eq 0) {
         Write-Linea ('  {0}Todavia no hay tabla: la escribe el motor al copiar. Corre [1].{2}{1}' -f `
                 $Paleta.Tenue, $Paleta.Fin, '')
@@ -360,118 +364,128 @@ function Get-FilasDeTabla {
             es un nombre -Verde, Ambar, Rojo, Gris- que cada ventana traduce a
             su paleta.
 
-            SE UNEN LOS DOS DESTINOS POR LA ETIQUETA DE LA RAIZ. Una raiz puede
-            estar en el nodo y no en el disco -es lo normal, el disco se conecta
-            a peticion- y otra puede estar solo en el disco, porque la copia
-            fria arrastra ademas lo que solo vive en el nodo. Las dos aparecen,
-            y la columna que no tiene dato dice que no lo tiene.
-
-            UNA COLUMNA VACIA NO SE PINTA DE VERDE. Es la misma regla de
-            Write-EstadoDelDisco un piso mas abajo: "no me consta" y "esta bien"
-            no se dibujan igual.
+            CRUCE EN VIVO CON EL DISCO: si se pasa -RaicesActuales (lo que
+            Get-RaicesDeRespaldo ve AHORA en los contenedores locales), la tabla
+            deja de ser solo una foto historica de RAICES.tsv:
+              - Una carpeta NN_* nueva sale de inmediato como NUEVA (ambar).
+              - Una raiz que estaba en RAICES.tsv pero desaparecio del disco
+                (renombrada o borrada) sale como AUSENTE (rojo) en vez de seguir
+                pintando AL DIA en verde.
         .PARAMETER Filas
             Lo que devolvio Read-EstadoPorRaiz.
         .PARAMETER HorasParaAmbar
             A partir de cuantas horas una copia buena deja de pintarse verde.
-
-            NO ES UN DIA DE CALENDARIO, Y ESE ERA UN DEFECTO REAL. Hasta el
-            2026-09-02 la celda se pintaba verde solo si la ultima copia habia
-            sido HOY, asi que con la corrida unica de las 22:30 el tablero
-            habria pintado las ocho raices en AMBAR diciendo "ayer 22:30" desde
-            medianoche hasta las 22:30 del dia siguiente: 22 horas y media de
-            ambar al dia con el sistema perfectamente sano. Nadie lo habia visto
-            porque la tarea no habia llegado a correr ni una vez -su LastRunTime
-            era 11/30/1999- y las corridas de ese dia fueron a mano.
-
-            Ahora el color sale del HUECO NOMINAL de la cadencia: mientras la
-            copia sea mas reciente que lo que el reparto de ventanas promete, es
-            verde. La etiqueta sigue diciendo "hoy 05:26" o "ayer 21:14", que es
-            como lo lee una persona; lo que cambia es quien decide el color.
+        .PARAMETER RaicesActuales
+            Opcional: raices actuales resueltas del disco en vivo.
+        .PARAMETER Centinelas
+            Opcional: centinelas declarados, para detectar raices sin cobertura.
     #>
     [CmdletBinding()]
     [OutputType([psobject[]])]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
-        [ValidateRange(1, 720)][double] $HorasParaAmbar = 12
+        [ValidateRange(1, 720)][double] $HorasParaAmbar = 12,
+        [AllowEmptyCollection()][psobject[]] $RaicesActuales = @(),
+        [AllowEmptyCollection()][psobject[]] $Centinelas = @()
     )
 
     $resultado = New-Object System.Collections.Generic.List[psobject]
-    if (@($Filas).Count -eq 0) { return $resultado.ToArray() }
 
     $porDestino = @{}
+    $nombrePorClave = @{}
     foreach ($f in $Filas) {
+        if ($null -eq $f) { continue }
         if (-not $porDestino.ContainsKey($f.Destino)) { $porDestino[$f.Destino] = @{} }
-        $porDestino[$f.Destino][$f.Raiz] = $f
+        $clave = ('' + $f.Raiz).TrimEnd('\').ToLowerInvariant()
+        $porDestino[$f.Destino][$clave] = $f
+        if (-not $nombrePorClave.ContainsKey($clave)) { $nombrePorClave[$clave] = ('' + $f.Raiz).TrimEnd('\') }
     }
 
-    # El orden lo manda el nodo -es la que corre sola- y lo que solo tenga el
-    # disco se anade detras, sin perderse.
+    $actualesPorClave = @{}
+    foreach ($ra in @($RaicesActuales)) {
+        if ($null -eq $ra -or -not ($ra.PSObject.Properties.Name -contains 'Ruta') -or -not $ra.Ruta) { continue }
+        $clave = ('' + $ra.Ruta).TrimEnd('\').ToLowerInvariant()
+        $actualesPorClave[$clave] = $ra
+        $nombrePorClave[$clave] = ('' + $ra.Ruta).TrimEnd('\')
+    }
+
+    $hayVivo = ($actualesPorClave.Count -gt 0)
+    if ($porDestino.Count -eq 0 -and -not $hayVivo) { return $resultado.ToArray() }
+
+    $centPorRaiz = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($ce in @($Centinelas)) {
+        if ($null -eq $ce -or -not ($ce.PSObject.Properties.Name -contains 'ruta') -or -not $ce.ruta) { continue }
+        $padre = Split-Path -Path ('' + $ce.ruta) -Parent
+        if ($padre) { [void]$centPorRaiz.Add($padre.TrimEnd('\')) }
+    }
+
+    # El orden lo mandan las raices activas y del nodo; las exclusivas del disco
+    # (como _HISTORICO y homeUsers) se anaden detras sin perderse.
     $orden = New-Object System.Collections.Generic.List[string]
-    foreach ($clave in @('nodo', 'disco')) {
-        if (-not $porDestino.ContainsKey($clave)) { continue }
-        foreach ($r in ($porDestino[$clave].Keys | Sort-Object)) {
-            if (-not $orden.Contains($r)) { $orden.Add($r) }
+    $primerBloque = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in $actualesPorClave.Keys) { [void]$primerBloque.Add($k) }
+    if ($porDestino.ContainsKey('nodo')) {
+        foreach ($k in $porDestino['nodo'].Keys) { [void]$primerBloque.Add($k) }
+    }
+    foreach ($k in ($primerBloque | Sort-Object { $nombrePorClave[$_] })) {
+        [void]$orden.Add($k)
+    }
+    if ($porDestino.ContainsKey('disco')) {
+        foreach ($k in ($porDestino['disco'].Keys | Sort-Object { $nombrePorClave[$_] })) {
+            if (-not $orden.Contains($k)) { [void]$orden.Add($k) }
         }
     }
 
-    foreach ($raiz in $orden) {
-        $enNodo = $null; $enDisco = $null
-        if ($porDestino.ContainsKey('nodo'))  { $enNodo  = $porDestino['nodo'][$raiz] }
-        if ($porDestino.ContainsKey('disco')) { $enDisco = $porDestino['disco'][$raiz] }
-        $ref = if ($enNodo) { $enNodo } else { $enDisco }
+    foreach ($clave in $orden) {
+        $raiz    = $nombrePorClave[$clave]
+        $enNodo  = $null; $enDisco = $null; $actual = $null
+        if ($porDestino.ContainsKey('nodo')  -and $porDestino['nodo'].ContainsKey($clave))  { $enNodo  = $porDestino['nodo'][$clave] }
+        if ($porDestino.ContainsKey('disco') -and $porDestino['disco'].ContainsKey($clave)) { $enDisco = $porDestino['disco'][$clave] }
+        if ($actualesPorClave.ContainsKey($clave)) { $actual = $actualesPorClave[$clave] }
 
-        # LA COLUMNA CL NO PUEDE AFIRMAR UNA CLASE QUE NO ES LA DEL NODO.
-        #
-        # Una raiz tiene DOS clases legitimas, una por destino: `C:\dev` es B
-        # contra el nodo -espejo, borra lo que sobra- y A contra el disco frio,
-        # que es aditivo siempre por diseno (respaldo.jsonc seccion 6). Las dos
-        # son correctas y RAICES.tsv guarda una fila para cada una.
-        #
-        # El defecto era el `else` de arriba: cuando faltaba la fila del nodo
-        # -- porque la corrida aborto antes de copiar y nunca llego a escribirla --
-        # la columna se rellenaba en silencio con la clase del DISCO. El 04/09
-        # eso puso una `A` tranquilizadora al lado de una raiz sobre la que el
-        # motor iba a borrar 545 archivos por ser `B`. Un dato tranquilizador y
-        # falso es peor que ningun dato.
-        #
-        # Ahora: si las dos filas existen y discrepan, se ensenan las dos
-        # -- "B/A", nodo primero --. Si solo esta la del disco, un guion: no
-        # consta, que es distinto de estar bien.
+        $esLocal = ($raiz -match '^[A-Za-z]:')
+        $estadoVivo = 'Activa'
+        if ($hayVivo -and $null -ne $actual -and $null -eq $enNodo) { $estadoVivo = 'Nueva' }
+        elseif ($hayVivo -and $esLocal -and $null -ne $enNodo -and $null -eq $actual) { $estadoVivo = 'Ausente' }
+        elseif (-not $esLocal) { $estadoVivo = 'SoloNodo' }
+
+        # LA COLUMNA CL refleja la clase vigente del nodo (o del disco real si
+        # es nueva), y muestra "B/A" cuando nodo y disco discrepan.
+        $claseNodo = $null
+        if ($actual) { $claseNodo = '' + $actual.Clase }
+        elseif ($enNodo) { $claseNodo = '' + $enNodo.Clase }
+
         $claseCelda = '?'
-        if ($enNodo) {
-            $claseCelda = '' + $enNodo.Clase
-            if ($enDisco -and ('' + $enDisco.Clase) -ne ('' + $enNodo.Clase)) {
-                $claseCelda = '{0}/{1}' -f $enNodo.Clase, $enDisco.Clase
+        if ($claseNodo) {
+            $claseCelda = $claseNodo
+            if ($enDisco -and ('' + $enDisco.Clase) -ne $claseNodo) {
+                $claseCelda = '{0}/{1}' -f $claseNodo, $enDisco.Clase
             }
         }
         elseif ($enDisco) { $claseCelda = '-' }
 
-        # LA COLUMNA DICE LO QUE EL NUMERO ES, NO LO QUE GUSTARIA QUE FUERA.
-        # La maqueta la titulaba PENDIENTE, pero el dato que el motor puede dar
-        # sin volver a escanear es cuantos archivos MOVIO el ultimo pase. Saber
-        # lo que falta de verdad exige un robocopy en seco por raiz, que son los
-        # minutos que este tablero no puede gastar. Llamarla "pendiente"
-        # ensenaria 67 junto a AL DIA y se leeria como 67 archivos en riesgo.
-        $movidos = [int]$ref.Pendientes
-        if ($enDisco -and [int]$enDisco.Pendientes -gt $movidos) { $movidos = [int]$enDisco.Pendientes }
+        # COPIADO pertenece al ultimo pase del NODO (o al disco solo en raices
+        # nacidas en el nodo). Ya no se mezcla max(nodo, disco) entre fechas
+        # separadas por semanas.
+        $movidos = 0
+        if ($enNodo) { $movidos = [int]$enNodo.Pendientes }
+        elseif ($enDisco -and -not $actual) { $movidos = [int]$enDisco.Pendientes }
 
         $celdas = @()
         $columna = 0
         foreach ($lado in @($enNodo, $enDisco)) {
             $columna++
+            if ($columna -eq 1 -and $estadoVivo -eq 'Nueva') {
+                $celdas += [pscustomobject]@{ Texto = 'NUEVA'; Tono = 'Ambar' }
+                continue
+            }
+            if ($columna -eq 1 -and $estadoVivo -eq 'Ausente') {
+                $celdas += [pscustomobject]@{ Texto = 'AUSENTE'; Tono = 'Rojo' }
+                continue
+            }
             if ($null -eq $lado) {
-                # UNA RAIZ QUE VIVE EN EL NODO NO LE "FALTA" AL NODO. _HISTORICO
-                # y homeUsers son del nodo: la copia fria los arrastra, pero
-                # nadie los copia AL nodo porque ya estan ahi. Un guion en esa
-                # celda se lee como un hueco, y un hueco en la columna del nodo
-                # se lee como un fallo.
-                #
-                # Para lo demas, ni verde ni rojo: no consta, que es distinto
-                # de estar bien.
-                # Solo en la columna del NODO: en la del disco, que le falte a
-                # una raiz del nodo si es un hueco de verdad.
                 $texto = '--'
-                if ($columna -eq 1 -and $raiz -notmatch '^[A-Za-z]:') { $texto = 'es el origen' }
+                if ($columna -eq 1 -and -not $esLocal) { $texto = 'es el origen' }
                 $celdas += [pscustomobject]@{ Texto = $texto; Tono = 'Gris' }
                 continue
             }
@@ -479,16 +493,6 @@ function Get-FilasDeTabla {
                 $celdas += [pscustomobject]@{ Texto = 'FALLO'; Tono = 'Rojo' }
                 continue
             }
-            # AL DIA A SECAS CUANDO ESTA DENTRO DEL HUECO QUE PROMETE LA
-            # CADENCIA, Y LA EDAD CUANDO NO. Poner la fecha siempre no cabia en
-            # la columna y se recortaba a "AL DIA hoy...", que es ruido; y una
-            # copia de hace doce dias que dijera solo "AL DIA" seria peor: al
-            # dia de cuando.
-            #
-            # EL CORTE ES POR HORAS Y NO POR DIA DE CALENDARIO. Con el corte por
-            # dia, una corrida de las 21:14 se ponia ambar a medianoche -tres
-            # horas despues- aunque la siguiente ventana no abriera hasta las
-            # 04:00. Eso es avisar de algo que no ha pasado.
             $edad = Format-Antiguedad -Momento $lado.Momento
             [datetime] $cuando = [datetime]::MinValue
             $reciente = $false
@@ -503,12 +507,16 @@ function Get-FilasDeTabla {
             }
         }
 
+        $sinCentinela = ($hayVivo -and $null -ne $actual -and $centPorRaiz.Count -gt 0 -and -not $centPorRaiz.Contains($raiz))
         $resultado.Add([pscustomobject]@{
-            Etiqueta = (Format-EtiquetaDeRaiz -Raiz $raiz)
-            Clase    = $claseCelda
-            Movidos  = $movidos
-            Nodo     = $celdas[0]
-            Disco    = $celdas[1]
+            Etiqueta     = (Format-EtiquetaDeRaiz -Raiz $raiz)
+            Ruta         = $raiz
+            Clase        = $claseCelda
+            Movidos      = $movidos
+            Nodo         = $celdas[0]
+            Disco        = $celdas[1]
+            EstadoVivo   = $estadoVivo
+            SinCentinela = $sinCentinela
         })
     }
     return $resultado.ToArray()
@@ -586,15 +594,48 @@ function Get-ResumenPendiente {
         [Parameter(Mandatory)][hashtable] $Estado,
         [AllowNull()][psobject] $Disco,
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
-        [AllowNull()][psobject] $Laboratorio
+        [AllowNull()][psobject] $Laboratorio,
+        [AllowEmptyCollection()][psobject[]] $HuerfanosActuales = @(),
+        [AllowEmptyCollection()][psobject[]] $ModeloTabla = @(),
+        [AllowNull()][psobject] $CentinelasVivo = $null
     )
 
     $partes = New-Object System.Collections.Generic.List[string]
 
+    if ($CentinelasVivo) {
+        if (@($CentinelasVivo.Fallos).Count -gt 0) {
+            $partes.Add(('{0} centinela(s) con fallo: no se copiara hasta revisar' -f @($CentinelasVivo.Fallos).Count))
+        }
+        if (@($CentinelasVivo.Renombrados).Count -gt 0) {
+            $partes.Add(('{0} raiz renombrada: corre [1] para migrarla en el nodo' -f @($CentinelasVivo.Renombrados).Count))
+        }
+        if (@($CentinelasVivo.Desactivados).Count -gt 0) {
+            $partes.Add(('{0} raiz sin prefijo NN_ (desactivada por renombre)' -f @($CentinelasVivo.Desactivados).Count))
+        }
+    }
+
+    $nuevas = @($ModeloTabla | Where-Object { $_.EstadoVivo -eq 'Nueva' }).Count
+    if ($nuevas -gt 0) {
+        $partes.Add(('{0} raiz(es) nueva(s) sin copiar todavia ([1])' -f $nuevas))
+    }
+    $ausentes = @($ModeloTabla | Where-Object { $_.EstadoVivo -eq 'Ausente' }).Count
+    if ($ausentes -gt 0) {
+        $partes.Add(('{0} raiz(es) ausente(s) en disco (renombrada o borrada)' -f $ausentes))
+    }
+    $sinCent = @($ModeloTabla | Where-Object { $_.SinCentinela }).Count
+    if ($sinCent -gt 0) {
+        $partes.Add(('{0} raiz(es) activa(s) sin centinela' -f $sinCent))
+    }
+
     $huerfanos = 0
-    if ($Estado.ContainsKey('huerfanos')) { [void][int]::TryParse(('' + $Estado['huerfanos']), [ref] $huerfanos) }
+    if ($PSBoundParameters.ContainsKey('HuerfanosActuales')) {
+        $huerfanos = @($HuerfanosActuales | Where-Object { -not (($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido) }).Count
+    }
+    elseif ($Estado.ContainsKey('huerfanos')) {
+        [void][int]::TryParse(('' + $Estado['huerfanos']), [ref] $huerfanos)
+    }
     if ($huerfanos -gt 0) {
-        $partes.Add(('{0} carpetas sin clasificar' -f $huerfanos))
+        $partes.Add(('{0} carpetas sin clasificar ([H])' -f $huerfanos))
     }
 
     if (-not $Disco) { $partes.Add('conecta el disco frio') }
@@ -690,12 +731,18 @@ function Show-Ventana {
         (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
         (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))
     Write-Linea (Get-Regla -Paleta $p -Unicode $u)
-    Write-CuerpoDeTabla -Filas $d.Filas -Paleta $p -HorasParaAmbar $d.HorasVerde
+    Write-CuerpoDeTabla -Filas $d.Filas -Paleta $p -HorasParaAmbar $d.HorasVerde `
+        -RaicesActuales $d.RaicesActuales -Centinelas $d.Centinelas
     Write-Linea ' '
 
     # --- Las lineas de resumen que pide la maqueta ---------------------------
     Write-LineaDeSumario -Etiqueta 'SEGURIDAD' -Paleta $p -Partes $d.Seguridad
-    Write-LineaDeSumario -Etiqueta 'COMPROBADO' -Paleta $p -Partes $d.Comprobado
+    $colorComprobado = if ($d.PSObject.Properties.Name -contains 'TonoComprobado' -and $p.ContainsKey($d.TonoComprobado)) {
+        $p[$d.TonoComprobado]
+    }
+    else { $p.Valor }
+    $avisarComprobado = ($d.PSObject.Properties.Name -contains 'TonoComprobado' -and $d.TonoComprobado -eq 'Rojo')
+    Write-LineaDeSumario -Etiqueta 'COMPROBADO' -Paleta $p -Partes $d.Comprobado -Color $colorComprobado -Avisar:$avisarComprobado
     Write-LineaDeSumario -Etiqueta 'AUTOMATISMO' -Paleta $p -Partes $d.Automatismo
     if (@($d.Pendiente).Count -gt 0) {
         Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $p -Partes $d.Pendiente -Color $p.Ambar -Avisar
@@ -739,9 +786,33 @@ function Get-DatosDeVentana {
         [Parameter(Mandatory)][psobject] $Configuracion
     )
 
+    $carpetaEstado = Get-CarpetaDeEstado -Configuracion $Configuracion
     $v      = Get-EstadoDelIndicador
-    $estado = Read-EstadoRespaldo
-    $filas  = @(Read-EstadoPorRaiz)
+    $estado = Read-EstadoRespaldo -Carpeta $carpetaEstado
+    $filas  = @(Read-EstadoPorRaiz -Carpeta $carpetaEstado)
+
+    # CRUCE EN VIVO CON EL DISCO LOCAL (<15 ms: 1 nivel en 5 contenedores).
+    # Nunca toca el nodo; asi una raiz NN_* nueva o renombrada se ve al instante.
+    $raicesActuales = @()
+    $huerfanosActuales = @()
+    $scanOk = $false
+    try {
+        $raicesActuales = @(Get-RaicesDeRespaldo -Configuracion $Configuracion)
+        $huerfanosActuales = @(Get-HuerfanosDeRespaldo -Configuracion $Configuracion)
+        $scanOk = $true
+    }
+    catch {
+        Write-Verbose "No se pudo consultar el disco local para el tablero: $($_.Exception.Message)"
+    }
+
+    $centinelasConfig = @($Configuracion.centinelas)
+    $centVivo = $null
+    try {
+        $centVivo = Test-Centinela -Centinelas $centinelasConfig -Contenedores @($Configuracion.contenedores)
+    }
+    catch {
+        Write-Verbose "No se pudieron comprobar centinelas en vivo: $($_.Exception.Message)"
+    }
 
     $unc = '' + $Configuracion.destinos.nodo.unc
     # Test-Path directo y no Test-DestinoNodo: pintar la ventana no debe escribir
@@ -785,30 +856,71 @@ function Get-DatosDeVentana {
     try { $horasVerde = (Get-CadenciaDeCorrida -Configuracion $Configuracion).HuecoNominalMaximoHoras }
     catch { Write-Verbose "Cadencia ilegible; el corte del verde se queda en $horasVerde h: $($_.Exception.Message)" }
 
-    $centinelas = '{0} declarados' -f @($Configuracion.centinelas).Count
-    if ($estado.ContainsKey('centinelas')) { $centinelas = '' + $estado['centinelas'] }
+    $centinelas = '{0} declarados' -f $centinelasConfig.Count
+    if ($centVivo) {
+        $okCent = $centVivo.Revisados - @($centVivo.Fallos).Count
+        $centinelas = '{0}/{1}' -f $okCent, $centVivo.Revisados
+        if (@($centVivo.Renombrados).Count -gt 0) {
+            $centinelas += (' ({0} renombrada)' -f @($centVivo.Renombrados).Count)
+        }
+        elseif (@($centVivo.Fallos).Count -gt 0) {
+            $centinelas += (' ({0} con fallo)' -f @($centVivo.Fallos).Count)
+        }
+    }
+    elseif ($estado.ContainsKey('centinelas')) { $centinelas = '' + $estado['centinelas'] }
     $cambio = '?'
     if ($estado.ContainsKey('cambio')) { $cambio = '' + $estado['cambio'] }
 
     $huellas = 'huellas {0}' -f (Format-Antiguedad -Momento ('' + $estado['huellas_momento']))
-    if ($estado.ContainsKey('huellas_detalle')) { $huellas += ' ' + $estado['huellas_detalle'] }
+    if ($estado.ContainsKey('huellas_detalle') -and $estado['huellas_detalle']) { $huellas += ' ' + $estado['huellas_detalle'] }
     # EL MUESTREO VA APARTE (seccion 9): las huellas de cada corrida leen lo
     # recien copiado, y solo el muestreo semanal relee la raiz entera. Una fecha
     # vieja aqui dice que hace mas de una semana que nadie relee lo que ya estaba.
     $muestreo = 'muestreo {0}' -f (Format-Antiguedad -Momento ('' + $estado['muestreo_momento']))
     if (('' + $estado['muestreo_estado']) -eq 'Falla') { $muestreo += ' con diferencias' }
 
+    $comprobadoPartes = New-Object System.Collections.Generic.List[string]
+    [void]$comprobadoPartes.Add($huellas)
+    if (('' + $estado['estructura_estado']) -eq 'Falla' -and $estado.ContainsKey('estructura_detalle') -and $estado['estructura_detalle']) {
+        [void]$comprobadoPartes.Add(('cambios ' + $estado['estructura_detalle']))
+    }
+    [void]$comprobadoPartes.Add($muestreo)
+    [void]$comprobadoPartes.Add(('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))))
+    [void]$comprobadoPartes.Add(('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
+
+    $tonoComprobado = 'Valor'
+    if (('' + $estado['huellas_estado']) -eq 'Falla' -or ('' + $estado['muestreo_estado']) -eq 'Falla') {
+        $tonoComprobado = 'Rojo'
+    }
+    elseif (('' + $estado['estructura_estado']) -eq 'Falla') {
+        $tonoComprobado = 'Ambar'
+    }
+
     # El laboratorio no va en la corrida diaria (seccion 5.2) y por eso no tiene
     # fila en la tabla por raiz. Es un destino mas, como el disco; su detalle
     # VM por VM esta en [L] (ADR-0104).
     $laboratorio = Get-DestinoDelLaboratorio -Estado $estado `
-        -Marca (Get-MarcaDeCorrida -Archivo 'LABORATORIO.lock')
+        -Marca (Get-MarcaDeCorrida -Carpeta $carpetaEstado -Archivo 'LABORATORIO.lock') `
+        -Progreso (Read-ProgresoDelLaboratorio -Carpeta $carpetaEstado)
+
+    $modeloTabla = @(Get-FilasDeTabla -Filas $filas -HorasParaAmbar $horasVerde `
+            -RaicesActuales $raicesActuales -Centinelas $centinelasConfig)
+
+    $argsPendiente = @{
+        Estado         = $estado
+        Disco          = $disco
+        Filas          = $filas
+        Laboratorio    = (Get-ResumenDelLaboratorio -Configuracion $Configuracion -Estado $estado)
+        ModeloTabla    = $modeloTabla
+        CentinelasVivo = $centVivo
+    }
+    if ($scanOk) { $argsPendiente['HuerfanosActuales'] = $huerfanosActuales }
 
     return [pscustomobject]@{
-        Equipo      = '' + $Configuracion.destinos.nodo.prefijoEquipo
-        Estado      = '' + $v.Estado
-        Detalle     = '' + $v.Detalle
-        Nodo        = [pscustomobject]@{
+        Equipo         = '' + $Configuracion.destinos.nodo.prefijoEquipo
+        Estado         = '' + $v.Estado
+        Detalle        = '' + $v.Detalle
+        Nodo           = [pscustomobject]@{
             Nombre        = 'NODO'
             Situacion     = $(if ($nodoVivo) { 'responde' } else { 'NO RESPONDE' })
             TonoSituacion = $(if ($nodoVivo) { 'Verde' } else { 'Rojo' })
@@ -816,7 +928,7 @@ function Get-DatosDeVentana {
             UltimaCopia   = $ultimaCopia
             TonoCopia     = $tonoCopia
         }
-        Disco       = [pscustomobject]@{
+        Disco          = [pscustomobject]@{
             Nombre        = 'DISCO FRIO'
             Situacion     = $(if ($disco) { 'conectado' } else { 'no conectado' })
             TonoSituacion = $(if ($disco) { 'Verde' } else { 'Gris' })
@@ -824,24 +936,16 @@ function Get-DatosDeVentana {
             UltimaCopia   = (Format-Antiguedad -Momento ('' + $estado['disco_momento']))
             TonoCopia     = $tonoDisco
         }
-        Laboratorio = $laboratorio
-        Filas       = $filas
-        HorasVerde  = $horasVerde
-        Seguridad   = @(('centinelas {0}' -f $centinelas), ('cambio {0} % en la ultima corrida' -f $cambio))
-        # LAS COMPROBACIONES NO VALEN UNA POR OTRA: las huellas dicen que lo
-        # copiado coincide, el muestreo que lo que ya estaba se sigue leyendo,
-        # la semilla que el kit de arranque se lee, y la restauracion real
-        # -criterio 11- que de verdad se puede volver.
-        Comprobado  = @(
-            $huellas,
-            $muestreo,
-            ('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))),
-            ('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
-        Automatismo = @(Get-EstadoDeTarea)
-        # El laboratorio lista D: en local -unos 500 archivos, milisegundos-; el
-        # nodo no se toca. No rompe la regla de "no escanea nada" de arriba.
-        Pendiente   = @(Get-ResumenPendiente -Estado $estado -Disco $disco -Filas $filas `
-                -Laboratorio (Get-ResumenDelLaboratorio -Configuracion $Configuracion -Estado $estado))
+        Laboratorio    = $laboratorio
+        Filas          = $filas
+        RaicesActuales = $raicesActuales
+        Centinelas     = $centinelasConfig
+        HorasVerde     = $horasVerde
+        Seguridad      = @(('centinelas {0}' -f $centinelas), ('cambio {0} % en la ultima corrida' -f $cambio))
+        Comprobado     = $comprobadoPartes.ToArray()
+        TonoComprobado = $tonoComprobado
+        Automatismo    = @(Get-EstadoDeTarea)
+        Pendiente      = @(Get-ResumenPendiente @argsPendiente)
     }
 }
 
@@ -878,7 +982,8 @@ function Get-DestinoDelLaboratorio {
     [OutputType([psobject])]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][hashtable] $Estado,
-        [Parameter(Mandatory)][psobject] $Marca
+        [Parameter(Mandatory)][psobject] $Marca,
+        [AllowNull()][psobject] $Progreso = $null
     )
 
     $ultimo = '' + $Estado['laboratorio_estado']
@@ -888,10 +993,11 @@ function Get-DestinoDelLaboratorio {
     $libres = '' + $Estado['laboratorio_tamano']
     if ($Marca.Existe -and -not $Marca.Vieja) {
         $situacion = 'guardando'; $tono = 'Verde'
-        # Con foto VSS (v2) la copia no bloquea el lab: las VMs pueden seguir
-        # encendidas. Se dice en la columna para que "guardando" no se lea como
-        # downtime; sin foto (v1) el texto de siempre.
-        $libres = if ($metodo -eq 'foto-vss') { 'foto, {0} min' -f $Marca.Minutos } else { 'lleva {0} min' -f $Marca.Minutos }
+        if ($Progreso -and $Progreso.Reciente) {
+            $libres = '{0}% {1}MB/s {2}' -f $Progreso.Porcentaje, $Progreso.MbPorSegundo, $Progreso.Vm
+        }
+        elseif ($metodo -eq 'foto-vss') { $libres = 'foto, {0} min' -f $Marca.Minutos }
+        else { $libres = 'lleva {0} min' -f $Marca.Minutos }
     }
     elseif ($Marca.Existe -or $ultimo -eq 'Copiando') { $situacion = 'CORTADO'; $tono = 'Rojo' }
     elseif ($ultimo -eq 'Falla') { $situacion = 'FALLO'; $tono = 'Rojo' }
@@ -948,10 +1054,10 @@ function Get-MenuDelTablero {
             , @('[1] al nodo', '[3] cotejar el nodo', '[5] semilla de arranque')
             , @('[2]    vista previa', '[4] estado completo', '[6] automatismo')
             , @('[7] al disco frio', '[9] cotejar el disco frio', '[A] ajustes')
-            , @('[8]    vista previa', '[R] ensayo de restauracion', '')
+            , @('[8]    vista previa', '[R] ensayo de restauracion', '[H] sin clasificar')
             , @('[G] laboratorio al nodo', '[L] ver el laboratorio', '')
             , @('[V]    vista previa', '[T] leer el lab en la Pi', '[S] salir'))
-        Nota     = 'centinelas y clases: se cambian en 3-Config/respaldo.jsonc'
+        Nota     = 'Enter refresca   -   centinelas y clases: 3-Config/respaldo.jsonc'
     }
 }
 
@@ -2092,6 +2198,51 @@ function Test-HayCorridaEnCurso {
     }
 }
 
+function Show-Huerfanos {
+    <#
+        .SYNOPSIS
+            [H]: lista las carpetas sin numerar dentro de los contenedores.
+        .DESCRIPTION
+            Permite inspeccionar en vivo que carpetas quedan fuera del respaldo
+            sin abrir los registros en LOCALAPPDATA. Separa carpetas nuevas de
+            las ya listadas en huerfanosConocidos.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion
+    )
+
+    $todos = @(Get-HuerfanosDeRespaldo -Configuracion $Configuracion)
+    $nuevos = @($todos | Where-Object { -not (($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido) })
+    $conocidos = @($todos | Where-Object { ($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido })
+
+    if ($todos.Count -eq 0) {
+        Write-Veredicto -Nivel 'OK' -Frase '0 carpetas sin clasificar dentro de los contenedores declarados.'
+        return
+    }
+
+    $tabla = @(foreach ($h in $todos) {
+        [pscustomobject]@{
+            Carpeta = (Format-EtiquetaDeRaiz -Raiz $h.Ruta)
+            Estado  = $(if (($h.PSObject.Properties.Name -contains 'Conocido') -and $h.Conocido) { 'conocida' } else { 'sin clasificar' })
+        }
+    })
+    Write-Linea ''
+    Show-Texto -Objeto $tabla
+    Write-Linea ''
+
+    if ($nuevos.Count -eq 0) {
+        Write-Veredicto -Nivel 'OK' -Frase ('0 carpetas nuevas sin clasificar ({0} conocidas de programas en respaldo.jsonc).' -f $conocidos.Count)
+    }
+    else {
+        Write-Veredicto -Nivel 'ATENCION' -Frase ('{0} carpeta(s) sin numerar no se copian ({1} conocida(s)).' -f $nuevos.Count, $conocidos.Count) `
+            -Accion 'Para respaldar una carpeta, renombrala con prefijo NN_ (por ejemplo 04_PROYECTO). Si es de un programa y no quieres verla en PENDIENTE, anade su nombre a huerfanosConocidos en 3-Config/respaldo.jsonc.'
+    }
+}
+
 function Invoke-OpcionDelTablero {
     <#
         .SYNOPSIS
@@ -2134,17 +2285,39 @@ function Invoke-OpcionDelTablero {
                 # abortos que quedan -centinela, origen inutilizable, deuda- no
                 # se autorizan de ninguna manera, ni aqui ni en la consola.
                 $puerta = Test-HayCorridaEnCurso -Configuracion $Configuracion
-                if ($puerta.EnCurso) { Write-Warning $puerta.Detalle }
+                if ($puerta.EnCurso) {
+                    Write-Veredicto -Nivel 'ATENCION' -Frase $puerta.Detalle
+                }
                 else {
-                    Write-Linea '   Copiando al nodo...'
+                    Write-Anuncio -Que 'Copia al NODO' `
+                        -Detalle 'Escribe en el nodo. Migra renombres NN_ reconocidos por centinela y omite raices sin cambios.'
                     $r1 = & "$nucleo\respaldo.ps1" @comunes -Confirm:$false
-                    if ($r1 -and $r1.Abortada) { Write-Warning $r1.Motivo }
-                    else { Write-Linea '   Corrida terminada.' }
+                    if ($null -eq $r1) {
+                        Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La corrida no devolvio resultado.'
+                    }
+                    elseif ($r1.Abortada) {
+                        Write-Veredicto -Nivel 'FALLO' -Frase ('' + $r1.Motivo) `
+                            -Accion 'No se escribio nada. Revisa el registro de hoy en LOCALAPPDATA\NasRespaldo\registro.'
+                    }
+                    else {
+                        $fallos1 = @($r1.Copias | Where-Object { -not $_.Correcto }).Count
+                        $copiados1 = 0
+                        foreach ($c1 in @($r1.Copias)) { $copiados1 += [int]$c1.NumACopiar }
+                        $ren1 = if ($r1.PSObject.Properties.Name -contains 'Renombres') { @($r1.Renombres).Count } else { 0 }
+                        $notaRen = if ($ren1 -gt 0) { ', {0} renombre(s) migrado(s)' -f $ren1 } else { '' }
+                        if ($fallos1 -gt 0) {
+                            Write-Veredicto -Nivel 'FALLO' -Frase ('{0} de {1} raices fallaron al copiar ({2} archivos copiados{3}).' -f $fallos1, @($r1.Copias).Count, $copiados1, $notaRen) `
+                                -Accion 'Revisa el registro de hoy para ver que raiz devolvio error de robocopy.'
+                        }
+                        else {
+                            Write-Veredicto -Nivel 'OK' -Frase ('{0} raices al dia en el nodo, {1} archivos copiados{2}.' -f @($r1.Copias).Count, $copiados1, $notaRen)
+                        }
+                    }
                 }
             }
             '2' {
                 Write-Anuncio -Que 'Simulacion de la copia al NODO' `
-                    -Detalle 'NO escribe nada. Mide que cambiaria en las 8 raices. ~1 min.'
+                    -Detalle 'NO escribe nada. Mide que cambiaria en las raices actuales. ~1 min.'
                 $r2 = & "$nucleo\respaldo.ps1" @comunes -SoloSimular -Confirm:$false
                 Show-VeredictoDeSimulacion -Resultado $r2 -Configuracion $Configuracion
             }
@@ -2153,7 +2326,15 @@ function Invoke-OpcionDelTablero {
                     -Detalle 'NO escribe nada. Lee archivos ENTEROS por la red: tarda MINUTOS y no esta colgado.'
                 Show-VeredictoDelCotejo -Resultado (& "$nucleo\verificar.ps1" @comunes)
             }
-            '4' { Show-Texto -Objeto (Read-EstadoRespaldo) -Vacio 'No hay estado escrito todavia.' }
+            '4' {
+                Write-Anuncio -Que 'Estado completo del cliente' `
+                    -Detalle 'Solo lee ESTADO.txt y las raices locales vigentes.'
+                $est4 = Read-EstadoRespaldo -Carpeta (Get-CarpetaDeEstado -Configuracion $Configuracion)
+                Show-Texto -Objeto $est4 -Vacio 'No hay estado escrito todavia.'
+                $raices4 = @(Get-RaicesDeRespaldo -Configuracion $Configuracion)
+                $nivel4 = switch ('' + $est4['estado']) { 'Protegido' { 'OK' } 'Falla' { 'FALLO' } 'SinDatos' { 'SIN DATOS' } default { 'ATENCION' } }
+                Write-Veredicto -Nivel $nivel4 -Frase ('Estado {0}: {1} ({2} raices activas en disco).' -f ('' + $est4['estado']), ('' + $est4['detalle']), $raices4.Count)
+            }
             '5' {
                 $destino = '{0}\{1}\{2}\_SEMILLA' -f `
                     $Configuracion.destinos.nodo.unc.TrimEnd('\'),
@@ -2171,28 +2352,57 @@ function Invoke-OpcionDelTablero {
                 # equipo y la copia queda declarada INCOMPLETA: nunca se dice
                 # "al dia" a una copia fria a la que le falto la mitad (6.2).
                 $puerta = Test-HayCorridaEnCurso -Configuracion $Configuracion
-                if ($puerta.EnCurso) { Write-Warning $puerta.Detalle }
+                if ($puerta.EnCurso) {
+                    Write-Veredicto -Nivel 'ATENCION' -Frase $puerta.Detalle
+                }
                 else {
-                    Write-Linea '   Copiando al disco frio (dos pasadas)...'
+                    Write-Anuncio -Que 'Copia al DISCO FRIO (dos pasadas, siempre aditiva)' `
+                        -Detalle 'Escribe en el disco USB (equipo -> disco y nodo -> disco). Nunca borra.'
                     $rd = & "$nucleo\disco.ps1" @comunes -Confirm:$false
-                    if ($rd.Abortada) { Write-Warning $rd.Motivo }
+                    if ($rd.Abortada) {
+                        Write-Veredicto -Nivel 'FALLO' -Frase ('' + $rd.Motivo)
+                    }
                     elseif (@($rd.Fallidas).Count -gt 0) {
                         # ANTES QUE "COMPLETA". El 2026-10-18 salia "COMPLETA"
                         # justo debajo de "FALLO C:\dev".
-                        Write-Warning ('COPIA FRIA CON FALLOS: {0} raices sin dar por buenas ({1}). Lo demas se copio; el detalle, en el registro de hoy.' -f @($rd.Fallidas).Count, (@($rd.Fallidas) -join ', '))
+                        Write-Veredicto -Nivel 'FALLO' -Frase ('COPIA FRIA CON FALLOS: {0} raices sin dar por buenas ({1}).' -f @($rd.Fallidas).Count, (@($rd.Fallidas) -join ', ')) `
+                            -Accion 'Lo demas se copio; revisa el registro de hoy.'
                     }
                     elseif (-not $rd.Completa) {
-                        Write-Warning 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.'
+                        Write-Veredicto -Nivel 'ATENCION' -Frase 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.' `
+                            -Accion 'Comprueba que el nodo responde y vuelve a pulsar [7].'
                     }
                     elseif ($rd.ArchivosCopiados -eq 0) {
-                        Write-Linea '   Copia fria AL DIA: las dos pasadas corrieron y no habia nada nuevo que copiar.'
+                        Write-Veredicto -Nivel 'OK' -Frase 'Copia fria AL DIA: las dos pasadas corrieron y no habia nada nuevo que copiar.'
                     }
                     else {
-                        Write-Linea ('   Copia fria COMPLETA: {0} archivos nuevos.' -f $rd.ArchivosCopiados)
+                        Write-Veredicto -Nivel 'OK' -Frase ('Copia fria COMPLETA: {0} archivos nuevos en dos pasadas.' -f $rd.ArchivosCopiados)
                     }
                 }
             }
-            '8' { Show-Texto -Objeto (& "$nucleo\disco.ps1" @comunes -SoloSimular -Confirm:$false) -Lista -Vacio 'La simulacion no devolvio nada.' }
+            '8' {
+                Write-Anuncio -Que 'Vista previa de la copia al DISCO FRIO' `
+                    -Detalle 'NO escribe nada. Mide que copiaria desde el equipo y desde el nodo.'
+                $r8 = & "$nucleo\disco.ps1" @comunes -SoloSimular -Confirm:$false
+                if ($null -eq $r8) {
+                    Write-Veredicto -Nivel 'SIN DATOS' -Frase 'La simulacion no devolvio nada.'
+                }
+                elseif ($r8.Abortada) {
+                    Write-Veredicto -Nivel 'ATENCION' -Frase ('' + $r8.Motivo)
+                }
+                else {
+                    $todas8 = @(@($r8.PasadaEquipo) + @($r8.PasadaNodo) | Where-Object { $null -ne $_ })
+                    Show-Texto -Objeto ($todas8 | Select-Object Origen, NumACopiar, Codigo, Correcto)
+                    $n8 = 0; foreach ($x8 in $todas8) { $n8 += [int]$x8.NumACopiar }
+                    $nivel8 = if ($r8.Completa) { 'OK' } else { 'ATENCION' }
+                    Write-Veredicto -Nivel $nivel8 -Frase ('Vista previa: copiaria {0} archivos en {1} raices (completa: {2}).' -f $n8, $todas8.Count, $r8.Completa)
+                }
+            }
+            'H' {
+                Write-Anuncio -Que 'Carpetas sin clasificar en contenedores' `
+                    -Detalle 'Solo lee en local (milisegundos). Excluye junctions de Windows.'
+                Show-Huerfanos -Configuracion $Configuracion
+            }
             '9' {
                 # Busca lo que una copia cortada dejo a medias. Existe porque un
                 # apagon el 2026-09-02 dejo ocho archivos con el tamano correcto
@@ -2291,12 +2501,26 @@ while ($seguir) {
     # solo por donde entra.
     $elegida = ('' + (Read-Host '  opcion')).Trim().ToUpperInvariant()
     if ($elegida -eq 'S') { $seguir = $false; continue }
+    if ($elegida -eq '') {
+        try { $configuracion = Get-ConfiguracionRespaldo @parametros }
+        catch { Write-Warning ('No se pudo releer la configuracion: {0}' -f $_.Exception.Message) }
+        continue
+    }
 
     if ($enCore) {
         if ($elegida -notmatch '^[0-9A-Z]$') { Write-Warning 'Opcion no reconocida.'; continue }
         $argumentos = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Opcion', $elegida)
         if ($rutaConfig) { $argumentos += @('-RutaConfiguracion', $rutaConfig) }
-        & $powershell51 @argumentos
+        # PowerShell 7 antepone su carpeta de modulos en PSModulePath; al
+        # heredarla, PowerShell 5.1 intenta cargar Microsoft.PowerShell.Utility
+        # de .NET moderno y pierde cmdlets como Get-FileHash. Se limpia solo
+        # para el hijo 5.1 y se restaura en finally.
+        $modPrevio = $env:PSModulePath
+        try {
+            $env:PSModulePath = '{0}\WindowsPowerShell\Modules;{1}\System32\WindowsPowerShell\v1.0\Modules' -f $env:ProgramFiles, $env:SystemRoot
+            & $powershell51 @argumentos
+        }
+        finally { $env:PSModulePath = $modPrevio }
     }
     else {
         Invoke-OpcionDelTablero -Opcion $elegida -Configuracion $configuracion -RutaConfiguracion ('' + $rutaConfig)

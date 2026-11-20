@@ -43,6 +43,21 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Aislamiento del registro diario: ninguna prueba debe escribir ruido en
+# LOCALAPPDATA\NasRespaldo\registro. La variable se hereda a los subprocesos
+# (& respaldo.ps1, & verificar.ps1, & laboratorio.ps1, Start-Job).
+$script:RegistroPrevioPruebas = $env:NASRESPALDO_REGISTRO
+$env:NASRESPALDO_REGISTRO = Join-Path $CarpetaCaja 'registro'
+
+# Si Windows PowerShell 5.1 hereda PSModulePath de PowerShell 7 (WindowsApps),
+# Get-FileHash falla al intentar cargar el modulo de 7. Se limpia para 5.1.
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    $partesMod = @(($env:PSModulePath -split ';') | Where-Object {
+            $_ -and ($_ -notmatch 'PowerShell\\7' -and $_ -notmatch 'Microsoft\.PowerShell_' -and $_ -notmatch 'Program Files\\PowerShell\\Modules')
+        })
+    $env:PSModulePath = $partesMod -join ';'
+}
+
 $nucleo = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo'
 . "$nucleo\comun.ps1"
 . "$nucleo\clasificar.ps1"
@@ -1212,15 +1227,50 @@ else {
     $estiloPs = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\estilo.ps1') -Raw -Encoding UTF8
     $iconoPs  = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\indicador.ps1') -Raw -Encoding UTF8
 
-    foreach ($token in @('ok', 'av', 'fa', 'nada')) {
-        $m = [regex]::Match($textoCss, ('--{0}:\s*#([0-9a-fA-F]{{6}})' -f $token))
-        Test-Afirmacion -Nombre ("estilo.css declara --{0}" -f $token) -Esperado $true -Obtenido $m.Success
-        if (-not $m.Success) { continue }
+    # Consola 2 (ADR-0105) declara los tokens en OKLCH. Convertimos OKLCH a sRGB
+    # (CSS Color 4) para seguir comprobando contra estilo.css como fuente unica.
+    $oklchASrgb = {
+        param([double]$L, [double]$C, [double]$H)
+        $rad = $H * [math]::PI / 180.0
+        $a = $C * [math]::Cos($rad)
+        $b = $C * [math]::Sin($rad)
+        $l_ = $L + 0.3963377774 * $a + 0.2158037573 * $b
+        $m_ = $L - 0.1055613458 * $a - 0.0638541728 * $b
+        $s_ = $L - 0.0894841775 * $a - 1.2914855480 * $b
+        $l3 = $l_ * $l_ * $l_; $m3 = $m_ * $m_ * $m_; $s3 = $s_ * $s_ * $s_
+        $rLin = +4.0767416621 * $l3 - 3.3077115913 * $m3 + 0.2309699292 * $s3
+        $gLin = -1.2684380046 * $l3 + 2.6097574011 * $m3 - 0.3413193965 * $s3
+        $bLin = -0.0041960863 * $l3 - 0.7034186147 * $m3 + 1.7076147010 * $s3
+        $enc = {
+            param([double]$x)
+            $x = [math]::Max(0.0, [math]::Min(1.0, $x))
+            $s = if ($x -le 0.0031308) { 12.92 * $x } else { 1.055 * [math]::Pow($x, 1.0 / 2.4) - 0.055 }
+            [int][math]::Round($s * 255.0)
+        }
+        $r = & $enc $rLin; $g = & $enc $gLin; $bl = & $enc $bLin
+        return [pscustomobject]@{ R = $r; G = $g; B = $bl; Hex = ('{0:x2}{1:x2}{2:x2}' -f $r, $g, $bl) }
+    }
 
-        $hex = $m.Groups[1].Value.ToLowerInvariant()
-        $r = [Convert]::ToInt32($hex.Substring(0, 2), 16)
-        $g = [Convert]::ToInt32($hex.Substring(2, 2), 16)
-        $b = [Convert]::ToInt32($hex.Substring(4, 2), 16)
+    foreach ($token in @('ok', 'av', 'fa', 'tx3')) {
+        $mOklch = [regex]::Match($textoCss, ('--{0}:\s*oklch\(\s*([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s*\)' -f $token))
+        $mHex   = [regex]::Match($textoCss, ('--{0}:\s*#([0-9a-fA-F]{{6}})' -f $token))
+        $hallado = ($mOklch.Success -or $mHex.Success)
+        Test-Afirmacion -Nombre ("estilo.css declara --{0}" -f $token) -Esperado $true -Obtenido $hallado
+        if (-not $hallado) { continue }
+
+        if ($mOklch.Success) {
+            $inv = [System.Globalization.CultureInfo]::InvariantCulture
+            $rgb = & $oklchASrgb ([double]::Parse($mOklch.Groups[1].Value, $inv)) `
+                ([double]::Parse($mOklch.Groups[2].Value, $inv)) `
+                ([double]::Parse($mOklch.Groups[3].Value, $inv))
+            $r = $rgb.R; $g = $rgb.G; $b = $rgb.B; $hex = $rgb.Hex
+        }
+        else {
+            $hex = $mHex.Groups[1].Value.ToLowerInvariant()
+            $r = [Convert]::ToInt32($hex.Substring(0, 2), 16)
+            $g = [Convert]::ToInt32($hex.Substring(2, 2), 16)
+            $b = [Convert]::ToInt32($hex.Substring(4, 2), 16)
+        }
 
         # El tablero escribe color de 24 bits en decimal.
         Test-Afirmacion -Nombre ("El tablero usa el --{0} del panel ({1})" -f $token, $hex) `
@@ -1416,7 +1466,7 @@ Test-Afirmacion -Nombre 'La tabla decidida da los tonos de siempre: al dia verde
 Test-Afirmacion -Nombre 'Y el texto de cada celda: la clase de los dos destinos, y "es el origen" para lo que vive en el nodo' `
     -Esperado 'B/A|es el origen' -Obtenido ('{0}|{1}' -f $modelo[0].Clase, $modelo[2].Nodo.Texto)
 Test-Afirmacion -Nombre 'Los colores del panel con Spectre salen de Get-Paleta: el verde es el del nodo' `
-    -Esperado '#3fb950' -Obtenido (Get-ColoresDelPanel)['Verde']
+    -Esperado '#66d081' -Obtenido (Get-ColoresDelPanel)['Verde']
 if ($PSVersionTable.PSVersion -lt [version]'7.4') {
     Test-Afirmacion -Nombre 'En PowerShell 5.1 no hay panel con Spectre: se pinta la ventana de siempre' `
         -Esperado $false -Obtenido (Initialize-PanelRico)
@@ -2029,14 +2079,17 @@ if (Test-Path -LiteralPath $appDataDeLaCaja) { Remove-Item -LiteralPath $appData
 New-Item -ItemType Directory -Path $appDataDeLaCaja -Force | Out-Null
 
 $appDataDeVerdad = $env:LOCALAPPDATA
+$regAntesDeTarea = $env:NASRESPALDO_REGISTRO
 $registroDeLaCaja = ''
 try {
     $env:LOCALAPPDATA = $appDataDeLaCaja
+    $env:NASRESPALDO_REGISTRO = ''
     Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\conhost.exe') `
         -ArgumentList ($argsTarea + ' -SoloSimular') -Wait | Out-Null
 }
 finally {
     $env:LOCALAPPDATA = $appDataDeVerdad
+    $env:NASRESPALDO_REGISTRO = $regAntesDeTarea
 }
 $logsDeLaCaja = @(Get-ChildItem -LiteralPath (Join-Path $appDataDeLaCaja 'NasRespaldo\registro') `
         -Filter '*.log' -ErrorAction SilentlyContinue)
@@ -2463,7 +2516,7 @@ $pantallaLimpia = (Show-VeredictoDelCotejo -Resultado $cotejoLimpio 6>&1 | Out-S
 Test-Afirmacion -Nombre 'Un cotejo sin diferencias da OK' `
     -Esperado $true -Obtenido ($pantallaLimpia -match 'OK\s')
 Test-Afirmacion -Nombre 'Y el verde lo sostiene la cifra de archivos LEIDOS ENTEROS, no de raices' `
-    -Esperado $true -Obtenido ($pantallaLimpia -match '7 archivos leidos enteros')
+    -Esperado $true -Obtenido (($pantallaLimpia -replace '\s+', ' ') -match '7 archivos leidos enteros')
 
 # ESTRUCTURA DISTINTA ES ATENCION: lo que falta se copia solo en la siguiente
 # corrida, asi que no es un fallo.
@@ -3100,6 +3153,209 @@ Test-Afirmacion -Nombre 'La linea PENDIENTE del tablero nombra el laboratorio cu
                 -Laboratorio ([pscustomobject]@{ Vms = 12; NoAlDia = 7 })) -match '^laboratorio: 7 de 12'))
 
 # ===========================================================================
+#  OPTIMIZACION 2026-11-20: RENOMBRE, REALIDAD EN VIVO, INTEGRIDAD Y REGISTRO
+# ===========================================================================
+
+Write-Titulo 'Optimizacion: renombres NN_ con centinela intacto y migracion atomica'
+
+$cajaRen = Join-Path $CarpetaCaja 'renombre-raiz'
+$renOrig = Join-Path $cajaRen 'origen'
+$renDest = Join-Path $cajaRen 'destino'
+$renDocs = Join-Path $renOrig 'Documents\01_ACADEMICO'
+New-Item -ItemType Directory -Path $renDocs, $renDest -Force | Out-Null
+'apunte 1' | Set-Content -LiteralPath (Join-Path $renDocs 'tema1.txt') -Encoding UTF8
+'apunte 2' | Set-Content -LiteralPath (Join-Path $renDocs 'tema2.txt') -Encoding UTF8
+$centRen = New-Centinela -Carpeta $renDocs -Confirm:$false
+
+$renCfgRuta = Join-Path $cajaRen 'respaldo.jsonc'
+$renDestUnc = '\\localhost\C$' + $renDest.Substring(2)
+$renCfgTexto = @"
+// Comentario que debe sobrevivir al actualizar un centinela renombrado
+{
+  "version": "0.2.0",
+  "equipo": "PC-REN",
+  "carpetaEstado": "$((Join-Path $cajaRen 'estado').Replace('\', '\\'))",
+  "destinos": {
+    "nodo": {
+      "unc": "$($renDestUnc.Replace('\', '\\'))",
+      "raiz": "01_BACKUP",
+      "prefijoEquipo": "PC-REN",
+      "abortarSiDestinoNoEsUNC": true,
+      "traduccionDeRutas": [
+        { "de": "$($renOrig.Replace('\', '\\'))", "a": "EQ" }
+      ]
+    }
+  },
+  "contenedores": [
+    { "ruta": "$((Join-Path $renOrig 'Documents').Replace('\', '\\'))", "clase": "B" }
+  ],
+  "raicesDeclaradas": [],
+  "raicesDelNodo": [],
+  "exclusiones": [],
+  "huerfanosConocidos": ["AppConocida"],
+  "centinelas": [
+    { "ruta": "$($centRen.ruta.Replace('\', '\\'))", "huella": "$($centRen.huella)" }
+  ],
+  "cadencia": {
+    "ventanas": [
+      { "inicio": "04:00", "duracionHoras": 3 },
+      { "inicio": "12:00", "duracionHoras": 3 },
+      { "inicio": "19:00", "duracionHoras": 3 }
+    ],
+    "horasParaAvisar": 22
+  },
+  "deudaPrimeraCorrida": { "raices": [], "saldada": true }
+}
+"@
+[System.IO.File]::WriteAllText($renCfgRuta, ($renCfgTexto -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
+
+# Primera corrida: siembra 01_ACADEMICO en el destino.
+$cfgRenObj = Get-ConfiguracionRespaldo -Ruta $renCfgRuta
+$cRen1 = Invoke-CorridaDeRespaldo -Configuracion $cfgRenObj -RutaConfiguracion $renCfgRuta -Confirm:$false
+$destViejo = Join-Path $renDest '01_BACKUP\PC-REN\EQ\Documents\01_ACADEMICO'
+Test-Afirmacion -Nombre 'Siembra inicial antes del renombre termina limpia y crea el destino' `
+    -Esperado 'False|True' -Obtenido ('{0}|{1}' -f $cRen1.Abortada, (Test-Path -LiteralPath $destViejo -PathType Container))
+
+# Segunda corrida sin cambios: Etapa 4 omite robocopy y sigue dando OK.
+$cRenSinCambios = Invoke-CorridaDeRespaldo -Configuracion $cfgRenObj -RutaConfiguracion $renCfgRuta -Confirm:$false
+Test-Afirmacion -Nombre 'Raiz sin cambios en Etapa 3 omite robocopy en Etapa 4 y queda limpia' `
+    -Esperado 'True|0|True' -Obtenido ('{0}|{1}|{2}' -f $cRenSinCambios.Copias[0].Correcto, $cRenSinCambios.Copias[0].NumACopiar,
+        [bool]$cRenSinCambios.Copias[0].OmitidaSinCambios)
+
+# Renombre: se conserva 01_ y se cambia solo el nombre (caso real del usuario).
+Rename-Item -LiteralPath $renDocs -NewName '01_UNIVERSIDAD'
+$renDocsNuevo = Join-Path $renOrig 'Documents\01_UNIVERSIDAD'
+$destNuevo = Join-Path $renDest '01_BACKUP\PC-REN\EQ\Documents\01_UNIVERSIDAD'
+
+$checkRen = Test-Centinela -Centinelas @($cfgRenObj.centinelas) -Contenedores @($cfgRenObj.contenedores)
+Test-Afirmacion -Nombre 'Cambiar el nombre conservando NN_ se reconoce por centinela SHA-256 intacto' `
+    -Esperado 'True|1|0' -Obtenido ('{0}|{1}|{2}' -f $checkRen.Correcto, @($checkRen.Renombrados).Count, @($checkRen.Fallos).Count)
+
+$cRen2 = Invoke-CorridaDeRespaldo -Configuracion $cfgRenObj -RutaConfiguracion $renCfgRuta -Confirm:$false
+$textoRenDespues = Get-Content -LiteralPath $renCfgRuta -Raw -Encoding UTF8
+$cfgRenReleida = Get-ConfiguracionRespaldo -Ruta $renCfgRuta
+Test-Afirmacion -Nombre 'La corrida migra atomicamente el destino en el nodo sin re-subir ni dejar huerfano' `
+    -Esperado 'False|True|False|True|0' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f $cRen2.Abortada,
+        (Test-Path -LiteralPath $destNuevo -PathType Container),
+        (Test-Path -LiteralPath $destViejo -PathType Container),
+        $cRen2.Renombres[0].DestinoMigrado,
+        $cRen2.Copias[0].NumACopiar)
+Test-Afirmacion -Nombre 'Y actualiza respaldo.jsonc conservando comentarios y finales LF' `
+    -Esperado 'True|True|0' -Obtenido ('{0}|{1}|{2}' -f
+        ($cfgRenReleida.centinelas[0].ruta -like '*01_UNIVERSIDAD\_centinela_respaldo.txt'),
+        ($textoRenDespues -match '// Comentario que debe sobrevivir'),
+        ([regex]::Matches($textoRenDespues, "`r")).Count)
+
+# Quitar el prefijo NN_ con centinela intacto: desactivacion explicita, NO falso ransomware.
+Rename-Item -LiteralPath $renDocsNuevo -NewName 'SIN_PREFIJO'
+$checkDes = Test-Centinela -Centinelas @($cfgRenReleida.centinelas) -Contenedores @($cfgRenReleida.contenedores)
+Test-Afirmacion -Nombre 'Quitar el prefijo NN_ con centinela intacto se clasifica como Desactivado, no ransomware' `
+    -Esperado 'True|1|0' -Obtenido ('{0}|{1}|{2}' -f $checkDes.Correcto, @($checkDes.Desactivados).Count, @($checkDes.Fallos).Count)
+
+# Alterar el contenido del centinela sigue siendo ABORTO DURO.
+'cifrado por ransomware' | Set-Content -LiteralPath (Join-Path $renOrig 'Documents\SIN_PREFIJO\_centinela_respaldo.txt') -Encoding UTF8
+$checkAtq = Test-Centinela -Centinelas @($cfgRenReleida.centinelas) -Contenedores @($cfgRenReleida.contenedores)
+Test-Afirmacion -Nombre 'Un centinela alterado o borrado sigue abortando en seco (defensa intacta)' `
+    -Esperado 'False|1' -Obtenido ('{0}|{1}' -f $checkAtq.Correcto, @($checkAtq.Fallos).Count)
+
+Write-Titulo 'Optimizacion: realidad en vivo en tablero, huerfanos, integridad y registro'
+
+# Huerfanos conocidos vs nuevos.
+New-Item -ItemType Directory -Path (Join-Path $renOrig 'Documents\AppConocida'), (Join-Path $renOrig 'Documents\CarpetaNueva') -Force | Out-Null
+$huerfRen = @(Get-HuerfanosDeRespaldo -Configuracion $cfgRenReleida)
+$hCon = @($huerfRen | Where-Object { $_.Conocido })
+$hNvo = @($huerfRen | Where-Object { -not $_.Conocido })
+Test-Afirmacion -Nombre 'huerfanosConocidos separa carpetas de programas sin ocultar carpetas nuevas' `
+    -Esperado '1|True' -Obtenido ('{0}|{1}' -f $hCon.Count, ($hNvo.Count -ge 1))
+
+# Tabla en vivo: NUEVA, AUSENTE, AL DIA y COPIADO fiel al nodo (no max con disco).
+$ahoraIso = (Get-Date).AddMinutes(-15).ToString('s')
+$filasVivo = @(
+    [pscustomobject]@{ Destino = 'nodo';  Raiz = 'C:\viva';    Clase = 'A'; Pendientes = 0; Estado = 'AlDia'; Momento = $ahoraIso },
+    [pscustomobject]@{ Destino = 'disco'; Raiz = 'C:\viva';    Clase = 'A'; Pendientes = 9; Estado = 'AlDia'; Momento = (Get-Date).AddDays(-30).ToString('s') },
+    [pscustomobject]@{ Destino = 'nodo';  Raiz = 'C:\borrada'; Clase = 'B'; Pendientes = 1; Estado = 'AlDia'; Momento = $ahoraIso }
+)
+$actualesVivo = @(
+    [pscustomobject]@{ Ruta = 'C:\viva';  Clase = 'A' },
+    [pscustomobject]@{ Ruta = 'C:\nueva'; Clase = 'B' }
+)
+$centVivoTabla = @([pscustomobject]@{ ruta = 'C:\viva\_centinela_respaldo.txt'; huella = '0' })
+$modVivo = @(Get-FilasDeTabla -Filas $filasVivo -HorasParaAmbar 12 -RaicesActuales $actualesVivo -Centinelas $centVivoTabla)
+$fViva    = @($modVivo | Where-Object { $_.Ruta -eq 'C:\viva' })[0]
+$fNueva   = @($modVivo | Where-Object { $_.Ruta -eq 'C:\nueva' })[0]
+$fBorrada = @($modVivo | Where-Object { $_.Ruta -eq 'C:\borrada' })[0]
+Test-Afirmacion -Nombre 'Tabla en vivo: NUEVA ambar, AUSENTE rojo, AL DIA verde y COPIADO solo del nodo' `
+    -Esperado 'AL DIA,Verde,0|NUEVA,Ambar,True|AUSENTE,Rojo' -Obtenido ('{0},{1},{2}|{3},{4},{5}|{6},{7}' -f
+        $fViva.Nodo.Texto, $fViva.Nodo.Tono, $fViva.Movidos,
+        $fNueva.Nodo.Texto, $fNueva.Nodo.Tono, $fNueva.SinCentinela,
+        $fBorrada.Nodo.Texto, $fBorrada.Nodo.Tono)
+
+# Progreso vivo de [G] en Get-DestinoDelLaboratorio.
+$cajaProg = Join-Path $CarpetaCaja 'lab-progreso'
+New-Item -ItemType Directory -Path $cajaProg -Force | Out-Null
+Write-ProgresoDelLaboratorio -Vm 'Kali' -Fase 'escribiendo' -Hechos 50 -Totales 100 -MbPorSegundo 11.4 -Carpeta $cajaProg -Confirm:$false
+$progLeido = Read-ProgresoDelLaboratorio -Carpeta $cajaProg
+$destLabProg = Get-DestinoDelLaboratorio -Estado @{ laboratorio_estado = 'Copiando' } `
+    -Marca ([pscustomobject]@{ Existe = $true; Vieja = $false; Minutos = 12 }) -Progreso $progLeido
+Test-Afirmacion -Nombre 'La fila LAB VMWARE ensena progreso vivo cuando existe LABORATORIO.progreso' `
+    -Esperado 'guardando|50% 11.4MB/s Kali' -Obtenido ('{0}|{1}' -f $destLabProg.Situacion, $destLabProg.Libres)
+Remove-ProgresoDelLaboratorio -Carpeta $cajaProg -Confirm:$false
+Test-Afirmacion -Nombre 'Remove-ProgresoDelLaboratorio retira el archivo limpiamente' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $cajaProg 'LABORATORIO.progreso'))
+
+# Separacion estructura vs huellas en ESTADO.txt.
+$cajaSep = Join-Path $CarpetaCaja 'estado-estructura'
+New-Item -ItemType Directory -Path $cajaSep -Force | Out-Null
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'ok' -Carpeta $cajaSep -Confirm:$false
+Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto $true -Detalle '12 leidos, 0 distintos' -Carpeta $cajaSep -Confirm:$false
+Write-EstadoDeComprobacion -Tipo 'estructura' -Correcto $false -Detalle '2 de 8 raices con cambios' -Carpeta $cajaSep -Confirm:$false
+Write-EstadoRespaldo -Estado 'Protegido' -Detalle 'siguiente corrida' -Carpeta $cajaSep -Confirm:$false
+$estSep = Read-EstadoRespaldo -Carpeta $cajaSep
+Test-Afirmacion -Nombre 'estructura_* y huellas_* conviven separadas y sobreviven a la siguiente corrida' `
+    -Esperado 'OK|Falla|12 leidos, 0 distintos' -Obtenido ('{0}|{1}|{2}' -f $estSep['huellas_estado'], $estSep['estructura_estado'], $estSep['huellas_detalle'])
+
+# Archivo bloqueado (Word/Excel/IDE) no tumba Test-HuellaPorMuestreo.
+$cajaBloq = Join-Path $CarpetaCaja 'muestreo-bloqueado'
+$bloqO = Join-Path $cajaBloq 'o'; $bloqD = Join-Path $cajaBloq 'd'
+New-Item -ItemType Directory -Path $bloqO, $bloqD -Force | Out-Null
+'libre'     | Set-Content -LiteralPath (Join-Path $bloqO 'libre.txt') -Encoding UTF8
+'bloqueado' | Set-Content -LiteralPath (Join-Path $bloqO 'abierto.docx') -Encoding UTF8
+Get-ChildItem -LiteralPath $bloqO -File | Copy-Item -Destination $bloqD
+$lockStream = [System.IO.File]::Open((Join-Path $bloqO 'abierto.docx'), [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+try {
+    $resBloq = Test-HuellaPorMuestreo -Raiz ([pscustomobject]@{ Ruta = $bloqO; Clase = 'B' }) -Destino $bloqD -Cuantos 2
+}
+finally { $lockStream.Dispose() }
+Test-Afirmacion -Nombre 'Un archivo bloqueado en origen no tumba el cotejo: se salta y verifica el resto' `
+    -Esperado '1|1|True' -Obtenido ('{0}|{1}|{2}' -f $resBloq.Bloqueados, $resBloq.Comprobados, $resBloq.Correcto)
+
+# Get-ProximaVentanaDeCorrida -ExcluirActual avanza a la siguiente ventana tras cerrar la actual.
+$cadProx = Get-CadenciaDeCorrida -Configuracion $cfgRenReleida
+$sigVent = Get-ProximaVentanaDeCorrida -Cadencia $cadProx -Momento ([datetime]'2026-11-19T21:59:30') -ExcluirActual
+Test-Afirmacion -Nombre 'ExcluirActual devuelve la ventana de manana al cerrar la ultima ventana del dia' `
+    -Esperado '04:00-07:00|2026-11-20T04:00:00' -Obtenido ('{0}|{1}' -f $sigVent.Ventana, $sigVent.Inicio.ToString('s'))
+
+# Aislamiento de logs y rotacion >90 dias.
+$cajaRot = Join-Path $CarpetaCaja 'rotacion-logs'
+New-Item -ItemType Directory -Path $cajaRot -Force | Out-Null
+'viejo' | Set-Content -LiteralPath (Join-Path $cajaRot 'respaldo-2025-01-01.log') -Encoding UTF8
+'hoy'   | Set-Content -LiteralPath (Join-Path $cajaRot ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))) -Encoding UTF8
+$retirados = Remove-RegistrosAntiguos -CarpetaRegistro $cajaRot -DiasRetencion 90 -Confirm:$false
+Test-Afirmacion -Nombre 'Aislamiento activo y Remove-RegistrosAntiguos retira >90 dias conservando el de hoy' `
+    -Esperado 'True|1|False|True' -Obtenido ('{0}|{1}|{2}|{3}' -f
+        ((Get-CarpetaDeRegistro) -eq (Join-Path $caja.Raiz 'registro')),
+        $retirados,
+        (Test-Path -LiteralPath (Join-Path $cajaRot 'respaldo-2025-01-01.log')),
+        (Test-Path -LiteralPath (Join-Path $cajaRot ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date)))))
+
+# estado.cmd ya no es el stub de Fase 0.
+$estadoCmdTexto = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\estado.cmd') -Raw -Encoding UTF8
+Test-Afirmacion -Nombre 'estado.cmd lanza tablero.ps1 en vez del stub de Fase 0' `
+    -Esperado 'True|False' -Obtenido ('{0}|{1}' -f ($estadoCmdTexto -match 'tablero\.ps1'), ($estadoCmdTexto -match 'el motor no existe todavia'))
+
+# ===========================================================================
+
+$env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas
 
 if (-not $Conservar) {
     Remove-Item -LiteralPath $CarpetaCaja -Recurse -Force -ErrorAction SilentlyContinue

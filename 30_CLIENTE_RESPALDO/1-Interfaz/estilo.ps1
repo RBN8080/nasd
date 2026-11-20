@@ -115,15 +115,18 @@ function Get-Paleta {
         }
     }
 
-    # LOS COLORES NO SE INVENTAN AQUI: SON LOS DEL PANEL DEL NODO.
-    # 10_CODIGO/internal/adaptadores/web/estatico/estilo.css declara el sistema
-    # de la casa, y el tablero es otra ventana del MISMO producto. Dos paletas
-    # distintas para el mismo NAS obligan a aprender dos idiomas de colores, y
-    # el dia que importa se lee el equivocado.
+    # LOS COLORES NO SE INVENTAN AQUI: SON LOS DEL PANEL DEL NODO (ADR-0105,
+    # Consola 2). 10_CODIGO/internal/adaptadores/web/estatico/estilo.css declara
+    # los tokens en OKLCH y aqui van sus sRGB exactos (CSS Color 4):
     #
-    #   --ok    #3fb950   --av    #d29922   --fa   #f85149   --nada #6b7280
-    #   --tx    #e9ecf1   --tx2   #868d99   --tx3  #5b616b
-    #   --ac    #b9cdea   --n5    #30343c
+    #   --ok   oklch(0.775 0.150 150)  -> #66d081  (102, 208, 129)
+    #   --av   oklch(0.800 0.135  80)  -> #ebb34b  (235, 179,  75)
+    #   --fa   oklch(0.730 0.150  25)  -> #f87e77  (248, 126, 119)
+    #   --tx3  oklch(0.715 0.014 255)  -> #9da4ac  (157, 164, 172)
+    #   --tx   oklch(0.955 0.005 255)  -> #eef0f3  (238, 240, 243)
+    #   --tx2  oklch(0.820 0.012 255)  -> #bfc5cc  (191, 197, 204)
+    #   --ac   oklch(0.843 0.046 257)  -> #b9cdea  (185, 205, 234)
+    #   --ln   oklch(0.360 0.013 255)  -> #393e44  ( 57,  62,  68)
     #
     # Se usa color de 24 bits -ESC[38;2;R;G;B- y no los 16 basicos: los 16 los
     # remapea el tema de cada terminal, asi que "verde" acabaria siendo el verde
@@ -135,16 +138,16 @@ function Get-Paleta {
         Fin      = "$e[0m"
         Fuerte   = "$e[1m"
 
-        Marco    = "$e[38;2;48;52;60m"      # --n5, la linea estructural
+        Marco    = "$e[38;2;57;62;68m"      # --ln, la linea estructural
         Titulo   = "$e[38;2;185;205;234m"   # --ac, los rotulos de bloque
-        Etiqueta = "$e[38;2;134;141;153m"   # --tx2, el nombre del campo
-        Valor    = "$e[38;2;233;236;241m"   # --tx, el contenido
-        Tenue    = "$e[38;2;91;97;107m"     # --tx3, lo secundario de verdad
+        Etiqueta = "$e[38;2;191;197;204m"   # --tx2, el nombre del campo
+        Valor    = "$e[38;2;238;240;243m"   # --tx, el contenido
+        Tenue    = "$e[38;2;157;164;172m"   # --tx3, lo secundario de verdad
 
-        Verde    = "$e[38;2;63;185;80m"     # --ok
-        Ambar    = "$e[38;2;210;153;34m"    # --av
-        Rojo     = "$e[38;2;248;81;73m"     # --fa
-        Gris     = "$e[38;2;107;114;128m"   # --nada
+        Verde    = "$e[38;2;102;208;129m"   # --ok
+        Ambar    = "$e[38;2;235;179;75m"    # --av
+        Rojo     = "$e[38;2;248;126;119m"   # --fa
+        Gris     = "$e[38;2;157;164;172m"   # --tx3
     }
 }
 

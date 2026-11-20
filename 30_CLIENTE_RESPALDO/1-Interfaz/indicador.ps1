@@ -214,13 +214,17 @@ function Get-EstadoParaElIcono {
         #    Si a la vez corre el motor, gana el de arriba: los dos son verde
         #    que respira, y la corrida diaria es la que dura minutos.
         if ($marcaLab.Existe) {
-            # Con foto VSS (v2) la copia no bloquea el lab; se dice para que el
-            # globo no parezca downtime. Sin foto (v1) el texto de siempre.
-            $detalleLab = if (('' + $estado['laboratorio_metodo']) -eq 'foto-vss') {
-                "Guardando el laboratorio desde una foto; las VMs pueden seguir encendidas (hace $($marcaLab.Minutos) min)"
+            # Con progreso vivo de [G] se dice que VM y porcentaje va; sin el
+            # (v1/v2 o antes del primer bloque), los minutos de siempre.
+            $progresoLab = Read-ProgresoDelLaboratorio -Carpeta $script:CarpetaEstado
+            if ($progresoLab -and $progresoLab.Reciente) {
+                $detalleLab = 'Guardando lab ({0} {1}% {2} MB/s)' -f $progresoLab.Vm, $progresoLab.Porcentaje, $progresoLab.MbPorSegundo
+            }
+            elseif (('' + $estado['laboratorio_metodo']) -eq 'foto-vss') {
+                $detalleLab = "Guardando el laboratorio desde una foto; las VMs pueden seguir encendidas (hace $($marcaLab.Minutos) min)"
             }
             else {
-                "Guardando el laboratorio en el nodo desde hace $($marcaLab.Minutos) min"
+                $detalleLab = "Guardando el laboratorio en el nodo desde hace $($marcaLab.Minutos) min"
             }
             return [pscustomobject]@{
                 Estado  = 'Copiando'
@@ -348,22 +352,19 @@ function New-IconoDeEstado {
     $g = [System.Drawing.Graphics]::FromImage($mapa)
     try {
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        # EL FONDO Y LOS CUATRO COLORES SON LOS DEL PANEL DEL NODO, no unos
-        # parecidos. estilo.css declara --n3 #16181b para las superficies y
-        # --ok/--av/--fa/--nada para los estados. El icono de la barra y el
-        # panel web son el MISMO producto: si su verde y este verde no son el
-        # mismo verde, quien mira aprende dos idiomas de colores y el dia que
-        # importa lee el equivocado.
-        $fondo = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 0x16, 0x18, 0x1b))
+        # EL FONDO Y LOS CUATRO COLORES SON LOS DEL PANEL DEL NODO (ADR-0105,
+        # Consola 2). estilo.css declara --pan para las superficies y
+        # --ok/--av/--fa/--tx3 para los estados (sRGB exacto de OKLCH).
+        $fondo = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 0x17, 0x1a, 0x1f))
         $g.FillRectangle($fondo, 0, 0, $lado, $lado)
         $fondo.Dispose()
 
         $color = switch ($Estado) {
-            'Protegido' { [System.Drawing.Color]::FromArgb(255, 0x3f, 0xb9, 0x50) }   # --ok
-            'Copiando'  { [System.Drawing.Color]::FromArgb(255, 0x3f, 0xb9, 0x50) }   # --ok
-            'Atencion'  { [System.Drawing.Color]::FromArgb(255, 0xd2, 0x99, 0x22) }   # --av
-            'Falla'     { [System.Drawing.Color]::FromArgb(255, 0xf8, 0x51, 0x49) }   # --fa
-            default     { [System.Drawing.Color]::FromArgb(255, 0x6b, 0x72, 0x80) }   # --nada
+            'Protegido' { [System.Drawing.Color]::FromArgb(255, 0x66, 0xd0, 0x81) }   # --ok
+            'Copiando'  { [System.Drawing.Color]::FromArgb(255, 0x66, 0xd0, 0x81) }   # --ok
+            'Atencion'  { [System.Drawing.Color]::FromArgb(255, 0xeb, 0xb3, 0x4b) }   # --av
+            'Falla'     { [System.Drawing.Color]::FromArgb(255, 0xf8, 0x7e, 0x77) }   # --fa
+            default     { [System.Drawing.Color]::FromArgb(255, 0x9d, 0xa4, 0xac) }   # --tx3
         }
         if ($Opacidad -lt 255) { $color = [System.Drawing.Color]::FromArgb($Opacidad, $color.R, $color.G, $color.B) }
         $pincel = New-Object System.Drawing.SolidBrush $color

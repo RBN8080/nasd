@@ -151,7 +151,14 @@ function Show-VentanaRica {
     Write-SpectreHost ' '
 
     # --- La tabla por raiz --------------------------------------------------
-    $tabla = @(Get-FilasDeTabla -Filas @($Datos.Filas) -HorasParaAmbar $Datos.HorasVerde)
+    $argsTabla = @{ Filas = @($Datos.Filas); HorasParaAmbar = $Datos.HorasVerde }
+    if ($Datos.PSObject.Properties.Name -contains 'RaicesActuales' -and @($Datos.RaicesActuales).Count -gt 0) {
+        $argsTabla['RaicesActuales'] = @($Datos.RaicesActuales)
+    }
+    if ($Datos.PSObject.Properties.Name -contains 'Centinelas' -and @($Datos.Centinelas).Count -gt 0) {
+        $argsTabla['Centinelas'] = @($Datos.Centinelas)
+    }
+    $tabla = @(Get-FilasDeTabla @argsTabla)
     if ($tabla.Count -eq 0) {
         Write-SpectreHost (Format-Marcado -Texto 'Todavia no hay tabla: la escribe el motor al copiar. Corre [1].' -Tono 'Tenue')
     }
@@ -172,19 +179,23 @@ function Show-VentanaRica {
 
     # --- Los sumarios -------------------------------------------------------
     # PENDIENTE solo aparece si hay algo, y es la unica que lleva la regla
-    # lateral del aviso: una marca que esta siempre no marca nada.
+    # lateral del aviso (o COMPROBADO si fallo una huella real).
+    $tonoComprobadoPanel = if ($Datos.PSObject.Properties.Name -contains 'TonoComprobado' -and $c.ContainsKey($Datos.TonoComprobado)) {
+        $Datos.TonoComprobado
+    }
+    else { 'Valor' }
     $separador = ' {0} ' -f (Format-Marcado -Texto ([string][char] 0x00B7) -Tono 'Tenue')
     $filasSumario = New-Object System.Collections.Generic.List[object]
     foreach ($s in @(
-            @{ Etiqueta = 'SEGURIDAD';   Partes = $Datos.Seguridad;   Tono = 'Valor' },
-            @{ Etiqueta = 'COMPROBADO';  Partes = $Datos.Comprobado;  Tono = 'Valor' },
-            @{ Etiqueta = 'AUTOMATISMO'; Partes = $Datos.Automatismo; Tono = 'Valor' },
-            @{ Etiqueta = 'PENDIENTE';   Partes = $Datos.Pendiente;   Tono = 'Ambar' })) {
+            @{ Etiqueta = 'SEGURIDAD';   Partes = $Datos.Seguridad;   Tono = 'Valor';               Regla = $false },
+            @{ Etiqueta = 'COMPROBADO';  Partes = $Datos.Comprobado;  Tono = $tonoComprobadoPanel;  Regla = ($tonoComprobadoPanel -eq 'Rojo') },
+            @{ Etiqueta = 'AUTOMATISMO'; Partes = $Datos.Automatismo; Tono = 'Valor';               Regla = $false },
+            @{ Etiqueta = 'PENDIENTE';   Partes = $Datos.Pendiente;   Tono = 'Ambar';               Regla = $true })) {
         $utiles = @($s.Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         if ($utiles.Count -eq 0) { continue }
         $rotulo = Format-Marcado -Texto $s.Etiqueta -Tono 'Etiqueta'
-        if ($s.Tono -eq 'Ambar') {
-            $rotulo = Format-Marcado -Texto (([string][char] 0x258C) + ' ' + $s.Etiqueta) -Tono 'Ambar'
+        if ($s.Regla) {
+            $rotulo = Format-Marcado -Texto (([string][char] 0x258C) + ' ' + $s.Etiqueta) -Tono $s.Tono
         }
         $texto = ($utiles | ForEach-Object { Format-Marcado -Texto $_ -Tono $s.Tono }) -join $separador
         $filasSumario.Add((New-SpectreGridRow -Data @($rotulo, $texto)))
