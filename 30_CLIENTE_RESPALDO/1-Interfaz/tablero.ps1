@@ -101,17 +101,60 @@ $nucleo = Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo'
 . "$nucleo\testigo.ps1"
 . "$PSScriptRoot\estilo.ps1"
 
-$script:NombreTarea     = 'NasRespaldo-Diario'
-$script:NombreIndicador = 'NasRespaldo-Indicador'
+function New-ContextoDeTablero {
+    <#
+        .SYNOPSIS
+            Encapsula el estado de sesion e interfaz del tablero en un objeto unico.
+        .DESCRIPTION
+            Sustituye multiples variables $script: dispersas por un contexto
+            explicito inicializado en un solo punto.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Construye un objeto de estado en memoria; no modifica disco ni sistema.')]
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [psobject] $Capacidades = (Initialize-Consola),
+        [bool] $PanelRico = $false
+    )
+    return [pscustomobject]@{
+        NombreTarea              = 'NasRespaldo-Diario'
+        NombreIndicador          = 'NasRespaldo-Indicador'
+        Capacidades              = $Capacidades
+        Paleta                   = (Get-Paleta -Capacidades $Capacidades)
+        Regla                    = (Get-ReglaDeAviso -Unicode $Capacidades.Unicode)
+        PanelRico                = $PanelRico
+        CanceladaEnVista         = $false
+        PermitirReintentoEnVista = $false
+        EtiquetaReintentoEnVista = 'actualizar'
+        AvisoMenu                = ''
+    }
+}
 
-$script:Capacidades = Initialize-Consola
-$script:Paleta      = Get-Paleta -Capacidades $script:Capacidades
-$script:Regla       = Get-ReglaDeAviso -Unicode $script:Capacidades.Unicode
+function Reset-EstadoDeVista {
+    <#
+        .SYNOPSIS
+            Restablece las banderas transitorias al abrir una subvista.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Contexto
+    )
+    $Contexto.CanceladaEnVista         = $false
+    $Contexto.PermitirReintentoEnVista = $false
+    $Contexto.EtiquetaReintentoEnVista = 'actualizar'
+}
 
 # EL PANEL CON SPECTRE ES OPCIONAL (ADR-0097): PowerShell 7.4 y el modulo
 # PwshSpectreConsole. Sin ellos se pinta la ventana de siempre.
 . "$PSScriptRoot\panel.ps1"
-$script:PanelRico = Initialize-PanelRico
+$script:Ctx         = New-ContextoDeTablero -Capacidades (Initialize-Consola) -PanelRico (Initialize-PanelRico)
+$script:Capacidades = $script:Ctx.Capacidades
+$script:Paleta      = $script:Ctx.Paleta
+$script:Regla       = $script:Ctx.Regla
+$script:PanelRico   = $script:Ctx.PanelRico
 
 function Show-Texto {
     <#
@@ -551,8 +594,8 @@ function Get-EstadoDeTarea {
 
     $partes = New-Object System.Collections.Generic.List[string]
     foreach ($par in @(
-            @{ Eti = 'motor'; Tarea = $script:NombreTarea },
-            @{ Eti = 'icono'; Tarea = $script:NombreIndicador })) {
+            @{ Eti = 'motor'; Tarea = $script:Ctx.NombreTarea },
+            @{ Eti = 'icono'; Tarea = $script:Ctx.NombreIndicador })) {
         $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
         if (-not $t) { $partes.Add(('{0} NO EXISTE' -f $par.Eti)); continue }
         if ($t.State -eq 'Disabled') { $partes.Add(('{0} DESHABILITADO' -f $par.Eti)); continue }
@@ -1818,8 +1861,8 @@ function Show-VeredictoDelAutomatismo {
 
     $filas = New-Object System.Collections.Generic.List[psobject]
     foreach ($par in @(
-            @{ Eti = 'motor'; Tarea = $script:NombreTarea },
-            @{ Eti = 'icono'; Tarea = $script:NombreIndicador })) {
+            @{ Eti = 'motor'; Tarea = $script:Ctx.NombreTarea },
+            @{ Eti = 'icono'; Tarea = $script:Ctx.NombreIndicador })) {
         $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
         if (-not $t) {
             $filas.Add([pscustomobject]@{ Pieza = $par.Eti; Estado = 'NO EXISTE'; Ventanas = ''; Ultima = ''; Resultado = '' })
@@ -2139,7 +2182,7 @@ function Set-HorarioConVistaPrevia {
     $registro = @{ Pieza = 'Motor'; Accion = 'Registrar' }
     if ($RutaConfiguracion) { $registro['RutaConfiguracion'] = $RutaConfiguracion }
     & "$PSScriptRoot\Registrar-Tarea.ps1" @registro -Confirm:$false 6> $null | Out-Null
-    $tarea = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
+    $tarea = Get-ScheduledTask -TaskName $script:Ctx.NombreTarea -ErrorAction SilentlyContinue
     $disparadores = 0
     if ($tarea) { $disparadores = @($tarea.Triggers).Count }
 
@@ -2265,7 +2308,7 @@ function Show-Reparto {
             -Detalle 'Cambia CUANDO corre el respaldo. Escribe en 3-Config/respaldo.jsonc y vuelve a registrar la tarea.'
         Show-HorarioActual -Cadencia $cadencia
 
-        $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia -NombreTarea $script:NombreTarea
+        $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia -NombreTarea $script:Ctx.NombreTarea
         $proxima = $siguiente.Descripcion
         if (-not $siguiente.Existe) { $proxima = 'LA TAREA NO EXISTE: no corre solo' }
         elseif (-not $siguiente.Habilitada) { $proxima = 'TAREA DESHABILITADA' }
@@ -2367,7 +2410,7 @@ function Show-Reparto {
                 $reg = @{ Pieza = 'Motor'; Accion = 'Registrar' }
                 if ($RutaConfiguracion) { $reg['RutaConfiguracion'] = $RutaConfiguracion }
                 & "$PSScriptRoot\Registrar-Tarea.ps1" @reg -Confirm:$false 6> $null | Out-Null
-                $t = Get-ScheduledTask -TaskName $script:NombreTarea -ErrorAction SilentlyContinue
+                $t = Get-ScheduledTask -TaskName $script:Ctx.NombreTarea -ErrorAction SilentlyContinue
                 $cuantos = 0
                 if ($t) { $cuantos = @($t.Triggers).Count }
                 if ($cuantos -eq $cadencia.CorridasPorDia) {
@@ -2652,11 +2695,7 @@ function Show-Huerfanos {
 # ---------------------------------------------------------------------------
 #  NAVEGACION DE PANTALLAS DISCRETAS (TUI LIMPIA)
 # ---------------------------------------------------------------------------
-
-$script:CanceladaEnVista = $false
-$script:PermitirReintentoEnVista = $false
-$script:EtiquetaReintentoEnVista = 'actualizar'
-$script:AvisoMenu = ''
+# Estado de navegacion centralizado en $script:Ctx (New-ContextoDeTablero).
 
 function Test-ConsolaInteractiva {
     <#
@@ -2816,7 +2855,7 @@ function Confirm-AccionDeTablero {
         Write-Linea ' '
         return $true
     }
-    $script:CanceladaEnVista = $true
+    $script:Ctx.CanceladaEnVista = $true
     return $false
 }
 
@@ -2874,8 +2913,8 @@ function Show-DiscoFrioNoConectado {
     if ($ficha.PSObject.Properties.Name -contains 'etiqueta' -and -not [string]::IsNullOrWhiteSpace('' + $ficha.etiqueta)) {
         $etiquetaDisco = '' + $ficha.etiqueta
     }
-    $script:PermitirReintentoEnVista = $true
-    $script:EtiquetaReintentoEnVista = 'reintentar tras conectar'
+    $script:Ctx.PermitirReintentoEnVista = $true
+    $script:Ctx.EtiquetaReintentoEnVista = 'reintentar tras conectar'
     Write-Linea ' '
     Write-Veredicto -Nivel 'ATENCION' -Frase (
         'El disco frio ({0}, firma {1}, centinela {2}) no esta conectado o no paso la verificacion. No se toco nada.' -f
@@ -3325,8 +3364,8 @@ function Invoke-VistaNodo {
             '2' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[A] > EJECUTAR RESPALDO AL NODO SMB'
                 Invoke-OpcionDelTablero -Opcion '1' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
-                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Nodo SMB') }
-                $script:CanceladaEnVista = $false
+                if (-not $script:Ctx.CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Nodo SMB') }
+                $script:Ctx.CanceladaEnVista = $false
             }
             '3' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[A] > VERIFICACION DE INTEGRIDAD (SHA-256)'
@@ -3395,8 +3434,8 @@ function Invoke-VistaDiscoFrio {
             '2' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[B] > EJECUTAR COPIA FRIA ADITIVA'
                 Invoke-OpcionDelTablero -Opcion '7' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
-                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Disco frio') }
-                $script:CanceladaEnVista = $false
+                if (-not $script:Ctx.CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Disco frio') }
+                $script:Ctx.CanceladaEnVista = $false
             }
             '3' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[B] > AUDITORIA DE ARCHIVOS INCOMPLETOS'
@@ -3463,7 +3502,7 @@ function Invoke-VistaLaboratorio {
                     & "$nucleo\laboratorio.ps1" @comunes -Accion Validar -Profundo
                     [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
                 }
-                $script:CanceladaEnVista = $false
+                $script:Ctx.CanceladaEnVista = $false
             }
             '3' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > SIMULACION AL NODO SMB'
@@ -3481,8 +3520,8 @@ function Invoke-VistaLaboratorio {
             '5' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > SINCRONIZAR LABORATORIO AL NODO'
                 Invoke-OpcionDelTablero -Opcion 'G' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
-                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM') }
-                $script:CanceladaEnVista = $false
+                if (-not $script:Ctx.CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM') }
+                $script:Ctx.CanceladaEnVista = $false
             }
             '6' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > COPIA FRIA DE VMS AL USB'
@@ -3498,7 +3537,7 @@ function Invoke-VistaLaboratorio {
                     Show-GuardadoDelLaboratorio -Resultado $gf
                     [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
                 }
-                $script:CanceladaEnVista = $false
+                $script:Ctx.CanceladaEnVista = $false
             }
             '7' {
                 Invoke-VistaLecturaPi -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
@@ -3555,8 +3594,8 @@ function Invoke-VistaRecuperacion {
             '2' {
                 Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[D] > REGENERAR _SEMILLA'
                 Invoke-OpcionDelTablero -Opcion '5' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
-                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Recuperacion') }
-                $script:CanceladaEnVista = $false
+                if (-not $script:Ctx.CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Recuperacion') }
+                $script:Ctx.CanceladaEnVista = $false
             }
             default {
                 Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
@@ -4018,21 +4057,19 @@ function Invoke-VistaDeOpcion {
 
     $seguirVista = $true
     while ($seguirVista) {
-        $script:CanceladaEnVista = $false
-        $script:PermitirReintentoEnVista = $false
-        $script:EtiquetaReintentoEnVista = 'actualizar'
+        Reset-EstadoDeVista -Contexto $script:Ctx
 
         Clear-PantallaInteractiva
         Write-CabeceraDeVista -Titulo $meta.Titulo
         Invoke-OpcionDelTablero -Opcion $meta.Opcion -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
 
-        if ($script:CanceladaEnVista) {
+        if ($script:Ctx.CanceladaEnVista) {
             # Confirmacion cancelada con Enter/V: volver al tablero de inmediato.
             return
         }
 
-        $puedeRefrescar = $meta.Refrescable -or $script:PermitirReintentoEnVista
-        $etiqR = if ($script:PermitirReintentoEnVista) { $script:EtiquetaReintentoEnVista } else { 'actualizar' }
+        $puedeRefrescar = $meta.Refrescable -or $script:Ctx.PermitirReintentoEnVista
+        $etiqR = if ($script:Ctx.PermitirReintentoEnVista) { $script:Ctx.EtiquetaReintentoEnVista } else { 'actualizar' }
         $paso = Wait-CierreDeVista -Refrescable:$puedeRefrescar -EtiquetaRefrescar $etiqR
         if ($paso -ne 'Refrescar') { $seguirVista = $false }
     }
@@ -4093,11 +4130,11 @@ while ($seguir) {
     }
     if (-not $pintada) { Show-Ventana -Configuracion $configuracion -Datos $datosPantalla }
 
-    if ($script:AvisoMenu) {
+    if ($script:Ctx.AvisoMenu) {
         $pAviso = $script:Paleta
-        Write-Linea ('  {0}! {1}{2}' -f $pAviso.Ambar, $script:AvisoMenu, $pAviso.Fin)
+        Write-Linea ('  {0}! {1}{2}' -f $pAviso.Ambar, $script:Ctx.AvisoMenu, $pAviso.Fin)
         Write-Linea ' '
-        $script:AvisoMenu = ''
+        $script:Ctx.AvisoMenu = ''
     }
 
     $operacionActiva = ($datosPantalla.ProgresoActivo -and $datosPantalla.ProgresoActivo.Activo) -or
@@ -4109,14 +4146,14 @@ while ($seguir) {
     if ($accion.Tipo -eq 'Salir') { $seguir = $false; continue }
     if ($accion.Tipo -eq 'Refrescar' -or $accion.Tipo -eq 'Redimension') {
         try { $configuracion = Get-ConfiguracionRespaldo @parametros }
-        catch { $script:AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
+        catch { $script:Ctx.AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
         continue
     }
 
     $elegida = '' + $accion.Tecla
     $metaElegida = Get-MetaDeOpcion -Opcion $elegida
     if (-not $metaElegida) {
-        $script:AvisoMenu = 'Opcion "{0}" no reconocida. Use [A]-[F], [R] o [S].' -f $elegida
+        $script:Ctx.AvisoMenu = 'Opcion "{0}" no reconocida. Use [A]-[F], [R] o [S].' -f $elegida
         continue
     }
 
@@ -4140,5 +4177,5 @@ while ($seguir) {
     }
 
     try { $configuracion = Get-ConfiguracionRespaldo @parametros }
-    catch { $script:AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
+    catch { $script:Ctx.AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
 }

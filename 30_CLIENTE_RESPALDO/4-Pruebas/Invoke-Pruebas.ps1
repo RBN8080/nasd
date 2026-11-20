@@ -2200,8 +2200,8 @@ Test-Afirmacion -Nombre 'Hay una medida por raiz, que es lo que la opcion [2] ti
 $intacto = Test-MotorIntacto -RaizProyecto (Split-Path $PSScriptRoot -Parent) -Tareas @()
 Test-Afirmacion -Nombre 'Con el proyecto entero, el motor se declara INTACTO' `
     -Esperado $true -Obtenido $intacto.Intacto
-Test-Afirmacion -Nombre 'Y son 14 piezas, no una cuenta al vuelo de la carpeta' `
-    -Esperado 14 -Obtenido $intacto.PiezasTotal
+Test-Afirmacion -Nombre 'Y son 16 piezas (incluye manifiesto y modulo NasRespaldo), no una cuenta al vuelo' `
+    -Esperado 16 -Obtenido $intacto.PiezasTotal
 
 # UNA PIEZA QUE FALTA SE TIENE QUE VER. Se comprueba contra una carpeta vacia,
 # que es lo que deja un antivirus que se lleva los archivos.
@@ -2210,16 +2210,17 @@ New-Item -ItemType Directory -Path $cajaVacia -Force | Out-Null
 $roto = Test-MotorIntacto -RaizProyecto $cajaVacia -Tareas @()
 Test-Afirmacion -Nombre 'Si faltan las piezas, NO se declara intacto' `
     -Esperado $false -Obtenido $roto.Intacto
-Test-Afirmacion -Nombre 'Y se nombran las 14 que faltan, no un "algo falla"' `
-    -Esperado 14 -Obtenido @($roto.PiezasFallan).Count
+Test-Afirmacion -Nombre 'Y se nombran las 16 que faltan, no un "algo falla"' `
+    -Esperado 16 -Obtenido @($roto.PiezasFallan).Count
 
 # UN ARCHIVO DE CERO BYTES EXISTE IGUAL DE BIEN QUE UNO BUENO Y NO SIRVE PARA
 # NADA. Es la misma comprobacion que ya hace la prueba de restauracion.
 $cajaVacia2 = Join-Path $caja.Raiz 'motor-truncado'
-foreach ($sub in @('1-Interfaz', '2-Nucleo', '3-Config')) {
+foreach ($sub in @('1-Interfaz', '2-Nucleo', '2-Nucleo\NasRespaldo', '3-Config')) {
     New-Item -ItemType Directory -Path (Join-Path $cajaVacia2 $sub) -Force | Out-Null
 }
 foreach ($p in @('2-Nucleo\respaldo.ps1', '2-Nucleo\comun.ps1', '2-Nucleo\clasificar.ps1',
+        '2-Nucleo\NasRespaldo\NasRespaldo.psd1', '2-Nucleo\NasRespaldo\NasRespaldo.psm1',
         '2-Nucleo\verificar.ps1', '2-Nucleo\disco.ps1', '2-Nucleo\semilla.ps1',
         '2-Nucleo\notificar.ps1', '2-Nucleo\testigo.ps1', '1-Interfaz\tablero.ps1',
         '1-Interfaz\indicador.ps1', '1-Interfaz\Registrar-Tarea.ps1', '1-Interfaz\estilo.ps1',
@@ -3119,18 +3120,18 @@ Test-Afirmacion -Nombre 'Y el siguiente [G] reenvia solo lo distinto y deja el n
 New-Item -ItemType Directory -Path "$labOrigen\VM1\disco.vmdk.lck" -Force | Out-Null
 & $tocarBloques @(400000) 9
 $antesLck = & $hashDe $vmdk1Nodo
-$script:VmxSimulado = $true
+Set-VmxSimulado -Valor $true -Confirm:$false
 $g6 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
 Test-Afirmacion -Nombre 'Con una VM encendida (.lck y vmware-vmx) se niega y no escribe nada' `
     -Esperado ('True|{0}' -f $antesLck) -Obtenido ('{0}|{1}' -f $g6.Abortada, (& $hashDe $vmdk1Nodo))
-$script:VmxSimulado = $false
+Set-VmxSimulado -Valor $false -Confirm:$false
 Test-Afirmacion -Nombre 'Un .lck huerfano (ningun vmware-vmx) no cuenta como VM encendida' `
     -Esperado '0' -Obtenido ('' + @(Get-VmAbiertaDelLaboratorio -Ficha (Get-FichaDelLaboratorio -Configuracion $cfgLab)).Count)
 New-Item -ItemType Directory -Path "$labOrigen\_lab\candados_viejos\X\a.vmdk.lck" -Force | Out-Null
-$script:VmxSimulado = $true
+Set-VmxSimulado -Valor $true -Confirm:$false
 Test-Afirmacion -Nombre 'Los candados archivados en _lab no cuentan, ni con una VM corriendo' `
     -Esperado 'VM1' -Obtenido ((@(Get-VmAbiertaDelLaboratorio -Ficha (Get-FichaDelLaboratorio -Configuracion $cfgLab))) -join ',')
-$script:VmxSimulado = $null
+Set-VmxSimulado -Valor $null -Confirm:$false
 Remove-Item -LiteralPath "$labOrigen\_lab" -Recurse -Force
 Remove-Item -LiteralPath "$labOrigen\VM1\disco.vmdk.lck" -Recurse -Force
 
@@ -3795,6 +3796,28 @@ $mF = Get-MetaDeOpcion -Opcion 'F'
 Test-Afirmacion -Nombre 'Menu consolidado [A]-[F] es secuencial, simetrico, sin celdas vacias ni sangrias rotas' `
     -Esperado 'ABCDEF|False|False|True|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
         $teclasMenu, $hayVaciaMenu, $haySangriaRota, $mA.PropiaVista, $mF.PropiaVista)
+
+# ===========================================================================
+Write-Titulo 'Modulo NasRespaldo con manifiesto y contexto explicito del tablero'
+# ===========================================================================
+
+$rutaManifiesto = Join-Path $nucleo 'NasRespaldo\NasRespaldo.psd1'
+$infoMod = Test-ModuleManifest -Path $rutaManifiesto -ErrorAction Stop
+$modCargado = Get-Module -Name 'NasRespaldo'
+Test-Afirmacion -Nombre 'NasRespaldo.psd1 pasa Test-ModuleManifest y exporta explicitamente sus 63 funciones' `
+    -Esperado '1.0.0|63|63|False' -Obtenido ('{0}|{1}|{2}|{3}' -f
+        $infoMod.Version.ToString(),
+        $infoMod.ExportedFunctions.Count,
+        $modCargado.ExportedFunctions.Count,
+        ($infoMod.ExportedFunctions.Keys -contains '*'))
+
+$ctxTest = New-ContextoDeTablero -Capacidades ([pscustomobject]@{ Color = $false; Unicode = $false }) -PanelRico $false
+$ctxTest.CanceladaEnVista = $true
+$ctxTest.PermitirReintentoEnVista = $true
+Reset-EstadoDeVista -Contexto $ctxTest
+Test-Afirmacion -Nombre 'New-ContextoDeTablero y Reset-EstadoDeVista encapsulan el estado de sesion del tablero' `
+    -Esperado 'NasRespaldo-Diario|False|False|actualizar' -Obtenido ('{0}|{1}|{2}|{3}' -f
+        $ctxTest.NombreTarea, $ctxTest.CanceladaEnVista, $ctxTest.PermitirReintentoEnVista, $ctxTest.EtiquetaReintentoEnVista)
 
 $env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas
 
