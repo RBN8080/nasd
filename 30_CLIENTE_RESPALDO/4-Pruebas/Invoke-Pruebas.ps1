@@ -3396,6 +3396,127 @@ if ($pyLab) {
     Test-Afirmacion -Nombre 'blkhash.py ranges (tramos contiguos + hueco + fuera de rango) devuelve orden exacto' `
         -Esperado ('SIZE {0}|{1}|{2}|{3}|{4}|{5}|-' -f $netH.Tamano, $netH.Huellas[0], $netH.Huellas[1], $netH.Huellas[2], $netH.Huellas[3], $netH.Huellas[10]) `
         -Obtenido ($pyRanges -join '|')
+
+    # blkhash.py lote: escribe AVANCE retrocompatible de 5 campos, FIN y 0.blk identico a .NET.
+    $loteDir = Join-Path $labRaiz 'prueba-lote'
+    $loteSal = Join-Path $loteDir 'salida'
+    New-Item -ItemType Directory -Path $loteDir -Force | Out-Null
+    $loteLista = Join-Path $loteDir 'lista.txt'
+    [System.IO.File]::WriteAllText($loteLista, ($vmdkRenLocal + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+    & $pyLab.Source $blkScript lote 65536 $loteLista $loteSal
+    $avLote = (Get-Content -LiteralPath (Join-Path $loteSal 'AVANCE') -Raw -Encoding UTF8).Trim()
+    $blk0Lineas = @(Get-Content -LiteralPath (Join-Path $loteSal '0.blk') -Encoding UTF8)
+    Test-Afirmacion -Nombre 'blkhash.py lote deja AVANCE con 5 campos, FIN y 0.blk identico a .NET' `
+        -Esperado ('True|True|True|{0}' -f ($netH.Huellas -join ',')) `
+        -Obtenido ('{0}|{1}|{2}|{3}' -f
+            ($avLote -match '^1 1 \d+ \d+ \d+\.\d+$'),
+            (Test-Path -LiteralPath (Join-Path $loteSal 'FIN') -PathType Leaf),
+            ($blk0Lineas[0] -match '^BS 65536 SIZE '),
+            (($blk0Lineas | Select-Object -Skip 1) -join ','))
+}
+
+Write-Titulo 'UX interactiva del tablero, vista [T] selectiva y disco frio'
+
+# 1. Read-LecturaDelLaboratorio + Get-DestinoDelLaboratorio + Get-ResumenPendiente.
+$cajaLec = Join-Path $CarpetaCaja 'lab-lectura-activa'
+New-Item -ItemType Directory -Path (Join-Path $cajaLec 'laboratorio') -Force | Out-Null
+$lecObjJson = [pscustomobject]@{
+    Inicio   = (Get-Date).AddMinutes(-25).ToString('s')
+    Alcance  = 'pendientes'
+    Bloque   = 1048576
+    Archivos = @(
+        [pscustomobject]@{ I = 0; Relativa = 'Kali\Kali.vmdk' },
+        [pscustomobject]@{ I = 1; Relativa = 'Ubuntu\Ubuntu.vmdk' }
+    )
+}
+Set-ContenidoAtomico -Ruta (Join-Path $cajaLec 'laboratorio\lectura.json') -Contenido ($lecObjJson | ConvertTo-Json -Depth 4) -Confirm:$false
+$lecLeida = Read-LecturaDelLaboratorio -Carpeta $cajaLec
+$destLabLec = Get-DestinoDelLaboratorio -Estado @{ laboratorio_estado = 'Falla' } `
+    -Marca ([pscustomobject]@{ Existe = $false; Vieja = $false; Minutos = 0 }) -LecturaEnCurso $lecLeida
+$pendLabLec = @(Get-ResumenPendiente -Estado @{ huerfanos = '0' } -Disco ([pscustomobject]@{ Raiz = 'F:\' }) `
+        -Filas @() -Laboratorio ([pscustomobject]@{ Vms = 2; NoAlDia = 1 }) -LecturaEnCurso $lecLeida)
+Test-Afirmacion -Nombre 'Con lectura.json activa, LAB VMWARE pinta leyendo Pi en ambar y PENDIENTE avisa [T]' `
+    -Esperado 'leyendo Pi|Ambar|2|True' -Obtenido ('{0}|{1}|{2}|{3}' -f
+        $destLabLec.Situacion, $destLabLec.TonoSituacion, $lecLeida.TotalArchivos,
+        ([bool]($pendLabLec -match 'lectura del laboratorio en la Pi en curso')))
+
+# 2. ConvertFrom-AvanceDeLectura: formato viejo (2 campos) y formato nuevo (5 campos).
+$avViejo = ConvertFrom-AvanceDeLectura -Linea '1 2' -Lectura $lecLeida
+$avNuevo = ConvertFrom-AvanceDeLectura -Linea '0 2 524288000 1048576000 23.4' -Lectura $lecLeida
+Test-Afirmacion -Nombre 'ConvertFrom-AvanceDeLectura soporta formato viejo (2 campos) y nuevo intra-archivo (5 campos)' `
+    -Esperado '2|Ubuntu\Ubuntu.vmdk|False|50|23.4|Kali\Kali.vmdk|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f
+        $avViejo.EnProceso, $avViejo.ArchivoActual, $avViejo.TieneIntraArchivo,
+        $avNuevo.PorcentajeArchivo, $avNuevo.MbPorSegundo, $avNuevo.ArchivoActual, $avNuevo.TieneIntraArchivo)
+
+# 3. Get-PlanDeLecturaDelLaboratorio y Invoke-LecturaDelLaboratorio -SoloPendientes.
+New-Item -ItemType Directory -Path "$labOrigen\VM_PEND" -Force | Out-Null
+& $escribirAzar "$labOrigen\VM_PEND\pend.vmdk" 2MB
+New-Item -ItemType Directory -Path "$labDestinoLocal\VM_PEND" -Force | Out-Null
+Copy-Item -LiteralPath "$labOrigen\VM_PEND\pend.vmdk" -Destination "$labDestinoLocal\VM_PEND\pend.vmdk" -Force
+$planPend = Get-PlanDeLecturaDelLaboratorio -Configuracion $cfgLab
+$tSoloPend = Invoke-LecturaDelLaboratorio -Configuracion $cfgLab -SoloPendientes -Confirm:$false
+Test-Afirmacion -Nombre 'PlanLectura y [T] -SoloPendientes leen solo los discos pendientes, no los ya vigentes' `
+    -Esperado '2|1|VM_PEND|Recogida|1|VM_PEND\pend.vmdk' -Obtenido ('{0}|{1}|{2}|{3}|{4}|{5}' -f
+        $planPend.TotalArchivos, $planPend.PendientesArchivos, ($planPend.PendientesVms -join ','),
+        $tSoloPend.Estado, @($tSoloPend.Archivos).Count, $tSoloPend.Archivos[0].Relativa)
+$tNadaPend = Invoke-LecturaDelLaboratorio -Configuracion $cfgLab -SoloPendientes -Confirm:$false
+Test-Afirmacion -Nombre 'Tras recoger los pendientes, -SoloPendientes detecta 0 pendientes y devuelve Nada' `
+    -Esperado 'Nada' -Obtenido $tNadaPend.Estado
+
+# 4. Stop-LecturaDelLaboratorio limpia lectura.json en modo local.
+New-Item -ItemType Directory -Path (Join-Path $labEstado 'laboratorio') -Force | Out-Null
+Set-ContenidoAtomico -Ruta (Join-Path $labEstado 'laboratorio\lectura.json') -Contenido '{"Inicio":"2026-11-20T10:00:00","Archivos":[]}' -Confirm:$false
+$stopLec = Stop-LecturaDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre 'Stop-LecturaDelLaboratorio retira lectura.json y confirma cancelacion' `
+    -Esperado 'True|False' -Obtenido ('{0}|{1}' -f $stopLec.Cancelada, (Test-Path -LiteralPath (Join-Path $labEstado 'laboratorio\lectura.json')))
+
+# 5. Tabla en vivo: fila historica que solo queda en disco frio tras un renombre sale "solo en disco".
+$filasSoloDisco = @(
+    [pscustomobject]@{ Destino = 'nodo';  Raiz = 'C:\01_NUEVA'; Clase = 'A'; Pendientes = 0; Estado = 'AlDia'; Momento = $ahoraIso },
+    [pscustomobject]@{ Destino = 'disco'; Raiz = 'C:\01_VIEJA'; Clase = 'A'; Pendientes = 3; Estado = 'AlDia'; Momento = (Get-Date).AddDays(-10).ToString('s') }
+)
+$actSoloDisco = @([pscustomobject]@{ Ruta = 'C:\01_NUEVA'; Clase = 'A' })
+$modSoloDisco = @(Get-FilasDeTabla -Filas $filasSoloDisco -HorasParaAmbar 12 -RaicesActuales $actSoloDisco)
+$fViejaDisco = @($modSoloDisco | Where-Object { $_.Ruta -eq 'C:\01_VIEJA' })[0]
+Test-Afirmacion -Nombre 'Raiz renombrada que solo queda en disco frio se etiqueta "solo en disco" (Gris)' `
+    -Esperado 'SoloDisco|solo en disco|Gris' -Obtenido ('{0}|{1}|{2}' -f $fViejaDisco.EstadoVivo, $fViejaDisco.Nodo.Texto, $fViejaDisco.Nodo.Tono)
+
+# 6. Metadatos de navegacion TUI y confirmacion segura por omision.
+$m1 = Get-MetaDeOpcion -Opcion '1'
+$mL = Get-MetaDeOpcion -Opcion 'L'
+$mT = Get-MetaDeOpcion -Opcion 'T'
+$mInv = Get-MetaDeOpcion -Opcion 'Z'
+Test-Afirmacion -Nombre 'Get-MetaDeOpcion distingue escritura, lectura refrescable, vista propia y opcion invalida' `
+    -Esperado 'False|True|True|True' -Obtenido ('{0}|{1}|{2}|{3}' -f $m1.Refrescable, $mL.Refrescable, $mT.PropiaVista, ($null -eq $mInv))
+Test-Afirmacion -Nombre 'Test-ConfirmacionPositiva exige S/SI explicito (Enter, N y V son cancelar seguro)' `
+    -Esperado 'True|True|False|False|False' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
+        (Test-ConfirmacionPositiva -Respuesta 's'),
+        (Test-ConfirmacionPositiva -Respuesta 'SI'),
+        (Test-ConfirmacionPositiva -Respuesta ''),
+        (Test-ConfirmacionPositiva -Respuesta 'n'),
+        (Test-ConfirmacionPositiva -Respuesta 'V'))
+
+# 7. Show-RevisionDelDisco emite veredicto estructurado (SIN DATOS / OK / FALLO).
+$revSin = (Show-RevisionDelDisco -Revision $null 6>&1 | Out-String)
+$revOk  = (Show-RevisionDelDisco -Revision ([pscustomobject]@{ Revisadas = @('A', 'B'); Saltadas = @(); EnVuelo = @() }) 6>&1 | Out-String)
+Test-Afirmacion -Nombre 'Show-RevisionDelDisco cierra siempre con Write-Veredicto (SIN DATOS / OK)' `
+    -Esperado 'True|True' -Obtenido ('{0}|{1}' -f ($revSin -match 'SIN DATOS'), ($revOk -match 'OK\s'))
+
+# 8. Write-LineaDeRegistro funciona tambien en PowerShell 7 (.NET 8/9), no solo en 5.1.
+$pwsh7 = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+if ($pwsh7) {
+    $logPs7 = Join-Path $CarpetaCaja 'registro-ps7.log'
+    $rutaComunEsc = (Join-Path $nucleo 'comun.ps1').Replace("'", "''")
+    $rutaLogEsc = $logPs7.Replace("'", "''")
+    $resPs7 = (& $pwsh7.Source -NoProfile -Command ". '$rutaComunEsc'; Write-LineaDeRegistro -Archivo '$rutaLogEsc' -Linea 'linea desde pwsh7'")
+    $txtPs7 = if (Test-Path -LiteralPath $logPs7 -PathType Leaf) { Get-Content -LiteralPath $logPs7 -Raw -Encoding UTF8 } else { '' }
+    Test-Afirmacion -Nombre 'Write-LineaDeRegistro escribe correctamente en PowerShell 7 (.NET moderno)' `
+        -Esperado 'True|True' -Obtenido ('{0}|{1}' -f ($resPs7 -eq $true), ($txtPs7 -match 'linea desde pwsh7'))
+
+    $rutaLecEsc = $cajaLec.Replace("'", "''")
+    $minPs7 = (& $pwsh7.Source -NoProfile -Command ". '$rutaComunEsc'; (Read-LecturaDelLaboratorio -Carpeta '$rutaLecEsc').Minutos")
+    Test-Afirmacion -Nombre 'Read-LecturaDelLaboratorio calcula minutos reales en PowerShell 7 (sin fallo de cultura es-MX)' `
+        -Esperado $true -Obtenido ([int]$minPs7 -ge 20)
 }
 
 # ===========================================================================

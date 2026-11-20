@@ -221,13 +221,27 @@ function Write-LineaDeRegistro {
             $bytes = [System.Text.Encoding]::UTF8.GetBytes($texto)
             if ($nace) { $bytes = ([byte[]]@(0xEF, 0xBB, 0xBF)) + $bytes }
 
-            $flujo = New-Object System.IO.FileStream(
-                $Archivo,
-                [System.IO.FileMode]::Append,
-                [System.Security.AccessControl.FileSystemRights]::AppendData,
-                [System.IO.FileShare]::ReadWrite,
-                4096,
-                [System.IO.FileOptions]::None)
+            if ($PSVersionTable.PSVersion.Major -ge 6) {
+                # En .NET 6+ (PowerShell 7) no existe la sobrecarga con
+                # FileSystemRights; FileMode::Append con FileAccess::Write usa
+                # FILE_APPEND_DATA en Windows de forma nativa.
+                $flujo = New-Object System.IO.FileStream(
+                    $Archivo,
+                    [System.IO.FileMode]::Append,
+                    [System.IO.FileAccess]::Write,
+                    [System.IO.FileShare]::ReadWrite,
+                    4096,
+                    [System.IO.FileOptions]::None)
+            }
+            else {
+                $flujo = New-Object System.IO.FileStream(
+                    $Archivo,
+                    [System.IO.FileMode]::Append,
+                    [System.Security.AccessControl.FileSystemRights]::AppendData,
+                    [System.IO.FileShare]::ReadWrite,
+                    4096,
+                    [System.IO.FileOptions]::None)
+            }
             try { $flujo.Write($bytes, 0, $bytes.Length) }
             finally { $flujo.Dispose() }
             return $true
@@ -3869,4 +3883,71 @@ function Remove-ProgresoDelLaboratorio {
     if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return }
     if (-not $PSCmdlet.ShouldProcess($ruta, 'Retirar progreso del laboratorio')) { return }
     Remove-Item -LiteralPath $ruta -Force -ErrorAction SilentlyContinue
+}
+
+function Read-LecturaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Lee laboratorio\lectura.json si hay una lectura [T] en curso. Nunca lanza.
+        .DESCRIPTION
+            Solo lectura local en disco (< 1 ms, sin SSH) para que el tablero
+            sepa de inmediato si la Pi tiene una lectura lanzada sin recoger y
+            no pinte un estado enganoso en LAB VMWARE.
+        .PARAMETER Carpeta
+            Carpeta de estado del cliente.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [ValidateNotNullOrEmpty()][string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $ruta = Join-Path $Carpeta 'laboratorio\lectura.json'
+    try {
+        if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return $null }
+        $t = Get-Content -LiteralPath $ruta -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+        if (-not $t) { return $null }
+        $inicio = ''
+        $minutos = 0
+        if ($t.PSObject.Properties.Name -contains 'Inicio' -and $null -ne $t.Inicio) {
+            if ($t.Inicio -is [datetime]) {
+                $dt = [datetime]$t.Inicio
+                $inicio = $dt.ToString('s')
+                $minutos = [Math]::Max(0, [int][Math]::Floor(((Get-Date) - $dt).TotalMinutes))
+            }
+            else {
+                $inicio = '' + $t.Inicio
+                [datetime] $dt = [datetime]::MinValue
+                if ($inicio -and (
+                        [datetime]::TryParse($inicio, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeLocal, [ref]$dt) -or
+                        [datetime]::TryParse($inicio, [ref]$dt))) {
+                    $minutos = [Math]::Max(0, [int][Math]::Floor(((Get-Date) - $dt).TotalMinutes))
+                }
+            }
+        }
+        $archivos = @()
+        if ($t.PSObject.Properties.Name -contains 'Archivos' -and $null -ne $t.Archivos) {
+            $archivos = @($t.Archivos)
+        }
+        $alcance = 'completo'
+        if ($t.PSObject.Properties.Name -contains 'Alcance' -and -not [string]::IsNullOrWhiteSpace('' + $t.Alcance)) {
+            $alcance = '' + $t.Alcance
+        }
+        $bloque = 0
+        if ($t.PSObject.Properties.Name -contains 'Bloque' -and $null -ne $t.Bloque) {
+            $bloque = [int]$t.Bloque
+        }
+        return [pscustomobject]@{
+            Ruta          = $ruta
+            Inicio        = $inicio
+            Minutos       = $minutos
+            TotalArchivos = $archivos.Count
+            Alcance       = $alcance
+            Bloque        = $bloque
+            Archivos      = $archivos
+        }
+    }
+    catch {
+        return $null
+    }
 }

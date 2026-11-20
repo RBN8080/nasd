@@ -27,8 +27,10 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
 import sys
+import time
 
 VENTANA_PURGA = 16 * 1024 * 1024  # 16 MiB de ventana deslizante para DONTNEED
+INTERVALO_AVANCE = 64 * 1024 * 1024  # 64 MiB entre actualizaciones intra-archivo de AVANCE
 HILOS_HASH = 2
 EN_VUELO_MAX = 4
 FADV_DONTNEED = getattr(os, 'POSIX_FADV_DONTNEED', None)
@@ -188,19 +190,37 @@ def modo_lote(bs, lista, salida):
     # LO QUE SE LEE TIENE QUE SER LO QUE HABIA. Se mira tamano y fecha antes y
     # despues de cada archivo: si cambiaron durante la lectura, el manifiesto no
     # describe ningun estado real y se marca ESTABLE 0 para que nadie lo use.
+    #
+    # AVANCE conserva los dos primeros campos (i total) por retrocompatibilidad
+    # y anade bytes_leidos tamano_archivo mb_s actualizados cada 64 MiB para
+    # dar visibilidad intra-archivo en discos virtuales grandes.
     os.makedirs(salida, exist_ok=True)
     # utf-8-sig: la lista llega por la entrada estandar desde Windows
     # PowerShell, que le pone BOM (ver modo_ranges).
     with open(lista, encoding='utf-8-sig') as e:
         rutas = [l.rstrip('\r\n') for l in e if l.strip()]
     total = len(rutas)
+    ruta_avance = os.path.join(salida, 'AVANCE')
     for i, ruta in enumerate(rutas):
-        escribir(os.path.join(salida, 'AVANCE'), '%d %d\n' % (i, total))
+        escribir(ruta_avance, '%d %d 0 0 0.0\n' % (i, total))
         try:
             antes = os.stat(ruta)
+            tamano = antes.st_size
+            escribir(ruta_avance, '%d %d 0 %d 0.0\n' % (i, total, tamano))
             f = abrir(ruta, secuencial=True)
+            hashes = []
             try:
-                hashes = list(todos(f, antes.st_size, bs))
+                t0 = time.monotonic()
+                leidos = 0
+                proximo_aviso = INTERVALO_AVANCE
+                for h in todos(f, tamano, bs):
+                    hashes.append(h)
+                    leidos = min(tamano, leidos + bs)
+                    if leidos >= proximo_aviso:
+                        dt = max(0.001, time.monotonic() - t0)
+                        mbs = (leidos / (1024.0 * 1024.0)) / dt
+                        escribir(ruta_avance, '%d %d %d %d %.1f\n' % (i, total, leidos, tamano, mbs))
+                        proximo_aviso = leidos + INTERVALO_AVANCE
             finally:
                 f.close()
             despues = os.stat(ruta)
@@ -209,7 +229,7 @@ def modo_lote(bs, lista, salida):
             escribir(os.path.join(salida, '%d.blk' % i), cab + ''.join(h + '\n' for h in hashes))
         except OSError as err:
             escribir(os.path.join(salida, '%d.err' % i), '%s\n' % err)
-    escribir(os.path.join(salida, 'AVANCE'), '%d %d\n' % (total, total))
+    escribir(ruta_avance, '%d %d 0 0 0.0\n' % (total, total))
     escribir(os.path.join(salida, 'FIN'), '%d\n' % total)
 
 

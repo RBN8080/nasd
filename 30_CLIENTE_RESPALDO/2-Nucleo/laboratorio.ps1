@@ -39,10 +39,17 @@
         Configuracion a usar. Por omision la de 3-Config.
 
     .PARAMETER Accion
-        Ver      la tabla por VM, sin escribir nada.
-        Previa   cuanto enviaria cada VM, sin escribir nada.
-        Guardar  envia lo que cambio.
-        Leer     la lectura completa en la Pi: la lanza, dice como va o la recoge.
+        Ver              la tabla por VM, sin escribir nada.
+        Previa           cuanto enviaria cada VM, sin escribir nada.
+        Guardar          envia lo que cambio.
+        Leer             la lectura del laboratorio en la Pi: la lanza, dice como va o la recoge.
+        PlanLectura      analiza que archivos grandes hay en el nodo y cuales estan pendientes de [T].
+        EstadoLectura    consulta en vivo el estado de una lectura [T] en curso sin recogerla.
+        CancelarLectura  detiene una lectura [T] en curso en la Pi y limpia lectura.json.
+
+    .PARAMETER SoloPendientes
+        Solo para -Accion Leer: lee en la Pi unicamente los archivos grandes cuyo
+        manifiesto falta, no cuadra con el nodo o pertenece a una VM marcada Pendiente.
 
     .EXAMPLE
         .\laboratorio.ps1 -Accion Previa
@@ -54,8 +61,10 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $RutaConfiguracion,
 
-    [ValidateSet('Ver', 'Previa', 'Guardar', 'Leer')]
-    [string] $Accion = 'Ver'
+    [ValidateSet('Ver', 'Previa', 'Guardar', 'Leer', 'PlanLectura', 'EstadoLectura', 'CancelarLectura')]
+    [string] $Accion = 'Ver',
+
+    [switch] $SoloPendientes
 )
 
 Set-StrictMode -Version Latest
@@ -1218,25 +1227,356 @@ function Complete-LecturaDeArchivo {
     return [pscustomobject]@{ Relativa = $Relativa; Vm = $vm; TeniaManifiesto = [bool]$previo; Distintos = $distintos; Correcto = $true; Motivo = '' }
 }
 
-function Invoke-LecturaDelLaboratorio {
+function ConvertFrom-AvanceDeLectura {
     <#
         .SYNOPSIS
-            La lectura completa del laboratorio en la Pi: la lanza, dice como va o la recoge.
+            Interpreta la linea AVANCE de blkhash.py lote (formato viejo 2 campos o nuevo 5 campos).
         .DESCRIPTION
-            SON HORAS Y EL EQUIPO NO TIENE QUE ESPERAR. La Pi lee a 23 MB/s: unas
-            3.5 h para los 281 GB del laboratorio. Se lanza en la Pi con setsid y
-            se desentiende; cada vez que se pulsa [T] despues, dice por donde va,
-            y cuando termino, recoge y convierte lo leido en manifiestos.
+            Funcion pura para pruebas y para la vista [T].
+            Formato viejo:  "8 18"
+            Formato nuevo:  "8 18 1207959552 9876543210 23.4"
+        .PARAMETER Linea
+            Texto leido de salida/AVANCE.
+        .PARAMETER Lectura
+            Objeto leido de lectura.json (opcional) para resolver nombre de archivo y VM actual.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [AllowEmptyString()][AllowNull()][string] $Linea = '',
+        [AllowNull()][psobject] $Lectura = $null
+    )
 
-            Se puede hacer con las VMs encendidas: lee el NODO, no D:. Lo unico
-            que no se puede es guardar mientras tanto, y Invoke-Guardado... se
-            niega mientras haya una lectura sin recoger.
+    $partes = @()
+    if (-not [string]::IsNullOrWhiteSpace($Linea)) {
+        $partes = @($Linea.Trim() -split '\s+')
+    }
+    $indice = 0
+    $total = 0
+    $valido = $false
+    if ($partes.Count -ge 2) {
+        [int] $iTmp = 0; [int] $tTmp = 0
+        if ([int]::TryParse($partes[0], [ref]$iTmp) -and [int]::TryParse($partes[1], [ref]$tTmp)) {
+            $indice = $iTmp
+            $total = $tTmp
+            $valido = $true
+        }
+    }
+    if (-not $valido -and $Lectura -and ($Lectura.PSObject.Properties.Name -contains 'Archivos')) {
+        $total = @($Lectura.Archivos).Count
+    }
+
+    $bytesLeidos = [long]-1
+    $tamanoArchivo = [long]-1
+    $porcentajeArchivo = -1
+    $mbPorSegundo = ''
+    $tieneIntra = $false
+    if ($valido -and $partes.Count -ge 5) {
+        [long] $bTmp = 0; [long] $sTmp = 0
+        if ([long]::TryParse($partes[2], [ref]$bTmp) -and [long]::TryParse($partes[3], [ref]$sTmp) -and $sTmp -gt 0) {
+            $bytesLeidos = $bTmp
+            $tamanoArchivo = $sTmp
+            $porcentajeArchivo = [int][Math]::Min(100, [Math]::Floor(100.0 * $bTmp / $sTmp))
+            $mbPorSegundo = $partes[4]
+            $tieneIntra = $true
+        }
+    }
+
+    $archivoActual = ''
+    $vmActual = ''
+    if ($Lectura -and ($Lectura.PSObject.Properties.Name -contains 'Archivos') -and $null -ne $Lectura.Archivos) {
+        $listaArch = @($Lectura.Archivos)
+        $encontrado = $null
+        foreach ($item in $listaArch) {
+            if ($item -and ($item.PSObject.Properties.Name -contains 'I') -and ([int]$item.I -eq $indice)) {
+                $encontrado = $item
+                break
+            }
+        }
+        if (-not $encontrado -and $indice -ge 0 -and $indice -lt $listaArch.Count) {
+            $encontrado = $listaArch[$indice]
+        }
+        if ($encontrado -and ($encontrado.PSObject.Properties.Name -contains 'Relativa')) {
+            $archivoActual = '' + $encontrado.Relativa
+            if ($archivoActual.Contains('\')) { $vmActual = $archivoActual.Split('\')[0] }
+        }
+    }
+
+    $enProceso = if ($total -gt 0) { [Math]::Min($total, $indice + 1) } else { 0 }
+    return [pscustomobject]@{
+        Valido            = $valido
+        Indice            = $indice
+        Completados       = [Math]::Min($indice, $total)
+        EnProceso         = $enProceso
+        Total             = $total
+        ArchivoActual     = $archivoActual
+        VmActual          = $vmActual
+        BytesLeidos       = $bytesLeidos
+        TamanoArchivo     = $tamanoArchivo
+        PorcentajeArchivo = $porcentajeArchivo
+        MbPorSegundo      = $mbPorSegundo
+        TieneIntraArchivo = $tieneIntra
+    }
+}
+
+function Get-PlanDeLecturaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Analiza que discos grandes hay en el nodo y cuales estan pendientes de [T].
+        .DESCRIPTION
+            Solo lectura: no lanza nada en la Pi ni escribe lectura.json. Permite
+            que la vista [T] ensene el tamano y tiempo estimado de leer solo las
+            VMs pendientes frente a releer el laboratorio entero.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param([Parameter(Mandatory)][psobject] $Configuracion)
+
+    $ficha = Get-FichaDelLaboratorio -Configuracion $Configuracion
+    if (-not $ficha) {
+        return [pscustomobject]@{
+            TieneLaboratorio   = $false
+            NodoVivo           = $false
+            EnCurso            = $false
+            Lectura            = $null
+            TotalArchivos      = 0
+            TotalBytes         = [long]0
+            TotalMinutos       = 0
+            PendientesArchivos = 0
+            PendientesBytes    = [long]0
+            PendientesMinutos  = 0
+            PendientesVms      = @()
+            ArchivosTodos      = @()
+            ArchivosPendientes = @()
+        }
+    }
+
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $lectura = Read-LecturaDelLaboratorio -Carpeta $carpeta
+    $nodoVivo = [bool](Test-Path -LiteralPath $ficha.Destino -PathType Container)
+    if (-not $nodoVivo) {
+        return [pscustomobject]@{
+            TieneLaboratorio   = $true
+            NodoVivo           = $false
+            EnCurso            = ($null -ne $lectura)
+            Lectura            = $lectura
+            TotalArchivos      = 0
+            TotalBytes         = [long]0
+            TotalMinutos       = 0
+            PendientesArchivos = 0
+            PendientesBytes    = [long]0
+            PendientesMinutos  = 0
+            PendientesVms      = @()
+            ArchivosTodos      = @()
+            ArchivosPendientes = @()
+        }
+    }
+
+    $grandes = @(Get-InventarioDelLaboratorio -Ficha $ficha -Raiz $ficha.Destino | Where-Object { $_.Grande } | Sort-Object -Property Relativa)
+    $porVm = Read-EstadoDelLaboratorioPorVm -Carpeta $carpeta
+    $pendientes = New-Object System.Collections.Generic.List[psobject]
+    foreach ($g in $grandes) {
+        $rutaM = Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa
+        $m = Read-ManifiestoDeBloques -Ruta $rutaM
+        $estadoVm = if ($g.Vm -and $porVm.ContainsKey($g.Vm)) { '' + $porVm[$g.Vm].Estado } else { '' }
+        $necesita = (-not $m) -or
+            ($m.Tamano -ne $g.Tamano) -or
+            ([Math]::Abs($g.FechaUtc.Ticks - $m.FechaUtcTicks) -gt $script:Tolerancia) -or
+            ($estadoVm -eq 'Pendiente')
+        if ($necesita) { [void]$pendientes.Add($g) }
+    }
+    $pendArr = $pendientes.ToArray()
+    $bytesTodos = Get-SumaDe -Objetos $grandes -Propiedad 'Tamano'
+    $bytesPend  = Get-SumaDe -Objetos $pendArr -Propiedad 'Tamano'
+    $minTodos = if ($bytesTodos -gt 0) { [Math]::Max(1, [int]($bytesTodos / 23MB / 60)) } else { 0 }
+    $minPend  = if ($bytesPend -gt 0) { [Math]::Max(1, [int]($bytesPend / 23MB / 60)) } else { 0 }
+    $vmsPend = @($pendArr | ForEach-Object { $_.Vm } | Where-Object { $_ } | Sort-Object -Unique)
+
+    return [pscustomobject]@{
+        TieneLaboratorio   = $true
+        NodoVivo           = $true
+        EnCurso            = ($null -ne $lectura)
+        Lectura            = $lectura
+        TotalArchivos      = $grandes.Count
+        TotalBytes         = $bytesTodos
+        TotalMinutos       = $minTodos
+        PendientesArchivos = $pendArr.Count
+        PendientesBytes    = $bytesPend
+        PendientesMinutos  = $minPend
+        PendientesVms      = $vmsPend
+        ArchivosTodos      = $grandes
+        ArchivosPendientes = $pendArr
+    }
+}
+
+function Get-EstadoDeLecturaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Consulta en vivo el avance de una lectura [T] en la Pi sin recogerla ni lanzarla.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param([Parameter(Mandatory)][psobject] $Configuracion)
+
+    $ficha = Get-FichaDelLaboratorio -Configuracion $Configuracion
+    if (-not $ficha) {
+        return [pscustomobject]@{
+            Estado = 'SinLaboratorio'; EnCurso = $false; Terminada = $false; ProcesoVivo = $false
+            SshOk = $false; Lectura = $null; Avance = $null
+            Detalle = 'La configuracion no declara el bloque laboratorio.'
+        }
+    }
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $lectura = Read-LecturaDelLaboratorio -Carpeta $carpeta
+    if (-not $lectura) {
+        return [pscustomobject]@{
+            Estado = 'Ninguna'; EnCurso = $false; Terminada = $false; ProcesoVivo = $false
+            SshOk = $true; Lectura = $null; Avance = $null
+            Detalle = 'No hay ninguna lectura en curso.'
+        }
+    }
+    if ($ficha.Verificador -eq 'local') {
+        return [pscustomobject]@{
+            Estado = 'EnCurso'; EnCurso = $true; Terminada = $true; ProcesoVivo = $false
+            SshOk = $true; Lectura = $lectura; Avance = (ConvertFrom-AvanceDeLectura -Linea '' -Lectura $lectura)
+            Detalle = 'Modo local listo para recoger.'
+        }
+    }
+
+    $dir = $script:LecturaEnLaPi
+    $usuario = $ficha.UsuarioEnLaPi
+    try {
+        # Sin comillas dobles (PowerShell 5.1 las recorta al invocar ssh.exe) y
+        # con `set -f` para impedir globbing sobre `[n]as-blkhash.py`.
+        $orden = "sudo -n -u {0} sh -c 'set -f; printf AVANCE:; cat {1}/salida/AVANCE 2>/dev/null || echo; test -f {1}/salida/FIN && echo FIN:1 || echo FIN:0; ps -eo args 2>/dev/null | grep -q [n]as-blkhash.py && echo VIVO:1 || echo VIVO:0'" -f $usuario, $dir
+        $lineas = @(Invoke-EnLaPi -Ficha $ficha -Orden $orden)
+    }
+    catch {
+        return [pscustomobject]@{
+            Estado = 'SinConexion'; EnCurso = $true; Terminada = $false; ProcesoVivo = $false
+            SshOk = $false; Lectura = $lectura; Avance = (ConvertFrom-AvanceDeLectura -Linea '' -Lectura $lectura)
+            Detalle = ('No se pudo consultar la Pi por ssh: {0}' -f $_.Exception.Message)
+        }
+    }
+
+    $lineaAvance = ''
+    $fin = $false
+    $vivo = $false
+    foreach ($l in $lineas) {
+        $s = ('' + $l).Trim()
+        if ($s.StartsWith('AVANCE:')) { $lineaAvance = $s.Substring(7).Trim() }
+        elseif ($s -eq 'FIN:1') { $fin = $true }
+        elseif ($s -eq 'VIVO:1') { $vivo = $true }
+    }
+    $av = ConvertFrom-AvanceDeLectura -Linea $lineaAvance -Lectura $lectura
+    $estadoTexto = if ($fin) { 'Terminada' } elseif ($vivo) { 'EnCurso' } else { 'Detenida' }
+    $det = if ($fin) {
+        'La Pi termino de leer los {0} archivos. Lista para recoger manifiestos.' -f $av.Total
+    }
+    elseif ($vivo) {
+        $parteArchivo = if ($av.ArchivoActual) { ' ({0})' -f $av.ArchivoActual } else { '' }
+        $parteIntra = if ($av.TieneIntraArchivo) { ' - {0}% a {1} MB/s' -f $av.PorcentajeArchivo, $av.MbPorSegundo } else { '' }
+        'Archivo {0} de {1}{2}{3}' -f $av.EnProceso, $av.Total, $parteArchivo, $parteIntra
+    }
+    else {
+        'No se ve blkhash.py corriendo en la Pi y no hay FIN (posible reinicio o corte).'
+    }
+
+    return [pscustomobject]@{
+        Estado      = $estadoTexto
+        EnCurso     = $true
+        Terminada   = $fin
+        ProcesoVivo = $vivo
+        SshOk       = $true
+        Lectura     = $lectura
+        Avance      = $av
+        Detalle     = $det
+    }
+}
+
+function Stop-LecturaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Cancela una lectura [T] en curso en la Pi y retira lectura.json.
+        .DESCRIPTION
+            No modifica ningun archivo del respaldo ni manifiestos ya guardados;
+            solo detiene el proceso de lectura blkhash.py lote en la Pi y limpia
+            el trabajo temporal /tmp/nas-lab-lectura y lectura.json.
         .PARAMETER Configuracion
             El objeto de configuracion completo.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([psobject])]
     param([Parameter(Mandatory)][psobject] $Configuracion)
+
+    $ficha = Get-FichaDelLaboratorio -Configuracion $Configuracion
+    if (-not $ficha) {
+        return [pscustomobject]@{ Cancelada = $false; Detalle = 'La configuracion no declara el bloque laboratorio.' }
+    }
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $trabajo = Join-Path $carpeta 'laboratorio\lectura.json'
+    if (-not (Test-Path -LiteralPath $trabajo -PathType Leaf)) {
+        return [pscustomobject]@{ Cancelada = $false; Detalle = 'No habia ninguna lectura en curso que cancelar.' }
+    }
+    if (-not $PSCmdlet.ShouldProcess($trabajo, 'Cancelar la lectura del laboratorio en la Pi')) {
+        return [pscustomobject]@{ Cancelada = $false; Detalle = 'Cancelacion abortada.' }
+    }
+
+    if ($ficha.Verificador -ne 'local') {
+        $dir = $script:LecturaEnLaPi
+        $usuario = $ficha.UsuarioEnLaPi
+        try {
+            $orden = "sudo -n -u {0} sh -c 'set -f; pkill -f [n]as-blkhash.py 2>/dev/null || true; rm -rf {1}'" -f $usuario, $dir
+            [void](Invoke-EnLaPi -Ficha $ficha -Orden $orden)
+        }
+        catch {
+            return [pscustomobject]@{
+                Cancelada = $false
+                Detalle   = ('No se pudo contactar la Pi por ssh para detener la lectura ({0}). lectura.json se conserva.' -f $_.Exception.Message)
+            }
+        }
+    }
+
+    Remove-Item -LiteralPath $trabajo -Force -ErrorAction SilentlyContinue
+    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio' -Mensaje 'Lectura [T] cancelada por el usuario: proceso detenido en la Pi y lectura.json retirado.'
+    return [pscustomobject]@{
+        Cancelada = $true
+        Detalle   = 'Lectura cancelada en la Pi y trabajo temporal limpiado. Los manifiestos previos siguen intactos.'
+    }
+}
+
+function Invoke-LecturaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            La lectura del laboratorio en la Pi: la lanza, dice como va o la recoge.
+        .DESCRIPTION
+            SON HORAS Y EL EQUIPO NO TIENE QUE ESPERAR. La Pi lee a 23 MB/s: unas
+            3.5 h para los 281 GB del laboratorio. Se lanza en la Pi con setsid y
+            se desentiende; cada vez que se pulsa [T] despues, dice por donde va,
+            y cuando termino, recoge y convierte lo leido en manifiestos.
+
+            Con -SoloPendientes lee unicamente los discos grandes cuyo manifiesto
+            falta, no cuadra con el nodo o pertenece a una VM marcada Pendiente.
+
+            Se puede hacer con las VMs encendidas: lee el NODO, no D:. Lo unico
+            que no se puede es guardar mientras tanto, y Invoke-Guardado... se
+            niega mientras haya una lectura sin recoger.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+        .PARAMETER SoloPendientes
+            Si se indica al lanzar, lee solo las VMs/archivos pendientes en vez del
+            laboratorio entero.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [switch] $SoloPendientes
+    )
 
     $ficha = Get-FichaDelLaboratorio -Configuracion $Configuracion
     if (-not $ficha) { return [pscustomobject]@{ Estado = 'SinLaboratorio'; Detalle = 'La configuracion no declara el bloque laboratorio.'; Archivos = @() } }
@@ -1256,8 +1596,18 @@ function Invoke-LecturaDelLaboratorio {
 
     # --- Verificador local (la bateria): leer y escribir en el acto ----------
     if ($ficha.Verificador -eq 'local') {
+        $planLocal = Get-PlanDeLecturaDelLaboratorio -Configuracion $Configuracion
+        if (-not $planLocal.NodoVivo) {
+            return [pscustomobject]@{ Estado = 'SinNodo'; Detalle = "El nodo no responde en $($ficha.Destino)."; Archivos = @() }
+        }
+        $objetivoLocal = @(if ($SoloPendientes) { $planLocal.ArchivosPendientes } else { $planLocal.ArchivosTodos }) | Where-Object { $null -ne $_ }
+        $objetivoLocal = @($objetivoLocal)
+        if ($objetivoLocal.Count -eq 0) {
+            $msgNada = if ($SoloPendientes) { 'No hay archivos pendientes de leer: todos los manifiestos cuadran con el nodo.' } else { 'En el nodo no hay discos grandes que leer.' }
+            return [pscustomobject]@{ Estado = 'Nada'; Detalle = $msgNada; Archivos = @() }
+        }
         $momento = (Get-Date).ToString('s')
-        $leidos = foreach ($a in @(Get-InventarioDelLaboratorio -Ficha $ficha -Raiz $ficha.Destino | Where-Object { $_.Grande })) {
+        $leidos = foreach ($a in $objetivoLocal) {
             Complete-LecturaDeArchivo -Carpeta $carpeta -Relativa $a.Relativa -FechaUtc $a.FechaUtc `
                 -Huellas (Get-HuellasPorBloque -Ruta $a.Ruta -Bloque $ficha.Bloque) -Confirm:$false
         }
@@ -1271,11 +1621,18 @@ function Invoke-LecturaDelLaboratorio {
     # --- Ya hay una lanzada: como va, o recogerla ----------------------------
     if (Test-Path -LiteralPath $trabajo -PathType Leaf) {
         $t = Get-Content -LiteralPath $trabajo -Raw -Encoding UTF8 | ConvertFrom-Json
-        $estado = @(Invoke-EnLaPi -Ficha $ficha -Orden ("sudo -n -u {0} sh -c 'cat {1}/salida/AVANCE 2>/dev/null; test -f {1}/salida/FIN && echo FIN; true'" -f $usuario, $dir))
-        if ($estado -notcontains 'FIN') {
-            $avance = ''
-            if ($estado.Count -gt 0) { $avance = $estado[0] }
-            return [pscustomobject]@{ Estado = 'EnCurso'; Detalle = ('la Pi va por el archivo {0} (lanzada {1})' -f $avance.Replace(' ', ' de '), $t.Inicio); Archivos = @() }
+        $est = Get-EstadoDeLecturaDelLaboratorio -Configuracion $Configuracion
+        if (-not $est.SshOk) {
+            return [pscustomobject]@{ Estado = 'SinNodo'; Detalle = $est.Detalle; Archivos = @() }
+        }
+        if (-not $est.Terminada) {
+            return [pscustomobject]@{
+                Estado  = 'EnCurso'
+                Detalle = ('{0} (lanzada {1})' -f $est.Detalle, $t.Inicio)
+                Avance  = $est.Avance
+                Vivo    = $est.ProcesoVivo
+                Archivos = @()
+            }
         }
 
         $leidos = New-Object System.Collections.Generic.List[psobject]
@@ -1310,12 +1667,18 @@ function Invoke-LecturaDelLaboratorio {
     }
 
     # --- Lanzarla ------------------------------------------------------------
-    if (-not (Test-Path -LiteralPath $ficha.Destino -PathType Container)) {
+    $plan = Get-PlanDeLecturaDelLaboratorio -Configuracion $Configuracion
+    if (-not $plan.NodoVivo) {
         return [pscustomobject]@{ Estado = 'SinNodo'; Detalle = "El nodo no responde en $($ficha.Destino)."; Archivos = @() }
     }
-    $grandes = @(Get-InventarioDelLaboratorio -Ficha $ficha -Raiz $ficha.Destino | Where-Object { $_.Grande } | Sort-Object -Property Relativa)
-    if ($grandes.Count -eq 0) { return [pscustomobject]@{ Estado = 'Nada'; Detalle = 'En el nodo no hay discos grandes que leer.'; Archivos = @() } }
-    if (-not $PSCmdlet.ShouldProcess($ficha.DestinoEnLaPi, 'Lanzar la lectura completa en la Pi')) { return $null }
+    $grandes = @(if ($SoloPendientes) { $plan.ArchivosPendientes } else { $plan.ArchivosTodos }) | Where-Object { $null -ne $_ }
+    $grandes = @($grandes)
+    if ($grandes.Count -eq 0) {
+        $msgNada = if ($SoloPendientes) { 'No hay VMs pendientes de leer en la Pi: todos los manifiestos cuadran con el nodo.' } else { 'En el nodo no hay discos grandes que leer.' }
+        return [pscustomobject]@{ Estado = 'Nada'; Detalle = $msgNada; Archivos = @() }
+    }
+    $alcanceTexto = if ($SoloPendientes) { 'pendientes' } else { 'completo' }
+    if (-not $PSCmdlet.ShouldProcess($ficha.DestinoEnLaPi, ('Lanzar lectura ({0}) en la Pi' -f $alcanceTexto))) { return $null }
 
     [void](Publish-BlkhashEnLaPi -Ficha $ficha)
     $lista = @($grandes | ForEach-Object { Get-RutaEnLaPi -Ficha $ficha -Relativa $_.Relativa })
@@ -1326,6 +1689,7 @@ function Invoke-LecturaDelLaboratorio {
     $i = 0
     $registro = [pscustomobject]@{
         Inicio   = (Get-Date).ToString('s')
+        Alcance  = $alcanceTexto
         Bloque   = $ficha.Bloque
         Archivos = @($grandes | ForEach-Object { [pscustomobject]@{ I = $i; Relativa = $_.Relativa }; $i++ })
     }
@@ -1336,7 +1700,8 @@ function Invoke-LecturaDelLaboratorio {
     # 23 MB/s: lo que lee la Pi de su disco por el USB 2.0 (seccion 5.2).
     $minutos = [Math]::Max(1, [int]($bytes / 23MB / 60))
     $cuanto = if ($minutos -lt 90) { '{0} min' -f $minutos } else { '{0:N1} h' -f ($minutos / 60) }
-    $frase = 'Lectura completa lanzada en la Pi: {0} archivos, {1}, unos {2}. Vuelve a pulsar [T] para ver como va.' -f $grandes.Count, (Format-BytesDelLaboratorio -Bytes $bytes), $cuanto
+    $etiq = if ($SoloPendientes) { 'Lectura de pendientes' } else { 'Lectura completa' }
+    $frase = '{0} lanzada en la Pi: {1} archivos, {2}, unos {3}. Pulsa [E] para seguirla en vivo o vuelve al tablero.' -f $etiq, $grandes.Count, (Format-BytesDelLaboratorio -Bytes $bytes), $cuanto
     Write-RegistroRespaldo -Etapa 'laboratorio' -Mensaje $frase
     return [pscustomobject]@{ Estado = 'Lanzada'; Detalle = $frase; Archivos = @() }
 }
@@ -1413,8 +1778,11 @@ if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ru
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
 switch ($Accion) {
-    'Ver'     { Get-VistaDelLaboratorio -Configuracion $configuracion }
-    'Previa'  { Invoke-GuardadoDelLaboratorio -Configuracion $configuracion -Simular }
-    'Guardar' { Invoke-GuardadoDelLaboratorio -Configuracion $configuracion -Confirm:$false }
-    'Leer'    { Invoke-LecturaDelLaboratorio -Configuracion $configuracion -Confirm:$false }
+    'Ver'             { Get-VistaDelLaboratorio -Configuracion $configuracion }
+    'Previa'          { Invoke-GuardadoDelLaboratorio -Configuracion $configuracion -Simular }
+    'Guardar'         { Invoke-GuardadoDelLaboratorio -Configuracion $configuracion -Confirm:$false }
+    'Leer'            { Invoke-LecturaDelLaboratorio -Configuracion $configuracion -SoloPendientes:$SoloPendientes -Confirm:$false }
+    'PlanLectura'     { Get-PlanDeLecturaDelLaboratorio -Configuracion $configuracion }
+    'EstadoLectura'   { Get-EstadoDeLecturaDelLaboratorio -Configuracion $configuracion }
+    'CancelarLectura' { Stop-LecturaDelLaboratorio -Configuracion $configuracion -Confirm:$false }
 }
