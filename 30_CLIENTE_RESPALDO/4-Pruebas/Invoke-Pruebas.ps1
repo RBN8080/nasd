@@ -3819,6 +3819,10 @@ Test-Afirmacion -Nombre 'New-ContextoDeTablero y Reset-EstadoDeVista encapsulan 
     -Esperado 'NasRespaldo-Diario|False|False|actualizar' -Obtenido ('{0}|{1}|{2}|{3}' -f
         $ctxTest.NombreTarea, $ctxTest.CanceladaEnVista, $ctxTest.PermitirReintentoEnVista, $ctxTest.EtiquetaReintentoEnVista)
 
+$calidad = & (Join-Path $PSScriptRoot 'Invoke-Calidad.ps1') 6>$null
+Test-Afirmacion -Nombre 'Invoke-Calidad.ps1 pasa todas las puertas estaticas (ASCII/LF, AST, modulo, verbos, cero dot-source param)' `
+    -Esperado 'True|0' -Obtenido ('{0}|{1}' -f $calidad.Correcto, $calidad.Fallos)
+
 $env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas
 
 if (-not $Conservar) {
