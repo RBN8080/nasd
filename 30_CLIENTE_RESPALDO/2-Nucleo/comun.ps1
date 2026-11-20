@@ -3378,7 +3378,35 @@ function Get-FichaDelLaboratorio {
         return $PorOmision
     }
 
+    # LA COPIA FRIA DEL LABORATORIO (ADR-0104, ampliacion). Peso equivalente al
+    # del nodo: la ruta es relativa a la raiz del disco, nunca una letra. Por
+    # omision espeja la del nodo: <prefijoEquipo>\D\VMware_LAB.
+    $frio = [pscustomobject]@{ Habilitado = $false; Relativa = '' }
+    if ($nombres -contains 'discoFrio') {
+        $lf = $l.discoFrio
+        $nf = @($lf.PSObject.Properties.Name)
+        $habilitado = $true
+        if ($nf -contains 'habilitado') { $habilitado = [bool]$lf.habilitado }
+        $relativa = ''
+        if ($nf -contains 'destino') { $relativa = ('' + $lf.destino).Trim('\') }
+        if (-not $relativa) {
+            $prefijo = 'EQUIPO-01'
+            if ($Configuracion.PSObject.Properties.Name -contains 'destinos' -and
+                $Configuracion.destinos.PSObject.Properties.Name -contains 'discoFrio' -and
+                $Configuracion.destinos.discoFrio.PSObject.Properties.Name -contains 'prefijoEquipo') {
+                $prefijo = '' + $Configuracion.destinos.discoFrio.prefijoEquipo
+            }
+            $relativa = $prefijo + '\D\VMware_LAB'
+        }
+        # Una ruta relativa de verdad: con letra, UNC o ".." escribiria donde no toca.
+        if ($relativa -match '^[A-Za-z]:' -or $relativa.StartsWith('\\') -or $relativa -match '(^|\\)\.\.(\\|$)') {
+            throw "laboratorio.discoFrio.destino debe ser relativo a la raiz del disco: $relativa"
+        }
+        $frio = [pscustomobject]@{ Habilitado = $habilitado; Relativa = $relativa }
+    }
+
     return [pscustomobject]@{
+        Frio            = $frio
         Origen          = ('' + $l.origen).TrimEnd('\')
         Destino         = ('' + $l.destino).TrimEnd('\')
         DestinoEnLaPi   = ('' + $l.destinoEnLaPi).TrimEnd('/')

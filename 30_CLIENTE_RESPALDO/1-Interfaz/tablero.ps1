@@ -2974,7 +2974,7 @@ function Invoke-OpcionDelTablero {
                 }
                 else {
                     Write-Anuncio -Que 'Copia al DISCO FRIO (dos pasadas, siempre aditiva)' `
-                        -Detalle 'Escribe en el disco USB (equipo -> disco y nodo -> disco). Nunca borra.'
+                        -Detalle 'Escribe en el disco USB (equipo, nodo y laboratorio de D:). Nunca borra.'
                     if ($Interactivo) {
                         $disco7 = Get-DiscoFrio -Configuracion $Configuracion 2>$null
                         if (-not $disco7) {
@@ -2982,7 +2982,7 @@ function Invoke-OpcionDelTablero {
                             return
                         }
                         $libres7 = Format-Espacio -Bytes (Get-EspacioLibre -Ruta $disco7.Raiz)
-                        $resumen7 = 'Disco frio listo en {0} (firma {1}{2}). Se ejecutaran las dos pasadas aditivas (equipo -> disco y nodo -> disco).' -f
+                        $resumen7 = 'Disco frio listo en {0} (firma {1}{2}). Se ejecutaran las pasadas aditivas (equipo -> disco, nodo -> disco y el laboratorio de D: por bloques; con VMs encendidas el laboratorio se difiere).' -f
                             $disco7.Raiz, $disco7.Firma, $(if ($libres7) { ', ' + $libres7 } else { '' })
                         if (-not (Confirm-AccionDeTablero -Resumen $resumen7)) {
                             return
@@ -2999,8 +2999,8 @@ function Invoke-OpcionDelTablero {
                             -Accion 'Lo demas se copio; revisa el registro de hoy.'
                     }
                     elseif (-not $rd.Completa) {
-                        Write-Veredicto -Nivel 'ATENCION' -Frase 'COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco. Lo que solo vive en el nodo NO llego.' `
-                            -Accion 'Comprueba que el nodo responde y vuelve a pulsar [7].'
+                        Write-Veredicto -Nivel 'ATENCION' -Frase ('COPIA FRIA INCOMPLETA: ' + $rd.MotivoIncompleta) `
+                            -Accion 'Resuelve eso (nodo respondiendo, VMs apagadas) y vuelve a pulsar [7]; lo ya copiado no se repite.'
                     }
                     elseif ($rd.ArchivosCopiados -eq 0) {
                         Write-Veredicto -Nivel 'OK' -Frase 'Copia fria AL DIA: las dos pasadas corrieron y no habia nada nuevo que copiar.'

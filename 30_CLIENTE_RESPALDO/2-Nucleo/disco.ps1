@@ -154,22 +154,30 @@ function Get-VeredictoDelDisco {
     [OutputType([psobject])]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Copias,
-        [Parameter(Mandatory)][bool] $Completa
+        [Parameter(Mandatory)][bool] $Completa,
+        [AllowNull()][psobject] $Laboratorio = $null
     )
 
     $fallidas = @($Copias | Where-Object { -not $_.Correcto } | ForEach-Object { '' + $_.Origen })
     $copiados = 0
     foreach ($c in $Copias) { $copiados += [int]$c.NumACopiar }
+    # El laboratorio cuenta como una raiz mas. Si fallo de verdad, es FALLA; si
+    # solo se difirio (VMs encendidas), cae en INCOMPLETA mas abajo.
+    if ($Laboratorio) {
+        if ($Laboratorio.Abortada -or $Laboratorio.Estado -eq 'Falla') { $fallidas += ('laboratorio: ' + $Laboratorio.Motivo) }
+        else { $copiados += @($Laboratorio.Archivos | Where-Object { $_.Estado -eq 'Enviado' }).Count }
+    }
 
     if ($fallidas.Count -gt 0) {
         $estado  = 'Falla'
         $detalle = 'CON FALLOS: {0} de {1} raices sin dar por buenas ({2}). Ver el registro de hoy' -f `
             $fallidas.Count, @($Copias).Count, ($fallidas -join ', ')
     }
-    elseif (-not $Completa) {
+    elseif (-not $Completa -or ($Laboratorio -and -not $Laboratorio.Correcto)) {
         # UNA COPIA FRIA A LA QUE LE FALTO UNA PASADA NO SE PINTA DE VERDE.
         $estado  = 'Atencion'
         $detalle = 'INCOMPLETA: lo que solo vive en el nodo NO llego al disco'
+        if ($Laboratorio -and -not $Laboratorio.Correcto -and $Laboratorio.Omitida) { $detalle = 'INCOMPLETA: ' + $Laboratorio.Motivo }
     }
     elseif ($copiados -eq 0) {
         $estado  = 'Protegido'
@@ -214,6 +222,8 @@ function Invoke-CorridaAlDiscoFrio {
         Disco         = $null
         PasadaEquipo  = @()
         PasadaNodo    = @()
+        PasadaLaboratorio = $null
+        MotivoIncompleta  = $null
         NodoAlcanzable= $false
         Completa      = $false
         Fallidas      = @()
@@ -304,6 +314,30 @@ function Invoke-CorridaAlDiscoFrio {
             # una copia fria a la que le falto la mitad.
             Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' `
                 -Mensaje "COPIA FRIA INCOMPLETA: corrio solo la pasada equipo -> disco porque $motivo. Lo que solo vive en el nodo NO llego."
+            $resultado.MotivoIncompleta = 'corrio solo la pasada equipo -> disco: lo que solo vive en el nodo NO llego.'
+        }
+
+        # --- Pasada C: el laboratorio de D: -> disco ------------------------
+        # El disco frio pesa lo mismo que el nodo, y el nodo tiene las VMs. Va
+        # por bloques y en local: ni SMB ni Pi. Con las VMs encendidas se
+        # difiere y la copia queda INCOMPLETA, por la misma regla de 6.2.
+        # SE INVOCA COMO GUION, NO SE CARGA CON PUNTO: laboratorio.ps1 tiene param()
+        # y ningun guion del nucleo carga a otro que lo tenga (la causa raiz del
+        # 2026-09-02, comprobada en la bateria). El hijo corre en este proceso y
+        # devuelve el objeto tal cual. Sin bloque discoFrio en el laboratorio, no hay pasada.
+        $lab = $null
+        $declaraLab = ($Configuracion.PSObject.Properties.Name -contains 'laboratorio') -and
+            ($Configuracion.laboratorio.PSObject.Properties.Name -contains 'discoFrio')
+        if ($declaraLab) {
+            $paramsLab = @{ Accion = $(if ($Simular) { 'PreviaFrio' } else { 'GuardarFrio' }) }
+            $rutaCfgLab = Get-Variable -Name 'RutaConfiguracionDelDisco' -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+            if ($rutaCfgLab) { $paramsLab['RutaConfiguracion'] = $rutaCfgLab }
+            $lab = & "$PSScriptRoot\laboratorio.ps1" @paramsLab -Confirm:$false
+        }
+        $resultado.PasadaLaboratorio = $lab
+        if ($lab -and -not $lab.Correcto) {
+            $resultado.Completa = $false
+            if (-not $resultado.MotivoIncompleta) { $resultado.MotivoIncompleta = '' + $lab.Motivo }
         }
     }
     finally {
@@ -317,7 +351,8 @@ function Invoke-CorridaAlDiscoFrio {
     # movio un solo archivo es cierto pero no es lo que la persona pregunta. Lo
     # que quiere saber es si falto algo.
     $veredicto = Get-VeredictoDelDisco -Completa $resultado.Completa `
-        -Copias @(@($resultado.PasadaEquipo) + @($resultado.PasadaNodo) | Where-Object { $_ })
+        -Copias @(@($resultado.PasadaEquipo) + @($resultado.PasadaNodo) | Where-Object { $_ }) `
+        -Laboratorio $resultado.PasadaLaboratorio
     $resultado.Fallidas = $veredicto.Fallidas
 
     if (-not $Simular) {
@@ -354,8 +389,12 @@ if ($MyInvocation.InvocationName -eq '.') {
 # abierta no se toca nada: ahi la ventana es de quien la abrio.
 Hide-VentanaDeConsola | Out-Null
 
+$script:RutaConfiguracionDelDisco = $null
 $parametrosConfig = @{}
-if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $parametrosConfig['Ruta'] = $RutaConfiguracion }
+if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) {
+    $parametrosConfig['Ruta'] = $RutaConfiguracion
+    $script:RutaConfiguracionDelDisco = $RutaConfiguracion
+}
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
 Invoke-CorridaAlDiscoFrio -Configuracion $configuracion `

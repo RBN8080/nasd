@@ -42,6 +42,9 @@
         Ver              la tabla por VM, sin escribir nada.
         Previa           cuanto enviaria cada VM, sin escribir nada.
         Guardar          envia lo que cambio.
+        PreviaFrio       cuanto copiaria al disco frio, sin escribir nada.
+        GuardarFrio      copia el laboratorio al disco frio (aditivo, por bloques, sin red).
+        Validar          esta cada VM en D:, el nodo y el disco frio? Solo lee, sin releer contenido.
         Leer             la lectura del laboratorio en la Pi: la lanza, dice como va o la recoge.
         PlanLectura      analiza que archivos grandes hay en el nodo y cuales estan pendientes de [T].
         EstadoLectura    consulta en vivo el estado de una lectura [T] en curso sin recogerla.
@@ -61,10 +64,14 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $RutaConfiguracion,
 
-    [ValidateSet('Ver', 'Previa', 'Guardar', 'Leer', 'PlanLectura', 'EstadoLectura', 'CancelarLectura')]
+    [ValidateSet('Ver', 'Previa', 'Guardar', 'PreviaFrio', 'GuardarFrio', 'Validar', 'Leer', 'PlanLectura', 'EstadoLectura', 'CancelarLectura')]
     [string] $Accion = 'Ver',
 
-    [switch] $SoloPendientes
+    [switch] $SoloPendientes,
+
+    [switch] $Profundo,
+
+    [switch] $PassThru
 )
 
 Set-StrictMode -Version Latest
@@ -140,14 +147,19 @@ function Get-RutaDelManifiesto {
             La carpeta de estado.
         .PARAMETER Relativa
             Ruta del archivo relativa a la raiz del laboratorio.
+        .PARAMETER Juego
+            Que destino describe: 'bloques' es el nodo; 'bloques-frio-<firma>'
+            es un disco frio concreto. Cada destino tiene su propio estado, y el
+            del disco lleva SU firma: otro disco no hereda lo que no tiene.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Carpeta,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Relativa
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Relativa,
+        [ValidateNotNullOrEmpty()][string] $Juego = 'bloques'
     )
-    return (Join-Path (Join-Path $Carpeta 'laboratorio\bloques') ($Relativa + '.blk'))
+    return (Join-Path (Join-Path $Carpeta ('laboratorio\' + $Juego)) ($Relativa + '.blk'))
 }
 
 function Read-ManifiestoDeBloques {
@@ -434,7 +446,9 @@ function Write-BloquesEnSuSitio {
                     }
                 }
             }
-            $d.Flush()
+            # A DISCO, no al cache del sistema: la confirmacion que sigue no
+            # vale nada si lo escrito todavia vive solo en memoria.
+            $d.Flush($true)
         }
         finally { $d.Dispose() }
     }
@@ -621,6 +635,580 @@ function Get-HuellasEnDestino {
 }
 
 # ---------------------------------------------------------------------------
+#  Lecturas locales: la huella de D: se calcula UNA vez, el disco USB se lee sin cache
+# ---------------------------------------------------------------------------
+
+function Get-HuellasDeOrigen {
+    <#
+        .SYNOPSIS
+            Las huellas por bloque de un archivo de D:, sin releerlo si no cambio.
+        .DESCRIPTION
+            Hashear 300 GB de D: cuesta ~8 min de NVMe y se pagaba otra vez por
+            cada destino (nodo, disco frio). Se guarda la huella junto con el
+            tamano y la fecha que D: tenia al calcularla; si siguen iguales, se
+            reutiliza. Es la MISMA confianza que ya sostiene el "al dia" del
+            nodo (tamano y fecha iguales = sin cambios), asi que no anade
+            ningun supuesto nuevo. Es estado derivado, no copia: si se borra, se
+            recalcula.
+        .PARAMETER Ficha
+            Lo que devuelve Get-FichaDelLaboratorio.
+        .PARAMETER Archivo
+            Una entrada de Get-InventarioDelLaboratorio.
+        .PARAMETER Carpeta
+            La carpeta de estado.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Ficha,
+        [Parameter(Mandatory)][psobject] $Archivo,
+        [Parameter(Mandatory)][string] $Carpeta
+    )
+
+    $rutaCache = Get-RutaDelManifiesto -Carpeta $Carpeta -Relativa $Archivo.Relativa -Juego 'origen'
+    $m = $null
+    try { $m = Read-ManifiestoDeBloques -Ruta $rutaCache } catch { $m = $null }
+    if ($m -and $m.Bloque -eq $Ficha.Bloque -and $m.Tamano -eq $Archivo.Tamano -and
+        $m.FechaUtcTicks -eq $Archivo.FechaUtc.Ticks -and
+        @($m.Huellas).Count -eq [int][Math]::Ceiling($Archivo.Tamano / [double]$Ficha.Bloque)) {
+        return [pscustomobject]@{ Tamano = [long]$m.Tamano; Bloque = [int]$m.Bloque; Huellas = @($m.Huellas) }
+    }
+    $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
+    try { Write-ManifiestoDeBloques -Ruta $rutaCache -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false }
+    catch { Write-Verbose "Sin cache de huellas para $($Archivo.Relativa): $($_.Exception.Message)" }
+    return $actual
+}
+
+function Get-HuellasDeIndices {
+    <#
+        .SYNOPSIS
+            SHA-256 de esos bloques de un archivo LOCAL, leidos del disco y no
+            de la memoria.
+        .DESCRIPTION
+            Lo que la Pi hace con "la cache tirada", aqui con FILE_FLAG_NO_BUFFERING:
+            el cotejo de lo que se acaba de escribir en el disco USB tiene que
+            salir del disco. Si el sistema lo sirviera de su cache, el cotejo
+            confirmaria lo que se escribio, no lo que quedo. Si el volumen no
+            admite lectura directa, cae a lectura normal y lo dice en Verbose.
+        .PARAMETER Ruta
+            El archivo.
+        .PARAMETER Bloque
+            Tamano de bloque. Multiplo de 4096 para la lectura directa.
+        .PARAMETER Indices
+            Los bloques a leer. Vacio: todos.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Ruta,
+        [Parameter(Mandatory)][ValidateRange(4096, 67108864)][int] $Bloque,
+        [AllowEmptyCollection()][int[]] $Indices = @()
+    )
+
+    $abrir = {
+        param($Directo)
+        $opc = [System.IO.FileOptions]::SequentialScan
+        $buf = 1048576
+        if ($Directo) { $opc = [System.IO.FileOptions]0x20000000; $buf = 1 }
+        New-Object System.IO.FileStream($Ruta, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read, $buf, $opc)
+    }
+    $directo = ($Bloque % 4096 -eq 0)
+    try { $fs = & $abrir $directo }
+    catch { Write-Verbose "Sin lectura directa en ${Ruta}: $($_.Exception.Message)"; $directo = $false; $fs = & $abrir $false }
+
+    $sha = New-Object System.Security.Cryptography.SHA256Cng
+    $mapa = @{}
+    try {
+        $tamano = $fs.Length
+        $total = [int][Math]::Ceiling($tamano / [double]$Bloque)
+        $lista = @($Indices)
+        if ($lista.Count -eq 0 -and $total -gt 0) { $lista = @(0..($total - 1)) }
+        $buf = New-Object byte[] $Bloque
+        foreach ($i in ($lista | Sort-Object -Unique)) {
+            $off = [long]$i * $Bloque
+            if ($off -ge $tamano) { $mapa[[int]$i] = '-'; continue }
+            $largo = [int][Math]::Min([long]$Bloque, $tamano - $off)
+            $fs.Position = $off
+            $leido = 0
+            # Sin buffer, la ultima lectura se pide completa y devuelve lo que hay.
+            while ($leido -lt $largo) {
+                $r = $fs.Read($buf, $leido, $Bloque - $leido)
+                if ($r -le 0) { break }
+                $leido += $r
+            }
+            if ($leido -lt $largo) { $mapa[[int]$i] = '-'; continue }
+            $mapa[[int]$i] = ([System.BitConverter]::ToString($sha.ComputeHash($buf, 0, $largo))).Replace('-', '').ToLowerInvariant()
+        }
+    }
+    finally { $fs.Dispose(); $sha.Dispose() }
+    return [pscustomobject]@{ Tamano = [long]$tamano; Mapa = $mapa }
+}
+
+# ---------------------------------------------------------------------------
+#  La copia fria del laboratorio: mismo metodo que el nodo, sin red
+# ---------------------------------------------------------------------------
+
+function Get-RaizFriaDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Donde caen las VMs en el disco frio y que juego de manifiestos las describe.
+        .PARAMETER Ficha
+            Lo que devuelve Get-FichaDelLaboratorio.
+        .PARAMETER Disco
+            Lo que devuelve Get-DiscoFrio.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Ficha,
+        [Parameter(Mandatory)][psobject] $Disco
+    )
+    return [pscustomobject]@{
+        Raiz  = (Join-Path $Disco.Raiz $Ficha.Frio.Relativa).TrimEnd('\')
+        Juego = ('bloques-frio-' + $Disco.Firma)
+    }
+}
+
+function Invoke-ArchivoGrandeFrio {
+    <#
+        .SYNOPSIS
+            Un disco virtual grande al disco frio: solo sus bloques cambiados.
+        .DESCRIPTION
+            Como Invoke-ArchivoGrande, con tres diferencias que salen de que el
+            destino es un disco LOCAL y no un recurso de red:
+
+              1. NO HAY PENDIENTE. Si el disco tiene el archivo y no hay
+                 manifiesto -o el archivo no es el que dice el manifiesto: copia
+                 cortada, otro programa, disco cambiado de caja-, se lee ESE
+                 archivo en local y se anota. Leer el USB cuesta minutos; releer
+                 el nodo costaba horas. Asi una copia interrumpida se reanuda
+                 sola, bloque a bloque, sin empezar de cero.
+              2. EL COTEJO SALE DEL DISCO. Los bloques escritos se vuelven a leer
+                 sin cache y se comparan con los de D:. Solo entonces cambia el
+                 manifiesto.
+              3. NUNCA BORRA. Un archivo que ya no esta en D: se queda en el
+                 disco (aditivo, seccion 6).
+        .PARAMETER Ficha
+            Lo que devuelve Get-FichaDelLaboratorio.
+        .PARAMETER Archivo
+            Una entrada de Get-InventarioDelLaboratorio.
+        .PARAMETER Carpeta
+            La carpeta de estado.
+        .PARAMETER Frio
+            Lo que devuelve Get-RaizFriaDelLaboratorio.
+        .PARAMETER Simular
+            Mide y no escribe (salvo el cache de huellas de D:).
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Ficha,
+        [Parameter(Mandatory)][psobject] $Archivo,
+        [Parameter(Mandatory)][string] $Carpeta,
+        [Parameter(Mandatory)][psobject] $Frio,
+        [switch] $Simular
+    )
+
+    $rel = $Archivo.Relativa
+    $enFrio = Join-Path $Frio.Raiz $rel
+    $rutaManifiesto = Get-RutaDelManifiesto -Carpeta $Carpeta -Relativa $rel -Juego $Frio.Juego
+    $manifiesto = Read-ManifiestoDeBloques -Ruta $rutaManifiesto
+    $salida = {
+        param($Estado, $Enviado, $Motivo)
+        [pscustomobject]@{ Relativa = $rel; Vm = $Archivo.Vm; Estado = $Estado; Enviado = [long]$Enviado; Motivo = $Motivo }
+    }
+    $mismaFecha = { param($A, $B) [Math]::Abs($A - $B) -le $script:Tolerancia }
+
+    $enDisco = Get-Item -LiteralPath $enFrio -Force -ErrorAction SilentlyContinue
+    $adoptado = $false
+    if ($manifiesto -and $enDisco -and
+        ($enDisco.Length -ne $manifiesto.Tamano -or -not (& $mismaFecha $enDisco.LastWriteTimeUtc.Ticks $manifiesto.FechaUtcTicks))) {
+        $manifiesto = $null          # el disco no es lo que el manifiesto dice
+    }
+    if ($manifiesto -and -not $enDisco) { $manifiesto = $null }   # lo borraron del disco
+
+    if (-not $manifiesto -and $enDisco) {
+        # Reanudar o readoptar: leer lo que el disco tiene de verdad.
+        if ($Simular) {
+            return (& $salida 'Leeria' 0 'esta en el disco sin manifiesto: lo leeria en local para saber que tiene')
+        }
+        if ($Archivo.Vm) {
+            Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
+                -Hechos 0 -Totales $enDisco.Length -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+        }
+        $leido = Get-HuellasDeIndices -Ruta $enFrio -Bloque $Ficha.Bloque
+        $huellasDisco = New-Object System.Collections.Generic.List[string]
+        $nBloques = [int][Math]::Ceiling($leido.Tamano / [double]$Ficha.Bloque)
+        for ($i = 0; $i -lt $nBloques; $i++) { $huellasDisco.Add('' + $leido.Mapa[$i]) }
+        $manifiesto = [pscustomobject]@{
+            Bloque = $Ficha.Bloque; Tamano = $leido.Tamano
+            FechaUtcTicks = $enDisco.LastWriteTimeUtc.Ticks; Huellas = $huellasDisco.ToArray()
+        }
+        $adoptado = $true
+    }
+
+    if ($manifiesto -and -not $adoptado -and $Archivo.Tamano -eq $manifiesto.Tamano -and (& $mismaFecha $Archivo.FechaUtc.Ticks $manifiesto.FechaUtcTicks)) {
+        return (& $salida 'AlDia' 0 '')
+    }
+
+    # Archivo nuevo en el disco y solo se mide: va entero, no hace falta hashear.
+    if (-not $manifiesto -and $Simular) { return (& $salida 'Enviaria' $Archivo.Tamano 'nuevo en el disco') }
+    $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
+    if ($manifiesto) {
+        $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
+        # Un '-' o un hueco en las huellas leidas del disco es "no se pudo leer": se reenvia.
+        if ($adoptado) {
+            $extra = New-Object System.Collections.Generic.List[int]
+            for ($i = 0; $i -lt @($manifiesto.Huellas).Count; $i++) { if (-not $manifiesto.Huellas[$i] -or $manifiesto.Huellas[$i] -eq '-') { $extra.Add($i) } }
+            $indices = [int[]]@(@($indices) + @($extra) | Sort-Object -Unique)
+        }
+    }
+    else {
+        $indices = [int[]]@()
+        if ($actual.Huellas.Count -gt 0) { $indices = [int[]](0..($actual.Huellas.Count - 1)) }
+    }
+    $bytes = Get-BytesDeIndices -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
+    if ($Simular) {
+        $motivo = ''
+        if (-not $enDisco) { $motivo = 'nuevo en el disco' }
+        return (& $salida 'Enviaria' $bytes $motivo)
+    }
+
+    [void](Write-BloquesEnSuSitio -Origen $Archivo.Ruta -Destino $enFrio -Bloque $Ficha.Bloque -Indices $indices `
+            -Tamano $actual.Tamano -FechaUtc $Archivo.FechaUtc -Vm $Archivo.Vm -CarpetaEstado $Carpeta -Confirm:$false)
+
+    if ($Archivo.Vm) {
+        Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'verificando' `
+            -Hechos $bytes -Totales $bytes -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+    }
+    $leidas = Get-HuellasDeIndices -Ruta $enFrio -Bloque $Ficha.Bloque -Indices $indices
+    $cotejo = Compare-HuellasLeidas -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
+        -Tamano $actual.Tamano -TamanoLeido $leidas.Tamano
+    if (-not $cotejo.Correcto) {
+        # Sin manifiesto: la proxima vez se relee el disco y se reanuda desde lo que haya.
+        if (Test-Path -LiteralPath $rutaManifiesto) { Remove-Item -LiteralPath $rutaManifiesto -Force }
+        Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'laboratorio-frio' -Mensaje ('{0}: {1} de {2} bloques no cuadran en el disco frio.' -f $rel, $cotejo.Malos, @($indices).Count)
+        return (& $salida 'Falla' $bytes ('{0} bloques no cuadran en el disco frio' -f $cotejo.Malos))
+    }
+    Write-ManifiestoDeBloques -Ruta $rutaManifiesto -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false
+    Write-RegistroRespaldo -Etapa 'laboratorio-frio' -Mensaje ('{0}: {1} bloques, {2}, confirmados en el disco frio.' -f $rel, @($indices).Count, (Format-BytesDelLaboratorio -Bytes $bytes))
+    return (& $salida 'Enviado' $bytes '')
+}
+
+function Invoke-GuardadoFrioDelLaboratorio {
+    <#
+        .SYNOPSIS
+            El laboratorio de D: al disco frio: guardas, pequenos, grandes por bloques.
+        .DESCRIPTION
+            Siempre aditivo. Lo llama disco.ps1 como tercera pasada (dentro de
+            su marca y sus guardas del disco y los centinelas) o, a solo,
+            laboratorio.ps1 -Accion GuardarFrio.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+        .PARAMETER Disco
+            Lo que devuelve Get-DiscoFrio. Si falta, se busca.
+        .PARAMETER Simular
+            Mide lo que enviaria cada VM y no escribe nada.
+    #>
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowNull()][psobject] $Disco = $null,
+        [switch] $Simular
+    )
+
+    $res = [ordered]@{
+        Inicio = Get-Date; Simulada = [bool]$Simular; Abortada = $false; Omitida = $false; Motivo = $null
+        PorVm = @(); Archivos = @(); Pequenos = $null; Enviado = [long]0; Estado = ''; Correcto = $false; Fin = $null
+    }
+    $abortar = {
+        param($Motivo, [bool]$Omitir)
+        $res.Abortada = (-not $Omitir)
+        $res.Omitida = $Omitir
+        $res.Motivo = $Motivo
+        $res.Estado = if ($Omitir) { 'Atencion' } else { 'Falla' }
+        $res.Fin = Get-Date
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio-frio' -Mensaje $Motivo
+        [pscustomobject]$res
+    }
+
+    $ficha = Get-FichaDelLaboratorio -Configuracion $Configuracion
+    if (-not $ficha -or -not $ficha.Frio.Habilitado) {
+        $res.Omitida = $true; $res.Correcto = $true; $res.Estado = 'Protegido'; $res.Motivo = 'El laboratorio no esta declarado para el disco frio.'
+        $res.Fin = Get-Date
+        return [pscustomobject]$res
+    }
+    if (-not (Test-Path -LiteralPath $ficha.Origen -PathType Container)) { return (& $abortar "No existe el laboratorio en $($ficha.Origen)." $false) }
+    if (-not $Disco) { $Disco = Get-DiscoFrio -Configuracion $Configuracion }
+    if (-not $Disco) { return (& $abortar 'El disco frio no esta conectado o no paso firma y centinela: el laboratorio no se copio.' $false) }
+
+    # LAS VMS ENCENDIDAS NO SON UN FALLO: el laboratorio se difiere y se dice.
+    # Copiar un .vmdk que cambia bajo los pies daria una imagen inconsistente.
+    $quieto = Test-LaboratorioQuieto -Ficha $ficha
+    if (-not $quieto.Quieto) { return (& $abortar ('Laboratorio NO copiado al disco frio: ' + $quieto.Motivo) $true) }
+
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $frio = Get-RaizFriaDelLaboratorio -Ficha $ficha -Disco $Disco
+    $inventario = @(Get-InventarioDelLaboratorio -Ficha $ficha)
+    if ($inventario.Count -eq 0) { return (& $abortar "El laboratorio en $($ficha.Origen) esta vacio: no hay nada que copiar." $false) }
+    $grandes = @($inventario | Where-Object { $_.Grande } | Sort-Object -Property Relativa)
+    $pequenos = @($inventario | Where-Object { -not $_.Grande })
+
+    # --- Renombres: mover en el disco lo que ya esta, en vez de copiarlo otra vez ---
+    $vigentes = @{}
+    foreach ($a in $inventario) { $vigentes[$a.Relativa] = $a.Grande }
+    $renombres = @{}
+    foreach ($g in $grandes) {
+        if (Test-Path -LiteralPath (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa -Juego $frio.Juego) -PathType Leaf) { continue }
+        if (Test-Path -LiteralPath (Join-Path $frio.Raiz $g.Relativa)) { continue }
+        $hallado = Find-ManifiestoRenombrado -Ficha $ficha -Archivo $g -Carpeta $carpeta -Vigentes $vigentes -Juego $frio.Juego -RaizDestino $frio.Raiz
+        if ($hallado) { $renombres[$g.Relativa] = $hallado }
+    }
+
+    # --- Espacio -------------------------------------------------------------
+    $necesario = Get-SumaDe -Objetos $pequenos -Propiedad 'Tamano'
+    foreach ($g in $grandes) {
+        if ($renombres.ContainsKey($g.Relativa)) { continue }
+        $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa -Juego $frio.Juego)
+        if ($m) { $necesario += [Math]::Max([long]0, $g.Tamano - $m.Tamano) }
+        elseif (-not (Test-Path -LiteralPath (Join-Path $frio.Raiz $g.Relativa))) { $necesario += $g.Tamano }
+    }
+    $libre = Get-EspacioLibre -Ruta $Disco.Raiz
+    if ($null -ne $libre -and $necesario -gt ($libre - $script:MargenEnNodo)) {
+        return (& $abortar ('No cabe en el disco frio: hacen falta hasta {0} y hay {1} libres (margen 20 GB).' -f
+                (Format-BytesDelLaboratorio -Bytes $necesario), (Format-BytesDelLaboratorio -Bytes $libre)) $false)
+    }
+
+    if (-not $Simular -and -not $PSCmdlet.ShouldProcess($frio.Raiz, 'Copiar el laboratorio al disco frio')) { return (& $abortar 'Cancelado.' $true) }
+
+    $archivos = New-Object System.Collections.Generic.List[psobject]
+    try {
+        if (-not $Simular) {
+            foreach ($relNueva in @($renombres.Keys)) {
+                $ren = $renombres[$relNueva]
+                $destNuevo = Join-Path $frio.Raiz $relNueva
+                $rutaManifNuevo = Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $relNueva -Juego $frio.Juego
+                try {
+                    $dirDest = Split-Path -Path $destNuevo -Parent
+                    if ($dirDest -and -not (Test-Path -LiteralPath $dirDest)) { New-Item -ItemType Directory -Path $dirDest -Force | Out-Null }
+                    Move-Item -LiteralPath $ren.DestinoAnterior -Destination $destNuevo -ErrorAction Stop
+                    $dirManif = Split-Path -Path $rutaManifNuevo -Parent
+                    if ($dirManif -and -not (Test-Path -LiteralPath $dirManif)) { New-Item -ItemType Directory -Path $dirManif -Force | Out-Null }
+                    Move-Item -LiteralPath $ren.ManifiestoAnterior -Destination $rutaManifNuevo -Force -ErrorAction Stop
+                    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio-frio' `
+                        -Mensaje ('RENOMBRE RECONOCIDO en el disco frio (sin recopiar): {0} -> {1}' -f $ren.RelativaAnterior, $relNueva)
+                }
+                catch {
+                    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio-frio' `
+                        -Mensaje ('No se pudo migrar el renombre {0} -> {1}: {2}' -f $ren.RelativaAnterior, $relNueva, $_.Exception.Message)
+                }
+            }
+        }
+
+        # --- Lo pequeno, con robocopy aditivo y SIN los grandes ---------------
+        $hojasPequenos = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($pq in $pequenos) { [void]$hojasPequenos.Add((Split-Path -Path $pq.Relativa -Leaf)) }
+        $exclusiones = New-Object System.Collections.Generic.List[string]
+        foreach ($g in $grandes) {
+            $hojaG = Split-Path -Path $g.Relativa -Leaf
+            if ($hojasPequenos.Contains($hojaG)) { [void]$exclusiones.Add($g.Ruta); [void]$exclusiones.Add((Join-Path $frio.Raiz $g.Relativa)) }
+            else { [void]$exclusiones.Add($hojaG) }
+        }
+        $res.Pequenos = Invoke-Robocopy -Origen $ficha.Origen -Destino $frio.Raiz -Clase 'A' -UnSoloHilo `
+            -SoloListar:$Simular -ExcluirArchivos (@($ficha.ExcluirArchivos) + @($exclusiones | Sort-Object -Unique)) -ExcluirCarpetas @($ficha.ExcluirCarpetas)
+
+        # --- Los grandes, por bloques ------------------------------------------
+        foreach ($g in $grandes) {
+            try { $hecho = Invoke-ArchivoGrandeFrio -Ficha $ficha -Archivo $g -Carpeta $carpeta -Frio $frio -Simular:$Simular -Confirm:$false }
+            catch {
+                Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'laboratorio-frio' -Mensaje ('{0}: {1}' -f $g.Relativa, $_.Exception.Message)
+                $hecho = [pscustomobject]@{ Relativa = $g.Relativa; Vm = $g.Vm; Estado = 'Falla'; Enviado = [long]0; Motivo = $_.Exception.Message }
+            }
+            $archivos.Add($hecho)
+        }
+    }
+    finally {
+        if (-not $Simular) { Remove-ProgresoDelLaboratorio -Carpeta $carpeta -Confirm:$false }
+    }
+
+    $res.Archivos = $archivos.ToArray()
+    $res.Enviado = Get-SumaDe -Objetos $res.Archivos -Propiedad 'Enviado'
+    $porVm = New-Object System.Collections.Generic.List[psobject]
+    foreach ($v in @(Get-ResumenDeVmsDelLaboratorio -Inventario $inventario)) {
+        $suyos = @($archivos | Where-Object { $_.Vm -eq $v.Vm })
+        $estadoVm = 'AlDia'
+        if (@($suyos | Where-Object { $_.Estado -eq 'Falla' }).Count -gt 0) { $estadoVm = 'Falla' }
+        $porVm.Add([pscustomobject]@{ Vm = $v.Vm; Bytes = $v.Bytes; Estado = $estadoVm; Enviado = (Get-SumaDe -Objetos $suyos -Propiedad 'Enviado') })
+    }
+    $res.PorVm = $porVm.ToArray()
+
+    $fallan = @($porVm | Where-Object { $_.Estado -eq 'Falla' })
+    $partes = New-Object System.Collections.Generic.List[string]
+    if (-not $res.Pequenos.Correcto) { $partes.Add('robocopy no dio por buenos los archivos pequenos') }
+    if ($fallan.Count -gt 0) { $partes.Add(('{0} VMs fallaron ({1})' -f $fallan.Count, (($fallan | ForEach-Object { $_.Vm }) -join ', '))) }
+    if ($partes.Count -gt 0) { $res.Estado = 'Falla'; $res.Motivo = 'LABORATORIO CON FALLOS en el disco frio: ' + ($partes -join '; ') }
+    else {
+        $res.Estado = 'Protegido'; $res.Correcto = $true
+        $res.Motivo = 'laboratorio en el disco frio: {0} enviados, el resto ya estaba' -f (Format-BytesDelLaboratorio -Bytes $res.Enviado)
+    }
+    if (-not $Simular) {
+        $nivel = if ($res.Correcto) { 'OK' } else { 'ATENCION' }
+        Write-RegistroRespaldo -Nivel $nivel -Etapa 'laboratorio-frio' -Mensaje $res.Motivo
+    }
+    $res.Fin = Get-Date
+    return [pscustomobject]$res
+}
+
+# ---------------------------------------------------------------------------
+#  Validar: esta cada VM en los tres sitios? Solo lee, sin releer nada pesado
+# ---------------------------------------------------------------------------
+
+function Get-ValidacionDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Compara D:, el nodo y el disco frio, archivo por archivo, sin leer contenido.
+        .DESCRIPTION
+            COSTE: tres listados (D: y el disco, locales; el nodo, UN listado por
+            SMB: ~700 archivos, un segundo) y la lectura de los manifiestos, que
+            son archivos locales pequenos. No lee ni un bloque de ningun
+            .vmdk, no escribe nada y no usa la Pi.
+
+            QUE AFIRMA CADA CELDA, y hasta donde llega:
+              OK        mismo tamano y misma fecha que en D:. Para un disco
+                        grande, ademas hay manifiesto cuyo tamano y fecha
+                        coinciden: lo que se confirmo bloque a bloque en el
+                        ultimo guardado sigue siendo lo que hay.
+              OK-fecha  (solo discos grandes) igual en tamano y fecha pero SIN
+                        manifiesto que lo respalde: se parece, no se probo.
+              DISTINTO  esta, pero no es la version de D:.
+              FALTA     no esta.
+              ?         no se pudo mirar (nodo sin red, disco desconectado).
+            Lo que NO prueba: que los bits no se hayan degradado en reposo. Eso
+            es -Profundo (disco frio: relee y coteja contra el manifiesto) y [T]
+            (nodo: lo relee la Pi). Ningun metodo barato lo prueba.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+        .PARAMETER Profundo
+            Relee del disco frio cada disco grande y lo coteja con su manifiesto.
+            Lectura local de cientos de GB: decenas de minutos.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [switch] $Profundo
+    )
+
+    $ficha = Get-FichaDelLaboratorio -Configuracion $Configuracion
+    if (-not $ficha) { return $null }
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $inventario = @(Get-InventarioDelLaboratorio -Ficha $ficha)
+
+    $listar = {
+        param($Raiz)
+        $mapa = @{}
+        try {
+            if (Test-Path -LiteralPath $Raiz -PathType Container) {
+                foreach ($a in @(Get-InventarioDelLaboratorio -Ficha $ficha -Raiz $Raiz)) { $mapa[$a.Relativa] = $a }
+                return $mapa
+            }
+        }
+        catch { Write-Verbose "No se pudo listar ${Raiz}: $($_.Exception.Message)" }
+        return $null
+    }
+    $enNodo = & $listar $ficha.Destino
+
+    $disco = $null
+    $enFrio = $null
+    $frio = $null
+    if ($ficha.Frio.Habilitado) {
+        $disco = Get-DiscoFrio -Configuracion $Configuracion 2>$null
+        if ($disco) {
+            $frio = Get-RaizFriaDelLaboratorio -Ficha $ficha -Disco $disco
+            $enFrio = & $listar $frio.Raiz
+            if ($null -eq $enFrio) { $enFrio = @{} }   # el disco esta, el laboratorio todavia no
+        }
+    }
+
+    $igual = {
+        param($A, $B) ($A.Tamano -eq $B.Tamano -and [Math]::Abs($A.FechaUtc.Ticks - $B.FechaUtc.Ticks) -le $script:Tolerancia)
+    }
+    $celda = {
+        param($Mapa, $Juego, $Archivo)
+        if ($null -eq $Mapa) { return '?' }
+        $otro = $Mapa[$Archivo.Relativa]
+        if (-not $otro) { return 'FALTA' }
+        if (-not (& $igual $Archivo $otro)) { return 'DISTINTO' }
+        if (-not $Archivo.Grande) { return 'OK' }
+        $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $Archivo.Relativa -Juego $Juego)
+        if ($m -and $m.Tamano -eq $otro.Tamano -and [Math]::Abs($m.FechaUtcTicks - $otro.FechaUtc.Ticks) -le $script:Tolerancia) { return 'OK' }
+        return 'OK-fecha'
+    }
+
+    $filas = New-Object System.Collections.Generic.List[psobject]
+    foreach ($a in $inventario) {
+        $cNodo = & $celda $enNodo 'bloques' $a
+        $cFrio = 'n/a'
+        if ($ficha.Frio.Habilitado) { $cFrio = if ($null -eq $enFrio) { '?' } else { & $celda $enFrio $frio.Juego $a } }
+        if ($Profundo -and $a.Grande -and $cFrio -eq 'OK') {
+            $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $a.Relativa -Juego $frio.Juego)
+            $leido = Get-HuellasDeIndices -Ruta (Join-Path $frio.Raiz $a.Relativa) -Bloque $ficha.Bloque
+            $malos = 0
+            for ($i = 0; $i -lt @($m.Huellas).Count; $i++) { if (-not $leido.Mapa.ContainsKey($i) -or $leido.Mapa[$i] -ne $m.Huellas[$i]) { $malos++ } }
+            if ($malos -gt 0 -or $leido.Tamano -ne $m.Tamano) { $cFrio = 'DEGRADADO' }
+        }
+        $filas.Add([pscustomobject]@{ Relativa = $a.Relativa; Vm = $a.Vm; Grande = $a.Grande; Bytes = $a.Tamano; Nodo = $cNodo; Frio = $cFrio })
+    }
+
+    $peor = {
+        param($Grupo, $Prop)
+        $v = @($Grupo | ForEach-Object { $_.$Prop })
+        foreach ($c in @('DEGRADADO', 'DISTINTO', 'FALTA', '?', 'OK-fecha')) { if ($v -contains $c) { return $c } }
+        if ($v -contains 'n/a') { return 'n/a' }
+        return 'OK'
+    }
+    $porVm = New-Object System.Collections.Generic.List[psobject]
+    foreach ($g in @($filas | Group-Object -Property Vm | Sort-Object -Property Name)) {
+        $porVm.Add([pscustomobject]@{
+                Vm = $(if ($g.Name) { $g.Name } else { '(raiz)' }); Archivos = $g.Count
+                Bytes = (Get-SumaDe -Objetos $g.Group -Propiedad 'Bytes')
+                Nodo = (& $peor $g.Group 'Nodo'); Frio = (& $peor $g.Group 'Frio')
+            })
+    }
+    $enTres = @($porVm | Where-Object { $_.Nodo -eq 'OK' -and ($_.Frio -eq 'OK' -or $_.Frio -eq 'n/a') }).Count
+    return [pscustomobject]@{
+        PorVm = $porVm.ToArray(); Archivos = $filas.ToArray()
+        NodoLeido = ($null -ne $enNodo); DiscoConectado = [bool]$disco; Profundo = [bool]$Profundo
+        VmsEnTres = $enTres; VmsTotal = $porVm.Count
+        BytesTotal = (Get-SumaDe -Objetos $filas.ToArray() -Propiedad 'Bytes')
+    }
+}
+
+function Write-ValidacionDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Pinta lo que devuelve Get-ValidacionDelLaboratorio.
+        .PARAMETER Validacion
+            El resultado.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][psobject] $Validacion)
+
+    Write-Host ('{0,-24} {1,6} {2,10}  {3,-10} {4,-10}' -f 'VM', 'ARCH.', 'TAMANO', 'NODO', 'DISCO FRIO')
+    foreach ($v in $Validacion.PorVm) {
+        Write-Host ('{0,-24} {1,6} {2,10}  {3,-10} {4,-10}' -f $v.Vm, $v.Archivos, (Format-BytesDelLaboratorio -Bytes $v.Bytes), $v.Nodo, $v.Frio)
+    }
+    foreach ($f in @($Validacion.Archivos | Where-Object { $_.Nodo -notin @('OK', 'n/a') -or $_.Frio -notin @('OK', 'n/a') } | Select-Object -First 40)) {
+        Write-Host ('   {0}: nodo {1}, disco frio {2}' -f $f.Relativa, $f.Nodo, $f.Frio)
+    }
+    if (-not $Validacion.NodoLeido) { Write-Warning 'El nodo no respondio: su columna sale con ?.' }
+    if (-not $Validacion.DiscoConectado) { Write-Warning 'El disco frio no esta conectado (o no paso firma y centinela): su columna sale con ?.' }
+    Write-Host ('{0} de {1} carpetas confirmadas en el nodo Y en el disco frio.' -f $Validacion.VmsEnTres, $Validacion.VmsTotal)
+}
+
+# ---------------------------------------------------------------------------
 #  Guardar
 # ---------------------------------------------------------------------------
 
@@ -703,10 +1291,13 @@ function Find-ManifiestoRenombrado {
         [Parameter(Mandatory)][psobject] $Ficha,
         [Parameter(Mandatory)][psobject] $Archivo,
         [Parameter(Mandatory)][string] $Carpeta,
-        [Parameter(Mandatory)][hashtable] $Vigentes
+        [Parameter(Mandatory)][hashtable] $Vigentes,
+        [ValidateNotNullOrEmpty()][string] $Juego = 'bloques',
+        [AllowEmptyString()][string] $RaizDestino = ''
     )
 
-    $raizManifiestos = Join-Path $Carpeta 'laboratorio\bloques'
+    if (-not $RaizDestino) { $RaizDestino = $Ficha.Destino }
+    $raizManifiestos = Join-Path $Carpeta ('laboratorio\' + $Juego)
     if (-not (Test-Path -LiteralPath $raizManifiestos -PathType Container)) { return $null }
 
     $candidatos = New-Object System.Collections.Generic.List[psobject]
@@ -721,7 +1312,7 @@ function Find-ManifiestoRenombrado {
         if ($nh -eq 0) { continue }
 
         # El destino viejo en el nodo debe existir y cuadrar con su manifiesto.
-        $nodoViejo = Join-Path $Ficha.Destino $relVieja
+        $nodoViejo = Join-Path $RaizDestino $relVieja
         $n = Get-Item -LiteralPath $nodoViejo -Force -ErrorAction SilentlyContinue
         if (-not $n -or $n.Length -ne $m.Tamano -or
             [Math]::Abs($n.LastWriteTimeUtc.Ticks - $m.FechaUtcTicks) -gt $script:Tolerancia) { continue }
@@ -798,7 +1389,7 @@ function Invoke-ArchivoGrande {
             [Math]::Abs($Archivo.FechaUtc.Ticks - $manifiesto.FechaUtcTicks) -le $script:Tolerancia) {
             return (& $salida 'AlDia' 0 ('migraria desde {0} sin re-subir' -f $RenombreSimulado.RelativaAnterior))
         }
-        $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
+        $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
         $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
         $bytesSim = Get-BytesDeIndices -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
         return (& $salida 'Enviaria' $bytesSim ('migraria desde {0}' -f $RenombreSimulado.RelativaAnterior))
@@ -820,7 +1411,7 @@ function Invoke-ArchivoGrande {
             Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
                 -Hechos 0 -Totales $Archivo.Tamano -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
         }
-        $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
+        $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
         $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
     }
     else {
@@ -834,7 +1425,7 @@ function Invoke-ArchivoGrande {
             Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
                 -Hechos 0 -Totales $Archivo.Tamano -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
         }
-        $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
+        $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
         $indices = [int[]]@()
         if ($actual.Huellas.Count -gt 0) { $indices = [int[]](0..($actual.Huellas.Count - 1)) }
     }
@@ -1781,6 +2372,17 @@ switch ($Accion) {
     'Ver'             { Get-VistaDelLaboratorio -Configuracion $configuracion }
     'Previa'          { Invoke-GuardadoDelLaboratorio -Configuracion $configuracion -Simular }
     'Guardar'         { Invoke-GuardadoDelLaboratorio -Configuracion $configuracion -Confirm:$false }
+    'PreviaFrio'      { Invoke-GuardadoFrioDelLaboratorio -Configuracion $configuracion -Simular }
+    'GuardarFrio'     {
+        $carpetaFrio = Get-CarpetaDeEstado -Configuracion $configuracion
+        Enter-MarcaDeCorrida -Carpeta $carpetaFrio -Tipo 'laboratorio' -Archivo 'LABORATORIO.lock' -Confirm:$false | Out-Null
+        try { Invoke-GuardadoFrioDelLaboratorio -Configuracion $configuracion -Confirm:$false }
+        finally { Exit-MarcaDeCorrida -Carpeta $carpetaFrio -Archivo 'LABORATORIO.lock' -Confirm:$false }
+    }
+    'Validar'         {
+        $validacion = Get-ValidacionDelLaboratorio -Configuracion $configuracion -Profundo:$Profundo
+        if ($validacion) { Write-ValidacionDelLaboratorio -Validacion $validacion; if ($PassThru) { $validacion } }
+    }
     'Leer'            { Invoke-LecturaDelLaboratorio -Configuracion $configuracion -SoloPendientes:$SoloPendientes -Confirm:$false }
     'PlanLectura'     { Get-PlanDeLecturaDelLaboratorio -Configuracion $configuracion }
     'EstadoLectura'   { Get-EstadoDeLecturaDelLaboratorio -Configuracion $configuracion }

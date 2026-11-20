@@ -3521,6 +3521,122 @@ if ($pwsh7) {
 
 # ===========================================================================
 
+# ===========================================================================
+Write-Titulo 'Copia fria del laboratorio: mismo metodo que el nodo, en local y sin releer D:'
+# ===========================================================================
+#
+# El disco frio pesa lo mismo que el nodo. Aqui el "disco" es una carpeta del
+# arenero: lo que se prueba es el metodo -manifiesto por disco, reanudar, cotejo
+# desde el destino, aditivo-, no el USB, que ya tiene sus criterios 7 y 7b.
+
+$fRaiz = Join-Path $caja.Raiz 'labfrio'
+$fOrigen = Join-Path $fRaiz 'origen'
+$fEstado = Join-Path $fRaiz 'estado'
+$fDisco = Join-Path $fRaiz 'disco'
+New-Item -ItemType Directory -Path "$fOrigen\V1", "$fOrigen\V2", $fEstado, $fDisco -Force | Out-Null
+$fAzar = New-Object System.Random 20261120
+$fEscribir = { param($R, $B) $b = New-Object byte[] $B; $fAzar.NextBytes($b); [System.IO.File]::WriteAllBytes($R, $b) }
+& $fEscribir "$fOrigen\V1\d.vmdk" (3MB + 1000)
+& $fEscribir "$fOrigen\V2\o.vmdk" 2MB
+'cfg = 1' | Set-Content -LiteralPath "$fOrigen\V1\v.vmx" -Encoding ASCII
+$cfgF = [pscustomobject]@{
+    carpetaEstado = $fEstado
+    laboratorio   = [pscustomobject]@{
+        origen = $fOrigen; destino = ('\\localhost\C$' + $fRaiz.Substring(2) + '\nodo'); destinoEnLaPi = '/x'
+        umbralDeltaBytes = 1MB; bloqueBytes = 65536; verificador = 'local'; vmrun = ''
+        discoFrio = [pscustomobject]@{ habilitado = $true; destino = 'EQ\D\Lab' }
+    }
+}
+$fFicha = Get-FichaDelLaboratorio -Configuracion $cfgF
+$fDiscoObj = [pscustomobject]@{ Firma = 'AAAA1111'; Letra = 'Z'; Raiz = ($fDisco + '\'); Centinela = '' }
+$fFrio = Get-RaizFriaDelLaboratorio -Ficha $fFicha -Disco $fDiscoObj
+$fHash = { param($R) (Get-FileHash -LiteralPath $R -Algorithm SHA256).Hash }
+$fGrande = { @(Get-InventarioDelLaboratorio -Ficha $fFicha | Where-Object { $_.Relativa -eq 'V1\d.vmdk' })[0] }
+$fTocar = {
+    param([long[]]$Offsets, [int]$Min)
+    $fs = [System.IO.File]::Open("$fOrigen\V1\d.vmdk", 'Open', 'ReadWrite')
+    try { foreach ($o in $Offsets) { $fs.Position = $o; $fs.WriteByte([byte](($o + $Min) % 251)) } } finally { $fs.Dispose() }
+    (Get-Item -LiteralPath "$fOrigen\V1\d.vmdk").LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddMinutes($Min)
+}
+$enFrioV1 = Join-Path $fFrio.Raiz 'V1\d.vmdk'
+
+Test-Afirmacion -Nombre 'La ruta del disco frio es relativa a su raiz y el juego de manifiestos lleva la firma del disco' `
+    -Esperado ("$fDisco\EQ\D\Lab|bloques-frio-AAAA1111") -Obtenido ('{0}|{1}' -f $fFrio.Raiz, $fFrio.Juego)
+$lanzoAbs = $false
+try { [void](Get-FichaDelLaboratorio -Configuracion ([pscustomobject]@{ laboratorio = [pscustomobject]@{
+                    origen = 'D:\x'; destino = '\\localhost\C$\x'; destinoEnLaPi = '/x'; umbralDeltaBytes = 1; bloqueBytes = 65536
+                    discoFrio = [pscustomobject]@{ destino = 'F:\Lab' } } })) } catch { $lanzoAbs = $true }
+Test-Afirmacion -Nombre 'Un destino del disco frio con letra de unidad no se acepta: la letra cambia sola' -Esperado $true -Obtenido $lanzoAbs
+
+$hTodo = Get-HuellasPorBloque -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536
+$hDir = Get-HuellasDeIndices -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536
+Test-Afirmacion -Nombre 'La lectura directa del disco da las mismas huellas que la normal, bloque corto final incluido' `
+    -Esperado ($hTodo.Huellas -join ',') -Obtenido ((0..($hTodo.Huellas.Count - 1) | ForEach-Object { $hDir.Mapa[$_] }) -join ',')
+Test-Afirmacion -Nombre 'Y un subconjunto de bloques devuelve solo esos' `
+    -Esperado ('{0}|{1}' -f $hTodo.Huellas[2], $hTodo.Huellas[48]) -Obtenido ('{0}|{1}' -f (Get-HuellasDeIndices -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536 -Indices @(2, 48)).Mapa[2], (Get-HuellasDeIndices -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536 -Indices @(2, 48)).Mapa[48])
+
+$c1 = Invoke-ArchivoGrandeFrio -Ficha $fFicha -Archivo (& $fGrande) -Carpeta $fEstado -Frio $fFrio -Confirm:$false
+Test-Afirmacion -Nombre 'Primera vez: el disco grande va entero al disco frio y llega identico' `
+    -Esperado ('Enviado|{0}|True' -f (3MB + 1000)) -Obtenido ('{0}|{1}|{2}' -f $c1.Estado, $c1.Enviado, ((& $fHash "$fOrigen\V1\d.vmdk") -eq (& $fHash $enFrioV1)))
+Test-Afirmacion -Nombre 'El manifiesto del disco frio vive aparte del del nodo, bajo la firma del disco' `
+    -Esperado 'True|False' -Obtenido ('{0}|{1}' -f (Test-Path -LiteralPath "$fEstado\laboratorio\bloques-frio-AAAA1111\V1\d.vmdk.blk"), (Test-Path -LiteralPath "$fEstado\laboratorio\bloques\V1\d.vmdk.blk"))
+Test-Afirmacion -Nombre 'La huella de D: queda guardada una vez, para no releer 300 GB por cada destino' `
+    -Esperado $true -Obtenido (Test-Path -LiteralPath "$fEstado\laboratorio\origen\V1\d.vmdk.blk")
+
+$c2 = Invoke-ArchivoGrandeFrio -Ficha $fFicha -Archivo (& $fGrande) -Carpeta $fEstado -Frio $fFrio -Confirm:$false
+Test-Afirmacion -Nombre 'Segunda vez sin cambios: al dia y no se escribe nada' -Esperado 'AlDia|0' -Obtenido ('{0}|{1}' -f $c2.Estado, $c2.Enviado)
+
+& $fTocar @(70000, (3MB + 500)) 5
+$c3 = Invoke-ArchivoGrandeFrio -Ficha $fFicha -Archivo (& $fGrande) -Carpeta $fEstado -Frio $fFrio -Confirm:$false
+Test-Afirmacion -Nombre 'Dos bloques tocados en D: viajan solos (uno es el corto final) y el disco queda identico' `
+    -Esperado ('Enviado|{0}|True' -f (65536 + 1000 - 0)) -Obtenido ('{0}|{1}|{2}' -f $c3.Estado, $c3.Enviado, ((& $fHash "$fOrigen\V1\d.vmdk") -eq (& $fHash $enFrioV1)))
+
+# Reanudar una copia cortada: el archivo esta, el manifiesto no. Se lee EL DISCO, no se empieza de cero.
+Remove-Item -LiteralPath "$fEstado\laboratorio\bloques-frio-AAAA1111\V1\d.vmdk.blk" -Force
+$fs = [System.IO.File]::Open($enFrioV1, 'Open', 'ReadWrite'); try { $fs.Position = 131072 + 7; $fs.WriteByte(0xEE) } finally { $fs.Dispose() }
+(Get-Item -LiteralPath $enFrioV1).LastWriteTimeUtc = (Get-Item -LiteralPath "$fOrigen\V1\d.vmdk").LastWriteTimeUtc
+$c4 = Invoke-ArchivoGrandeFrio -Ficha $fFicha -Archivo (& $fGrande) -Carpeta $fEstado -Frio $fFrio -Confirm:$false
+Test-Afirmacion -Nombre 'Copia cortada: sin manifiesto lee el disco y reenvia SOLO el bloque danado' `
+    -Esperado 'Enviado|65536|True' -Obtenido ('{0}|{1}|{2}' -f $c4.Estado, $c4.Enviado, ((& $fHash "$fOrigen\V1\d.vmdk") -eq (& $fHash $enFrioV1)))
+Test-Afirmacion -Nombre 'Y el manifiesto vuelve a existir' `
+    -Esperado $true -Obtenido (Test-Path -LiteralPath "$fEstado\laboratorio\bloques-frio-AAAA1111\V1\d.vmdk.blk")
+
+# Otro disco con la misma ruta no hereda el estado del primero.
+$fOtro = [pscustomobject]@{ Firma = 'BBBB2222'; Letra = 'Y'; Raiz = ((Join-Path $fRaiz 'disco2') + '\'); Centinela = '' }
+$fFrio2 = Get-RaizFriaDelLaboratorio -Ficha $fFicha -Disco $fOtro
+$pOtro = Invoke-ArchivoGrandeFrio -Ficha $fFicha -Archivo (& $fGrande) -Carpeta $fEstado -Frio $fFrio2 -Simular -Confirm:$false
+Test-Afirmacion -Nombre 'Un disco distinto parte de cero: no hereda el manifiesto del anterior' `
+    -Esperado ('Enviaria|{0}' -f (3MB + 1000)) -Obtenido ('{0}|{1}' -f $pOtro.Estado, $pOtro.Enviado)
+
+# La pasada entera: aditiva, con lo pequeno por robocopy y sin borrar nunca.
+$fT = Invoke-GuardadoFrioDelLaboratorio -Configuracion $cfgF -Disco $fDiscoObj -Confirm:$false
+Test-Afirmacion -Nombre 'La pasada completa deja las VMs en el disco frio, lo pequeno incluido' `
+    -Esperado 'Protegido|True|True|True' -Obtenido ('{0}|{1}|{2}|{3}' -f $fT.Estado, $fT.Correcto,
+        (Test-Path -LiteralPath (Join-Path $fFrio.Raiz 'V1\v.vmx')), (Test-Path -LiteralPath (Join-Path $fFrio.Raiz 'V2\o.vmdk')))
+Remove-Item -LiteralPath "$fOrigen\V2" -Recurse -Force
+$fT2 = Invoke-GuardadoFrioDelLaboratorio -Configuracion $cfgF -Disco $fDiscoObj -Confirm:$false
+Test-Afirmacion -Nombre 'Aditivo: lo que se borro de D: SIGUE en el disco frio' `
+    -Esperado 'True|Protegido' -Obtenido ('{0}|{1}' -f (Test-Path -LiteralPath (Join-Path $fFrio.Raiz 'V2\o.vmdk')), $fT2.Estado)
+
+# Renombrar la VM en D: no la recopia: se reconoce y se mueve en el disco.
+Rename-Item -LiteralPath "$fOrigen\V1" -NewName 'V1_renombrada'
+$fRen = Invoke-GuardadoFrioDelLaboratorio -Configuracion $cfgF -Disco $fDiscoObj -Confirm:$false
+Test-Afirmacion -Nombre 'Renombrar una VM no la recopia: se mueve en el disco frio y no viaja ni un bloque' `
+    -Esperado 'True|False|0' -Obtenido ('{0}|{1}|{2}' -f (Test-Path -LiteralPath (Join-Path $fFrio.Raiz 'V1_renombrada\d.vmdk')),
+        (Test-Path -LiteralPath (Join-Path $fFrio.Raiz 'V1\d.vmdk')), (Get-SumaDe -Objetos @($fRen.Archivos | Where-Object { $_.Relativa -like '*.vmdk' -and $_.Relativa -like 'V1_*' }) -Propiedad 'Enviado'))
+
+# Con una VM encendida el laboratorio se DIFIERE y se dice: no es un fallo ni un verde.
+'x' | Set-Content -LiteralPath "$fOrigen\V1_renombrada\vm.vmss" -Encoding ASCII   # suspendida: siempre cuenta
+$fViva = Invoke-GuardadoFrioDelLaboratorio -Configuracion $cfgF -Disco $fDiscoObj -Confirm:$false
+Remove-Item -LiteralPath "$fOrigen\V1_renombrada\vm.vmss" -Force
+Test-Afirmacion -Nombre 'VMs encendidas: el laboratorio se difiere y se dice, sin escribir ni dar verde' `
+    -Esperado 'True|False|False' -Obtenido ('{0}|{1}|{2}' -f $fViva.Omitida, $fViva.Correcto, $fViva.Abortada)
+$vIncompleto = Get-VeredictoDelDisco -Completa $true -Copias @() -Laboratorio $fViva
+Test-Afirmacion -Nombre 'Y el veredicto del disco frio queda INCOMPLETA por el laboratorio, no Protegido' `
+    -Esperado 'Atencion' -Obtenido $vIncompleto.Estado
+$vFalla = Get-VeredictoDelDisco -Completa $true -Copias @() -Laboratorio ([pscustomobject]@{ Abortada = $true; Estado = 'Falla'; Omitida = $false; Correcto = $false; Motivo = 'x'; Archivos = @() })
+Test-Afirmacion -Nombre 'Un laboratorio que FALLA tumba el veredicto del disco frio' -Esperado 'Falla' -Obtenido $vFalla.Estado
+
 $env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas
 
 if (-not $Conservar) {
