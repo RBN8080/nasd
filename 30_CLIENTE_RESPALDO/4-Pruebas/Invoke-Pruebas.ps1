@@ -1509,7 +1509,7 @@ else {
         Test-Afirmacion -Nombre 'Y ensena la tabla entera: cada raiz y el FALLO en su celda' `
             -Esperado $true -Obtenido ($textoPanel -match 'C:\\dev' -and $textoPanel -match 'homeUsers' -and $textoPanel -match 'FALLO')
         Test-Afirmacion -Nombre 'Los corchetes salen tal cual: el texto se escapa antes del marcado' `
-            -Esperado $true -Obtenido ($textoPanel -match '\[corchetes\]' -and $textoPanel -match '\[1\] al nodo')
+            -Esperado $true -Obtenido ($textoPanel -match '\[corchetes\]' -and $textoPanel -match '\[A\] Respaldo al nodo SMB')
         Test-Afirmacion -Nombre 'Y la fila del laboratorio sale con los destinos (seccion 5.2)' `
             -Esperado $true -Obtenido ($textoPanel -match 'LAB VMWARE' -and $textoPanel -match 'guardando')
     }
@@ -2559,8 +2559,8 @@ Test-Afirmacion -Nombre 'El menu pide una "opcion", no una "tecla"' `
     -Esperado $true -Obtenido ($fuenteMenu -match "Read-Host\s+'\s*opcion'")
 Test-Afirmacion -Nombre 'Ninguna opcion se sigue llamando "simular": no decia simular QUE' `
     -Esperado $true -Obtenido ($fuenteMenu -notmatch "\[\d\]\s+simular")
-Test-Afirmacion -Nombre 'La vista previa va SANGRADA bajo la copia que previsualiza' `
-    -Esperado $true -Obtenido ($fuenteMenu -match "\[2\]\s\s+vista previa" -and $fuenteMenu -match "\[8\]\s\s+vista previa")
+Test-Afirmacion -Nombre 'El menu consolidado agrupa operaciones en [A]-[F] sin vistas previas sangradas sueltas' `
+    -Esperado $true -Obtenido ($fuenteMenu -match '\[A\] Respaldo al nodo SMB' -and $fuenteMenu -notmatch '\[2\]\s\s+vista previa')
 
 # ---------------------------------------------------------------------------
 #  LA AUDITORIA DEL 2026-09-14 -- siete defectos, y seis eran el mismo camino
@@ -3702,6 +3702,99 @@ Test-Afirmacion -Nombre 'Remove-ProgresoDelLaboratorio retira ambos archivos de 
         (Test-Path -LiteralPath (Join-Path $cajaProgOp 'PROGRESO.json')))
 Test-Afirmacion -Nombre 'Tras GuardarFrio del laboratorio, PROGRESO.json queda limpio' `
     -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $fEstado 'PROGRESO.json'))
+
+# ===========================================================================
+Write-Titulo 'Consola profesional: geometria responsiva, semantica estricta y menu [A]-[F]'
+# ===========================================================================
+
+$geoC = Get-GeometriaDeConsola -AnchoConsola 72
+$geoE = Get-GeometriaDeConsola -AnchoConsola 100
+$geoA = Get-GeometriaDeConsola -AnchoConsola 140
+Test-Afirmacion -Nombre 'Get-GeometriaDeConsola clasifica perfiles Compacto, Estandar y Amplio sin desbordes' `
+    -Esperado 'Compacto|1|Estandar|2|Amplio|2|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f
+        $geoC.Perfil, $geoC.ColumnasMenu, $geoE.Perfil, $geoE.ColumnasMenu, $geoA.Perfil, $geoA.ColumnasMenu,
+        (($geoC.ColRaiz + $geoC.ColPol + $geoC.ColDelta + $geoC.ColNodo + $geoC.ColDisco) -le $geoC.Ancho -and
+         ($geoE.ColRaiz + $geoE.ColPol + $geoE.ColDelta + $geoE.ColNodo + $geoE.ColDisco) -le $geoE.Ancho -and
+         ($geoA.ColRaiz + $geoA.ColPol + $geoA.ColDelta + $geoA.ColNodo + $geoA.ColDisco) -le $geoA.Ancho))
+
+Test-Afirmacion -Nombre 'Get-EtiquetaDeEstado y Format-BarraDeProgreso producen formato estandar determinista' `
+    -Esperado 'NOMINAL|CRITICO|[#####.....]' -Obtenido ('{0}|{1}|{2}' -f
+        (Get-EtiquetaDeEstado -Estado 'Protegido'),
+        (Get-EtiquetaDeEstado -Estado 'Falla'),
+        (Format-BarraDeProgreso -Porcentaje 50 -Ancho 10 -Unicode $false))
+
+# Semantica estricta de PROTECCION (Verde solo con 100% vivo e integro).
+$cList = @([pscustomobject]@{ ruta = 'C:\a\_c.txt'; huella = '0' })
+$protOk = Resolve-EstadoDeProteccion -CentinelasConfig $cList `
+    -CentinelasVivo ([pscustomobject]@{ Revisados = 1; Fallos = @(); Renombrados = @(); Desactivados = @() }) `
+    -Estado @{ cambio = '0.2' } -ModeloTabla @([pscustomobject]@{ SinCentinela = $false })
+$protAmbar = Resolve-EstadoDeProteccion -CentinelasConfig $cList `
+    -CentinelasVivo ([pscustomobject]@{ Revisados = 1; Fallos = @(); Renombrados = @(); Desactivados = @() }) `
+    -Estado @{} -ModeloTabla @([pscustomobject]@{ SinCentinela = $true })
+$protRojo = Resolve-EstadoDeProteccion -CentinelasConfig $cList `
+    -CentinelasVivo ([pscustomobject]@{ Revisados = 1; Fallos = @(@{ Ruta = 'x' }); Renombrados = @(); Desactivados = @() }) `
+    -Estado @{} -ModeloTabla @()
+Test-Afirmacion -Nombre 'Resolve-EstadoDeProteccion pinta Verde solo con 100% integro, Ambar sin cobertura y Rojo ante fallo' `
+    -Esperado 'Verde|Ambar|Rojo|True' -Obtenido ('{0}|{1}|{2}|{3}' -f $protOk.Tono, $protAmbar.Tono, $protRojo.Tono, $protRojo.Regla)
+
+# Semantica estricta de INTEGRIDAD (Verde solo con 4 controles vigentes, Ambar sin ensayo DR, Rojo si falla SHA-256).
+$hoyIsoInt = (Get-Date).AddHours(-2).ToString('s')
+$intVerde = Resolve-EstadoDeIntegridad -Estado @{
+    huellas_estado = 'OK'; huellas_momento = $hoyIsoInt; huellas_detalle = '10 leidos, 0 distintos'
+    muestreo_estado = 'OK'; muestreo_momento = $hoyIsoInt
+    semilla_estado = 'OK'; semilla_momento = $hoyIsoInt
+    restauracion_probada = $hoyIsoInt
+}
+$intAmbarDr = Resolve-EstadoDeIntegridad -Estado @{
+    huellas_estado = 'OK'; huellas_momento = $hoyIsoInt
+    muestreo_estado = 'OK'; muestreo_momento = $hoyIsoInt
+    semilla_estado = 'OK'; semilla_momento = $hoyIsoInt
+}
+$intRojo = Resolve-EstadoDeIntegridad -Estado @{
+    huellas_estado = 'Falla'; huellas_momento = $hoyIsoInt
+    muestreo_estado = 'OK'; muestreo_momento = $hoyIsoInt
+    semilla_estado = 'OK'; semilla_momento = $hoyIsoInt
+}
+Test-Afirmacion -Nombre 'Resolve-EstadoDeIntegridad nunca miente: Verde solo completo, Ambar si falta ensayo DR, Rojo ante fallo' `
+    -Esperado 'Verde|Ambar|Rojo|True' -Obtenido ('{0}|{1}|{2}|{3}' -f $intVerde.Tono, $intAmbarDr.Tono, $intRojo.Tono, $intRojo.Regla)
+
+# Semantica de SERVICIO y conciliacion del veredicto global.
+$srvOk = Resolve-EstadoDeServicio -VentanasEsperadas 3 `
+    -TareasTexto @('motor 3 ventanas Ready', 'icono Ready') `
+    -MotorIntacto ([pscustomobject]@{ PiezasTotal = 14; PiezasFallan = @() })
+$srvAmbar = Resolve-EstadoDeServicio -VentanasEsperadas 3 `
+    -TareasTexto @('motor 2 ventanas Ready', 'icono Ready') `
+    -MotorIntacto ([pscustomobject]@{ PiezasTotal = 14; PiezasFallan = @() })
+$srvRojo = Resolve-EstadoDeServicio -VentanasEsperadas 3 `
+    -TareasTexto @('motor DESHABILITADO', 'icono Ready') `
+    -MotorIntacto ([pscustomobject]@{ PiezasTotal = 14; PiezasFallan = @() })
+Test-Afirmacion -Nombre 'Resolve-EstadoDeServicio detecta estado sano, desajuste de ventanas y motor deshabilitado' `
+    -Esperado 'Verde|Ambar|Rojo' -Obtenido ('{0}|{1}|{2}' -f $srvOk.Tono, $srvAmbar.Tono, $srvRojo.Tono)
+
+$verEscalado = Resolve-VeredictoDeConsola -EstadoIndicador 'Protegido' -DetalleIndicador 'ok' `
+    -Proteccion $protRojo -Integridad $intVerde -Servicio $srvOk
+Test-Afirmacion -Nombre 'Resolve-VeredictoDeConsola escala a Falla si proteccion en vivo falla aunque ESTADO.txt diga Protegido' `
+    -Esperado 'Falla' -Obtenido $verEscalado.Estado
+
+# Racionalizacion ISA-18.2 de alertas: Critico primero y disco frio reciente no genera ruido.
+$alPrio = @(Get-AlertasPriorizadas -Estado @{ disco_momento = $hoyIsoInt; huerfanos = '2' } -Disco $null `
+        -Filas @() -Laboratorio ([pscustomobject]@{ Vms = 5; NoAlDia = 1 }) `
+        -CentinelasVivo ([pscustomobject]@{ Revisados = 1; Fallos = @(@{ Ruta = 'x' }); Renombrados = @(); Desactivados = @() }) `
+        -Servicio $srvOk -Integridad $intAmbarDr)
+Test-Afirmacion -Nombre 'Get-AlertasPriorizadas ordena Critico primero y omite aviso de disco frio si la copia es reciente' `
+    -Esperado 'Critico|False' -Obtenido ('{0}|{1}' -f $alPrio[0].Nivel, ([bool](($alPrio | ForEach-Object { $_.Mensaje }) -match 'NAS-COLD-01')))
+
+# Menu consolidado [A]-[F]: ordenado, simetrico y sin sangrias manuales ni celdas vacias.
+$menuNuevo = Get-MenuDelTablero
+$teclasMenu = (@($menuNuevo.Items | ForEach-Object { $_.Tecla }) -join '')
+$celdasMenu = @($menuNuevo.Filas | ForEach-Object { $_ })
+$hayVaciaMenu = @($celdasMenu | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0
+$haySangriaRota = @($celdasMenu | Where-Object { $_ -match '\]\s{2,}' }).Count -gt 0
+$mA = Get-MetaDeOpcion -Opcion 'A'
+$mF = Get-MetaDeOpcion -Opcion 'F'
+Test-Afirmacion -Nombre 'Menu consolidado [A]-[F] es secuencial, simetrico, sin celdas vacias ni sangrias rotas' `
+    -Esperado 'ABCDEF|False|False|True|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
+        $teclasMenu, $hayVaciaMenu, $haySangriaRota, $mA.PropiaVista, $mF.PropiaVista)
 
 $env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas
 

@@ -102,10 +102,9 @@ function Show-VentanaRica {
         .SYNOPSIS
             La ventana de estado y el menu, con marco, tabla y color por estado.
         .DESCRIPTION
-            La maqueta de Show-Ventana -cabecera con veredicto, los dos destinos,
-            la tabla por raiz, los sumarios y el menu- con lo que Spectre anade:
-            el marco toma el color del veredicto, la tabla lleva bordes y todo
-            se ajusta al ancho de la ventana.
+            Se adapta dinamicamente al ancho visible de la terminal usando
+            Get-GeometriaDeConsola (Compacto / Estandar / Amplio). Todos los
+            paneles, tablas, reglas y rejillas comparten el mismo ancho exacto.
         .PARAMETER Datos
             Lo que devuelve Get-DatosDeVentana.
     #>
@@ -117,40 +116,55 @@ function Show-VentanaRica {
 
     $c = $script:ColoresPanel
 
-    # EL TONO DEL VEREDICTO LO DECIDE Get-ColorDeEstado (estilo.ps1). Se le pasa
-    # una "paleta" de nombres, asi la regla estado -> color sigue en un sitio.
+    # EL TONO DEL VEREDICTO LO DECIDE Get-ColorDeEstado (estilo.ps1).
     $tono = Get-ColorDeEstado -Estado $Datos.Estado -Paleta @{ Verde = 'Verde'; Ambar = 'Ambar'; Rojo = 'Rojo'; Gris = 'Gris' }
     $simbolo = (Get-Simbolo -Estado $Datos.Estado -Unicode $true).Trim()
+    $etiquetaEstado = Get-EtiquetaDeEstado -Estado $Datos.Estado
 
-    # TODOS LOS BLOQUES CON EL MISMO ANCHO, para que los marcos se alineen, y
-    # con SUELO DE 92: por debajo, Spectre reparte el sitio de la tabla y parte
-    # en tres renglones la columna de la clase (medido pintandola a 80). El
-    # techo es la consola que mide Spectre: un ancho mayor lo rechaza y lanza.
     $consola = [Spectre.Console.AnsiConsole]::Profile.Width
-    $ancho = [Math]::Min($consola, [Math]::Max(92, [Math]::Min(110, $consola - 2)))
+    $geo = Get-GeometriaDeConsola -AnchoConsola $consola
+    $ancho = [Math]::Min($consola, $geo.AnchoPanel)
 
     # --- Cabecera: el marco entero lleva el color del veredicto --------------
-    $cuerpo = '{0} {1}' -f (Format-Marcado -Texto $simbolo -Tono $tono),
-        (Format-Marcado -Texto $Datos.Estado.ToUpperInvariant() -Tono $tono -Negrita)
+    $horaAct = if ($Datos.PSObject.Properties.Name -contains 'Actualizado' -and $Datos.Actualizado) {
+        '' + $Datos.Actualizado
+    }
+    else { (Get-Date).ToString('HH:mm:ss') }
+    $cuerpo = '{0} {1}   {2}' -f (Format-Marcado -Texto $simbolo -Tono $tono),
+        (Format-Marcado -Texto $etiquetaEstado -Tono $tono -Negrita),
+        (Format-Marcado -Texto ('Actualizado ' + $horaAct) -Tono 'Tenue')
     if ($Datos.Detalle) { $cuerpo += "`n" + (Format-Marcado -Texto $Datos.Detalle -Tono 'Tenue') }
-    $cabecera = Format-Marcado -Texto (' RESPALDO {0} ' -f $Datos.Equipo) -Tono 'Titulo' -Negrita
+    $sepMedio = [string][char] 0x00B7
+    $cabecera = Format-Marcado -Texto (' CONSOLA DE RESPALDO {0} {1} ' -f $sepMedio, $Datos.Equipo) -Tono 'Titulo' -Negrita
     Format-SpectrePanel -Data $cuerpo -Header $cabecera -Border 'Rounded' -Color $c[$tono] -Width $ancho |
         Out-SpectreHost
 
-    # --- Los destinos: nodo, disco frio y el laboratorio (seccion 5.2) -------
+    # --- Los destinos: nodo SMB, disco frio y laboratorio VM -----------------
     $destinos = @($Datos.Nodo, $Datos.Disco)
-    if ($Datos.PSObject.Properties.Name -contains 'Laboratorio') { $destinos += $Datos.Laboratorio }
+    if ($Datos.PSObject.Properties.Name -contains 'Laboratorio' -and $Datos.Laboratorio) { $destinos += $Datos.Laboratorio }
     $filasDestino = foreach ($destino in $destinos) {
         New-SpectreGridRow -Data @(
-            (Format-Marcado -Texto $destino.Nombre -Tono 'Etiqueta'),
+            (Format-Marcado -Texto $destino.Nombre -Tono 'Etiqueta' -Negrita),
             (Format-Marcado -Texto $destino.Situacion -Tono $destino.TonoSituacion),
             (Format-Marcado -Texto $destino.Libres -Tono 'Tenue'),
-            (Format-Marcado -Texto ('ult. copia {0}' -f $destino.UltimaCopia) -Tono $destino.TonoCopia))
+            (Format-Marcado -Texto ('ult. sync: {0}' -f $destino.UltimaCopia) -Tono $destino.TonoCopia))
     }
-    Format-SpectreGrid -Data @($filasDestino) -Padding 3 | Out-SpectreHost
+    Format-SpectreGrid -Data @($filasDestino) -Padding 2 -Width $ancho | Out-SpectreHost
+
+    # --- Barra viva de operacion en curso (PROGRESO.json) --------------------
+    if ($Datos.PSObject.Properties.Name -contains 'ProgresoActivo' -and $Datos.ProgresoActivo -and $Datos.ProgresoActivo.Activo) {
+        $prog = $Datos.ProgresoActivo
+        $barra = Format-BarraDeProgreso -Porcentaje $prog.Porcentaje -Ancho 16 -Unicode $true
+        $resProg = Format-ProgresoDeOperacion -Progreso $prog
+        $lineaProg = '{0} {1}  {2}' -f
+            (Format-Marcado -Texto 'EN CURSO' -Tono 'Verde' -Negrita),
+            (Format-Marcado -Texto $barra -Tono 'Verde'),
+            (Format-Marcado -Texto $resProg -Tono 'Valor')
+        Write-SpectreHost $lineaProg
+    }
     Write-SpectreHost ' '
 
-    # --- La tabla por raiz --------------------------------------------------
+    # --- La tabla por volumen / raiz -----------------------------------------
     $argsTabla = @{ Filas = @($Datos.Filas); HorasParaAmbar = $Datos.HorasVerde }
     if ($Datos.PSObject.Properties.Name -contains 'RaicesActuales' -and @($Datos.RaicesActuales).Count -gt 0) {
         $argsTabla['RaicesActuales'] = @($Datos.RaicesActuales)
@@ -160,15 +174,15 @@ function Show-VentanaRica {
     }
     $tabla = @(Get-FilasDeTabla @argsTabla)
     if ($tabla.Count -eq 0) {
-        Write-SpectreHost (Format-Marcado -Texto 'Todavia no hay tabla: la escribe el motor al copiar. Corre [1].' -Tono 'Tenue')
+        Write-SpectreHost (Format-Marcado -Texto 'Sin registro de volumenes todavia. Ejecute [A] Respaldo al nodo SMB.' -Tono 'Tenue')
     }
     else {
         $objetos = foreach ($m in $tabla) {
             [pscustomobject]@{
-                'RAIZ'       = (Format-Marcado -Texto $m.Etiqueta -Tono 'Valor')
-                'CL'         = (Format-Marcado -Texto $m.Clase -Tono 'Tenue')
-                'COPIADO'    = (Format-Marcado -Texto ('{0} arch.' -f $m.Movidos) -Tono 'Tenue')
-                'NODO'       = (Format-Marcado -Texto $m.Nodo.Texto -Tono $m.Nodo.Tono)
+                'VOLUMEN'    = (Format-Marcado -Texto (Limit-Texto -Texto $m.Etiqueta -Maximo $geo.ColRaiz) -Tono 'Valor')
+                'POL'        = (Format-Marcado -Texto $m.Clase -Tono 'Tenue')
+                'DELTA'      = (Format-Marcado -Texto ('{0} arch.' -f $m.Movidos) -Tono 'Tenue')
+                'NODO SMB'   = (Format-Marcado -Texto $m.Nodo.Texto -Tono $m.Nodo.Tono)
                 'DISCO FRIO' = (Format-Marcado -Texto $m.Disco.Texto -Tono $m.Disco.Tono)
             }
         }
@@ -177,43 +191,90 @@ function Show-VentanaRica {
     }
     Write-SpectreHost ' '
 
-    # --- Los sumarios -------------------------------------------------------
-    # PENDIENTE solo aparece si hay algo, y es la unica que lleva la regla
-    # lateral del aviso (o COMPROBADO si fallo una huella real).
-    $tonoComprobadoPanel = if ($Datos.PSObject.Properties.Name -contains 'TonoComprobado' -and $c.ContainsKey($Datos.TonoComprobado)) {
-        $Datos.TonoComprobado
-    }
-    else { 'Valor' }
-    $separador = ' {0} ' -f (Format-Marcado -Texto ([string][char] 0x00B7) -Tono 'Tenue')
+    # --- Panel de control (semantica estricta, nunca miente) -----------------
+    $tieneNuevos = ($Datos.PSObject.Properties.Name -contains 'Proteccion') -and ($null -ne $Datos.Proteccion)
+    $separador = ' {0} ' -f (Format-Marcado -Texto $sepMedio -Tono 'Tenue')
     $filasSumario = New-Object System.Collections.Generic.List[object]
-    foreach ($s in @(
-            @{ Etiqueta = 'SEGURIDAD';   Partes = $Datos.Seguridad;   Tono = 'Valor';               Regla = $false },
-            @{ Etiqueta = 'COMPROBADO';  Partes = $Datos.Comprobado;  Tono = $tonoComprobadoPanel;  Regla = ($tonoComprobadoPanel -eq 'Rojo') },
-            @{ Etiqueta = 'AUTOMATISMO'; Partes = $Datos.Automatismo; Tono = 'Valor';               Regla = $false },
-            @{ Etiqueta = 'PENDIENTE';   Partes = $Datos.Pendiente;   Tono = 'Ambar';               Regla = $true })) {
-        $utiles = @($s.Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        if ($utiles.Count -eq 0) { continue }
-        $rotulo = Format-Marcado -Texto $s.Etiqueta -Tono 'Etiqueta'
-        if ($s.Regla) {
-            $rotulo = Format-Marcado -Texto (([string][char] 0x258C) + ' ' + $s.Etiqueta) -Tono $s.Tono
+
+    if ($tieneNuevos) {
+        $bloques = @(
+            @{ Etiqueta = 'PROTECCION'; Partes = @($Datos.Proteccion.Partes); Tono = $Datos.Proteccion.Tono; Regla = [bool]$Datos.Proteccion.Regla },
+            @{ Etiqueta = 'INTEGRIDAD'; Partes = @($Datos.Integridad.Partes); Tono = $Datos.Integridad.Tono; Regla = [bool]$Datos.Integridad.Regla },
+            @{ Etiqueta = 'SERVICIO';   Partes = @($Datos.Servicio.Partes);   Tono = $Datos.Servicio.Tono;   Regla = [bool]$Datos.Servicio.Regla }
+        )
+        foreach ($s in $bloques) {
+            $utiles = @($s.Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($utiles.Count -eq 0) { continue }
+            $tonoUso = if ($c.ContainsKey($s.Tono)) { $s.Tono } else { 'Valor' }
+            $rotulo = Format-Marcado -Texto $s.Etiqueta -Tono 'Etiqueta'
+            if ($s.Regla) {
+                $rotulo = Format-Marcado -Texto (([string][char] 0x258C) + ' ' + $s.Etiqueta) -Tono $tonoUso -Negrita
+            }
+            $texto = ($utiles | ForEach-Object { Format-Marcado -Texto $_ -Tono $tonoUso }) -join $separador
+            $filasSumario.Add((New-SpectreGridRow -Data @($rotulo, $texto)))
         }
-        $texto = ($utiles | ForEach-Object { Format-Marcado -Texto $_ -Tono $s.Tono }) -join $separador
-        $filasSumario.Add((New-SpectreGridRow -Data @($rotulo, $texto)))
+
+        if ($Datos.PSObject.Properties.Name -contains 'Alertas' -and @($Datos.Alertas).Count -gt 0) {
+            $alertasVis = @($Datos.Alertas | Select-Object -First 3)
+            $hayCritica = @($alertasVis | Where-Object { $_.Nivel -eq 'Critico' }).Count -gt 0
+            $tonoAlerta = if ($hayCritica) { 'Rojo' } else { 'Ambar' }
+            $partesAl = New-Object System.Collections.Generic.List[string]
+            foreach ($al in $alertasVis) {
+                $tAl = if ($al.Nivel -eq 'Critico') { 'Rojo' } else { 'Ambar' }
+                $pref = if ($al.Opcion) { '[{0}] ' -f $al.Opcion } else { '' }
+                [void]$partesAl.Add((Format-Marcado -Texto ($pref + $al.Mensaje) -Tono $tAl))
+            }
+            $extraAl = @($Datos.Alertas).Count - $alertasVis.Count
+            if ($extraAl -gt 0) {
+                [void]$partesAl.Add((Format-Marcado -Texto ('+{0} mas en [F] Diagnostico' -f $extraAl) -Tono 'Tenue'))
+            }
+            $rotAl = Format-Marcado -Texto (([string][char] 0x258C) + ' ALERTAS') -Tono $tonoAlerta -Negrita
+            $filasSumario.Add((New-SpectreGridRow -Data @($rotAl, ($partesAl.ToArray() -join $separador))))
+        }
+    }
+    else {
+        # Respaldo de compatibilidad con objetos de prueba legados.
+        $tonoComprobadoPanel = if ($Datos.PSObject.Properties.Name -contains 'TonoComprobado' -and $c.ContainsKey($Datos.TonoComprobado)) {
+            $Datos.TonoComprobado
+        }
+        else { 'Valor' }
+        foreach ($s in @(
+                @{ Etiqueta = 'PROTECCION'; Partes = $Datos.Seguridad;   Tono = 'Valor';               Regla = $false },
+                @{ Etiqueta = 'INTEGRIDAD'; Partes = $Datos.Comprobado;  Tono = $tonoComprobadoPanel;  Regla = ($tonoComprobadoPanel -eq 'Rojo') },
+                @{ Etiqueta = 'SERVICIO';   Partes = $Datos.Automatismo; Tono = 'Valor';               Regla = $false },
+                @{ Etiqueta = 'ALERTAS';    Partes = $Datos.Pendiente;   Tono = 'Ambar';               Regla = $true })) {
+            $utiles = @($s.Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($utiles.Count -eq 0) { continue }
+            $rotulo = Format-Marcado -Texto $s.Etiqueta -Tono 'Etiqueta'
+            if ($s.Regla) {
+                $rotulo = Format-Marcado -Texto (([string][char] 0x258C) + ' ' + $s.Etiqueta) -Tono $s.Tono
+            }
+            $texto = ($utiles | ForEach-Object { Format-Marcado -Texto $_ -Tono $s.Tono }) -join $separador
+            $filasSumario.Add((New-SpectreGridRow -Data @($rotulo, $texto)))
+        }
     }
     if ($filasSumario.Count -gt 0) {
         Format-SpectreGrid -Data $filasSumario.ToArray() -Padding 2 -Width $ancho | Out-SpectreHost
     }
 
-    # --- Menu ----------------------------------------------------------------
+    # --- Menu consolidado [A]-[F] --------------------------------------------
     $menu = Get-MenuDelTablero
     Write-SpectreHost ' '
     Write-SpectreRule -LineColor $c.Marco -Width $ancho
     $filasMenu = New-Object System.Collections.Generic.List[object]
-    $filasMenu.Add((New-SpectreGridRow -Data @($menu.Columnas | ForEach-Object { Format-Marcado -Texto $_ -Tono 'Titulo' -Negrita })))
-    foreach ($fila in $menu.Filas) {
-        $filasMenu.Add((New-SpectreGridRow -Data @($fila | ForEach-Object { Format-Marcado -Texto $_ -Tono 'Valor' })))
+    if ($geo.ColumnasMenu -eq 1) {
+        $filasMenu.Add((New-SpectreGridRow -Data @((Format-Marcado -Texto 'OPERACIONES Y SISTEMA' -Tono 'Titulo' -Negrita))))
+        foreach ($item in $menu.Items) {
+            $filasMenu.Add((New-SpectreGridRow -Data @((Format-Marcado -Texto ('[{0}] {1}' -f $item.Tecla, $item.Etiqueta) -Tono 'Valor'))))
+        }
     }
-    Format-SpectreGrid -Data $filasMenu.ToArray() -Padding 4 | Out-SpectreHost
+    else {
+        $filasMenu.Add((New-SpectreGridRow -Data @($menu.Columnas | ForEach-Object { Format-Marcado -Texto $_ -Tono 'Titulo' -Negrita })))
+        foreach ($fila in $menu.Filas) {
+            $filasMenu.Add((New-SpectreGridRow -Data @($fila | ForEach-Object { Format-Marcado -Texto $_ -Tono 'Valor' })))
+        }
+    }
+    Format-SpectreGrid -Data $filasMenu.ToArray() -Padding 2 -Width $ancho | Out-SpectreHost
     Write-SpectreHost (Format-Marcado -Texto $menu.Nota -Tono 'Tenue')
     Write-SpectreHost ' '
 }

@@ -240,20 +240,15 @@ function Write-LineaDeSumario {
         # -.aviso{border-left:2px solid}- y .mal, .bien y .ojo solo cambian ese
         # borde. Aqui es un bloque medio, y la lleva la unica linea que es un
         # aviso de verdad, no todas: una marca que esta siempre no marca nada.
-        [switch] $Avisar
+        [switch] $Avisar,
+
+        [ValidateRange(0, 500)][int] $Ancho = 0,
+        [ValidateRange(8, 30)][int] $AnchoEtiqueta = 14
     )
     $utiles = @($Partes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($utiles.Count -eq 0) { return }
     if ([string]::IsNullOrEmpty($Color)) { $Color = $Paleta.Valor }
-    # EL ANCHO VISIBLE SE LLEVA APARTE, Y ESTA LINEA EXPLICA POR QUE. Aqui se
-    # calculaba la sangria como 12 - $Marca.Length, y $Marca lleva los codigos
-    # de color DENTRO: con color, .Length vale 23 en vez de 1, la resta daba
-    # -11 y la ventana se tumbaba entera al abrirla. Con la salida redirigida
-    # no hay color, $Marca mide 1, y el fallo no aparece -- que es justo por lo
-    # que se me paso: lo comprobe donde no podia ocurrir.
-    #
-    # Es el mismo error contra el que avisa Format-Celda dos funciones mas
-    # abajo. Contar una cadena ya pintada da un ancho falso, siempre.
+    if ($Ancho -le 0) { $Ancho = $script:AnchoTablero }
     $Marca = ''
     $anchoMarca = 0
     if ($Avisar) {
@@ -261,15 +256,20 @@ function Write-LineaDeSumario {
         $anchoMarca = $script:Regla.Length
     }
 
-    # SE PARTE EN VARIAS LINEAS, NO SE RECORTA. Recortar con puntos suspensivos
-    # esconde justo el ultimo aviso de la lista, y en la linea PENDIENTE el
-    # ultimo era "el testigo externo no esta configurado": el aviso mas
-    # importante de la pantalla desaparecia por caber mal.
-    $sitio = $script:AnchoTablero - 12
-    $separador = '   -   '
+    # SE PARTE EN VARIAS LINEAS, NO SE RECORTA. Incluso una sola parte larga se
+    # envuelve por palabras para no perder avisos criticos en ventanas estrechas.
+    $sitio = [Math]::Max(20, $Ancho - $AnchoEtiqueta)
+    $separador = '  |  '
     $lineas = New-Object System.Collections.Generic.List[string]
     $actual = ''
     foreach ($parte in $utiles) {
+        if ($parte.Length -gt $sitio) {
+            if ($actual) { $lineas.Add($actual); $actual = '' }
+            foreach ($trozo in @(Split-TextoEnLineas -Texto $parte -Ancho $sitio)) {
+                $lineas.Add($trozo)
+            }
+            continue
+        }
         $candidata = if ($actual) { $actual + $separador + $parte } else { $parte }
         if ($candidata.Length -le $sitio -or -not $actual) { $actual = $candidata; continue }
         $lineas.Add($actual)
@@ -282,7 +282,7 @@ function Write-LineaDeSumario {
         $rotulo = if ($primera) { $Etiqueta } else { '' }
         Write-Linea ('  {0}{1}{2}{3}{4}' -f `
                 $Marca, `
-            (Format-Celda -Texto $rotulo -Ancho (12 - $anchoMarca) -Paleta $Paleta -Color $Paleta.Etiqueta), `
+            (Format-Celda -Texto $rotulo -Ancho ($AnchoEtiqueta - $anchoMarca) -Paleta $Paleta -Color $Paleta.Etiqueta), `
                 $Color, (Limit-Texto -Texto $linea -Maximo $sitio), $Paleta.Fin)
         $primera = $false
     }
@@ -338,25 +338,27 @@ function Write-CuerpoDeTabla {
         [Parameter(Mandatory)][hashtable] $Paleta,
         [ValidateRange(1, 720)][double] $HorasParaAmbar = 12,
         [AllowEmptyCollection()][psobject[]] $RaicesActuales = @(),
-        [AllowEmptyCollection()][psobject[]] $Centinelas = @()
+        [AllowEmptyCollection()][psobject[]] $Centinelas = @(),
+        [AllowNull()][psobject] $Geometria = $null
     )
 
+    $geo = if ($Geometria) { $Geometria } else { Get-GeometriaDeConsola }
     $modelo = @(Get-FilasDeTabla -Filas $Filas -HorasParaAmbar $HorasParaAmbar `
             -RaicesActuales $RaicesActuales -Centinelas $Centinelas)
     if ($modelo.Count -eq 0) {
-        Write-Linea ('  {0}Todavia no hay tabla: la escribe el motor al copiar. Corre [1].{2}{1}' -f `
-                $Paleta.Tenue, $Paleta.Fin, '')
+        Write-Linea ('  {0}Sin registro de volumenes todavia. Ejecute [A] Respaldo al nodo SMB.{1}' -f `
+                $Paleta.Tenue, $Paleta.Fin)
         return
     }
 
     foreach ($m in $modelo) {
         Write-Linea ('  {0}{1}{2}{3}{4}' -f `
-            (Format-Celda -Texto $m.Etiqueta -Ancho 30 -Paleta $Paleta -Color $Paleta.Valor), `
-            (Format-Celda -Texto $m.Clase -Ancho 4 -Paleta $Paleta -Color $Paleta.Tenue), `
-            (Format-Celda -Texto ('{0} arch. ' -f $m.Movidos) -Ancho 11 -Paleta $Paleta -Derecha `
+            (Format-Celda -Texto $m.Etiqueta -Ancho $geo.ColRaiz -Paleta $Paleta -Color $Paleta.Valor), `
+            (Format-Celda -Texto $m.Clase -Ancho $geo.ColPol -Paleta $Paleta -Color $Paleta.Tenue), `
+            (Format-Celda -Texto ('{0} arch. ' -f $m.Movidos) -Ancho $geo.ColDelta -Paleta $Paleta -Derecha `
                     -Color $Paleta.Tenue), `
-            (Format-Celda -Texto $m.Nodo.Texto -Ancho 13 -Paleta $Paleta -Color $Paleta[$m.Nodo.Tono]), `
-            (Format-Celda -Texto $m.Disco.Texto -Ancho 13 -Paleta $Paleta -Color $Paleta[$m.Disco.Tono]))
+            (Format-Celda -Texto $m.Nodo.Texto -Ancho $geo.ColNodo -Paleta $Paleta -Color $Paleta[$m.Nodo.Tono]), `
+            (Format-Celda -Texto $m.Disco.Texto -Ancho $geo.ColDisco -Paleta $Paleta -Color $Paleta[$m.Disco.Tono]))
     }
 }
 
@@ -673,109 +675,503 @@ function Get-ResumenPendiente {
     return $partes.ToArray()
 }
 
+function Resolve-EstadoDeProteccion {
+    <#
+        .SYNOPSIS
+            Evalua el bloque PROTECCION con semantica estricta (nunca miente).
+        .DESCRIPTION
+            Verde SOLO si la comprobacion en vivo de centinelas corrio, 100%
+            estan integros, 0 renombres pendientes, 0 desactivados y 0 volumenes
+            activos sin cobertura. Ambar si falta cobertura o dato; Rojo si falla
+            algun centinela. Funcion pura.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [AllowEmptyCollection()][psobject[]] $CentinelasConfig = @(),
+        [AllowNull()][psobject] $CentinelasVivo = $null,
+        [AllowNull()][hashtable] $Estado = @{},
+        [AllowEmptyCollection()][psobject[]] $ModeloTabla = @()
+    )
+
+    $partes = New-Object System.Collections.Generic.List[string]
+    $cambio = if ($Estado -and $Estado.ContainsKey('cambio') -and -not [string]::IsNullOrWhiteSpace('' + $Estado['cambio'])) {
+        '' + $Estado['cambio']
+    }
+    else { '' }
+
+    if (@($CentinelasConfig).Count -eq 0) {
+        [void]$partes.Add('centinelas no configurados (0)')
+        if ($cambio) { [void]$partes.Add(('delta ultima ejecucion: {0} %' -f $cambio)) }
+        return [pscustomobject]@{ Tono = 'Ambar'; Regla = $true; Partes = $partes.ToArray(); Motivo = 'sin centinelas antirransomware configurados' }
+    }
+
+    $sinCent = @($ModeloTabla | Where-Object { ($_.PSObject.Properties.Name -contains 'SinCentinela') -and $_.SinCentinela }).Count
+
+    if (-not $CentinelasVivo) {
+        [void]$partes.Add(('centinelas {0} declarados (sin verificar en vivo)' -f @($CentinelasConfig).Count))
+        if ($cambio) { [void]$partes.Add(('delta ultima ejecucion: {0} %' -f $cambio)) }
+        return [pscustomobject]@{ Tono = 'Ambar'; Regla = $false; Partes = $partes.ToArray(); Motivo = 'centinelas sin verificar en vivo' }
+    }
+
+    $fallos = @($CentinelasVivo.Fallos).Count
+    $ren = @($CentinelasVivo.Renombrados).Count
+    $des = @($CentinelasVivo.Desactivados).Count
+    $rev = [int]$CentinelasVivo.Revisados
+    $ok = $rev - $fallos
+
+    if ($fallos -gt 0) {
+        [void]$partes.Add(('centinelas {0}/{1} ({2} con fallo)' -f $ok, $rev, $fallos))
+        if ($cambio) { [void]$partes.Add(('delta ultima ejecucion: {0} %' -f $cambio)) }
+        return [pscustomobject]@{ Tono = 'Rojo'; Regla = $true; Partes = $partes.ToArray(); Motivo = ('{0} centinela(s) alterado(s) o ausente(s)' -f $fallos) }
+    }
+
+    if ($ren -gt 0 -or $des -gt 0 -or $sinCent -gt 0) {
+        [void]$partes.Add(('centinelas {0}/{1}' -f $ok, $rev))
+        if ($ren -gt 0) { [void]$partes.Add(('{0} renombre(s) por migrar' -f $ren)) }
+        if ($des -gt 0) { [void]$partes.Add(('{0} volumen(es) desactivado(s)' -f $des)) }
+        if ($sinCent -gt 0) { [void]$partes.Add(('{0} volumen(es) sin centinela' -f $sinCent)) }
+        if ($cambio) { [void]$partes.Add(('delta: {0} %' -f $cambio)) }
+        return [pscustomobject]@{ Tono = 'Ambar'; Regla = $false; Partes = $partes.ToArray(); Motivo = 'cobertura de centinelas incompleta o renombre pendiente' }
+    }
+
+    [void]$partes.Add(('centinelas {0}/{1} integros' -f $ok, $rev))
+    if ($cambio) { [void]$partes.Add(('delta ultima ejecucion: {0} %' -f $cambio)) }
+    return [pscustomobject]@{ Tono = 'Verde'; Regla = $false; Partes = $partes.ToArray(); Motivo = '' }
+}
+
+function Resolve-EstadoDeIntegridad {
+    <#
+        .SYNOPSIS
+            Evalua el bloque INTEGRIDAD (SHA-256, auditoria, semilla y ensayo DR).
+        .DESCRIPTION
+            Basado en NIST SP 800-34 Rev. 1 y Krogh (The DAM Book):
+              Rojo   si falla SHA-256, muestreo completo o semilla DR.
+              Ambar  si cualquier control falta, esta vencido (> DiasMuestreoMax)
+                     o nunca se registro un ensayo real de recuperacion (DR).
+              Verde  SOLO cuando los cuatro controles estan OK y vigentes.
+            Funcion pura.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][hashtable] $Estado,
+        [datetime] $Ahora = (Get-Date),
+        [ValidateRange(1, 365)][int] $DiasMuestreoMax = 14
+    )
+
+    $huellasEst = '' + $Estado['huellas_estado']
+    $huellasMom = '' + $Estado['huellas_momento']
+    $huellasDet = '' + $Estado['huellas_detalle']
+    $muestreoEst = '' + $Estado['muestreo_estado']
+    $muestreoMom = '' + $Estado['muestreo_momento']
+    $estructuraEst = '' + $Estado['estructura_estado']
+    $estructuraDet = '' + $Estado['estructura_detalle']
+    $semillaEst = '' + $Estado['semilla_estado']
+    $semillaMom = '' + $Estado['semilla_momento']
+    $restMom = '' + $Estado['restauracion_probada']
+
+    $partes = New-Object System.Collections.Generic.List[string]
+    $hTxt = 'SHA-256: ' + (Format-Antiguedad -Momento $huellasMom)
+    if ($huellasDet) { $hTxt += ' (' + $huellasDet + ')' }
+    [void]$partes.Add($hTxt)
+
+    if ($estructuraEst -eq 'Falla' -and $estructuraDet) {
+        [void]$partes.Add('estructura: ' + $estructuraDet)
+    }
+
+    [datetime] $dtMuestreo = [datetime]::MinValue
+    $muestreoValido = [datetime]::TryParse($muestreoMom, [ref]$dtMuestreo)
+    $muestreoVencido = (-not $muestreoValido) -or (($Ahora - $dtMuestreo).TotalDays -gt $DiasMuestreoMax)
+    $mTxt = 'auditoria completa: ' + (Format-Antiguedad -Momento $muestreoMom)
+    if ($muestreoEst -eq 'Falla') { $mTxt += ' (CON DIFERENCIAS)' }
+    elseif ($muestreoValido -and $muestreoVencido) { $mTxt += ' (vencida)' }
+    [void]$partes.Add($mTxt)
+
+    [void]$partes.Add('semilla DR: ' + (Format-Antiguedad -Momento $semillaMom))
+    $restValido = (-not [string]::IsNullOrWhiteSpace($restMom)) -and ($restMom -ne 'nunca')
+    $rTxt = if ($restValido) { 'ensayo DR: ' + (Format-Antiguedad -Momento $restMom) } else { 'ensayo DR: pendiente' }
+    [void]$partes.Add($rTxt)
+
+    if ($huellasEst -eq 'Falla' -or $muestreoEst -eq 'Falla' -or $semillaEst -eq 'Falla') {
+        $motF = if ($huellasEst -eq 'Falla' -or $muestreoEst -eq 'Falla') { 'discrepancia de integridad SHA-256 detectada' } else { 'semilla de recuperacion incompleta o ausente' }
+        return [pscustomobject]@{ Tono = 'Rojo'; Regla = $true; Partes = $partes.ToArray(); Motivo = $motF }
+    }
+
+    $pendientes = New-Object System.Collections.Generic.List[string]
+    if ($huellasEst -ne 'OK') { [void]$pendientes.Add('SHA-256 sin confirmar') }
+    if ($estructuraEst -eq 'Falla') { [void]$pendientes.Add('diferencias de estructura') }
+    if ($muestreoEst -ne 'OK' -or $muestreoVencido) { [void]$pendientes.Add('auditoria completa vencida o pendiente') }
+    if ($semillaEst -ne 'OK') { [void]$pendientes.Add('semilla sin verificar') }
+    if (-not $restValido) { [void]$pendientes.Add('ensayo DR pendiente') }
+
+    if ($pendientes.Count -gt 0) {
+        return [pscustomobject]@{ Tono = 'Ambar'; Regla = $false; Partes = $partes.ToArray(); Motivo = ($pendientes -join '; ') }
+    }
+
+    return [pscustomobject]@{ Tono = 'Verde'; Regla = $false; Partes = $partes.ToArray(); Motivo = '' }
+}
+
+function Resolve-EstadoDeServicio {
+    <#
+        .SYNOPSIS
+            Evalua el bloque SERVICIO (tareas programadas e integridad del motor).
+        .DESCRIPTION
+            Verde si el programador y el indicador estan activos con las
+            ventanas esperadas y el motor esta integro; Ambar ante desajuste no
+            critico; Rojo si falta la tarea del motor o alguna pieza del motor.
+            Acepta datos precalculados para pruebas unitarias deterministas.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [int] $VentanasEsperadas = 0,
+        [AllowNull()][string[]] $TareasTexto = $null,
+        [AllowNull()][psobject] $MotorIntacto = $null
+    )
+
+    $tareas = if ($null -ne $TareasTexto) { @($TareasTexto) } else { @(Get-EstadoDeTarea) }
+    $partes = New-Object System.Collections.Generic.List[string]
+    foreach ($t in $tareas) {
+        if (-not [string]::IsNullOrWhiteSpace($t)) { [void]$partes.Add($t) }
+    }
+
+    $motorMal = ($tareas -join ' ') -match 'motor (NO EXISTE|DESHABILITADO)'
+    $iconoMal = ($tareas -join ' ') -match 'icono (NO EXISTE|DESHABILITADO)'
+    $piezasRotas = $false
+    if ($MotorIntacto) {
+        if (@($MotorIntacto.PiezasFallan).Count -gt 0) {
+            $piezasRotas = $true
+            [void]$partes.Add(('motor: {0} pieza(s) faltante(s)' -f @($MotorIntacto.PiezasFallan).Count))
+        }
+        else {
+            [void]$partes.Add(('motor integro ({0} piezas)' -f $MotorIntacto.PiezasTotal))
+        }
+    }
+
+    $desajusteVentanas = $false
+    if ($VentanasEsperadas -gt 0) {
+        $lineaMotor = @($tareas | Where-Object { $_ -like 'motor*' } | Select-Object -First 1)
+        if ($lineaMotor.Count -gt 0 -and $lineaMotor[0] -match '(\d+)\s+ventanas') {
+            if ([int]$Matches[1] -ne $VentanasEsperadas) {
+                $desajusteVentanas = $true
+                [void]$partes.Add(('esperadas {0} ventanas' -f $VentanasEsperadas))
+            }
+        }
+    }
+
+    if ($motorMal -or $piezasRotas) {
+        return [pscustomobject]@{ Tono = 'Rojo'; Regla = $true; Partes = $partes.ToArray(); Motivo = 'servicio automatico o integridad del motor comprometida' }
+    }
+    if ($iconoMal -or $desajusteVentanas -or $tareas.Count -eq 0) {
+        return [pscustomobject]@{ Tono = 'Ambar'; Regla = $false; Partes = $partes.ToArray(); Motivo = 'servicio programado degradado o indicador inactivo' }
+    }
+    return [pscustomobject]@{ Tono = 'Verde'; Regla = $false; Partes = $partes.ToArray(); Motivo = '' }
+}
+
+function Get-AlertasPriorizadas {
+    <#
+        .SYNOPSIS
+            Racionaliza las incidencias activas por severidad (ANSI/ISA-18.2).
+        .DESCRIPTION
+            Separa fallos criticos de advertencias operativas, ordena de mayor
+            a menor severidad y evita mezclar ruido rutinario con fallos reales.
+            Devuelve objetos { Nivel, Mensaje, Opcion }.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][hashtable] $Estado,
+        [AllowNull()][psobject] $Disco,
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Filas,
+        [AllowNull()][psobject] $Laboratorio,
+        [AllowEmptyCollection()][psobject[]] $HuerfanosActuales = @(),
+        [AllowEmptyCollection()][psobject[]] $ModeloTabla = @(),
+        [AllowNull()][psobject] $CentinelasVivo = $null,
+        [AllowNull()][psobject] $LecturaEnCurso = $null,
+        [AllowNull()][psobject] $Servicio = $null,
+        [AllowNull()][psobject] $Integridad = $null
+    )
+
+    $criticas = New-Object System.Collections.Generic.List[psobject]
+    $advertencias = New-Object System.Collections.Generic.List[psobject]
+
+    if ($CentinelasVivo -and @($CentinelasVivo.Fallos).Count -gt 0) {
+        [void]$criticas.Add([pscustomobject]@{
+            Nivel = 'Critico'; Opcion = 'F'
+            Mensaje = ('{0} centinela(s) con fallo: respaldo detenido' -f @($CentinelasVivo.Fallos).Count)
+        })
+    }
+    if ($Integridad -and $Integridad.Tono -eq 'Rojo') {
+        [void]$criticas.Add([pscustomobject]@{
+            Nivel = 'Critico'; Opcion = 'A'
+            Mensaje = $Integridad.Motivo
+        })
+    }
+    if ($Servicio -and $Servicio.Tono -eq 'Rojo') {
+        [void]$criticas.Add([pscustomobject]@{
+            Nivel = 'Critico'; Opcion = 'E'
+            Mensaje = $Servicio.Motivo
+        })
+    }
+    $ausentes = @($ModeloTabla | Where-Object { $_.EstadoVivo -eq 'Ausente' }).Count
+    if ($ausentes -gt 0) {
+        [void]$criticas.Add([pscustomobject]@{
+            Nivel = 'Critico'; Opcion = 'F'
+            Mensaje = ('{0} volumen(es) ausente(s) en disco local' -f $ausentes)
+        })
+    }
+    $conFallo = @($Filas | Where-Object { $_.Estado -ne 'AlDia' }).Count
+    if ($conFallo -gt 0) {
+        [void]$criticas.Add([pscustomobject]@{
+            Nivel = 'Critico'; Opcion = 'A'
+            Mensaje = ('{0} volumen(es) con fallo en ultima copia' -f $conFallo)
+        })
+    }
+
+    if ($CentinelasVivo -and @($CentinelasVivo.Renombrados).Count -gt 0) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'A'
+            Mensaje = ('{0} volumen(es) renombrado(s): ejecutar respaldo para migrar' -f @($CentinelasVivo.Renombrados).Count)
+        })
+    }
+    $nuevas = @($ModeloTabla | Where-Object { $_.EstadoVivo -eq 'Nueva' }).Count
+    if ($nuevas -gt 0) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'A'
+            Mensaje = ('{0} volumen(es) nuevo(s) pendiente(s) de primera copia' -f $nuevas)
+        })
+    }
+    $sinCent = @($ModeloTabla | Where-Object { $_.SinCentinela }).Count
+    if ($sinCent -gt 0) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'F'
+            Mensaje = ('{0} volumen(es) activo(s) sin centinela' -f $sinCent)
+        })
+    }
+    if ($LecturaEnCurso) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'C'
+            Mensaje = 'Lectura de manifiestos en la Pi en curso'
+        })
+    }
+    elseif ($Laboratorio -and $Laboratorio.NoAlDia -gt 0) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'C'
+            Mensaje = ('Laboratorio VM: {0}/{1} carpetas desactualizadas en nodo' -f $Laboratorio.NoAlDia, $Laboratorio.Vms)
+        })
+    }
+
+    $huerfanos = 0
+    if ($PSBoundParameters.ContainsKey('HuerfanosActuales')) {
+        $huerfanos = @($HuerfanosActuales | Where-Object { -not (($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido) }).Count
+    }
+    elseif ($Estado.ContainsKey('huerfanos')) {
+        [void][int]::TryParse(('' + $Estado['huerfanos']), [ref]$huerfanos)
+    }
+    if ($huerfanos -gt 0) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'F'
+            Mensaje = ('{0} carpeta(s) sin clasificar en contenedores' -f $huerfanos)
+        })
+    }
+
+    # Disco frio fuera de linea solo es advertencia si nunca se copio o excede 14 dias.
+    if (-not $Disco) {
+        [datetime] $dtDisco = [datetime]::MinValue
+        $discoReciente = [datetime]::TryParse(('' + $Estado['disco_momento']), [ref]$dtDisco) -and (((Get-Date) - $dtDisco).TotalDays -le 14)
+        if (-not $discoReciente) {
+            [void]$advertencias.Add([pscustomobject]@{
+                Nivel = 'Advertencia'; Opcion = 'B'
+                Mensaje = 'Copia fria fuera de linea vencida o sin ejecutar (conectar NAS-COLD-01)'
+            })
+        }
+    }
+
+    if (-not (Get-UrlDelTestigo)) {
+        [void]$advertencias.Add([pscustomobject]@{
+            Nivel = 'Advertencia'; Opcion = 'E'
+            Mensaje = 'Testigo externo (Healthchecks) sin configurar'
+        })
+    }
+
+    return (@($criticas.ToArray()) + @($advertencias.ToArray()))
+}
+
+function Resolve-VeredictoDeConsola {
+    <#
+        .SYNOPSIS
+            Concilia el estado del indicador con las comprobaciones en vivo.
+        .DESCRIPTION
+            Impide que el encabezado muestre NOMINAL (verde) cuando un control
+            en vivo (centinelas, integridad SHA-256 o servicio) reporta fallo
+            o degradacion real. Funcion pura.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][string] $EstadoIndicador,
+        [AllowEmptyString()][string] $DetalleIndicador = '',
+        [AllowNull()][psobject] $Proteccion = $null,
+        [AllowNull()][psobject] $Integridad = $null,
+        [AllowNull()][psobject] $Servicio = $null
+    )
+
+    if ($EstadoIndicador -eq 'Copiando') {
+        return [pscustomobject]@{ Estado = 'Copiando'; Detalle = $DetalleIndicador }
+    }
+    if ($Proteccion -and $Proteccion.Tono -eq 'Rojo') {
+        return [pscustomobject]@{ Estado = 'Falla'; Detalle = ('Proteccion comprometida: ' + $Proteccion.Motivo) }
+    }
+    if ($Integridad -and $Integridad.Tono -eq 'Rojo') {
+        return [pscustomobject]@{ Estado = 'Falla'; Detalle = ('Integridad comprometida: ' + $Integridad.Motivo) }
+    }
+    if ($Servicio -and $Servicio.Tono -eq 'Rojo') {
+        return [pscustomobject]@{ Estado = 'Falla'; Detalle = ('Servicio comprometido: ' + $Servicio.Motivo) }
+    }
+    if ($EstadoIndicador -eq 'Falla') {
+        return [pscustomobject]@{ Estado = 'Falla'; Detalle = $DetalleIndicador }
+    }
+    if ($EstadoIndicador -eq 'Protegido') {
+        if ($Proteccion -and $Proteccion.Tono -eq 'Ambar') {
+            return [pscustomobject]@{ Estado = 'Atencion'; Detalle = ('Proteccion: ' + $Proteccion.Motivo) }
+        }
+        if ($Servicio -and $Servicio.Tono -eq 'Ambar') {
+            return [pscustomobject]@{ Estado = 'Atencion'; Detalle = ('Servicio: ' + $Servicio.Motivo) }
+        }
+    }
+    return [pscustomobject]@{ Estado = $EstadoIndicador; Detalle = $DetalleIndicador }
+}
+
 function Show-Ventana {
     <#
         .SYNOPSIS
-            Pinta la ventana de estado y el menu.
+            Pinta la ventana de estado y el menu adaptados al ancho real de la terminal.
         .DESCRIPTION
-            ES LA MAQUETA APROBADA DEL PLAN, no una lista de campos. El plan
-            -00_PLAN_RESPALDO_EQUIPO-01_v5_FINAL_FINAL.html, seccion "Tablero
-            interactivo"- dibuja una pantalla concreta, y su pieza central es
-            UNA TABLA POR RAIZ con una columna por destino. Sin esa tabla el
-            tablero contesta "estas protegido" pero no contesta "que
-            exactamente", que es la pregunta que se hace de verdad delante de
-            un respaldo.
-
-            Se separa con REGLAS a todo lo ancho y no con un marco cerrado: es
-            lo que dibuja la maqueta y lo que hace el panel del nodo.
-
-            Que se ensena lo decide Get-DatosDeVentana; aqui solo se pinta.
+            Calcula geometria responsiva (Compacto / Estandar / Amplio) en cada
+            redibujo, muestra telemetria viva de PROGRESO.json y usa semantica
+            estricta de colores en PROTECCION, INTEGRIDAD, SERVICIO y ALERTAS.
         .PARAMETER Configuracion
             El objeto de configuracion completo.
+        .PARAMETER Datos
+            Opcional: resultado ya resuelto de Get-DatosDeVentana.
     #>
     [CmdletBinding()]
     [OutputType([void])]
     param(
-        [Parameter(Mandatory)][psobject] $Configuracion
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowNull()][psobject] $Datos = $null
     )
 
-    $d       = Get-DatosDeVentana -Configuracion $Configuracion
+    $d       = if ($Datos) { $Datos } else { Get-DatosDeVentana -Configuracion $Configuracion }
+    $geo     = Get-GeometriaDeConsola
+    $script:AnchoTablero = $geo.Ancho
     $p       = $script:Paleta
     $u       = $script:Capacidades.Unicode
     $colorEs = Get-ColorDeEstado -Estado $d.Estado -Paleta $p
     $simbolo = Get-Simbolo -Estado $d.Estado -Unicode $u
-    $ancho   = $script:AnchoTablero
+    $etEstado = Get-EtiquetaDeEstado -Estado $d.Estado
+    $ancho   = $geo.Ancho
 
-    # --- Cabecera: quien soy, y el veredicto pegado a la derecha ------------
-    $izq = 'RESPALDO {0}' -f $d.Equipo
-    $der = 'VEREDICTO:{0}{1}' -f $simbolo, $d.Estado.ToUpperInvariant()
+    # --- Cabecera: identificacion, reloj vivo y estado real a la derecha -----
+    $horaAct = if ($d.PSObject.Properties.Name -contains 'Actualizado' -and $d.Actualizado) { $d.Actualizado } else { (Get-Date).ToString('HH:mm:ss') }
+    $izq = 'CONSOLA DE RESPALDO | {0}  ({1})' -f $d.Equipo, $horaAct
+    $sepSimbolo = if ($u) { '' } else { ' ' }
+    $der = '{0}{1}{2}' -f $simbolo, $sepSimbolo, $etEstado
     $hueco = $ancho - $izq.Length - $der.Length
-    if ($hueco -lt 1) { $hueco = 1 }
+    if ($hueco -lt 1) {
+        $izq = 'RESPALDO | {0}' -f $d.Equipo
+        $hueco = [Math]::Max(1, $ancho - $izq.Length - $der.Length)
+    }
     Write-Linea ('  {0}{1}{2}{3}{4}{5}{6}' -f `
             ($p.Fuerte + $p.Titulo), $izq, $p.Fin, (' ' * $hueco), $colorEs, $der, $p.Fin)
-    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
-    # EL DETALLE SE PARTE, NO SE RECORTA (04/09/2026). Aqui salia
-    # "No se copia NADA ha..." con la frase cortada a la mitad: la unica linea
-    # que explica por que no se ha copiado nada era la unica que no se podia
-    # leer entera. Limit-Texto sigue valiendo para las CELDAS, donde recortar es
-    # la alternativa a romper el marco; para esto hacia falta un partidor, y no
-    # existia hasta hoy.
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $ancho)
     foreach ($trozo in @(Split-TextoEnLineas -Texto $d.Detalle -Ancho $ancho)) {
         Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $trozo, $p.Fin)
     }
     Write-Linea ' '
 
-    # --- Los destinos: nodo, disco frio y el laboratorio (seccion 5.2) -------
+    # --- Destinos: nodo SMB, disco frio y laboratorio VM ---------------------
     $destinos = @($d.Nodo, $d.Disco)
-    if ($d.PSObject.Properties.Name -contains 'Laboratorio') { $destinos += $d.Laboratorio }
+    if ($d.PSObject.Properties.Name -contains 'Laboratorio' -and $d.Laboratorio) { $destinos += $d.Laboratorio }
     foreach ($destino in $destinos) {
-        Write-Linea ('  {0}{1}{2}{3}' -f `
-            (Format-Celda -Texto $destino.Nombre -Ancho 11 -Paleta $p -Color $p.Etiqueta), `
-            (Format-Celda -Texto $destino.Situacion -Ancho 14 -Paleta $p -Color $p[$destino.TonoSituacion]), `
-            (Format-Celda -Texto $destino.Libres -Ancho 16 -Paleta $p -Color $p.Tenue), `
-            (Format-Celda -Texto ('ult. copia {0}' -f $destino.UltimaCopia) `
-                    -Ancho 26 -Paleta $p -Color $p[$destino.TonoCopia]))
+        Write-Linea ('  {0} {1} {2} {3}' -f `
+            (Format-Celda -Texto $destino.Nombre -Ancho ($geo.DestNombre - 1) -Paleta $p -Color $p.Etiqueta), `
+            (Format-Celda -Texto $destino.Situacion -Ancho ($geo.DestSituacion - 1) -Paleta $p -Color $p[$destino.TonoSituacion]), `
+            (Format-Celda -Texto $destino.Libres -Ancho ($geo.DestCapacidad - 1) -Paleta $p -Color $p.Tenue), `
+            (Format-Celda -Texto ('ult. sync: {0}' -f $destino.UltimaCopia) `
+                    -Ancho $geo.DestCopia -Paleta $p -Color $p[$destino.TonoCopia]))
+    }
+
+    # --- Barra viva si existe operacion activa en PROGRESO.json --------------
+    if ($d.PSObject.Properties.Name -contains 'ProgresoActivo' -and $d.ProgresoActivo -and $d.ProgresoActivo.Activo) {
+        $prog = $d.ProgresoActivo
+        $barra = Format-BarraDeProgreso -Porcentaje $prog.Porcentaje -Ancho 16 -Unicode $u
+        $resProg = Format-ProgresoDeOperacion -Progreso $prog
+        $txtVivo = Limit-Texto -Texto $resProg -Maximo ([Math]::Max(20, $ancho - 30))
+        Write-Linea ('  {0}EN CURSO   {1}{2}{3}  {4}{5}{3}' -f ($p.Fuerte + $p.Verde), $p.Verde, $barra, $p.Fin, $p.Valor, $txtVivo)
     }
     Write-Linea ' '
 
-    # --- La tabla por raiz: la pieza central de la maqueta -------------------
+    # --- Tabla de volumenes / raices -----------------------------------------
     Write-Linea ('  {0}{1}{2}{3}{4}' -f `
-        (Format-Celda -Texto 'RAIZ' -Ancho 30 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'CL' -Ancho 4 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'COPIADO ' -Ancho 11 -Paleta $p -Color $p.Etiqueta -Derecha), `
-        (Format-Celda -Texto 'NODO' -Ancho 13 -Paleta $p -Color $p.Etiqueta), `
-        (Format-Celda -Texto 'DISCO FRIO' -Ancho 13 -Paleta $p -Color $p.Etiqueta))
-    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+        (Format-Celda -Texto 'VOLUMEN' -Ancho $geo.ColRaiz -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'POL' -Ancho $geo.ColPol -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'DELTA ' -Ancho $geo.ColDelta -Paleta $p -Color $p.Etiqueta -Derecha), `
+        (Format-Celda -Texto 'NODO SMB' -Ancho $geo.ColNodo -Paleta $p -Color $p.Etiqueta), `
+        (Format-Celda -Texto 'DISCO FRIO' -Ancho $geo.ColDisco -Paleta $p -Color $p.Etiqueta))
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $ancho)
     Write-CuerpoDeTabla -Filas $d.Filas -Paleta $p -HorasParaAmbar $d.HorasVerde `
-        -RaicesActuales $d.RaicesActuales -Centinelas $d.Centinelas
+        -RaicesActuales $d.RaicesActuales -Centinelas $d.Centinelas -Geometria $geo
     Write-Linea ' '
 
-    # --- Las lineas de resumen que pide la maqueta ---------------------------
-    Write-LineaDeSumario -Etiqueta 'SEGURIDAD' -Paleta $p -Partes $d.Seguridad
-    $colorComprobado = if ($d.PSObject.Properties.Name -contains 'TonoComprobado' -and $p.ContainsKey($d.TonoComprobado)) {
-        $p[$d.TonoComprobado]
-    }
-    else { $p.Valor }
-    $avisarComprobado = ($d.PSObject.Properties.Name -contains 'TonoComprobado' -and $d.TonoComprobado -eq 'Rojo')
-    Write-LineaDeSumario -Etiqueta 'COMPROBADO' -Paleta $p -Partes $d.Comprobado -Color $colorComprobado -Avisar:$avisarComprobado
-    Write-LineaDeSumario -Etiqueta 'AUTOMATISMO' -Paleta $p -Partes $d.Automatismo
-    if (@($d.Pendiente).Count -gt 0) {
-        Write-LineaDeSumario -Etiqueta 'PENDIENTE' -Paleta $p -Partes $d.Pendiente -Color $p.Ambar -Avisar
+    # --- Panel de control con color semantico estricto -----------------------
+    Write-LineaDeSumario -Etiqueta 'PROTECCION' -Paleta $p -Partes $d.Proteccion.Partes `
+        -Color $p[$d.Proteccion.Tono] -Avisar:([bool]$d.Proteccion.Regla) -Ancho $ancho -AnchoEtiqueta $geo.ColEtiquetaSumario
+    Write-LineaDeSumario -Etiqueta 'INTEGRIDAD' -Paleta $p -Partes $d.Integridad.Partes `
+        -Color $p[$d.Integridad.Tono] -Avisar:([bool]$d.Integridad.Regla) -Ancho $ancho -AnchoEtiqueta $geo.ColEtiquetaSumario
+    Write-LineaDeSumario -Etiqueta 'SERVICIO' -Paleta $p -Partes $d.Servicio.Partes `
+        -Color $p[$d.Servicio.Tono] -Avisar:([bool]$d.Servicio.Regla) -Ancho $ancho -AnchoEtiqueta $geo.ColEtiquetaSumario
+
+    if (@($d.Alertas).Count -gt 0) {
+        $vis = @($d.Alertas | Select-Object -First 3)
+        $hayCrit = @($vis | Where-Object { $_.Nivel -eq 'Critico' }).Count -gt 0
+        $colorAl = if ($hayCrit) { $p.Rojo } else { $p.Ambar }
+        $txtAl = New-Object System.Collections.Generic.List[string]
+        foreach ($al in $vis) {
+            $pref = if ($al.Opcion) { '[{0}] ' -f $al.Opcion } else { '' }
+            [void]$txtAl.Add($pref + $al.Mensaje)
+        }
+        $extra = @($d.Alertas).Count - $vis.Count
+        if ($extra -gt 0) { [void]$txtAl.Add(('+{0} mas en [F] Diagnostico' -f $extra)) }
+        Write-LineaDeSumario -Etiqueta 'ALERTAS' -Paleta $p -Partes $txtAl.ToArray() `
+            -Color $colorAl -Avisar -Ancho $ancho -AnchoEtiqueta $geo.ColEtiquetaSumario
     }
 
-    # --- Menu ----------------------------------------------------------------
+    # --- Menu consolidado [A]-[F] --------------------------------------------
     $menu = Get-MenuDelTablero
     Write-Linea ' '
-    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
-    Write-Linea ('  {0}{1}{2}{3}{4}' -f ($p.Fuerte + $p.Titulo), `
-            $menu.Columnas[0].PadRight(26), $menu.Columnas[1].PadRight(28), $menu.Columnas[2], $p.Fin)
-    foreach ($fila in $menu.Filas) {
-        Write-Linea ('  {0}{1}{2}' -f `
-            (Format-Celda -Texto $fila[0] -Ancho 26 -Paleta $p -Color $p.Valor), `
-            (Format-Celda -Texto $fila[1] -Ancho 28 -Paleta $p -Color $p.Valor), `
-            (Format-Celda -Texto $fila[2] -Ancho 24 -Paleta $p -Color $p.Valor))
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $ancho)
+    if ($geo.ColumnasMenu -eq 1) {
+        Write-Linea ('  {0}OPERACIONES Y SISTEMA{1}' -f ($p.Fuerte + $p.Titulo), $p.Fin)
+        foreach ($item in $menu.Items) {
+            Write-Linea ('  {0}' -f (Format-Celda -Texto ('[{0}] {1}' -f $item.Tecla, $item.Etiqueta) -Ancho $ancho -Paleta $p -Color $p.Valor))
+        }
     }
-    Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $menu.Nota, $p.Fin)
+    else {
+        $c1 = $geo.AnchoColMenu
+        $c2 = [Math]::Max(24, $ancho - $c1)
+        Write-Linea ('  {0}{1}{2}{3}' -f ($p.Fuerte + $p.Titulo), `
+                $menu.Columnas[0].PadRight($c1), $menu.Columnas[1], $p.Fin)
+        foreach ($fila in $menu.Filas) {
+            Write-Linea ('  {0}{1}' -f `
+                (Format-Celda -Texto $fila[0] -Ancho $c1 -Paleta $p -Color $p.Valor), `
+                (Format-Celda -Texto $fila[1] -Ancho $c2 -Paleta $p -Color $p.Valor))
+        }
+    }
+    foreach ($lNota in @(Split-TextoEnLineas -Texto $menu.Nota -Ancho $ancho)) {
+        Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $lNota, $p.Fin)
+    }
     Write-Linea ' '
 }
 
@@ -863,58 +1259,17 @@ function Get-DatosDeVentana {
     if (('' + $estado['disco_estado']) -eq 'Atencion') { $tonoDisco = 'Ambar' }
     elseif (('' + $estado['disco_estado']) -eq 'Falla') { $tonoDisco = 'Rojo' }
 
-    # EL CORTE DEL VERDE SALE DE LA CADENCIA, no de un numero escrito aqui: es el
-    # hueco que el propio reparto de ventanas promete. Si no se puede leer, 12 h,
-    # que es el hueco de la cadencia de hoy -pintar de mas no es la falla grave;
-    # pintar de verde algo viejo si-.
     $horasVerde = 12
-    try { $horasVerde = (Get-CadenciaDeCorrida -Configuracion $Configuracion).HuecoNominalMaximoHoras }
+    $ventanasEsp = 0
+    try {
+        $cadInfo = Get-CadenciaDeCorrida -Configuracion $Configuracion
+        $horasVerde = $cadInfo.HuecoNominalMaximoHoras
+        $ventanasEsp = [int]$cadInfo.CorridasPorDia
+    }
     catch { Write-Verbose "Cadencia ilegible; el corte del verde se queda en $horasVerde h: $($_.Exception.Message)" }
 
-    $centinelas = '{0} declarados' -f $centinelasConfig.Count
-    if ($centVivo) {
-        $okCent = $centVivo.Revisados - @($centVivo.Fallos).Count
-        $centinelas = '{0}/{1}' -f $okCent, $centVivo.Revisados
-        if (@($centVivo.Renombrados).Count -gt 0) {
-            $centinelas += (' ({0} renombrada)' -f @($centVivo.Renombrados).Count)
-        }
-        elseif (@($centVivo.Fallos).Count -gt 0) {
-            $centinelas += (' ({0} con fallo)' -f @($centVivo.Fallos).Count)
-        }
-    }
-    elseif ($estado.ContainsKey('centinelas')) { $centinelas = '' + $estado['centinelas'] }
-    $cambio = '?'
-    if ($estado.ContainsKey('cambio')) { $cambio = '' + $estado['cambio'] }
-
-    $huellas = 'huellas {0}' -f (Format-Antiguedad -Momento ('' + $estado['huellas_momento']))
-    if ($estado.ContainsKey('huellas_detalle') -and $estado['huellas_detalle']) { $huellas += ' ' + $estado['huellas_detalle'] }
-    # EL MUESTREO VA APARTE (seccion 9): las huellas de cada corrida leen lo
-    # recien copiado, y solo el muestreo semanal relee la raiz entera. Una fecha
-    # vieja aqui dice que hace mas de una semana que nadie relee lo que ya estaba.
-    $muestreo = 'muestreo {0}' -f (Format-Antiguedad -Momento ('' + $estado['muestreo_momento']))
-    if (('' + $estado['muestreo_estado']) -eq 'Falla') { $muestreo += ' con diferencias' }
-
-    $comprobadoPartes = New-Object System.Collections.Generic.List[string]
-    [void]$comprobadoPartes.Add($huellas)
-    if (('' + $estado['estructura_estado']) -eq 'Falla' -and $estado.ContainsKey('estructura_detalle') -and $estado['estructura_detalle']) {
-        [void]$comprobadoPartes.Add(('cambios ' + $estado['estructura_detalle']))
-    }
-    [void]$comprobadoPartes.Add($muestreo)
-    [void]$comprobadoPartes.Add(('semilla {0}' -f (Format-Antiguedad -Momento ('' + $estado['semilla_momento']))))
-    [void]$comprobadoPartes.Add(('restauracion real {0}' -f (Format-Antiguedad -Momento ('' + $estado['restauracion_probada']))))
-
-    $tonoComprobado = 'Valor'
-    if (('' + $estado['huellas_estado']) -eq 'Falla' -or ('' + $estado['muestreo_estado']) -eq 'Falla') {
-        $tonoComprobado = 'Rojo'
-    }
-    elseif (('' + $estado['estructura_estado']) -eq 'Falla') {
-        $tonoComprobado = 'Ambar'
-    }
-
-    # El laboratorio no va en la corrida diaria (seccion 5.2) y por eso no tiene
-    # fila en la tabla por raiz. Es un destino mas, como el disco; su detalle
-    # VM por VM esta en [L] (ADR-0104).
     $lecturaLab = Read-LecturaDelLaboratorio -Carpeta $carpetaEstado
+    $progresoActivo = Read-ProgresoDeOperacion -Carpeta $carpetaEstado
     $laboratorio = Get-DestinoDelLaboratorio -Estado $estado `
         -Marca (Get-MarcaDeCorrida -Carpeta $carpetaEstado -Archivo 'LABORATORIO.lock') `
         -Progreso (Read-ProgresoDelLaboratorio -Carpeta $carpetaEstado) `
@@ -923,24 +1278,40 @@ function Get-DatosDeVentana {
     $modeloTabla = @(Get-FilasDeTabla -Filas $filas -HorasParaAmbar $horasVerde `
             -RaicesActuales $raicesActuales -Centinelas $centinelasConfig)
 
+    $proteccion = Resolve-EstadoDeProteccion -CentinelasConfig $centinelasConfig -CentinelasVivo $centVivo `
+        -Estado $estado -ModeloTabla $modeloTabla
+    $integridad = Resolve-EstadoDeIntegridad -Estado $estado
+    $motorSalud = $null
+    try { $motorSalud = Test-MotorIntacto -Tareas @() } catch { $motorSalud = $null }
+    $servicio = Resolve-EstadoDeServicio -VentanasEsperadas $ventanasEsp -MotorIntacto $motorSalud
+
+    $resumenLab = Get-ResumenDelLaboratorio -Configuracion $Configuracion -Estado $estado
     $argsPendiente = @{
         Estado         = $estado
         Disco          = $disco
         Filas          = $filas
-        Laboratorio    = (Get-ResumenDelLaboratorio -Configuracion $Configuracion -Estado $estado)
+        Laboratorio    = $resumenLab
         ModeloTabla    = $modeloTabla
         CentinelasVivo = $centVivo
         LecturaEnCurso = $lecturaLab
     }
     if ($scanOk) { $argsPendiente['HuerfanosActuales'] = $huerfanosActuales }
+    $pendienteLegado = @(Get-ResumenPendiente @argsPendiente)
+    $alertas = @(Get-AlertasPriorizadas @argsPendiente -Servicio $servicio -Integridad $integridad)
+
+    $veredicto = Resolve-VeredictoDeConsola -EstadoIndicador ('' + $v.Estado) -DetalleIndicador ('' + $v.Detalle) `
+        -Proteccion $proteccion -Integridad $integridad -Servicio $servicio
 
     return [pscustomobject]@{
         Equipo         = '' + $Configuracion.destinos.nodo.prefijoEquipo
-        Estado         = '' + $v.Estado
-        Detalle        = '' + $v.Detalle
+        Estado         = '' + $veredicto.Estado
+        Detalle        = '' + $veredicto.Detalle
+        Actualizado    = (Get-Date).ToString('HH:mm:ss')
+        ProgresoActivo = $progresoActivo
+        LecturaActiva  = ($null -ne $lecturaLab)
         Nodo           = [pscustomobject]@{
-            Nombre        = 'NODO'
-            Situacion     = $(if ($nodoVivo) { 'responde' } else { 'NO RESPONDE' })
+            Nombre        = 'NODO SMB'
+            Situacion     = $(if ($nodoVivo) { 'En linea' } else { 'FUERA DE LINEA' })
             TonoSituacion = $(if ($nodoVivo) { 'Verde' } else { 'Rojo' })
             Libres        = (Format-Espacio -Bytes $libresNodo)
             UltimaCopia   = $ultimaCopia
@@ -948,7 +1319,7 @@ function Get-DatosDeVentana {
         }
         Disco          = [pscustomobject]@{
             Nombre        = 'DISCO FRIO'
-            Situacion     = $(if ($disco) { 'conectado' } else { 'no conectado' })
+            Situacion     = $(if ($disco) { 'Montado' } else { 'Desconectado' })
             TonoSituacion = $(if ($disco) { 'Verde' } else { 'Gris' })
             Libres        = (Format-Espacio -Bytes $libresDisco)
             UltimaCopia   = (Format-Antiguedad -Momento ('' + $estado['disco_momento']))
@@ -959,11 +1330,16 @@ function Get-DatosDeVentana {
         RaicesActuales = $raicesActuales
         Centinelas     = $centinelasConfig
         HorasVerde     = $horasVerde
-        Seguridad      = @(('centinelas {0}' -f $centinelas), ('cambio {0} % en la ultima corrida' -f $cambio))
-        Comprobado     = $comprobadoPartes.ToArray()
-        TonoComprobado = $tonoComprobado
-        Automatismo    = @(Get-EstadoDeTarea)
-        Pendiente      = @(Get-ResumenPendiente @argsPendiente)
+        Proteccion     = $proteccion
+        Integridad     = $integridad
+        Servicio       = $servicio
+        Alertas        = $alertas
+        # Claves heredadas conservadas para compatibilidad de pruebas/consumidores.
+        Seguridad      = $proteccion.Partes
+        Comprobado     = $integridad.Partes
+        TonoComprobado = $integridad.Tono
+        Automatismo    = $servicio.Partes
+        Pendiente      = $pendienteLegado
     }
 }
 
@@ -1041,46 +1417,35 @@ function Get-DestinoDelLaboratorio {
 function Get-MenuDelTablero {
     <#
         .SYNOPSIS
-            Las opciones del menu, en tres columnas. Las pintan las dos ventanas.
+            Menu consolidado en 6 subvistas operativas ([A]-[F]), en dos columnas
+            equilibradas y lista secuencial para modo compacto.
         .DESCRIPTION
-            Los parametros de proteccion NO estan aqui, y no es un olvido
-            (seccion 10.1): los centinelas y las clases se cambian editando el
-            archivo, porque subir un umbral desde una pantalla bonita desarma la
-            defensa con dos pulsaciones y sin dejar rastro.
-
-            EL NOMBRE DE CADA OPCION ES UNA PALABRA QUE SE ENTIENDE SOLA, y el
-            "contra que" lo dice el ANUNCIO al abrirla, no el menu. Se pidio asi
-            mirando la pantalla el 2026-09-03: "no quiero ahi poner todo, sino
-            una palabra que pueda ser entendible a la primera".
-
-            "vista previa" VA SANGRADA bajo la copia que previsualiza, y esa
-            sangria responde "simular QUE" sin gastar una palabra: [2] cuelga de
-            [1] y [8] de [7]. Antes las dos decian "simular" a secas, cada una en
-            una fila suelta, y no se sabia de que copia hablaban.
-
-            "cotejar" y no "verificar": en Mexico una copia cotejada es la que se
-            comparo contra su original, asi que la palabra ya lleva dentro el
-            "contra que" que faltaba.
-
-            EL LABORATORIO VA EN SUS DOS FILAS, con letras y no numeros: [G]
-            guarda D:\VMware_LAB en el nodo por bloques y [V] cuelga de ella
-            como [2] de [1]; [L] lo ensena VM por VM y [T] lee el nodo entero
-            en la Pi (ADR-0104). [S] baja a la ultima fila, donde se busca.
+            Agrupa simulaciones, ejecuciones y verificaciones dentro de su
+            propio dominio operativo (estilo consola de appliance), eliminando
+            sangrias manuales, huecos vacios y teclas mezcladas. Los parametros
+            de proteccion siguen declarados exclusivamente en respaldo.jsonc.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
     param()
 
+    $items = @(
+        [pscustomobject]@{ Tecla = 'A'; Etiqueta = 'Respaldo al nodo SMB';         Grupo = 'OPERACIONES' }
+        [pscustomobject]@{ Tecla = 'B'; Etiqueta = 'Copia fria (NAS-COLD-01)';     Grupo = 'OPERACIONES' }
+        [pscustomobject]@{ Tecla = 'C'; Etiqueta = 'Laboratorio VM (VMware_LAB)';  Grupo = 'OPERACIONES' }
+        [pscustomobject]@{ Tecla = 'D'; Etiqueta = 'Recuperacion (_SEMILLA)';      Grupo = 'SISTEMA' }
+        [pscustomobject]@{ Tecla = 'E'; Etiqueta = 'Programacion y servicio';      Grupo = 'SISTEMA' }
+        [pscustomobject]@{ Tecla = 'F'; Etiqueta = 'Diagnostico e inventario';     Grupo = 'SISTEMA' }
+    )
     return [pscustomobject]@{
-        Columnas = @('COPIAR', 'COMPROBAR', 'SISTEMA')
+        Columnas = @('OPERACIONES', 'MANTENIMIENTO Y SISTEMA')
         Filas    = @(
-            , @('[1] al nodo', '[3] cotejar el nodo', '[5] semilla de arranque')
-            , @('[2]    vista previa', '[4] estado completo', '[6] automatismo')
-            , @('[7] al disco frio', '[9] cotejar el disco frio', '[A] ajustes')
-            , @('[8]    vista previa', '[R] ensayo de restauracion', '[H] sin clasificar')
-            , @('[G] laboratorio al nodo', '[L] ver el laboratorio', '')
-            , @('[V]    vista previa', '[T] leer el lab en la Pi', '[S] salir'))
-        Nota     = 'Enter refresca   -   centinelas y clases: 3-Config/respaldo.jsonc'
+            , @('[A] Respaldo al nodo SMB',        '[D] Recuperacion (_SEMILLA)')
+            , @('[B] Copia fria (NAS-COLD-01)',    '[E] Programacion y servicio')
+            , @('[C] Laboratorio VM (VMware_LAB)', '[F] Diagnostico e inventario')
+        )
+        Items    = $items
+        Nota     = '[R] Refrescar  [S] Salir  |  Config: 3-Config/respaldo.jsonc'
     }
 }
 
@@ -2331,6 +2696,10 @@ function Get-MetaDeOpcion {
     <#
         .SYNOPSIS
             Metadatos de navegacion de cada opcion del menu (titulo, refresco, vista propia).
+        .DESCRIPTION
+            Incluye las 6 subvistas principales [A]-[F] del tablero consolidado
+            y mantiene compatibilidad hacia atras con las claves CLI heredadas
+            (1-9, G, H, L, R, T, V) usadas en automatizaciones y pruebas.
         .PARAMETER Opcion
             Letra o digito en mayusculas. Devuelve $null si no existe en el menu.
     #>
@@ -2341,22 +2710,29 @@ function Get-MetaDeOpcion {
     )
 
     $tabla = @{
-        '1' = @{ Titulo = '[1] COPIA AL NODO';                   Refrescable = $false; PropiaVista = $false }
-        '2' = @{ Titulo = '[2] VISTA PREVIA AL NODO';            Refrescable = $true;  PropiaVista = $false }
-        '3' = @{ Titulo = '[3] COTEJAR EL NODO';                 Refrescable = $true;  PropiaVista = $false }
-        '4' = @{ Titulo = '[4] ESTADO COMPLETO';                 Refrescable = $true;  PropiaVista = $false }
-        '5' = @{ Titulo = '[5] SEMILLA DE ARRANQUE';             Refrescable = $false; PropiaVista = $false }
-        '6' = @{ Titulo = '[6] ESTADO DEL AUTOMATISMO';          Refrescable = $true;  PropiaVista = $false }
-        '7' = @{ Titulo = '[7] COPIA AL DISCO FRIO';             Refrescable = $false; PropiaVista = $false }
-        '8' = @{ Titulo = '[8] VISTA PREVIA AL DISCO FRIO';      Refrescable = $true;  PropiaVista = $false }
-        '9' = @{ Titulo = '[9] COTEJAR EL DISCO FRIO';           Refrescable = $true;  PropiaVista = $false }
-        'R' = @{ Titulo = '[R] ENSAYO DE RESTAURACION';          Refrescable = $true;  PropiaVista = $false }
-        'H' = @{ Titulo = '[H] CARPETAS SIN CLASIFICAR';         Refrescable = $true;  PropiaVista = $false }
-        'A' = @{ Titulo = '[A] AJUSTES DEL HORARIO';             Refrescable = $false; PropiaVista = $true  }
-        'L' = @{ Titulo = '[L] VER EL LABORATORIO';              Refrescable = $true;  PropiaVista = $false }
-        'V' = @{ Titulo = '[V] VISTA PREVIA DEL LABORATORIO';    Refrescable = $true;  PropiaVista = $false }
-        'G' = @{ Titulo = '[G] GUARDAR LABORATORIO AL NODO';     Refrescable = $false; PropiaVista = $false }
-        'T' = @{ Titulo = '[T] LECTURA DEL LABORATORIO EN LA PI'; Refrescable = $false; PropiaVista = $true  }
+        # --- Menu principal consolidado [A]-[F] ------------------------------
+        'A' = @{ Titulo = '[A] RESPALDO AL NODO SMB';              Refrescable = $false; PropiaVista = $true  }
+        'B' = @{ Titulo = '[B] COPIA FRIA FUERA DE LINEA';         Refrescable = $false; PropiaVista = $true  }
+        'C' = @{ Titulo = '[C] LABORATORIO DE MAQUINAS VIRTUALES'; Refrescable = $false; PropiaVista = $true  }
+        'D' = @{ Titulo = '[D] RECUPERACION ANTE DESASTRES';       Refrescable = $false; PropiaVista = $true  }
+        'E' = @{ Titulo = '[E] PROGRAMACION Y SERVICIO';           Refrescable = $false; PropiaVista = $true  }
+        'F' = @{ Titulo = '[F] DIAGNOSTICO E INVENTARIO';          Refrescable = $false; PropiaVista = $true  }
+        # --- Claves CLI heredadas (retrocompatibilidad) ----------------------
+        '1' = @{ Titulo = '[1] COPIA AL NODO';                     Refrescable = $false; PropiaVista = $false }
+        '2' = @{ Titulo = '[2] VISTA PREVIA AL NODO';              Refrescable = $true;  PropiaVista = $false }
+        '3' = @{ Titulo = '[3] VERIFICACION DEL NODO';             Refrescable = $true;  PropiaVista = $false }
+        '4' = @{ Titulo = '[4] ESTADO COMPLETO';                   Refrescable = $true;  PropiaVista = $false }
+        '5' = @{ Titulo = '[5] SEMILLA DE ARRANQUE';               Refrescable = $false; PropiaVista = $false }
+        '6' = @{ Titulo = '[6] ESTADO DEL SERVICIO';               Refrescable = $true;  PropiaVista = $false }
+        '7' = @{ Titulo = '[7] COPIA AL DISCO FRIO';               Refrescable = $false; PropiaVista = $false }
+        '8' = @{ Titulo = '[8] VISTA PREVIA AL DISCO FRIO';        Refrescable = $true;  PropiaVista = $false }
+        '9' = @{ Titulo = '[9] AUDITORIA DEL DISCO FRIO';          Refrescable = $true;  PropiaVista = $false }
+        'R' = @{ Titulo = '[R] ENSAYO DE RESTAURACION';            Refrescable = $true;  PropiaVista = $false }
+        'H' = @{ Titulo = '[H] CARPETAS SIN CLASIFICAR';           Refrescable = $true;  PropiaVista = $false }
+        'L' = @{ Titulo = '[L] VER EL LABORATORIO';                Refrescable = $true;  PropiaVista = $false }
+        'V' = @{ Titulo = '[V] VISTA PREVIA DEL LABORATORIO';      Refrescable = $true;  PropiaVista = $false }
+        'G' = @{ Titulo = '[G] GUARDAR LABORATORIO AL NODO';       Refrescable = $false; PropiaVista = $false }
+        'T' = @{ Titulo = '[T] LECTURA DEL LABORATORIO EN LA PI';  Refrescable = $false; PropiaVista = $true  }
     }
     $clave = ('' + $Opcion).Trim().ToUpperInvariant()
     if (-not $tabla.ContainsKey($clave)) { return $null }
@@ -2372,7 +2748,7 @@ function Get-MetaDeOpcion {
 function Write-CabeceraDeVista {
     <#
         .SYNOPSIS
-            Pinta la cabecera con ruta de navegacion (breadcrumb) de una subvista.
+            Pinta la cabecera con ruta de navegacion (breadcrumb) adaptada al ancho.
         .PARAMETER Titulo
             Titulo de la subvista activa.
     #>
@@ -2382,11 +2758,13 @@ function Write-CabeceraDeVista {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Titulo
     )
 
+    $geo = Get-GeometriaDeConsola
+    $script:AnchoTablero = $geo.Ancho
     $p = $script:Paleta
     $u = $script:Capacidades.Unicode
     Write-Linea ' '
-    Write-Linea ('  {0}TABLERO{1}  {2}>{1}  {3}{4}{1}' -f $p.Tenue, $p.Fin, $p.Marco, ($p.Fuerte + $p.Titulo), $Titulo)
-    Write-Linea (Get-Regla -Paleta $p -Unicode $u)
+    Write-Linea ('  {0}CONSOLA{1}  {2}>{1}  {3}{4}{1}' -f $p.Tenue, $p.Fin, $p.Marco, ($p.Fuerte + $p.Titulo), $Titulo)
+    Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $geo.Ancho)
     Write-Linea ' '
 }
 
@@ -2834,6 +3212,478 @@ function Invoke-VistaLecturaPi {
     }
 }
 
+function Read-AccionEnVivo {
+    <#
+        .SYNOPSIS
+            Espera pulsacion directa de una tecla o refresco automatico / cambio de ancho.
+        .DESCRIPTION
+            Mantiene la consola viva sin bloquear el redibujo: refresca cada
+            IntervaloSegundos y detecta al instante redimensionamientos de la
+            ventana de terminal. Si la entrada esta redirigida cae a Read-Host.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [ValidateRange(1, 300)][int] $IntervaloSegundos = 15,
+        [int] $AnchoInicial = 0,
+        [string] $Etiqueta = 'Seleccione opcion [A-F], [R] refrescar, [S] salir'
+    )
+
+    if (-not (Test-ConsolaInteractiva)) {
+        $txt = ('' + (Read-Host '  opcion')).Trim().ToUpperInvariant()
+        if ($txt -eq 'S' -or $txt -eq 'Q') { return [pscustomobject]@{ Tipo = 'Salir'; Tecla = 'S' } }
+        if ($txt -eq '' -or $txt -eq 'R') { return [pscustomobject]@{ Tipo = 'Refrescar'; Tecla = 'R' } }
+        return [pscustomobject]@{ Tipo = 'Opcion'; Tecla = $txt }
+    }
+
+    $p = $script:Paleta
+    Write-Host ('  {0}{1}{2} ' -f $p.Tenue, $Etiqueta, $p.Fin) -NoNewline
+
+    $anchoBase = if ($AnchoInicial -gt 0) { $AnchoInicial } else { Get-AnchoDeConsola }
+    $pasos = [Math]::Max(1, [int]($IntervaloSegundos * 1000 / 150))
+    for ($i = 0; $i -lt $pasos; $i++) {
+        try {
+            $wAct = Get-AnchoDeConsola
+            if ($wAct -ne $anchoBase) {
+                return [pscustomobject]@{ Tipo = 'Redimension'; Tecla = '' }
+            }
+            if ([Console]::KeyAvailable) {
+                $k = [Console]::ReadKey($true)
+                if ($k.Key -eq [System.ConsoleKey]::Escape) {
+                    return [pscustomobject]@{ Tipo = 'Salir'; Tecla = 'S' }
+                }
+                if ($k.Key -eq [System.ConsoleKey]::Enter) {
+                    return [pscustomobject]@{ Tipo = 'Refrescar'; Tecla = 'R' }
+                }
+                $ch = ('' + $k.KeyChar).Trim().ToUpperInvariant()
+                if (-not $ch) { continue }
+                if ($ch -eq 'S' -or $ch -eq 'Q') {
+                    return [pscustomobject]@{ Tipo = 'Salir'; Tecla = 'S' }
+                }
+                if ($ch -eq 'R') {
+                    return [pscustomobject]@{ Tipo = 'Refrescar'; Tecla = 'R' }
+                }
+                return [pscustomobject]@{ Tipo = 'Opcion'; Tecla = $ch }
+            }
+        }
+        catch {
+            break
+        }
+        Start-Sleep -Milliseconds 150
+    }
+    return [pscustomobject]@{ Tipo = 'Refrescar'; Tecla = '' }
+}
+
+function Invoke-VistaNodo {
+    <#
+        .SYNOPSIS
+            Subvista [A]: operaciones y verificacion contra el nodo SMB.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta; $u = $script:Capacidades.Unicode
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $seguirV = $true
+    while ($seguirV) {
+        Clear-PantallaInteractiva
+        Write-CabeceraDeVista -Titulo '[A] RESPALDO AL NODO SMB'
+        $unc = '' + $Configuracion.destinos.nodo.unc
+        $vivo = [bool](Test-Path -LiteralPath $unc -ErrorAction SilentlyContinue)
+        $lib = if ($vivo) { Format-Espacio -Bytes (Get-EspacioLibre -Ruta $unc) } else { 'no disponible' }
+        $est = Read-EstadoRespaldo -Carpeta $carpeta
+        $ult = Format-Antiguedad -Momento ('' + $est['copia_momento'])
+        $colorN = if ($vivo) { $p.Verde } else { $p.Rojo }
+        $sitN = if ($vivo) { 'En linea' } else { 'FUERA DE LINEA' }
+
+        Write-Linea ('   {0}Destino SMB   {1}  {2}' -f $p.Etiqueta, $p.Fin, $unc)
+        Write-Linea ('   {0}Estado        {1}  {2}{3}{1}   ({4})' -f $p.Etiqueta, $p.Fin, $colorN, $sitN, $lib)
+        Write-Linea ('   {0}Ultima copia  {1}  {2}' -f $p.Etiqueta, $p.Fin, $ult)
+        Write-Linea ' '
+        Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $script:AnchoTablero)
+        Write-Linea ('   {0}[1]{1} Simulacion previa (sin escritura)' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[2]{1} Ejecutar respaldo al nodo SMB' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[3]{1} Verificar integridad (estructura y SHA-256)' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[R]{1} Actualizar      {0}[Enter / V]{1} Volver a la consola' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ' '
+
+        $el = ('' + (Read-Host '   accion')).Trim().ToUpperInvariant()
+        switch ($el) {
+            ''  { $seguirV = $false }
+            'V' { $seguirV = $false }
+            'S' { $seguirV = $false }
+            'R' { }
+            '1' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[A] > SIMULACION AL NODO SMB'
+                Invoke-OpcionDelTablero -Opcion '2' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Nodo SMB')
+            }
+            '2' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[A] > EJECUTAR RESPALDO AL NODO SMB'
+                Invoke-OpcionDelTablero -Opcion '1' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Nodo SMB') }
+                $script:CanceladaEnVista = $false
+            }
+            '3' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[A] > VERIFICACION DE INTEGRIDAD (SHA-256)'
+                Invoke-OpcionDelTablero -Opcion '3' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Nodo SMB')
+            }
+            default {
+                Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Nodo SMB')
+            }
+        }
+    }
+}
+
+function Invoke-VistaDiscoFrio {
+    <#
+        .SYNOPSIS
+            Subvista [B]: operaciones y auditoria del disco frio fuera de linea.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta; $u = $script:Capacidades.Unicode
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $ficha = $Configuracion.destinos.discoFrio
+    $seguirV = $true
+    while ($seguirV) {
+        Clear-PantallaInteractiva
+        Write-CabeceraDeVista -Titulo '[B] COPIA FRIA FUERA DE LINEA'
+        $disco = Get-DiscoFrio -Configuracion $Configuracion 2>$null
+        $est = Read-EstadoRespaldo -Carpeta $carpeta
+        $ult = Format-Antiguedad -Momento ('' + $est['disco_momento'])
+
+        if ($disco) {
+            $lib = Format-Espacio -Bytes (Get-EspacioLibre -Ruta $disco.Raiz)
+            Write-Linea ('   {0}Unidad        {1}  {2}Montado en {3}{1}  (firma {4}, {5})' -f $p.Etiqueta, $p.Fin, $p.Verde, $disco.Raiz, $disco.Firma, $lib)
+        }
+        else {
+            Write-Linea ('   {0}Unidad        {1}  {2}Desconectado{1}  (esperada firma {3}, centinela {4})' -f $p.Etiqueta, $p.Fin, $p.Ambar, $ficha.firma, $ficha.centinela)
+        }
+        Write-Linea ('   {0}Politica      {1}  Aditiva estricta (equipo + nodo + laboratorio VM; nunca borra)' -f $p.Etiqueta, $p.Fin)
+        Write-Linea ('   {0}Ultima copia  {1}  {2}' -f $p.Etiqueta, $p.Fin, $ult)
+        Write-Linea ' '
+        Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $script:AnchoTablero)
+        Write-Linea ('   {0}[1]{1} Simulacion previa (3 pasadas, sin escritura)' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[2]{1} Ejecutar copia fria aditiva completa' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[3]{1} Auditar archivos incompletos en disco frio' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[R]{1} Re-detectar unidad      {0}[Enter / V]{1} Volver a la consola' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ' '
+
+        $el = ('' + (Read-Host '   accion')).Trim().ToUpperInvariant()
+        switch ($el) {
+            ''  { $seguirV = $false }
+            'V' { $seguirV = $false }
+            'S' { $seguirV = $false }
+            'R' { }
+            '1' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[B] > SIMULACION DE COPIA FRIA'
+                Invoke-OpcionDelTablero -Opcion '8' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Disco frio')
+            }
+            '2' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[B] > EJECUTAR COPIA FRIA ADITIVA'
+                Invoke-OpcionDelTablero -Opcion '7' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Disco frio') }
+                $script:CanceladaEnVista = $false
+            }
+            '3' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[B] > AUDITORIA DE ARCHIVOS INCOMPLETOS'
+                Invoke-OpcionDelTablero -Opcion '9' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Disco frio')
+            }
+            default {
+                Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Disco frio')
+            }
+        }
+    }
+}
+
+function Invoke-VistaLaboratorio {
+    <#
+        .SYNOPSIS
+            Subvista [C]: gestion integral del laboratorio VM (nodo, disco frio,
+            validacion en 3 sitios y lectura de manifiestos en la Pi).
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $comunes = @{}
+    if ($RutaConfiguracion) { $comunes['RutaConfiguracion'] = $RutaConfiguracion }
+    $p = $script:Paleta; $u = $script:Capacidades.Unicode
+    $seguirV = $true
+    while ($seguirV) {
+        Clear-PantallaInteractiva
+        Write-CabeceraDeVista -Titulo '[C] LABORATORIO DE MAQUINAS VIRTUALES'
+        $vista = & "$nucleo\laboratorio.ps1" @comunes -Accion Ver
+        Show-Laboratorio -Vista $vista
+        Write-Linea ' '
+        Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $script:AnchoTablero)
+        Write-Linea ('   {0}[1]{1} Validacion 3 sitios (D: / Nodo / Frio)   {0}[5]{1} Sincronizar lab al nodo SMB' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[2]{1} Validacion profunda del disco frio       {0}[6]{1} Copia fria de VMs al USB' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[3]{1} Simulacion diferencial al nodo SMB       {0}[7]{1} Lectura de manifiestos en Pi (en vivo)' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[4]{1} Simulacion local al disco frio           {0}[R]{1} Actualizar   {0}[Enter / V]{1} Volver' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ' '
+
+        $el = ('' + (Read-Host '   accion')).Trim().ToUpperInvariant()
+        switch ($el) {
+            ''  { $seguirV = $false }
+            'V' { $seguirV = $false }
+            'S' { $seguirV = $false }
+            'R' { }
+            '1' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > VALIDACION 3 SITIOS'
+                Write-Anuncio -Que 'Validacion del laboratorio en D:, nodo SMB y disco frio' `
+                    -Detalle 'Solo lectura (~3 s). Verifica presencia, tamano, fecha y vigencia de manifiestos.'
+                Write-Linea ' '
+                & "$nucleo\laboratorio.ps1" @comunes -Accion Validar
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+            }
+            '2' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > VALIDACION PROFUNDA DEL DISCO FRIO'
+                Write-Anuncio -Que 'Validacion profunda contra manifiestos del disco frio' `
+                    -Detalle 'Solo lectura. Relee fisicamente los bloques del USB (decenas de minutos).'
+                if (Confirm-AccionDeTablero -Resumen 'Se releeran los discos virtuales en el disco frio para detectar degradacion de bits contra sus manifiestos.' -EtiquetaSi 'Iniciar lectura profunda') {
+                    & "$nucleo\laboratorio.ps1" @comunes -Accion Validar -Profundo
+                    [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+                }
+                $script:CanceladaEnVista = $false
+            }
+            '3' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > SIMULACION AL NODO SMB'
+                Invoke-OpcionDelTablero -Opcion 'V' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+            }
+            '4' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > SIMULACION AL DISCO FRIO'
+                Write-Anuncio -Que 'Vista previa de copia fria del laboratorio VM' `
+                    -Detalle 'NO escribe nada en el disco USB. Mide bloques a copiar y espacio requerido.'
+                $pf = & "$nucleo\laboratorio.ps1" @comunes -Accion PreviaFrio
+                Show-GuardadoDelLaboratorio -Resultado $pf
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+            }
+            '5' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > SINCRONIZAR LABORATORIO AL NODO'
+                Invoke-OpcionDelTablero -Opcion 'G' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM') }
+                $script:CanceladaEnVista = $false
+            }
+            '6' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[C] > COPIA FRIA DE VMS AL USB'
+                Write-Anuncio -Que 'Copia fria diferencial de VMs al disco USB' `
+                    -Detalle 'Escribe bloques en el disco frio (aditivo, reanudable, sin red). Requiere VMs apagadas.'
+                $discoLab = Get-DiscoFrio -Configuracion $Configuracion 2>$null
+                if (-not $discoLab) {
+                    Show-DiscoFrioNoConectado -Configuracion $Configuracion
+                    [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+                }
+                elseif (Confirm-AccionDeTablero -Resumen ('Se copiara el laboratorio VM por bloques al disco frio en {0} (firma {1}). Confirme que todas las VMs estan apagadas.' -f $discoLab.Raiz, $discoLab.Firma)) {
+                    $gf = & "$nucleo\laboratorio.ps1" @comunes -Accion GuardarFrio -Confirm:$false
+                    Show-GuardadoDelLaboratorio -Resultado $gf
+                    [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+                }
+                $script:CanceladaEnVista = $false
+            }
+            '7' {
+                Invoke-VistaLecturaPi -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            default {
+                Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Laboratorio VM')
+            }
+        }
+    }
+}
+
+function Invoke-VistaRecuperacion {
+    <#
+        .SYNOPSIS
+            Subvista [D]: recuperacion ante desastres (_SEMILLA y estado DR).
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta; $u = $script:Capacidades.Unicode
+    $carpeta = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $seguirV = $true
+    while ($seguirV) {
+        Clear-PantallaInteractiva
+        Write-CabeceraDeVista -Titulo '[D] RECUPERACION ANTE DESASTRES (_SEMILLA)'
+        $est = Read-EstadoRespaldo -Carpeta $carpeta
+        $sem = Format-Antiguedad -Momento ('' + $est['semilla_momento'])
+        $dr = if ($est.ContainsKey('restauracion_probada') -and $est['restauracion_probada']) { '' + $est['restauracion_probada'] } else { 'pendiente (nunca registrada)' }
+        Write-Linea ('   {0}Ultima verificacion  {1}  {2}' -f $p.Etiqueta, $p.Fin, $sem)
+        Write-Linea ('   {0}Ensayo DR en limpio  {1}  {2}' -f $p.Etiqueta, $p.Fin, $dr)
+        Write-Linea ' '
+        Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $script:AnchoTablero)
+        Write-Linea ('   {0}[1]{1} Verificar integridad de _SEMILLA y RESTAURAR.ps1 en el nodo' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[2]{1} Regenerar _SEMILLA en el nodo (sin llaves privadas)' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[R]{1} Actualizar      {0}[Enter / V]{1} Volver a la consola' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ' '
+
+        $el = ('' + (Read-Host '   accion')).Trim().ToUpperInvariant()
+        switch ($el) {
+            ''  { $seguirV = $false }
+            'V' { $seguirV = $false }
+            'S' { $seguirV = $false }
+            'R' { }
+            '1' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[D] > VERIFICACION DE _SEMILLA'
+                Invoke-OpcionDelTablero -Opcion 'R' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Recuperacion')
+            }
+            '2' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[D] > REGENERAR _SEMILLA'
+                Invoke-OpcionDelTablero -Opcion '5' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                if (-not $script:CanceladaEnVista) { [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Recuperacion') }
+                $script:CanceladaEnVista = $false
+            }
+            default {
+                Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Recuperacion')
+            }
+        }
+    }
+}
+
+function Invoke-VistaProgramacion {
+    <#
+        .SYNOPSIS
+            Subvista [E]: unifica estado de tareas/integridad del motor y
+            gestion de ventanas de ejecucion.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta; $u = $script:Capacidades.Unicode
+    $seguirV = $true
+    while ($seguirV) {
+        Clear-PantallaInteractiva
+        Write-CabeceraDeVista -Titulo '[E] PROGRAMACION Y SERVICIO'
+        Show-VeredictoDelAutomatismo
+        Write-Linea ' '
+        Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $script:AnchoTablero)
+        Write-Linea ('   {0}[1]{1} Administrar ventanas de ejecucion y umbral de alerta' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[R]{1} Re-evaluar servicio      {0}[Enter / V]{1} Volver a la consola' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ' '
+
+        $el = ('' + (Read-Host '   accion')).Trim().ToUpperInvariant()
+        switch ($el) {
+            ''  { $seguirV = $false }
+            'V' { $seguirV = $false }
+            'S' { $seguirV = $false }
+            'R' { }
+            '1' {
+                $null = Show-Reparto -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            default {
+                Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Programacion')
+            }
+        }
+    }
+}
+
+function Invoke-VistaDiagnostico {
+    <#
+        .SYNOPSIS
+            Subvista [F]: cola completa de alertas priorizadas, carpetas sin
+            clasificar, estado completo y eventos recientes del registro diario.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
+    )
+
+    $p = $script:Paleta; $u = $script:Capacidades.Unicode
+    $seguirV = $true
+    while ($seguirV) {
+        Clear-PantallaInteractiva
+        Write-CabeceraDeVista -Titulo '[F] DIAGNOSTICO E INVENTARIO'
+        $dDiag = Get-DatosDeVentana -Configuracion $Configuracion
+        Write-Linea ('   {0}ALERTAS PRIORIZADAS ({1}){2}' -f ($p.Fuerte + $p.Titulo), @($dDiag.Alertas).Count, $p.Fin)
+        if (@($dDiag.Alertas).Count -eq 0) {
+            Write-Linea ('     {0}0 incidencias activas.{1}' -f $p.Verde, $p.Fin)
+        }
+        else {
+            foreach ($al in @($dDiag.Alertas)) {
+                $col = if ($al.Nivel -eq 'Critico') { $p.Rojo } else { $p.Ambar }
+                $etiq = if ($al.Nivel -eq 'Critico') { 'CRITICO    ' } else { 'ADVERTENCIA' }
+                Write-Linea ('     {0}{1}{2}  [{3}] {4}' -f $col, $etiq, $p.Fin, $al.Opcion, $al.Mensaje)
+            }
+        }
+        Write-Linea ' '
+        Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $script:AnchoTablero)
+        Write-Linea ('   {0}[1]{1} Carpetas sin clasificar en contenedores' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[2]{1} Registro de estado completo (ESTADO.txt)' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[3]{1} Ultimos 20 eventos del registro de hoy' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ('   {0}[R]{1} Actualizar      {0}[Enter / V]{1} Volver a la consola' -f ($p.Fuerte + $p.Valor), $p.Fin)
+        Write-Linea ' '
+
+        $el = ('' + (Read-Host '   accion')).Trim().ToUpperInvariant()
+        switch ($el) {
+            ''  { $seguirV = $false }
+            'V' { $seguirV = $false }
+            'S' { $seguirV = $false }
+            'R' { }
+            '1' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[F] > CARPETAS SIN CLASIFICAR'
+                Invoke-OpcionDelTablero -Opcion 'H' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Diagnostico')
+            }
+            '2' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[F] > ESTADO COMPLETO'
+                Invoke-OpcionDelTablero -Opcion '4' -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion -Interactivo
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Diagnostico')
+            }
+            '3' {
+                Clear-PantallaInteractiva; Write-CabeceraDeVista -Titulo '[F] > ULTIMOS EVENTOS DE HOY'
+                $carpLog = Get-CarpetaDeRegistro -Configuracion $Configuracion
+                $archLog = Join-Path $carpLog ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))
+                if (Test-Path -LiteralPath $archLog -PathType Leaf) {
+                    $ultimas = @(Get-Content -LiteralPath $archLog -Encoding UTF8 -Tail 20 -ErrorAction SilentlyContinue)
+                    foreach ($l in $ultimas) { Write-Linea ('   ' + $l) }
+                    Write-Veredicto -Nivel 'OK' -Frase ('Mostradas {0} linea(s) recientes de {1}.' -f $ultimas.Count, (Split-Path $archLog -Leaf))
+                }
+                else {
+                    Write-Veredicto -Nivel 'SIN DATOS' -Frase ('No existe registro para hoy en {0}.' -f $carpLog)
+                }
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Diagnostico')
+            }
+            default {
+                Write-Veredicto -Nivel 'SIN DATOS' -Frase ('Opcion "{0}" no valida en esta vista.' -f $el)
+                [void](Wait-CierreDeVista -EtiquetaVolver 'continuar en Diagnostico')
+            }
+        }
+    }
+}
+
 function Invoke-OpcionDelTablero {
     <#
         .SYNOPSIS
@@ -3107,11 +3957,22 @@ function Invoke-OpcionDelTablero {
                 }
             }
             'A' {
-                # Lo que devuelve -la configuracion releida si se cambio el
-                # horario- se descarta a proposito: el bucle relee la
-                # configuracion despues de CADA opcion, porque en PowerShell 7
-                # la opcion corre en otro proceso y no puede devolverla.
-                $null = Show-Reparto -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+                Invoke-VistaNodo -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            'B' {
+                Invoke-VistaDiscoFrio -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            'C' {
+                Invoke-VistaLaboratorio -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            'D' {
+                Invoke-VistaRecuperacion -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            'E' {
+                Invoke-VistaProgramacion -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
+            }
+            'F' {
+                Invoke-VistaDiagnostico -Configuracion $Configuracion -RutaConfiguracion $RutaConfiguracion
             }
             default { Write-Warning 'Opcion no reconocida.' }
         }
@@ -3213,13 +4074,16 @@ $powershell51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\power
 $seguir = $true
 while ($seguir) {
     Clear-PantallaInteractiva
+    $anchoDibujo = Get-AnchoDeConsola
+    $datosPantalla = Get-DatosDeVentana -Configuracion $configuracion
+
     # SI EL PANEL RICO FALLA, SE VUELVE A LA VENTANA DE SIEMPRE Y SE QUEDA ASI
     # (ADR-0097): una version nueva del modulo no puede dejar al tablero sin
     # ventana el dia que hace falta.
     $pintada = $false
     if ($script:PanelRico) {
         try {
-            Show-VentanaRica -Datos (Get-DatosDeVentana -Configuracion $configuracion)
+            Show-VentanaRica -Datos $datosPantalla
             $pintada = $true
         }
         catch {
@@ -3227,7 +4091,7 @@ while ($seguir) {
             $script:PanelRico = $false
         }
     }
-    if (-not $pintada) { Show-Ventana -Configuracion $configuracion }
+    if (-not $pintada) { Show-Ventana -Configuracion $configuracion -Datos $datosPantalla }
 
     if ($script:AvisoMenu) {
         $pAviso = $script:Paleta
@@ -3236,21 +4100,23 @@ while ($seguir) {
         $script:AvisoMenu = ''
     }
 
-    # SE PIDE UNA "opcion", NO UNA "tecla". Lo pidio el responsable el
-    # 2026-09-03: "no quiero ver tecla, se ve vibecodeado con esos terminos".
-    # Y ademas es lo cierto -- lo que se elige es una operacion, y el teclado es
-    # solo por donde entra.
-    $elegida = ('' + (Read-Host '  opcion')).Trim().ToUpperInvariant()
-    if ($elegida -eq 'S') { $seguir = $false; continue }
-    if ($elegida -eq '') {
+    $operacionActiva = ($datosPantalla.ProgresoActivo -and $datosPantalla.ProgresoActivo.Activo) -or
+        $datosPantalla.LecturaActiva -or ($datosPantalla.Estado -eq 'Copiando')
+    $intervaloVivo = if ($operacionActiva) { 2 } else { 15 }
+    $accion = Read-AccionEnVivo -IntervaloSegundos $intervaloVivo -AnchoInicial $anchoDibujo `
+        -Etiqueta ('[A-F] abrir  [R] refrescar ({0}s)  [S] salir >' -f $intervaloVivo)
+
+    if ($accion.Tipo -eq 'Salir') { $seguir = $false; continue }
+    if ($accion.Tipo -eq 'Refrescar' -or $accion.Tipo -eq 'Redimension') {
         try { $configuracion = Get-ConfiguracionRespaldo @parametros }
         catch { $script:AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
         continue
     }
 
+    $elegida = '' + $accion.Tecla
     $metaElegida = Get-MetaDeOpcion -Opcion $elegida
     if (-not $metaElegida) {
-        $script:AvisoMenu = 'Opcion "{0}" no reconocida. Elige una letra o numero del menu.' -f $elegida
+        $script:AvisoMenu = 'Opcion "{0}" no reconocida. Use [A]-[F], [R] o [S].' -f $elegida
         continue
     }
 
@@ -3262,10 +4128,6 @@ while ($seguir) {
 
         $argumentos = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Opcion', $elegida, '-Interactivo')
         if ($rutaConfig) { $argumentos += @('-RutaConfiguracion', $rutaConfig) }
-        # PowerShell 7 antepone su carpeta de modulos en PSModulePath; al
-        # heredarla, PowerShell 5.1 intenta cargar Microsoft.PowerShell.Utility
-        # de .NET moderno y pierde cmdlets como Get-FileHash. Se limpia solo
-        # para el hijo 5.1 y se restaura en finally.
         $modPrevio = $env:PSModulePath
         try {
             $env:PSModulePath = '{0}\WindowsPowerShell\Modules;{1}\System32\WindowsPowerShell\v1.0\Modules' -f $env:ProgramFiles, $env:SystemRoot
@@ -3277,9 +4139,6 @@ while ($seguir) {
         Invoke-VistaDeOpcion -Opcion $elegida -Configuracion $configuracion -RutaConfiguracion ('' + $rutaConfig)
     }
 
-    # SE RELEE DESPUES DE CADA OPCION. [A] puede haber cambiado el horario, y
-    # en PowerShell 7 la opcion corrio en otro proceso: el objeto que traia este
-    # seguiria pintando un horario que ya no corre.
     try { $configuracion = Get-ConfiguracionRespaldo @parametros }
     catch { $script:AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
 }

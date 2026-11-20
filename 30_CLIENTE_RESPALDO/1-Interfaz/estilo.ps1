@@ -33,7 +33,149 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:AnchoTablero = 70
+$script:AnchoTablero = 84
+
+function Get-AnchoDeConsola {
+    <#
+        .SYNOPSIS
+            Devuelve el ancho real de la ventana de terminal. Nunca lanza.
+        .DESCRIPTION
+            Consulta primero Console.WindowWidth (refleja el tamano visible
+            actual al redimensionar la ventana), luego RawUI.WindowSize y
+            BufferSize. Si la salida esta redirigida devuelve 100.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+
+    try {
+        if (-not [Console]::IsOutputRedirected) {
+            $w = [Console]::WindowWidth
+            if ($w -ge 40) { return [int]$w }
+        }
+    }
+    catch { Write-Verbose "WindowWidth no disponible: $($_.Exception.Message)" }
+    try {
+        if ($Host -and $Host.UI -and $Host.UI.RawUI) {
+            $w2 = $Host.UI.RawUI.WindowSize.Width
+            if ($w2 -ge 40) { return [int]$w2 }
+            $w3 = $Host.UI.RawUI.BufferSize.Width
+            if ($w3 -ge 40) { return [int]$w3 }
+        }
+    }
+    catch { Write-Verbose "RawUI.WindowSize no disponible: $($_.Exception.Message)" }
+    return 100
+}
+
+function Get-GeometriaDeConsola {
+    <#
+        .SYNOPSIS
+            Calcula anchos proporcionales y perfil responsivo para cualquier ventana.
+        .DESCRIPTION
+            Tres perfiles segun ancho visible:
+              Compacto  (< 84 cols)   menu en 1 columna, celdas compactas
+              Estandar  (84-119 cols) tabla completa y menu en 2 columnas
+              Amplio    (>= 120 cols) tope legible de 124 cols, 2 columnas
+            Funcion pura cuando se pasa -AnchoConsola: facilita pruebas
+            deterministas en los tres tamanos sin abrir ventanas reales.
+        .PARAMETER AnchoConsola
+            Ancho de la consola en columnas. Si es <= 0 se consulta en vivo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [int] $AnchoConsola = 0
+    )
+
+    if ($AnchoConsola -le 0) { $AnchoConsola = Get-AnchoDeConsola }
+    $cons = [Math]::Max(56, [int]$AnchoConsola)
+    $ancho = [Math]::Max(52, [Math]::Min(120, $cons - 4))
+    $anchoPanel = [Math]::Max(54, [Math]::Min(124, $cons - 2))
+
+    if ($cons -lt 84) {
+        $perfil = 'Compacto'
+        $colPol = 4; $colDelta = 9; $colNodo = 11; $colDisco = 11
+        $colsMenu = 1
+        $anchoColMenu = $ancho
+        $destNom = 11; $destSit = 13; $destLib = 14
+    }
+    elseif ($cons -lt 120) {
+        $perfil = 'Estandar'
+        $colPol = 5; $colDelta = 11; $colNodo = 14; $colDisco = 14
+        $colsMenu = 2
+        $anchoColMenu = [Math]::Max(34, [int][Math]::Floor(($ancho - 2) / 2))
+        $destNom = 13; $destSit = 15; $destLib = 18
+    }
+    else {
+        $perfil = 'Amplio'
+        $colPol = 6; $colDelta = 12; $colNodo = 15; $colDisco = 15
+        $colsMenu = 2
+        $anchoColMenu = [Math]::Max(44, [int][Math]::Floor(($ancho - 4) / 2))
+        $destNom = 14; $destSit = 16; $destLib = 22
+    }
+
+    $colRaiz = [Math]::Max(17, $ancho - ($colPol + $colDelta + $colNodo + $colDisco))
+    $destCopia = [Math]::Max(16, $ancho - ($destNom + $destSit + $destLib))
+
+    return [pscustomobject]@{
+        AnchoConsola       = $cons
+        Perfil             = $perfil
+        Ancho              = $ancho
+        AnchoPanel         = $anchoPanel
+        ColRaiz            = $colRaiz
+        ColPol             = $colPol
+        ColDelta           = $colDelta
+        ColNodo            = $colNodo
+        ColDisco           = $colDisco
+        DestNombre         = $destNom
+        DestSituacion      = $destSit
+        DestCapacidad      = $destLib
+        DestCopia          = $destCopia
+        ColEtiquetaSumario = 14
+        ColumnasMenu       = $colsMenu
+        AnchoColMenu       = $anchoColMenu
+    }
+}
+
+function Get-EtiquetaDeEstado {
+    <#
+        .SYNOPSIS
+            Traduce el estado interno del contrato a terminologia operativa estandar.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Estado
+    )
+    switch ($Estado) {
+        'Protegido' { return 'NOMINAL' }
+        'Copiando'  { return 'EN EJECUCION' }
+        'Atencion'  { return 'ADVERTENCIA' }
+        'Falla'     { return 'CRITICO' }
+        default     { return 'SIN DATOS' }
+    }
+}
+
+function Format-BarraDeProgreso {
+    <#
+        .SYNOPSIS
+            Barra de progreso determinista en ASCII o bloques Unicode.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [ValidateRange(0, 100)][int] $Porcentaje,
+        [ValidateRange(6, 40)][int] $Ancho = 16,
+        [bool] $Unicode = $true
+    )
+
+    $lleno = [int][Math]::Round(($Porcentaje / 100.0) * $Ancho)
+    $lleno = [Math]::Max(0, [Math]::Min($Ancho, $lleno))
+    $vacio = $Ancho - $lleno
+    $cLleno = if ($Unicode) { [string][char] 0x2588 } else { '#' }
+    $cVacio = if ($Unicode) { [string][char] 0x2591 } else { '.' }
+    return ('[{0}{1}]' -f ($cLleno * $lleno), ($cVacio * $vacio))
+}
 
 function Initialize-Consola {
     <#
