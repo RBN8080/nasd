@@ -1509,7 +1509,7 @@ else {
         Test-Afirmacion -Nombre 'Y ensena la tabla entera: cada raiz y el FALLO en su celda' `
             -Esperado $true -Obtenido ($textoPanel -match 'C:\\dev' -and $textoPanel -match 'homeUsers' -and $textoPanel -match 'FALLO')
         Test-Afirmacion -Nombre 'Los corchetes salen tal cual: el texto se escapa antes del marcado' `
-            -Esperado $true -Obtenido ($textoPanel -match '\[corchetes\]' -and $textoPanel -match '\[A\] Respaldo al nodo SMB')
+            -Esperado $true -Obtenido ($textoPanel -match '\[corchetes\]' -and $textoPanel -match '\[1\] Respaldo al nodo SMB')
         Test-Afirmacion -Nombre 'Y la fila del laboratorio sale con los destinos (seccion 5.2)' `
             -Esperado $true -Obtenido ($textoPanel -match 'LAB VMWARE' -and $textoPanel -match 'guardando')
     }
@@ -2560,8 +2560,8 @@ Test-Afirmacion -Nombre 'El menu pide una "opcion", no una "tecla"' `
     -Esperado $true -Obtenido ($fuenteMenu -match "Read-Host\s+'\s*opcion'")
 Test-Afirmacion -Nombre 'Ninguna opcion se sigue llamando "simular": no decia simular QUE' `
     -Esperado $true -Obtenido ($fuenteMenu -notmatch "\[\d\]\s+simular")
-Test-Afirmacion -Nombre 'El menu consolidado agrupa operaciones en [A]-[F] sin vistas previas sangradas sueltas' `
-    -Esperado $true -Obtenido ($fuenteMenu -match '\[A\] Respaldo al nodo SMB' -and $fuenteMenu -notmatch '\[2\]\s\s+vista previa')
+Test-Afirmacion -Nombre 'El menu consolidado agrupa operaciones en [1]-[6] sin vistas previas sangradas sueltas' `
+    -Esperado $true -Obtenido ($fuenteMenu -match '\[1\] Respaldo al nodo SMB' -and $fuenteMenu -notmatch '\[2\]\s\s+vista previa')
 
 # ---------------------------------------------------------------------------
 #  LA AUDITORIA DEL 2026-09-14 -- siete defectos, y seis eran el mismo camino
@@ -3705,7 +3705,7 @@ Test-Afirmacion -Nombre 'Tras GuardarFrio del laboratorio, PROGRESO.json queda l
     -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $fEstado 'PROGRESO.json'))
 
 # ===========================================================================
-Write-Titulo 'Consola profesional: geometria responsiva, semantica estricta y menu [A]-[F]'
+Write-Titulo 'Consola profesional: geometria responsiva, semantica estricta y menu [1]-[6]'
 # ===========================================================================
 
 $geoC = Get-GeometriaDeConsola -AnchoConsola 72
@@ -3785,17 +3785,17 @@ $alPrio = @(Get-AlertasPriorizadas -Estado @{ disco_momento = $hoyIsoInt; huerfa
 Test-Afirmacion -Nombre 'Get-AlertasPriorizadas ordena Critico primero y omite aviso de disco frio si la copia es reciente' `
     -Esperado 'Critico|False' -Obtenido ('{0}|{1}' -f $alPrio[0].Nivel, ([bool](($alPrio | ForEach-Object { $_.Mensaje }) -match 'NAS-COLD-01')))
 
-# Menu consolidado [A]-[F]: ordenado, simetrico y sin sangrias manuales ni celdas vacias.
+# Menu consolidado numerico [1]-[6]: ordenado, simetrico y sin sangrias manuales ni celdas vacias.
 $menuNuevo = Get-MenuDelTablero
 $teclasMenu = (@($menuNuevo.Items | ForEach-Object { $_.Tecla }) -join '')
 $celdasMenu = @($menuNuevo.Filas | ForEach-Object { $_ })
 $hayVaciaMenu = @($celdasMenu | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0
 $haySangriaRota = @($celdasMenu | Where-Object { $_ -match '\]\s{2,}' }).Count -gt 0
-$mA = Get-MetaDeOpcion -Opcion 'A'
-$mF = Get-MetaDeOpcion -Opcion 'F'
-Test-Afirmacion -Nombre 'Menu consolidado [A]-[F] es secuencial, simetrico, sin celdas vacias ni sangrias rotas' `
-    -Esperado 'ABCDEF|False|False|True|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
-        $teclasMenu, $hayVaciaMenu, $haySangriaRota, $mA.PropiaVista, $mF.PropiaVista)
+$m1Menu = Get-MetaDeOpcion -Opcion '1'
+$m6Menu = Get-MetaDeOpcion -Opcion '6'
+Test-Afirmacion -Nombre 'Menu consolidado numerico [1]-[6] es secuencial, simetrico, sin celdas vacias ni sangrias rotas' `
+    -Esperado '123456|False|False|True|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
+        $teclasMenu, $hayVaciaMenu, $haySangriaRota, $m1Menu.PropiaVista, $m6Menu.PropiaVista)
 
 # ===========================================================================
 Write-Titulo 'Modulo NasRespaldo con manifiesto y contexto explicito del tablero'

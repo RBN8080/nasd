@@ -174,12 +174,15 @@ function Show-VentanaRica {
     }
     $tabla = @(Get-FilasDeTabla @argsTabla)
     if ($tabla.Count -eq 0) {
-        Write-SpectreHost (Format-Marcado -Texto 'Sin registro de volumenes todavia. Ejecute [A] Respaldo al nodo SMB.' -Tono 'Tenue')
+        Write-SpectreHost (Format-Marcado -Texto 'Sin registro de volumenes todavia. Ejecute [1] Respaldo al nodo SMB.' -Tono 'Tenue')
     }
     else {
+        # Descuenta los 16 caracteres de bordes/relleno de la tabla Spectre (5 columnas)
+        # y el ancho minimo de POL/DELTA/NODO/DISCO para evitar quiebres verticales.
+        $maxVolSpectre = [Math]::Max(18, [Math]::Min($geo.ColRaiz, $ancho - 50))
         $objetos = foreach ($m in $tabla) {
             [pscustomobject]@{
-                'VOLUMEN'    = (Format-Marcado -Texto (Limit-Texto -Texto $m.Etiqueta -Maximo $geo.ColRaiz) -Tono 'Valor')
+                'VOLUMEN'    = (Format-Marcado -Texto (Limit-Texto -Texto $m.Etiqueta -Maximo $maxVolSpectre) -Tono 'Valor')
                 'POL'        = (Format-Marcado -Texto $m.Clase -Tono 'Tenue')
                 'DELTA'      = (Format-Marcado -Texto ('{0} arch.' -f $m.Movidos) -Tono 'Tenue')
                 'NODO SMB'   = (Format-Marcado -Texto $m.Nodo.Texto -Tono $m.Nodo.Tono)
@@ -226,7 +229,7 @@ function Show-VentanaRica {
             }
             $extraAl = @($Datos.Alertas).Count - $alertasVis.Count
             if ($extraAl -gt 0) {
-                [void]$partesAl.Add((Format-Marcado -Texto ('+{0} mas en [F] Diagnostico' -f $extraAl) -Tono 'Tenue'))
+                [void]$partesAl.Add((Format-Marcado -Texto ('+{0} mas en [6] Diagnostico' -f $extraAl) -Tono 'Tenue'))
             }
             $rotAl = Format-Marcado -Texto (([string][char] 0x258C) + ' ALERTAS') -Tono $tonoAlerta -Negrita
             $filasSumario.Add((New-SpectreGridRow -Data @($rotAl, ($partesAl.ToArray() -join $separador))))
@@ -257,7 +260,7 @@ function Show-VentanaRica {
         Format-SpectreGrid -Data $filasSumario.ToArray() -Padding 2 -Width $ancho | Out-SpectreHost
     }
 
-    # --- Menu consolidado [A]-[F] --------------------------------------------
+    # --- Menu consolidado [1]-[6] --------------------------------------------
     $menu = Get-MenuDelTablero
     Write-SpectreHost ' '
     Write-SpectreRule -LineColor $c.Marco -Width $ancho

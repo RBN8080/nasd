@@ -57,7 +57,7 @@ Describe 'Contrato unificado de progreso atomico (PROGRESO.json)' {
     }
 }
 
-Describe 'Consola TUI adaptable, semantica estricta y menu [A]-[F]' {
+Describe 'Consola TUI adaptable, semantica estricta y menu [1]-[6]' {
     It 'calcula perfiles Compacto, Estandar y Amplio sin desbordar el ancho' {
         foreach ($caso in @(
                 @{ W = 72;  Perfil = 'Compacto'; Cols = 1 }
@@ -86,9 +86,9 @@ Describe 'Consola TUI adaptable, semantica estricta y menu [A]-[F]' {
         $v.Estado | Should -Be 'Falla'
     }
 
-    It 'expone menu secuencial [A]-[F] sin celdas vacias ni sangrias manuales' {
+    It 'expone menu secuencial numerico [1]-[6] sin celdas vacias ni sangrias manuales' {
         $m = Get-MenuDelTablero
-        ((@($m.Items | ForEach-Object { $_.Tecla })) -join '') | Should -Be 'ABCDEF'
+        ((@($m.Items | ForEach-Object { $_.Tecla })) -join '') | Should -Be '123456'
         $celdas = @($m.Filas | ForEach-Object { $_ })
         @($celdas | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count | Should -Be 0
         @($celdas | Where-Object { $_ -match '\]\s{2,}' }).Count | Should -Be 0
