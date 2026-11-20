@@ -101,11 +101,21 @@ function Invoke-PasadaAlDisco {
         [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Raices,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RaizDestino,
         [Parameter(Mandatory)][psobject[]] $Traducciones,
-        [switch] $Simular
+        [switch] $Simular,
+        [AllowEmptyString()][string] $CarpetaEstado = '',
+        [AllowEmptyString()][string] $NombrePasada = 'copiando'
     )
 
     $resultados = New-Object System.Collections.Generic.List[psobject]
+    $idxPasada = 0
+    $totalPasada = @($Raices).Count
     foreach ($r in $Raices) {
+        $idxPasada++
+        if (-not $Simular -and $CarpetaEstado) {
+            Write-ProgresoDeOperacion -Operacion 'disco' -Fase $NombrePasada -Objetivo 'Disco frio' `
+                -Elemento (Split-Path -Path $r.Ruta -Leaf) -Hechos ($idxPasada - 1) -Totales $totalPasada `
+                -Unidad 'raices' -Carpeta $CarpetaEstado -Confirm:$false
+        }
         $destino = Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $RaizDestino -Traducciones $Traducciones
 
         if ($Simular) {
@@ -288,7 +298,8 @@ function Invoke-CorridaAlDiscoFrio {
         $raizEquipo = Join-Path $disco.Raiz $ficha.prefijoEquipo
         $resultado.PasadaEquipo = Invoke-PasadaAlDisco -Raices $raicesEquipo `
             -RaizDestino $raizEquipo -Traducciones @($ficha.traduccionDeRutas) `
-            -Simular:$Simular -Confirm:$false
+            -Simular:$Simular -CarpetaEstado $(if ($Simular) { '' } else { $carpetaEstado }) `
+            -NombrePasada 'pasada-equipo' -Confirm:$false
 
         # --- Pasada B: nodo -> disco ----------------------------------------
         # EXIGE LAS DOS COSAS A LA VEZ. Si el nodo no responde, esta pasada no
@@ -304,7 +315,8 @@ function Invoke-CorridaAlDiscoFrio {
             $raizNodo = Join-Path $disco.Raiz $ficha.prefijoNodo
             $resultado.PasadaNodo = Invoke-PasadaAlDisco -Raices $raicesNodo `
                 -RaizDestino $raizNodo -Traducciones @($ficha.traduccionDelNodo) `
-                -Simular:$Simular -Confirm:$false
+                -Simular:$Simular -CarpetaEstado $(if ($Simular) { '' } else { $carpetaEstado }) `
+                -NombrePasada 'pasada-nodo' -Confirm:$false
             $resultado.Completa = $true
         }
         else {
@@ -329,6 +341,11 @@ function Invoke-CorridaAlDiscoFrio {
         $declaraLab = ($Configuracion.PSObject.Properties.Name -contains 'laboratorio') -and
             ($Configuracion.laboratorio.PSObject.Properties.Name -contains 'discoFrio')
         if ($declaraLab) {
+            if (-not $Simular) {
+                Write-ProgresoDeOperacion -Operacion 'disco' -Fase 'pasada-laboratorio' -Objetivo 'Disco frio' `
+                    -Elemento 'Laboratorio VM' -Hechos 0 -Totales 1 -Unidad 'pasos' `
+                    -Carpeta $carpetaEstado -Confirm:$false
+            }
             $paramsLab = @{ Accion = $(if ($Simular) { 'PreviaFrio' } else { 'GuardarFrio' }) }
             $rutaCfgLab = Get-Variable -Name 'RutaConfiguracionDelDisco' -Scope Script -ValueOnly -ErrorAction SilentlyContinue
             if ($rutaCfgLab) { $paramsLab['RutaConfiguracion'] = $rutaCfgLab }
@@ -344,7 +361,10 @@ function Invoke-CorridaAlDiscoFrio {
         # SIEMPRE en finally: una marca que se queda puesta hace que el icono
         # pinte FALLA, y eso es verdad cuando el motor murio y mentira cuando
         # solo faltaba retirarla.
-        if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
+        if (-not $Simular) {
+            Remove-ProgresoDeOperacion -Carpeta $carpetaEstado -Operacion 'disco' -Confirm:$false
+            Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false
+        }
     }
 
     # Ademas se cuenta lo que DE VERDAD se copio: decir "completa" cuando no se

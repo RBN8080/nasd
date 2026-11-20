@@ -457,7 +457,8 @@ function Get-EstadoDeRespaldo {
         [ValidateRange(0, 10000)][int] $Muestra = 10,
         [switch] $RevisarDisco,
         [string[]] $Recientes,
-        [switch] $OmitirEstructura
+        [switch] $OmitirEstructura,
+        [AllowEmptyString()][string] $CarpetaProgreso = ''
     )
 
     $unc = $Configuracion.destinos.nodo.unc
@@ -487,6 +488,11 @@ function Get-EstadoDeRespaldo {
             Write-Progress -Activity 'Verificando contra el nodo' `
                 -Status ("{0} de {1}: {2}" -f $n, $total, $r.Ruta) `
                 -PercentComplete ([int](100 * ($n - 1) / [Math]::Max(1, $total)))
+            if ($CarpetaProgreso) {
+                Write-ProgresoDeOperacion -Operacion 'verificacion' -Fase 'verificando' -Objetivo 'Nodo SMB' `
+                    -Elemento (Split-Path -Path $r.Ruta -Leaf) -Hechos ($n - 1) -Totales $total `
+                    -Unidad 'raices' -Carpeta $CarpetaProgreso -Confirm:$false
+            }
             Write-Information ("   [{0}/{1}] {2}" -f $n, $total, $r.Ruta) -InformationAction Continue
 
             if (-not $OmitirEstructura) {
@@ -512,6 +518,11 @@ function Get-EstadoDeRespaldo {
     # reviso" tiene que poder distinguirse de "se reviso y esta limpio".
     $discoEnVuelo = $null
     if ($RevisarDisco -and $disco) {
+        if ($CarpetaProgreso) {
+            Write-ProgresoDeOperacion -Operacion 'verificacion' -Fase 'auditando-disco' -Objetivo 'Disco frio' `
+                -Elemento $disco.Raiz -Hechos 0 -Totales 1 -Unidad 'pasos' `
+                -Carpeta $CarpetaProgreso -Confirm:$false
+        }
         $discoEnVuelo = Test-DiscoFrioEnVuelo -Configuracion $Configuracion -Disco $disco
     }
 
@@ -566,6 +577,7 @@ try {
     $alcance = Get-AlcanceDelMuestreo -UltimoMuestreo ('' + $previo['muestreo_momento']) `
         -HayRecientes:($PSBoundParameters.ContainsKey('Recientes'))
     $argsEstado = @{ Configuracion = $configuracion; Muestra = $TamanoMuestra; RevisarDisco = $RevisarDisco }
+    if ($marcaPuesta) { $argsEstado['CarpetaProgreso'] = $carpetaEstado }
     if ($alcance -eq 'recientes') {
         $argsEstado['Recientes'] = $Recientes
         if ($SoloHuellas) { $argsEstado['OmitirEstructura'] = $true }
@@ -665,5 +677,8 @@ finally {
     # marca tiene que irse igual. Una marca abandonada envejece y el icono pinta
     # FALLA -- cierto cuando el motor murio de verdad, y una mentira si solo es
     # que el nodo dejo de responder a mitad de una comprobacion.
-    if ($marcaPuesta) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
+    if ($marcaPuesta) {
+        Remove-ProgresoDeOperacion -Carpeta $carpetaEstado -Operacion 'verificacion' -Confirm:$false
+        Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false
+    }
 }

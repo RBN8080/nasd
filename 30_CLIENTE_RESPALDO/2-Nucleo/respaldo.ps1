@@ -598,9 +598,19 @@ $resultado.Causa = 'destinoInalcanzable'
     Write-RegistroRespaldo -Etapa 'centinela' -Mensaje "Centinelas correctos: $($cent.Revisados)."
 
     # --- Etapa 3: medir el cambio de TODAS las raices antes de copiar -------
+    $carpetaProg = if (-not $Simular) { Get-CarpetaDeEstado -Configuracion $Configuracion } else { '' }
+    try {
     $cambios = New-Object System.Collections.Generic.List[psobject]
+    $idxMed = 0
+    $totalRaices = @($raices).Count
 
     foreach ($r in $raices) {
+        $idxMed++
+        if ($carpetaProg) {
+            Write-ProgresoDeOperacion -Operacion 'nodo' -Fase 'midiendo' -Objetivo 'Nodo SMB' `
+                -Elemento (Split-Path -Path $r.Ruta -Leaf) -Hechos ($idxMed - 1) -Totales $totalRaices `
+                -Unidad 'raices' -Carpeta $carpetaProg -Confirm:$false
+        }
         if (-not (Test-OrigenUtilizable -Raiz $r)) {
             $resultado.Abortada = $true
             $resultado.Motivo = "Guarda de origen: $($r.Ruta) no es utilizable."
@@ -667,7 +677,14 @@ $resultado.Causa = 'destinoInalcanzable'
     }
 
     $copias = New-Object System.Collections.Generic.List[psobject]
+    $idxCop = 0
     foreach ($r in $raices) {
+        $idxCop++
+        if ($carpetaProg) {
+            Write-ProgresoDeOperacion -Operacion 'nodo' -Fase 'copiando' -Objetivo 'Nodo SMB' `
+                -Elemento (Split-Path -Path $r.Ruta -Leaf) -Hechos ($idxCop - 1) -Totales $totalRaices `
+                -Unidad 'raices' -Carpeta $carpetaProg -Confirm:$false
+        }
         $destino = Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $raizNodo -Traducciones $traducciones
         $accion = 'Copiar clase {0} a {1}' -f $r.Clase, $destino
         if (-not $PSCmdlet.ShouldProcess($r.Ruta, $accion)) { continue }
@@ -713,6 +730,10 @@ $resultado.Causa = 'destinoInalcanzable'
     $resultado.Copias = $copias.ToArray()
     $resultado.Fin = Get-Date
     return [pscustomobject]$resultado
+    }
+    finally {
+        if ($carpetaProg) { Remove-ProgresoDeOperacion -Carpeta $carpetaProg -Operacion 'nodo' -Confirm:$false }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -910,7 +931,10 @@ function Invoke-CorridaConEstado {
         throw $fallo
     }
     finally {
-        if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false }
+        if (-not $Simular) {
+            Remove-ProgresoDeOperacion -Carpeta $carpetaEstado -Operacion 'nodo' -Confirm:$false
+            Exit-MarcaDeCorrida -Carpeta $carpetaEstado -Confirm:$false
+        }
     }
 
     if ($Simular -or $null -eq $resultado) { return $resultado }

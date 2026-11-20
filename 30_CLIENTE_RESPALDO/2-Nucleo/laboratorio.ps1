@@ -388,7 +388,8 @@ function Write-BloquesEnSuSitio {
         [Parameter(Mandatory)][long] $Tamano,
         [Parameter(Mandatory)][datetime] $FechaUtc,
         [AllowEmptyString()][string] $Vm = '',
-        [AllowEmptyString()][string] $CarpetaEstado = ''
+        [AllowEmptyString()][string] $CarpetaEstado = '',
+        [ValidateSet('laboratorio', 'laboratorio-frio')][string] $Operacion = 'laboratorio'
     )
 
     if (-not $PSCmdlet.ShouldProcess($Destino, "Escribir $(@($Indices).Count) bloques")) { return [long]0 }
@@ -442,7 +443,7 @@ function Write-BloquesEnSuSitio {
                     if ($CarpetaEstado -and $Vm) {
                         Write-ProgresoDelLaboratorio -Vm $Vm -Archivo $hoja -Fase 'escribiendo' `
                             -Hechos $escritos -Totales $totalBytes -MbPorSegundo $mbs -EtaMinutos $eta `
-                            -Carpeta $CarpetaEstado -Confirm:$false
+                            -Carpeta $CarpetaEstado -Operacion $Operacion -Confirm:$false
                     }
                 }
             }
@@ -834,7 +835,7 @@ function Invoke-ArchivoGrandeFrio {
         }
         if ($Archivo.Vm) {
             Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
-                -Hechos 0 -Totales $enDisco.Length -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+                -Hechos 0 -Totales $enDisco.Length -MbPorSegundo 0 -Carpeta $Carpeta -Operacion 'laboratorio-frio' -Confirm:$false
         }
         $leido = Get-HuellasDeIndices -Ruta $enFrio -Bloque $Ficha.Bloque
         $huellasDisco = New-Object System.Collections.Generic.List[string]
@@ -875,11 +876,11 @@ function Invoke-ArchivoGrandeFrio {
     }
 
     [void](Write-BloquesEnSuSitio -Origen $Archivo.Ruta -Destino $enFrio -Bloque $Ficha.Bloque -Indices $indices `
-            -Tamano $actual.Tamano -FechaUtc $Archivo.FechaUtc -Vm $Archivo.Vm -CarpetaEstado $Carpeta -Confirm:$false)
+            -Tamano $actual.Tamano -FechaUtc $Archivo.FechaUtc -Vm $Archivo.Vm -CarpetaEstado $Carpeta -Operacion 'laboratorio-frio' -Confirm:$false)
 
     if ($Archivo.Vm) {
         Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'verificando' `
-            -Hechos $bytes -Totales $bytes -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+            -Hechos $bytes -Totales $bytes -MbPorSegundo 0 -Carpeta $Carpeta -Operacion 'laboratorio-frio' -Confirm:$false
     }
     $leidas = Get-HuellasDeIndices -Ruta $enFrio -Bloque $Ficha.Bloque -Indices $indices
     $cotejo = Compare-HuellasLeidas -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
@@ -1029,7 +1030,7 @@ function Invoke-GuardadoFrioDelLaboratorio {
         }
     }
     finally {
-        if (-not $Simular) { Remove-ProgresoDelLaboratorio -Carpeta $carpeta -Confirm:$false }
+        if (-not $Simular) { Remove-ProgresoDelLaboratorio -Carpeta $carpeta -Operacion 'laboratorio-frio' -Confirm:$false }
     }
 
     $res.Archivos = $archivos.ToArray()
@@ -1147,18 +1148,29 @@ function Get-ValidacionDelLaboratorio {
     }
 
     $filas = New-Object System.Collections.Generic.List[psobject]
-    foreach ($a in $inventario) {
-        $cNodo = & $celda $enNodo 'bloques' $a
-        $cFrio = 'n/a'
-        if ($ficha.Frio.Habilitado) { $cFrio = if ($null -eq $enFrio) { '?' } else { & $celda $enFrio $frio.Juego $a } }
-        if ($Profundo -and $a.Grande -and $cFrio -eq 'OK') {
-            $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $a.Relativa -Juego $frio.Juego)
-            $leido = Get-HuellasDeIndices -Ruta (Join-Path $frio.Raiz $a.Relativa) -Bloque $ficha.Bloque
-            $malos = 0
-            for ($i = 0; $i -lt @($m.Huellas).Count; $i++) { if (-not $leido.Mapa.ContainsKey($i) -or $leido.Mapa[$i] -ne $m.Huellas[$i]) { $malos++ } }
-            if ($malos -gt 0 -or $leido.Tamano -ne $m.Tamano) { $cFrio = 'DEGRADADO' }
+    $totalProf = if ($Profundo) { @($inventario | Where-Object { $_.Grande }).Count } else { 0 }
+    $hechosProf = 0
+    try {
+        foreach ($a in $inventario) {
+            $cNodo = & $celda $enNodo 'bloques' $a
+            $cFrio = 'n/a'
+            if ($ficha.Frio.Habilitado) { $cFrio = if ($null -eq $enFrio) { '?' } else { & $celda $enFrio $frio.Juego $a } }
+            if ($Profundo -and $a.Grande -and $cFrio -eq 'OK') {
+                Write-ProgresoDeOperacion -Operacion 'validacion-profunda' -Fase 'verificando' -Objetivo 'Disco frio' `
+                    -Elemento $a.Relativa -Hechos $hechosProf -Totales $totalProf -Unidad 'archivos' `
+                    -Carpeta $carpeta -Confirm:$false
+                $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $a.Relativa -Juego $frio.Juego)
+                $leido = Get-HuellasDeIndices -Ruta (Join-Path $frio.Raiz $a.Relativa) -Bloque $ficha.Bloque
+                $malos = 0
+                for ($i = 0; $i -lt @($m.Huellas).Count; $i++) { if (-not $leido.Mapa.ContainsKey($i) -or $leido.Mapa[$i] -ne $m.Huellas[$i]) { $malos++ } }
+                if ($malos -gt 0 -or $leido.Tamano -ne $m.Tamano) { $cFrio = 'DEGRADADO' }
+                $hechosProf++
+            }
+            $filas.Add([pscustomobject]@{ Relativa = $a.Relativa; Vm = $a.Vm; Grande = $a.Grande; Bytes = $a.Tamano; Nodo = $cNodo; Frio = $cFrio })
         }
-        $filas.Add([pscustomobject]@{ Relativa = $a.Relativa; Vm = $a.Vm; Grande = $a.Grande; Bytes = $a.Tamano; Nodo = $cNodo; Frio = $cFrio })
+    }
+    finally {
+        if ($Profundo) { Remove-ProgresoDeOperacion -Carpeta $carpeta -Operacion 'validacion-profunda' -Confirm:$false }
     }
 
     $peor = {

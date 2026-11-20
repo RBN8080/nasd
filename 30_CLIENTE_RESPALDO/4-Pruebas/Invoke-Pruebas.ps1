@@ -3637,6 +3637,72 @@ Test-Afirmacion -Nombre 'Y el veredicto del disco frio queda INCOMPLETA por el l
 $vFalla = Get-VeredictoDelDisco -Completa $true -Copias @() -Laboratorio ([pscustomobject]@{ Abortada = $true; Estado = 'Falla'; Omitida = $false; Correcto = $false; Motivo = 'x'; Archivos = @() })
 Test-Afirmacion -Nombre 'Un laboratorio que FALLA tumba el veredicto del disco frio' -Esperado 'Falla' -Obtenido $vFalla.Estado
 
+# ===========================================================================
+Write-Titulo 'Contrato unificado de progreso en vivo (PROGRESO.json)'
+# ===========================================================================
+
+$cajaProgOp = Join-Path $caja.Raiz 'progreso-unificado'
+New-Item -ItemType Directory -Path $cajaProgOp -Force | Out-Null
+
+Write-ProgresoDeOperacion -Operacion 'disco' -Fase 'pasada-equipo' -Objetivo 'Disco frio' `
+    -Elemento '01_DOCS' -Hechos 50MB -Totales 200MB -Unidad 'bytes' -TasaMBs 25.0 `
+    -Carpeta $cajaProgOp -Confirm:$false
+$pOp1 = Read-ProgresoDeOperacion -Carpeta $cajaProgOp
+Test-Afirmacion -Nombre 'Write/Read-ProgresoDeOperacion publica porcentaje, ETA y valida PID vivo' `
+    -Esperado 'disco|25|6|True|True|progreso-json' -Obtenido ('{0}|{1}|{2}|{3}|{4}|{5}' -f
+        $pOp1.Operacion, $pOp1.Porcentaje, $pOp1.EtaSegundos, $pOp1.ProcesoVivo, $pOp1.Activo, $pOp1.Fuente)
+
+$inicioPrev = $pOp1.InicioUtc
+Start-Sleep -Milliseconds 50
+Write-ProgresoDeOperacion -Operacion 'disco' -Fase 'pasada-equipo' -Objetivo 'Disco frio' `
+    -Elemento '02_FOTOS' -Hechos 100MB -Totales 200MB -Unidad 'bytes' -TasaMBs 25.0 `
+    -Carpeta $cajaProgOp -Confirm:$false
+$pOp2 = Read-ProgresoDeOperacion -Carpeta $cajaProgOp
+Test-Afirmacion -Nombre 'Actualizaciones sucesivas del mismo PID conservan InicioUtc y actualizan avance' `
+    -Esperado "$inicioPrev|50|02_FOTOS" -Obtenido ('{0}|{1}|{2}' -f $pOp2.InicioUtc, $pOp2.Porcentaje, $pOp2.Elemento)
+
+$fmtOp = Format-ProgresoDeOperacion -Progreso $pOp2
+Test-Afirmacion -Nombre 'Format-ProgresoDeOperacion resume porcentaje, tasa, ETA y objetivo' `
+    -Esperado 'True|True|True' -Obtenido ('{0}|{1}|{2}' -f ($fmtOp -match '50%'), ($fmtOp -match '25\.0 MB/s'), ($fmtOp -match 'Disco frio'))
+
+# Un proceso muerto nunca se presenta como Activo.
+$pidMuertoProg = (Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'exit' -PassThru -WindowStyle Hidden).Id
+Start-Sleep -Milliseconds 350
+$jsonMuerto = (@{
+    Version = 1; Operacion = 'nodo'; Fase = 'copiando'; Objetivo = 'Nodo SMB'; Elemento = 'x'
+    Hechos = 1; Totales = 2; Unidad = 'raices'; Porcentaje = 50; TasaMBs = 0; EtaSegundos = -1
+    Detalle = ''; Pid = $pidMuertoProg; InicioUtc = [datetime]::UtcNow.ToString('o')
+    ActualizadoUtc = [datetime]::UtcNow.ToString('o')
+} | ConvertTo-Json -Depth 2)
+Set-ContenidoAtomico -Ruta (Join-Path $cajaProgOp 'PROGRESO.json') -Contenido $jsonMuerto -Confirm:$false
+$pMuerto = Read-ProgresoDeOperacion -Carpeta $cajaProgOp
+Test-Afirmacion -Nombre 'PROGRESO.json con PID muerto se detecta inactivo (no finge operacion en curso)' `
+    -Esperado 'False|False' -Obtenido ('{0}|{1}' -f $pMuerto.ProcesoVivo, $pMuerto.Activo)
+
+Remove-ProgresoDeOperacion -Carpeta $cajaProgOp -Confirm:$false
+Test-Afirmacion -Nombre 'Remove-ProgresoDeOperacion limpia PROGRESO.json' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $cajaProgOp 'PROGRESO.json'))
+
+# Compatibilidad con Write/Remove-ProgresoDelLaboratorio y respaldo de lectura legada.
+Write-ProgresoDelLaboratorio -Vm 'Ubuntu' -Archivo 'disk.vmdk' -Fase 'escribiendo' `
+    -Hechos 40 -Totales 100 -MbPorSegundo 12.5 -EtaMinutos 3 -Carpeta $cajaProgOp -Operacion 'laboratorio-frio' -Confirm:$false
+$pLabSinc = Read-ProgresoDeOperacion -Carpeta $cajaProgOp
+Test-Afirmacion -Nombre 'Write-ProgresoDelLaboratorio sincroniza tambien PROGRESO.json con la operacion' `
+    -Esperado 'laboratorio-frio|40|Ubuntu|True' -Obtenido ('{0}|{1}|{2}|{3}' -f $pLabSinc.Operacion, $pLabSinc.Porcentaje, $pLabSinc.Objetivo, $pLabSinc.Activo)
+
+Remove-Item -LiteralPath (Join-Path $cajaProgOp 'PROGRESO.json') -Force
+$pLegado = Read-ProgresoDeOperacion -Carpeta $cajaProgOp
+Test-Afirmacion -Nombre 'Sin PROGRESO.json, Read-ProgresoDeOperacion lee LABORATORIO.progreso como respaldo' `
+    -Esperado 'laboratorio|40|laboratorio-legado' -Obtenido ('{0}|{1}|{2}' -f $pLegado.Operacion, $pLegado.Porcentaje, $pLegado.Fuente)
+
+Remove-ProgresoDelLaboratorio -Carpeta $cajaProgOp -Operacion 'laboratorio-frio' -Confirm:$false
+Test-Afirmacion -Nombre 'Remove-ProgresoDelLaboratorio retira ambos archivos de avance' `
+    -Esperado 'False|False' -Obtenido ('{0}|{1}' -f
+        (Test-Path -LiteralPath (Join-Path $cajaProgOp 'LABORATORIO.progreso')),
+        (Test-Path -LiteralPath (Join-Path $cajaProgOp 'PROGRESO.json')))
+Test-Afirmacion -Nombre 'Tras GuardarFrio del laboratorio, PROGRESO.json queda limpio' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $fEstado 'PROGRESO.json'))
+
 $env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas
 
 if (-not $Conservar) {
