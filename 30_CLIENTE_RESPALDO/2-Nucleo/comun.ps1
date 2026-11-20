@@ -3131,16 +3131,37 @@ function Get-VmAbiertaDelLaboratorio {
         [Parameter(Mandatory)][psobject] $Ficha
     )
 
+    # UN .lck SIN PROCESO vmware-vmx ES UN CANDADO HUERFANO (VMware o el equipo
+    # cerrados a la fuerza): la VM esta apagada y VMware lo ignora. Solo cuenta
+    # si hay alguna VM corriendo. El .vmss (suspendida) cuenta siempre.
+    $hayVmx = Test-VmxEnMarcha
     $raiz = $Ficha.Origen.TrimEnd('\')
     $abiertas = New-Object System.Collections.Generic.List[string]
     foreach ($e in @(Get-ChildItem -LiteralPath $raiz -Recurse -Force -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -like '*.lck' -or $_.Name -like '*.vmss' })) {
+        if ($e.Name -like '*.lck' -and -not $hayVmx) { continue }
         $rel = $e.FullName.Substring($raiz.Length + 1)
         $vm = $rel.Split('\')[0]
-        if ($vm -like '_POR_BORRAR*') { continue }
+        if ($vm -like '_POR_BORRAR*' -or $vm -eq '_lab') { continue }
         if (-not $abiertas.Contains($vm)) { $abiertas.Add($vm) }
     }
     return $abiertas.ToArray()
+}
+
+function Test-VmxEnMarcha {
+    <#
+        .SYNOPSIS
+            Si hay alguna VM de VMware corriendo en este equipo.
+        .DESCRIPTION
+            Una VM encendida es un proceso vmware-vmx. $script:VmxSimulado
+            (solo la bateria) fuerza la respuesta.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+    $simulado = Get-Variable -Name 'VmxSimulado' -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    if ($null -ne $simulado) { return [bool]$simulado }
+    return (@(Get-Process -Name 'vmware-vmx*' -ErrorAction SilentlyContinue).Count -gt 0)
 }
 
 function Write-EstadoDelLaboratorioPorVm {

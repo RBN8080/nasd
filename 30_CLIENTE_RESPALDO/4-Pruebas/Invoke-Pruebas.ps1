@@ -3066,9 +3066,19 @@ Test-Afirmacion -Nombre 'Y el siguiente [G] reenvia solo lo distinto y deja el n
 New-Item -ItemType Directory -Path "$labOrigen\VM1\disco.vmdk.lck" -Force | Out-Null
 & $tocarBloques @(400000) 9
 $antesLck = & $hashDe $vmdk1Nodo
+$script:VmxSimulado = $true
 $g6 = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
-Test-Afirmacion -Nombre 'Con una VM encendida (.lck) se niega y no escribe nada' `
+Test-Afirmacion -Nombre 'Con una VM encendida (.lck y vmware-vmx) se niega y no escribe nada' `
     -Esperado ('True|{0}' -f $antesLck) -Obtenido ('{0}|{1}' -f $g6.Abortada, (& $hashDe $vmdk1Nodo))
+$script:VmxSimulado = $false
+Test-Afirmacion -Nombre 'Un .lck huerfano (ningun vmware-vmx) no cuenta como VM encendida' `
+    -Esperado '0' -Obtenido ('' + @(Get-VmAbiertaDelLaboratorio -Ficha (Get-FichaDelLaboratorio -Configuracion $cfgLab)).Count)
+New-Item -ItemType Directory -Path "$labOrigen\_lab\candados_viejos\X\a.vmdk.lck" -Force | Out-Null
+$script:VmxSimulado = $true
+Test-Afirmacion -Nombre 'Los candados archivados en _lab no cuentan, ni con una VM corriendo' `
+    -Esperado 'VM1' -Obtenido ((@(Get-VmAbiertaDelLaboratorio -Ficha (Get-FichaDelLaboratorio -Configuracion $cfgLab))) -join ',')
+$script:VmxSimulado = $null
+Remove-Item -LiteralPath "$labOrigen\_lab" -Recurse -Force
 Remove-Item -LiteralPath "$labOrigen\VM1\disco.vmdk.lck" -Recurse -Force
 
 Remove-Item -LiteralPath "$labOrigen\VM2" -Recurse -Force
