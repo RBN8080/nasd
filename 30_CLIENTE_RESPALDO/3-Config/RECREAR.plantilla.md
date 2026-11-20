@@ -27,7 +27,7 @@ minutos.
    identidad de git. Se cronometra solo.
 3. **Los datos.** No los trae ningún guion: se copian.
    - Del nodo: `\\192.168.1.38\datos\01_BACKUP\EQUIPO-01\`
-   - Del disco frío: la unidad con etiqueta `COPIA-FRIA`, bajo `EQUIPO-01\`
+   - Del disco frío: la unidad con etiqueta `NAS-COLD-01`, bajo `EQUIPO-01\`
    - Las rutas debajo del nombre de máquina son **idénticas** a las del equipo,
      así que se sabe de dónde vino cada archivo sin leer documentación.
 4. **Las llaves SSH**, que viajan aparte y cifradas (`ADR-0080`).

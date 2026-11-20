@@ -2492,13 +2492,17 @@ function Show-DiscoFrioNoConectado {
     )
 
     $ficha = $Configuracion.destinos.discoFrio
+    $etiquetaDisco = 'disco frio'
+    if ($ficha.PSObject.Properties.Name -contains 'etiqueta' -and -not [string]::IsNullOrWhiteSpace('' + $ficha.etiqueta)) {
+        $etiquetaDisco = '' + $ficha.etiqueta
+    }
     $script:PermitirReintentoEnVista = $true
     $script:EtiquetaReintentoEnVista = 'reintentar tras conectar'
     Write-Linea ' '
     Write-Veredicto -Nivel 'ATENCION' -Frase (
-        'El disco frio no esta conectado o no paso firma ({0}) y centinela ({1}). No se toco nada.' -f
-        $ficha.firma, $ficha.centinela) `
-        -Accion 'Conecta el disco USB COPIA-FRIA y pulsa [R] para reintentar aqui mismo, o [Enter] para volver al tablero.'
+        'El disco frio ({0}, firma {1}, centinela {2}) no esta conectado o no paso la verificacion. No se toco nada.' -f
+        $etiquetaDisco, $ficha.firma, $ficha.centinela) `
+        -Accion ('Conecta la unidad USB {0} y pulsa [R] para reintentar aqui mismo, o [Enter] para volver al tablero.' -f $etiquetaDisco)
 }
 
 function Format-DuracionMinutos {
