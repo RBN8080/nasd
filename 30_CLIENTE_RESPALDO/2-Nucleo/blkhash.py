@@ -14,44 +14,102 @@
 #                                                 lista (una ruta por linea) y deja
 #                                                 <salida>/<i>.blk, AVANCE y FIN
 #
-# Antes de leer tira la cache de paginas (posix_fadvise), para leer del DISCO y
-# no de la RAM: un cotejo que lee la cache no prueba que el disco este sano.
+# Integridad + rendimiento:
+#   - Al abrir tira la cache entera con POSIX_FADV_DONTNEED para leer del DISCO
+#     y nunca de la RAM.
+#   - En lecturas secuenciales y tramos contiguos activa POSIX_FADV_SEQUENTIAL
+#     y purga la cache en ventana deslizante trasera cada 16 MiB en vez de cada
+#     1 MiB, para no destruir el readahead del kernel sobre el HDD mecanico.
+#   - Superpone lectura de disco (hilo principal) con SHA-256 (pool acotado de
+#     2 hilos; hashlib libera el GIL en CPython) manteniendo memoria acotada.
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
 import sys
 
+VENTANA_PURGA = 16 * 1024 * 1024  # 16 MiB de ventana deslizante para DONTNEED
+HILOS_HASH = 2
+EN_VUELO_MAX = 4
+FADV_DONTNEED = getattr(os, 'POSIX_FADV_DONTNEED', None)
+FADV_SEQUENTIAL = getattr(os, 'POSIX_FADV_SEQUENTIAL', None)
 
-def abrir(ruta):
+
+def _fadvise(fd, off, length, advice):
+    if advice is not None and hasattr(os, 'posix_fadvise'):
+        try:
+            os.posix_fadvise(fd, off, length, advice)
+        except OSError:
+            pass
+
+
+def abrir(ruta, secuencial=False):
     f = open(ruta, 'rb', buffering=0)
     fd = f.fileno()
-    if hasattr(os, 'posix_fadvise'):
-        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+    _fadvise(fd, 0, 0, FADV_DONTNEED)
+    if secuencial:
+        _fadvise(fd, 0, 0, FADV_SEQUENTIAL)
     return f
 
 
-def hash_bloque(f, off, n):
-    f.seek(off)
+def leer_exacto(f, n):
     leido = bytearray()
     while len(leido) < n:
         trozo = f.read(n - len(leido))
         if not trozo:
             break
         leido += trozo
-    if hasattr(os, 'posix_fadvise'):
-        os.posix_fadvise(f.fileno(), off, n, os.POSIX_FADV_DONTNEED)
-    return hashlib.sha256(bytes(leido)).hexdigest()
+    return bytes(leido)
+
+
+def _sha256_hex(datos):
+    return hashlib.sha256(datos).hexdigest()
+
+
+def hash_tramo_secuencial(f, inicio_off, fin_off, bs, pool):
+    """Lee [inicio_off, fin_off) secuencialmente con readahead + purga deslizante + SHA256 en pipeline."""
+    fd = f.fileno()
+    largo_tramo = fin_off - inicio_off
+    if largo_tramo <= 0:
+        return
+    if largo_tramo >= 4 * bs:
+        _fadvise(fd, inicio_off, largo_tramo, FADV_SEQUENTIAL)
+
+    f.seek(inicio_off)
+    cola = deque()
+    off = inicio_off
+    purgado_hasta = inicio_off
+
+    while off < fin_off:
+        n = min(bs, fin_off - off)
+        datos = leer_exacto(f, n)
+        cola.append(pool.submit(_sha256_hex, datos))
+        off += n
+
+        if off - purgado_hasta >= VENTANA_PURGA:
+            _fadvise(fd, purgado_hasta, off - purgado_hasta, FADV_DONTNEED)
+            purgado_hasta = off
+
+        while len(cola) >= EN_VUELO_MAX:
+            yield cola.popleft().result()
+
+    if off > purgado_hasta:
+        _fadvise(fd, purgado_hasta, off - purgado_hasta, FADV_DONTNEED)
+
+    while cola:
+        yield cola.popleft().result()
 
 
 def todos(f, size, bs):
-    off = 0
-    while off < size:
-        n = min(bs, size - off)
-        yield hash_bloque(f, off, n)
-        off += n
+    if size <= 0:
+        return
+    with ThreadPoolExecutor(max_workers=HILOS_HASH) as pool:
+        for h in hash_tramo_secuencial(f, 0, size, bs, pool):
+            yield h
 
 
 def modo_full(ruta, bs):
-    f = abrir(ruta)
+    f = abrir(ruta, secuencial=True)
     try:
         size = os.fstat(f.fileno()).st_size
         sys.stdout.write('SIZE %d\n' % size)
@@ -62,23 +120,59 @@ def modo_full(ruta, bs):
 
 
 def modo_ranges(ruta, bs):
-    f = abrir(ruta)
+    f = abrir(ruta, secuencial=False)
     try:
-        size = os.fstat(f.fileno()).st_size
+        fd = f.fileno()
+        size = os.fstat(fd).st_size
         sys.stdout.write('SIZE %d\n' % size)
+
+        indices = []
         for crudo in sys.stdin.buffer:
             # Windows PowerShell 5.1 antepone un BOM al canalizar texto a un
             # programa externo, aunque se le pida UTF-8 sin el. Medido el
-            # 2026-10-18: la primera linea llegaba como '﻿0'. Se leen bytes
+            # 2026-10-18: la primera linea llegaba como '\ufeff0'. Se leen bytes
             # y se decodifican aqui para que de igual la codificacion del sistema.
-            linea = crudo.decode('utf-8', 'replace').strip().lstrip('﻿')
+            linea = crudo.decode('utf-8', 'replace').strip().lstrip('\ufeff')
             if not linea:
                 continue
-            off = int(linea) * bs
-            if off >= size:
-                sys.stdout.write('-\n')
-                continue
-            sys.stdout.write(hash_bloque(f, off, min(bs, size - off)) + '\n')
+            indices.append(int(linea))
+
+        if not indices:
+            return
+
+        # Agrupa indices contiguos en tramos para aprovechar readahead y pipeline
+        # preservando exactamente el orden pedido por stdin (incluidos '-' fuera
+        # de rango o indices repetidos/desordenados).
+        with ThreadPoolExecutor(max_workers=HILOS_HASH) as pool:
+            pos = 0
+            total = len(indices)
+            while pos < total:
+                idx = indices[pos]
+                off = idx * bs
+                if idx < 0 or off >= size:
+                    sys.stdout.write('-\n')
+                    pos += 1
+                    continue
+
+                fin_pos = pos + 1
+                while fin_pos < total and indices[fin_pos] == indices[fin_pos - 1] + 1:
+                    if indices[fin_pos] * bs >= size:
+                        break
+                    fin_pos += 1
+
+                largo_run = fin_pos - pos
+                if largo_run >= 2:
+                    inicio_off = idx * bs
+                    fin_off = min(size, (indices[fin_pos - 1] + 1) * bs)
+                    for h in hash_tramo_secuencial(f, inicio_off, fin_off, bs, pool):
+                        sys.stdout.write(h + '\n')
+                else:
+                    n = min(bs, size - off)
+                    f.seek(off)
+                    datos = leer_exacto(f, n)
+                    _fadvise(fd, off, n, FADV_DONTNEED)
+                    sys.stdout.write(_sha256_hex(datos) + '\n')
+                pos = fin_pos
     finally:
         f.close()
 
@@ -104,7 +198,7 @@ def modo_lote(bs, lista, salida):
         escribir(os.path.join(salida, 'AVANCE'), '%d %d\n' % (i, total))
         try:
             antes = os.stat(ruta)
-            f = abrir(ruta)
+            f = abrir(ruta, secuencial=True)
             try:
                 hashes = list(todos(f, antes.st_size, bs))
             finally:

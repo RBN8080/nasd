@@ -3353,6 +3353,51 @@ $estadoCmdTexto = Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot 
 Test-Afirmacion -Nombre 'estado.cmd lanza tablero.ps1 en vez del stub de Fase 0' `
     -Esperado 'True|False' -Obtenido ('{0}|{1}' -f ($estadoCmdTexto -match 'tablero\.ps1'), ($estadoCmdTexto -match 'el motor no existe todavia'))
 
+Write-Titulo 'Fase 3: laboratorio rapido, agrupacion contigua y renombres de VMs sin re-subir'
+
+# Agrupacion de bloques contiguos (run coalescing).
+$tramosLab = Group-IndicesContiguos -Indices @(0, 1, 2, 3, 4, 10, 11, 20) -Bloque 1048576 -MaxBytesTramo (4 * 1048576)
+Test-Afirmacion -Nombre 'Group-IndicesContiguos agrupa contiguos hasta 4 MiB y separa huecos' `
+    -Esperado '0:4|4:1|10:2|20:1' -Obtenido (($tramosLab | ForEach-Object { '{0}:{1}' -f $_.Inicio, $_.Cuenta }) -join '|')
+
+# Renombre de carpeta de VM (y del .vmdk): migra atomicamente en el nodo con 0 bytes re-subidos.
+$renLabPrev = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Rename-Item -LiteralPath "$labOrigen\VM1" -NewName 'VM1_RENOMBRADA'
+Rename-Item -LiteralPath "$labOrigen\VM1_RENOMBRADA\disco.vmdk" -NewName 'disco_nuevo.vmdk'
+$vmdkRenLocal = "$labOrigen\VM1_RENOMBRADA\disco_nuevo.vmdk"
+$vmdkRenNodo  = "$labDestinoLocal\VM1_RENOMBRADA\disco_nuevo.vmdk"
+
+$prevRenLab = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Simular
+Test-Afirmacion -Nombre '[V] detecta VM/.vmdk renombrada y previsualiza 0 bytes enviados' `
+    -Esperado 'Protegido|0' -Obtenido ('{0}|{1}' -f $prevRenLab.Estado, $prevRenLab.Enviado)
+
+$gRenLab = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+Test-Afirmacion -Nombre '[G] migra VM/.vmdk renombrada en el nodo con 0 bytes re-subidos, sin dejar la vieja' `
+    -Esperado 'Protegido|0|True|False|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
+        $gRenLab.Estado,
+        $gRenLab.Enviado,
+        (Test-Path -LiteralPath $vmdkRenNodo -PathType Leaf),
+        (Test-Path -LiteralPath $vmdk1Nodo),
+        ((Get-HuellaDeArchivo -Ruta $vmdkRenLocal) -eq (Get-HuellaDeArchivo -Ruta $vmdkRenNodo)))
+Test-Afirmacion -Nombre 'Y LABORATORIO.progreso queda limpio al terminar [G]' `
+    -Esperado $false -Obtenido (Test-Path -LiteralPath (Join-Path $labEstado 'LABORATORIO.progreso'))
+
+# Paridad exacta de blkhash.py en modos full, ranges (con tramos contiguos y fuera de rango) y lote.
+$pyLab = Get-Command python -ErrorAction SilentlyContinue
+if (-not $pyLab) { $pyLab = Get-Command python3 -ErrorAction SilentlyContinue }
+if ($pyLab) {
+    $blkScript = Join-Path $nucleo 'blkhash.py'
+    $netH = Get-HuellasPorBloque -Ruta $vmdkRenLocal -Bloque 65536
+    $pyFull = @(& $pyLab.Source $blkScript full $vmdkRenLocal 65536)
+    $pyRanges = @(('0', '1', '2', '3', '10', '9999') | & $pyLab.Source $blkScript ranges $vmdkRenLocal 65536)
+    Test-Afirmacion -Nombre 'blkhash.py full (secuencial + pipeline) produce las mismas huellas que .NET' `
+        -Esperado ('SIZE {0}|{1}' -f $netH.Tamano, ($netH.Huellas -join ',')) `
+        -Obtenido ('{0}|{1}' -f $pyFull[0], (($pyFull | Select-Object -Skip 1) -join ','))
+    Test-Afirmacion -Nombre 'blkhash.py ranges (tramos contiguos + hueco + fuera de rango) devuelve orden exacto' `
+        -Esperado ('SIZE {0}|{1}|{2}|{3}|{4}|{5}|-' -f $netH.Tamano, $netH.Huellas[0], $netH.Huellas[1], $netH.Huellas[2], $netH.Huellas[3], $netH.Huellas[10]) `
+        -Obtenido ($pyRanges -join '|')
+}
+
 # ===========================================================================
 
 $env:NASRESPALDO_REGISTRO = $script:RegistroPrevioPruebas

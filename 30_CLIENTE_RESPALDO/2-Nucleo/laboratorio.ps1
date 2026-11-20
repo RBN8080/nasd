@@ -282,6 +282,52 @@ function Get-BytesDeIndices {
     return $total
 }
 
+function Group-IndicesContiguos {
+    <#
+        .SYNOPSIS
+            Agrupa indices consecutivos en tramos contiguos acotados (run coalescing).
+        .DESCRIPTION
+            Escribir bloques de 1 MiB de uno en uno por SMB paga un ciclo
+            sincrono por bloque. Agrupar bloques consecutivos hasta 4 MiB satura
+            el pipelining multi-credito de SMB3 sin disparar la memoria.
+        .PARAMETER Indices
+            Indices de bloque a escribir.
+        .PARAMETER Bloque
+            Tamano de bloque en bytes.
+        .PARAMETER MaxBytesTramo
+            Tope por escritura contigua. Por omision 4 MiB.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject[]])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][int[]] $Indices,
+        [Parameter(Mandatory)][ValidateRange(4096, 67108864)][int] $Bloque,
+        [ValidateRange(4096, 67108864)][int] $MaxBytesTramo = 4MB
+    )
+
+    $tramos = New-Object System.Collections.Generic.List[psobject]
+    if (@($Indices).Count -eq 0) { return , $tramos.ToArray() }
+
+    $maxBloques = [Math]::Max(1, [int][Math]::Floor($MaxBytesTramo / $Bloque))
+    $ordenados = @($Indices | Sort-Object -Unique)
+
+    $inicio = $ordenados[0]
+    $cuenta = 1
+    for ($k = 1; $k -lt $ordenados.Count; $k++) {
+        $actual = $ordenados[$k]
+        if ($actual -eq ($inicio + $cuenta) -and $cuenta -lt $maxBloques) {
+            $cuenta++
+        }
+        else {
+            $tramos.Add([pscustomobject]@{ Inicio = $inicio; Cuenta = $cuenta })
+            $inicio = $actual
+            $cuenta = 1
+        }
+    }
+    $tramos.Add([pscustomobject]@{ Inicio = $inicio; Cuenta = $cuenta })
+    return , $tramos.ToArray()
+}
+
 function Write-BloquesEnSuSitio {
     <#
         .SYNOPSIS
@@ -290,6 +336,10 @@ function Write-BloquesEnSuSitio {
             ABRE SIN TRUNCAR. Es lo que robocopy no sabe hacer: abrir el destino
             y escribir solo los bloques que cambiaron. Si el destino no existe se
             crea, y entonces los indices son todos.
+
+            Agrupa bloques contiguos hasta 4 MiB y abre los FileStream con
+            buffer explicito de 1 MiB (SequentialScan) para aprovechar el
+            pipelining SMB3 en vez del buffer por omision de 4 KiB.
         .PARAMETER Origen
             El archivo en D:.
         .PARAMETER Destino
@@ -302,6 +352,10 @@ function Write-BloquesEnSuSitio {
             Tamano final del destino.
         .PARAMETER FechaUtc
             Fecha final del destino: la del origen.
+        .PARAMETER Vm
+            Opcional: nombre de la VM para telemetria en LABORATORIO.progreso.
+        .PARAMETER CarpetaEstado
+            Opcional: carpeta de estado donde escribir LABORATORIO.progreso.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([long])]
@@ -311,39 +365,64 @@ function Write-BloquesEnSuSitio {
         [Parameter(Mandatory)][int] $Bloque,
         [Parameter(Mandatory)][AllowEmptyCollection()][int[]] $Indices,
         [Parameter(Mandatory)][long] $Tamano,
-        [Parameter(Mandatory)][datetime] $FechaUtc
+        [Parameter(Mandatory)][datetime] $FechaUtc,
+        [AllowEmptyString()][string] $Vm = '',
+        [AllowEmptyString()][string] $CarpetaEstado = ''
     )
 
     if (-not $PSCmdlet.ShouldProcess($Destino, "Escribir $(@($Indices).Count) bloques")) { return [long]0 }
     $dir = Split-Path -Path $Destino -Parent
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
+    $totalBytes = Get-BytesDeIndices -Indices $Indices -Bloque $Bloque -Tamano $Tamano
+    $tramos = Group-IndicesContiguos -Indices $Indices -Bloque $Bloque -MaxBytesTramo 4MB
+    $maxBuf = [Math]::Max($Bloque, 4MB)
+    $bufferStream = [Math]::Min(1048576, [Math]::Max(65536, $Bloque))
+    $hoja = Split-Path -Path $Destino -Leaf
+    $crono = [System.Diagnostics.Stopwatch]::StartNew()
+    $ultimoAviso = [long]0
+
     $escritos = [long]0
-    $o = New-Object System.IO.FileStream($Origen, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    $o = New-Object System.IO.FileStream($Origen, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::ReadWrite, $bufferStream, [System.IO.FileOptions]::SequentialScan)
     try {
-        $d = New-Object System.IO.FileStream($Destino, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+        $d = New-Object System.IO.FileStream($Destino, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None, $bufferStream, [System.IO.FileOptions]::SequentialScan)
         try {
             if ($d.Length -ne $Tamano) { $d.SetLength($Tamano) }
-            $buf = New-Object byte[] $Bloque
-            $n = 0
-            foreach ($i in $Indices) {
-                $off = [long]$i * $Bloque
-                $largo = [int][Math]::Min([long]$Bloque, $Tamano - $off)
+            $buf = New-Object byte[] $maxBuf
+            foreach ($tramo in $tramos) {
+                $off = [long]$tramo.Inicio * $Bloque
+                $largo = [int][Math]::Min([long]$tramo.Cuenta * $Bloque, $Tamano - $off)
                 if ($largo -le 0) { continue }
-                $o.Position = $off
+                if ($buf.Length -lt $largo) { $buf = New-Object byte[] $largo }
+
+                if ($o.Position -ne $off) { $o.Position = $off }
                 $leido = 0
                 while ($leido -lt $largo) {
                     $r = $o.Read($buf, $leido, $largo - $leido)
-                    if ($r -le 0) { throw "El origen se acabo antes de tiempo en el bloque $i de $Origen" }
+                    if ($r -le 0) { throw "El origen se acabo antes de tiempo en el bloque $($tramo.Inicio) de $Origen" }
                     $leido += $r
                 }
-                $d.Position = $off
+
+                if ($d.Position -ne $off) { $d.Position = $off }
                 $d.Write($buf, 0, $largo)
                 $escritos += $largo
-                $n++
-                if ($n % 64 -eq 0) {
-                    Write-Progress -Activity "Enviando $(Split-Path $Destino -Leaf)" -Status ('{0:N0} de {1:N0} MiB' -f ($escritos / 1MB), ((@($Indices).Count * [long]$Bloque) / 1MB)) `
-                        -PercentComplete ([Math]::Min(100, [int](100 * $n / @($Indices).Count)))
+
+                if (($escritos - $ultimoAviso) -ge 16MB -or $escritos -eq $totalBytes) {
+                    $ultimoAviso = $escritos
+                    $seg = [Math]::Max(0.1, $crono.Elapsed.TotalSeconds)
+                    $mbs = ($escritos / 1MB) / $seg
+                    $eta = if ($mbs -gt 0.05 -and $totalBytes -gt $escritos) { [int][Math]::Ceiling((($totalBytes - $escritos) / 1MB) / $mbs / 60.0) } else { 0 }
+                    $pct = if ($totalBytes -gt 0) { [Math]::Min(100, [int](100.0 * $escritos / $totalBytes)) } else { 100 }
+                    Write-Progress -Activity "Enviando $hoja" `
+                        -Status ('{0:N0} de {1:N0} MiB ({2:N1} MB/s)' -f ($escritos / 1MB), ($totalBytes / 1MB), $mbs) `
+                        -PercentComplete $pct
+                    if ($CarpetaEstado -and $Vm) {
+                        Write-ProgresoDelLaboratorio -Vm $Vm -Archivo $hoja -Fase 'escribiendo' `
+                            -Hechos $escritos -Totales $totalBytes -MbPorSegundo $mbs -EtaMinutos $eta `
+                            -Carpeta $CarpetaEstado -Confirm:$false
+                    }
                 }
             }
             $d.Flush()
@@ -351,7 +430,7 @@ function Write-BloquesEnSuSitio {
         finally { $d.Dispose() }
     }
     finally { $o.Dispose() }
-    Write-Progress -Activity "Enviando $(Split-Path $Destino -Leaf)" -Completed
+    Write-Progress -Activity "Enviando $hoja" -Completed
     [System.IO.File]::SetLastWriteTimeUtc($Destino, $FechaUtc)
     return $escritos
 }
@@ -458,7 +537,7 @@ function Publish-BlkhashEnLaPi {
     $local = Join-Path $PSScriptRoot 'blkhash.py'
     & scp.exe -q -o BatchMode=yes $local ('{0}:{1}' -f $Ficha.Ssh, $script:BlkhashEnLaPi)
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo subir blkhash.py a la Pi.' }
-    $esperada = (Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash.ToLowerInvariant()
+    $esperada = Get-HuellaDeArchivo -Ruta $local -Algoritmo SHA256
     $vista = @(Invoke-EnLaPi -Ficha $Ficha -Orden ('sha256sum ' + $script:BlkhashEnLaPi))
     if ($vista.Count -eq 0 -or -not $vista[0].StartsWith($esperada)) { throw 'blkhash.py llego distinto a la Pi.' }
     return $script:BlkhashEnLaPi
@@ -560,6 +639,118 @@ function Test-LaboratorioQuieto {
     return [pscustomobject]@{ Quieto = $true; Motivo = '' }
 }
 
+function Get-HuellaDeBloqueUnico {
+    <#
+        .SYNOPSIS
+            SHA-256 de un solo bloque de un archivo (sin leer el archivo entero).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Ruta,
+        [Parameter(Mandatory)][int] $Bloque,
+        [Parameter(Mandatory)][int] $Indice
+    )
+
+    $sha = New-Object System.Security.Cryptography.SHA256Cng
+    $fs = New-Object System.IO.FileStream($Ruta, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        $off = [long]$Indice * $Bloque
+        if ($off -ge $fs.Length) { return '' }
+        $largo = [int][Math]::Min([long]$Bloque, $fs.Length - $off)
+        $buf = New-Object byte[] $largo
+        $fs.Position = $off
+        $leido = 0
+        while ($leido -lt $largo) {
+            $r = $fs.Read($buf, $leido, $largo - $leido)
+            if ($r -le 0) { break }
+            $leido += $r
+        }
+        return ([System.BitConverter]::ToString($sha.ComputeHash($buf, 0, $leido))).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $fs.Dispose()
+        $sha.Dispose()
+    }
+}
+
+function Find-ManifiestoRenombrado {
+    <#
+        .SYNOPSIS
+            Detecta si un disco grande sin manifiesto es una VM/.vmdk renombrada.
+        .DESCRIPTION
+            Compara contra manifiestos .blk huerfanos (cuya ruta vieja ya no
+            existe en D:) exigiendo:
+              1. Mismo tamano de bloque y mismo tamano de archivo.
+              2. El archivo viejo en el nodo sigue coincidiendo con su manifiesto.
+              3. Al menos 2 huellas distintas en el manifiesto y coincidencia
+                 exacta de 3 bloques de muestra (primero, medio, ultimo distintos)
+                 en <5 ms sobre NVMe.
+              4. Coincidencia UNICA (si hay ambiguedad, no migra).
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Ficha,
+        [Parameter(Mandatory)][psobject] $Archivo,
+        [Parameter(Mandatory)][string] $Carpeta,
+        [Parameter(Mandatory)][hashtable] $Vigentes
+    )
+
+    $raizManifiestos = Join-Path $Carpeta 'laboratorio\bloques'
+    if (-not (Test-Path -LiteralPath $raizManifiestos -PathType Container)) { return $null }
+
+    $candidatos = New-Object System.Collections.Generic.List[psobject]
+    foreach ($blk in @(Get-ChildItem -LiteralPath $raizManifiestos -Recurse -File -Filter '*.blk' -ErrorAction SilentlyContinue)) {
+        $relVieja = $blk.FullName.Substring($raizManifiestos.Length + 1)
+        $relVieja = $relVieja.Substring(0, $relVieja.Length - 4)
+        if ($Vigentes.ContainsKey($relVieja)) { continue }
+
+        $m = Read-ManifiestoDeBloques -Ruta $blk.FullName
+        if (-not $m -or $m.Bloque -ne $Ficha.Bloque -or $m.Tamano -ne $Archivo.Tamano) { continue }
+        $nh = @($m.Huellas).Count
+        if ($nh -eq 0) { continue }
+
+        # El destino viejo en el nodo debe existir y cuadrar con su manifiesto.
+        $nodoViejo = Join-Path $Ficha.Destino $relVieja
+        $n = Get-Item -LiteralPath $nodoViejo -Force -ErrorAction SilentlyContinue
+        if (-not $n -or $n.Length -ne $m.Tamano -or
+            [Math]::Abs($n.LastWriteTimeUtc.Ticks - $m.FechaUtcTicks) -gt $script:Tolerancia) { continue }
+
+        # Elegir hasta 3 indices de muestra con huellas distintas (evita falsos
+        # positivos entre discos recien creados llenos de ceros).
+        $muestraIdx = New-Object System.Collections.Generic.List[int]
+        $vistas = New-Object System.Collections.Generic.HashSet[string]
+        $ordenPrueba = @(0, [int]($nh / 2), ($nh - 1)) | Select-Object -Unique
+        foreach ($idx in $ordenPrueba) {
+            if ($vistas.Add($m.Huellas[$idx])) { $muestraIdx.Add($idx) }
+        }
+        if ($muestraIdx.Count -lt 2 -and $nh -ge 2) {
+            for ($idx = 0; $idx -lt $nh -and $muestraIdx.Count -lt 3; $idx++) {
+                if ($vistas.Add($m.Huellas[$idx])) { $muestraIdx.Add($idx) }
+            }
+        }
+        if ($nh -ge 2 -and $muestraIdx.Count -lt 2) { continue }
+
+        $coincide = $true
+        foreach ($idx in $muestraIdx) {
+            $hLocal = Get-HuellaDeBloqueUnico -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque -Indice $idx
+            if ($hLocal -ne $m.Huellas[$idx]) { $coincide = $false; break }
+        }
+        if ($coincide) {
+            $candidatos.Add([pscustomobject]@{
+                RelativaAnterior   = $relVieja
+                ManifiestoAnterior = $blk.FullName
+                DestinoAnterior    = $nodoViejo
+                Manifiesto         = $m
+            })
+        }
+    }
+
+    if ($candidatos.Count -ne 1) { return $null }
+    return $candidatos[0]
+}
+
 function Invoke-ArchivoGrande {
     <#
         .SYNOPSIS
@@ -579,7 +770,8 @@ function Invoke-ArchivoGrande {
         [Parameter(Mandatory)][psobject] $Ficha,
         [Parameter(Mandatory)][psobject] $Archivo,
         [Parameter(Mandatory)][string] $Carpeta,
-        [switch] $Simular
+        [switch] $Simular,
+        [AllowNull()][psobject] $RenombreSimulado = $null
     )
 
     $rel = $Archivo.Relativa
@@ -589,6 +781,18 @@ function Invoke-ArchivoGrande {
     $salida = {
         param($Estado, $Enviado, $Motivo)
         [pscustomobject]@{ Relativa = $rel; Vm = $Archivo.Vm; Estado = $Estado; Enviado = [long]$Enviado; Motivo = $Motivo }
+    }
+
+    if (-not $manifiesto -and $Simular -and $RenombreSimulado) {
+        $manifiesto = $RenombreSimulado.Manifiesto
+        if ($Archivo.Tamano -eq $manifiesto.Tamano -and
+            [Math]::Abs($Archivo.FechaUtc.Ticks - $manifiesto.FechaUtcTicks) -le $script:Tolerancia) {
+            return (& $salida 'AlDia' 0 ('migraria desde {0} sin re-subir' -f $RenombreSimulado.RelativaAnterior))
+        }
+        $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
+        $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
+        $bytesSim = Get-BytesDeIndices -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
+        return (& $salida 'Enviaria' $bytesSim ('migraria desde {0}' -f $RenombreSimulado.RelativaAnterior))
     }
 
     if ($manifiesto) {
@@ -603,6 +807,10 @@ function Invoke-ArchivoGrande {
             return (& $salida 'AlDia' 0 '')
         }
         Write-Information ('   {0}: buscando lo que cambio ({1})...' -f $rel, (Format-BytesDelLaboratorio -Bytes $Archivo.Tamano)) -InformationAction Continue
+        if (-not $Simular -and $Archivo.Vm) {
+            Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
+                -Hechos 0 -Totales $Archivo.Tamano -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+        }
         $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
         $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
     }
@@ -613,6 +821,10 @@ function Invoke-ArchivoGrande {
             return (& $salida 'Pendiente' 0 'esta en el nodo y no tiene manifiesto: pulsa [T]')
         }
         Write-Information ('   {0}: nuevo, va entero ({1})...' -f $rel, (Format-BytesDelLaboratorio -Bytes $Archivo.Tamano)) -InformationAction Continue
+        if (-not $Simular -and $Archivo.Vm) {
+            Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
+                -Hechos 0 -Totales $Archivo.Tamano -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+        }
         $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
         $indices = [int[]]@()
         if ($actual.Huellas.Count -gt 0) { $indices = [int[]](0..($actual.Huellas.Count - 1)) }
@@ -622,7 +834,12 @@ function Invoke-ArchivoGrande {
     if ($Simular) { return (& $salida 'Enviaria' $bytes '') }
 
     [void](Write-BloquesEnSuSitio -Origen $Archivo.Ruta -Destino $enNodo -Bloque $Ficha.Bloque -Indices $indices `
-            -Tamano $actual.Tamano -FechaUtc $Archivo.FechaUtc -Confirm:$false)
+            -Tamano $actual.Tamano -FechaUtc $Archivo.FechaUtc `
+            -Vm $Archivo.Vm -CarpetaEstado $Carpeta -Confirm:$false)
+    if ($Archivo.Vm) {
+        Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'verificando' `
+            -Hechos $bytes -Totales $bytes -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
+    }
     $leidas = Get-HuellasEnDestino -Ficha $Ficha -Relativa $rel -Indices $indices
     $cotejo = Compare-HuellasLeidas -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
         -Tamano $actual.Tamano -TamanoLeido $leidas.Tamano
@@ -694,9 +911,23 @@ function Invoke-GuardadoDelLaboratorio {
     $grandes = @($inventario | Where-Object { $_.Grande } | Sort-Object -Property Relativa)
     $pequenos = @($inventario | Where-Object { -not $_.Grande })
 
+    $vigentesMap = @{}
+    foreach ($a in $inventario) { $vigentesMap[$a.Relativa] = $a.Grande }
+
+    # --- 0. Deteccion de renombres de VMs / .vmdk (antes de espacio y robocopy) --
+    $renombresLab = @{}
+    foreach ($g in $grandes) {
+        $rutaM = Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa
+        if (Test-Path -LiteralPath $rutaM -PathType Leaf) { continue }
+        if (Test-Path -LiteralPath (Join-Path $ficha.Destino $g.Relativa)) { continue }
+        $hallado = Find-ManifiestoRenombrado -Ficha $ficha -Archivo $g -Carpeta $carpeta -Vigentes $vigentesMap
+        if ($hallado) { $renombresLab[$g.Relativa] = $hallado }
+    }
+
     # --- Espacio -------------------------------------------------------------
     $necesario = Get-SumaDe -Objetos $pequenos -Propiedad 'Tamano'
     foreach ($g in $grandes) {
+        if ($renombresLab.ContainsKey($g.Relativa)) { continue }
         $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa)
         if ($m) { $necesario += [Math]::Max([long]0, $g.Tamano - $m.Tamano) }
         elseif (-not (Test-Path -LiteralPath (Join-Path $ficha.Destino $g.Relativa))) { $necesario += $g.Tamano }
@@ -718,21 +949,105 @@ function Invoke-GuardadoDelLaboratorio {
     try {
         if ($ficha.Verificador -ne 'local' -and -not $Simular) { [void](Publish-BlkhashEnLaPi -Ficha $ficha) }
 
+        # --- 0b. Migrar renombres detectados ANTES de robocopy /MIR ----------
+        # Si robocopy corriera antes cuando cambio el nombre del .vmdk, purgaria
+        # el disco viejo del nodo antes de poder renombrarlo en su sitio.
+        if (-not $Simular) {
+            foreach ($relNueva in @($renombresLab.Keys)) {
+                $ren = $renombresLab[$relNueva]
+                $destNuevo = Join-Path $ficha.Destino $relNueva
+                $rutaManifNuevo = Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $relNueva
+                try {
+                    $dirDest = Split-Path -Path $destNuevo -Parent
+                    if ($dirDest -and -not (Test-Path -LiteralPath $dirDest)) { New-Item -ItemType Directory -Path $dirDest -Force | Out-Null }
+                    Move-Item -LiteralPath $ren.DestinoAnterior -Destination $destNuevo -ErrorAction Stop
+
+                    $dirManif = Split-Path -Path $rutaManifNuevo -Parent
+                    if ($dirManif -and -not (Test-Path -LiteralPath $dirManif)) { New-Item -ItemType Directory -Path $dirManif -Force | Out-Null }
+                    Move-Item -LiteralPath $ren.ManifiestoAnterior -Destination $rutaManifNuevo -Force -ErrorAction Stop
+                    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio' `
+                        -Mensaje ("RENOMBRE RECONOCIDO (sin re-subir): {0} -> {1}" -f $ren.RelativaAnterior, $relNueva)
+                }
+                catch {
+                    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio' `
+                        -Mensaje ("No se pudo migrar renombre {0} -> {1}: {2}" -f $ren.RelativaAnterior, $relNueva, $_.Exception.Message)
+                }
+            }
+        }
+
         # --- 1. Lo pequeno, con robocopy, SIN los grandes --------------------
         # Si robocopy viera un disco grande lo truncaria y lo copiaria entero:
-        # la trampa medida con el v1. Se excluye por NOMBRE, que vale en los dos
-        # lados, y asi robocopy tampoco lo purga del nodo.
-        $nombresGrandes = @($grandes | ForEach-Object { Split-Path -Path $_.Relativa -Leaf } | Sort-Object -Unique)
+        # la trampa medida con el v1. Si ningun archivo pequeno comparte nombre
+        # base con un disco grande se excluye por hoja (vale en origen y destino);
+        # si hubiera colision de nombre base, se excluyen rutas completas.
+        $hojasPequenos = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($pq in $pequenos) { [void]$hojasPequenos.Add((Split-Path -Path $pq.Relativa -Leaf)) }
+        $exclusionesGrandes = New-Object System.Collections.Generic.List[string]
+        foreach ($g in $grandes) {
+            $hojaG = Split-Path -Path $g.Relativa -Leaf
+            if ($hojasPequenos.Contains($hojaG)) {
+                [void]$exclusionesGrandes.Add($g.Ruta)
+                [void]$exclusionesGrandes.Add((Join-Path $ficha.Destino $g.Relativa))
+            }
+            else {
+                [void]$exclusionesGrandes.Add($hojaG)
+            }
+        }
+        $nombresGrandes = @($exclusionesGrandes | Sort-Object -Unique)
         Write-Information '   Archivos pequenos (configuracion de las VMs)...' -InformationAction Continue
         $res.Pequenos = Invoke-Robocopy -Origen $ficha.Origen -Destino $ficha.Destino -Clase 'B' -UnSoloHilo `
             -SoloListar:$Simular -ExcluirArchivos (@($ficha.ExcluirArchivos) + $nombresGrandes) -ExcluirCarpetas @($ficha.ExcluirCarpetas)
 
-        # --- 2. Los grandes, por bloques -------------------------------------
-        foreach ($g in $grandes) {
-            try { $archivos.Add((Invoke-ArchivoGrande -Ficha $ficha -Archivo $g -Carpeta $carpeta -Simular:$Simular -Confirm:$false)) }
-            catch {
-                Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'laboratorio' -Mensaje ('{0}: {1}' -f $g.Relativa, $_.Exception.Message)
-                $archivos.Add([pscustomobject]@{ Relativa = $g.Relativa; Vm = $g.Vm; Estado = 'Falla'; Enviado = [long]0; Motivo = $_.Exception.Message })
+        # --- 2. Los grandes, por bloques (con checkpoint por VM) -------------
+        $vmsResumen = @{}
+        foreach ($vr in @(Get-ResumenDeVmsDelLaboratorio -Inventario $inventario)) { $vmsResumen[$vr.Vm] = $vr }
+
+        foreach ($grupoVm in @($grandes | Group-Object -Property Vm | Sort-Object -Property Name)) {
+            $archivosVm = New-Object System.Collections.Generic.List[psobject]
+            foreach ($g in @($grupoVm.Group | Sort-Object -Property Relativa)) {
+                $renSim = if ($Simular -and $renombresLab.ContainsKey($g.Relativa)) { $renombresLab[$g.Relativa] } else { $null }
+                $intento = 0
+                $maxInt = if (-not $Simular -and $ficha.Verificador -ne 'local') { 2 } else { 1 }
+                $hechoG = $null
+                while ($intento -lt $maxInt) {
+                    $intento++
+                    try {
+                        $hechoG = Invoke-ArchivoGrande -Ficha $ficha -Archivo $g -Carpeta $carpeta -Simular:$Simular -RenombreSimulado $renSim -Confirm:$false
+                        break
+                    }
+                    catch {
+                        $esRed = ($_.Exception -is [System.IO.IOException])
+                        if ($esRed -and $intento -lt $maxInt) {
+                            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio' `
+                                -Mensaje ('{0}: fallo transitorio de red ({1}), reintentando en 5 s...' -f $g.Relativa, $_.Exception.Message)
+                            Start-Sleep -Seconds 5
+                            continue
+                        }
+                        Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'laboratorio' -Mensaje ('{0}: {1}' -f $g.Relativa, $_.Exception.Message)
+                        $hechoG = [pscustomobject]@{ Relativa = $g.Relativa; Vm = $g.Vm; Estado = 'Falla'; Enviado = [long]0; Motivo = $_.Exception.Message }
+                        break
+                    }
+                }
+                $archivos.Add($hechoG)
+                $archivosVm.Add($hechoG)
+            }
+
+            # Checkpoint incremental en LABORATORIO.tsv al confirmar cada VM,
+            # para no perder horas de avance si una VM posterior se corta.
+            if (-not $Simular -and $grupoVm.Name -and $vmsResumen.ContainsKey($grupoVm.Name)) {
+                $suyosVm = $archivosVm.ToArray()
+                $hayFallaVm = @($suyosVm | Where-Object { $_.Estado -eq 'Falla' }).Count -gt 0
+                $hayPendVm  = @($suyosVm | Where-Object { $_.Estado -eq 'Pendiente' }).Count -gt 0
+                if (-not $hayFallaVm -and -not $hayPendVm) {
+                    Write-EstadoDelLaboratorioPorVm -Filas @([pscustomobject]@{
+                            Vm       = $grupoVm.Name
+                            Bytes    = $vmsResumen[$grupoVm.Name].Bytes
+                            Guardado = $inicio.ToString('s')
+                            Enviado  = (Get-SumaDe -Objetos $suyosVm -Propiedad 'Enviado')
+                            Estado   = 'AlDia'
+                            Detalle  = ''
+                        }) -Carpeta $carpeta -Confirm:$false
+                }
             }
         }
 
@@ -741,8 +1056,7 @@ function Invoke-GuardadoDelLaboratorio {
         # del nodo. Solo si el nodo sigue siendo lo que dice su manifiesto.
         $raizManifiestos = Join-Path $carpeta 'laboratorio\bloques'
         if (Test-Path -LiteralPath $raizManifiestos) {
-            $vigentes = @{}
-            foreach ($a in $inventario) { $vigentes[$a.Relativa] = $a.Grande }
+            $vigentes = $vigentesMap
             foreach ($blk in @(Get-ChildItem -LiteralPath $raizManifiestos -Recurse -File -Filter '*.blk')) {
                 $rel = $blk.FullName.Substring($raizManifiestos.Length + 1)
                 $rel = $rel.Substring(0, $rel.Length - 4)
@@ -781,7 +1095,10 @@ function Invoke-GuardadoDelLaboratorio {
         throw
     }
     finally {
-        if (-not $Simular) { Exit-MarcaDeCorrida -Carpeta $carpeta -Archivo 'LABORATORIO.lock' -Confirm:$false }
+        if (-not $Simular) {
+            Remove-ProgresoDelLaboratorio -Carpeta $carpeta -Confirm:$false
+            Exit-MarcaDeCorrida -Carpeta $carpeta -Archivo 'LABORATORIO.lock' -Confirm:$false
+        }
     }
 
     # --- Veredicto por VM ------------------------------------------------------
