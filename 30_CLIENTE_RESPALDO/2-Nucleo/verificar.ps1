@@ -71,7 +71,13 @@ param(
 
     # Lo pasa respaldo.ps1 tras una corrida buena. Sin el, la muestra sale de la
     # raiz entera, que es lo que quiere quien coteja a mano desde la opcion [3].
-    [string[]] $Recientes
+    [string[]] $Recientes,
+
+    # Cuando respaldo.ps1 invoca el cotejo de lo recien copiado inmediatamente
+    # despues de sincronizar, evita repetir una tercera pasada completa de
+    # robocopy /L sobre las 8 raices. En el muestreo semanal y en [3] siempre
+    # corre el cotejo estructural completo.
+    [switch] $SoloHuellas
 )
 
 Set-StrictMode -Version Latest
@@ -203,6 +209,7 @@ function Test-HuellaPorMuestreo {
     $comprobados = 0
     $ausentes    = 0
     $posteriores = 0
+    $bloqueados  = 0
     $alcance     = 'completo'
     if ($PSBoundParameters.ContainsKey('Candidatos')) { $alcance = 'recientes' }
     $raizOrigen  = $Raiz.Ruta.TrimEnd('\')
@@ -262,12 +269,27 @@ function Test-HuellaPorMuestreo {
                     $posteriores++
                     continue
                 }
-                $puestos++
-                $comprobados++
                 # SHA256: aqui no hay linea base MD5 que respetar, y el nivel 3
                 # es la afirmacion mas fuerte que hace este sistema.
-                $hOrigen  = Get-HuellaDeArchivo -Ruta $o.FullName -Algoritmo SHA256
-                $hDestino = Get-HuellaDeArchivo -Ruta $gemelo     -Algoritmo SHA256
+                # Un archivo abierto con bloqueo exclusivo (Word, Excel, IDE)
+                # lanza IOException: no debe tumbar todo el cotejo ni privar al
+                # testigo del verde; se salta sin consumir puesto de la muestra
+                # para probar otro candidato.
+                try {
+                    $hOrigen  = Get-HuellaDeArchivo -Ruta $o.FullName -Algoritmo SHA256
+                    $hDestino = Get-HuellaDeArchivo -Ruta $gemelo     -Algoritmo SHA256
+                }
+                catch {
+                    $ex = $_.Exception
+                    if ($ex -is [System.IO.IOException] -or ($null -ne $ex.InnerException -and $ex.InnerException -is [System.IO.IOException])) {
+                        $bloqueados++
+                        Write-Verbose ("Archivo en uso omitido del muestreo: {0}" -f $relativa)
+                        continue
+                    }
+                    throw
+                }
+                $puestos++
+                $comprobados++
                 if ($hOrigen -ne $hDestino) {
                     $diferencias.Add([pscustomobject]@{ Ruta = $relativa; Motivo = 'HUELLA DISTINTA' })
                 }
@@ -281,6 +303,7 @@ function Test-HuellaPorMuestreo {
         Comprobados = $comprobados
         Ausentes    = $ausentes
         Posteriores = $posteriores
+        Bloqueados  = $bloqueados
         Diferencias = $diferencias.ToArray()
         Correcto    = ($diferencias.Count -eq 0)
     }
@@ -433,7 +456,8 @@ function Get-EstadoDeRespaldo {
         [Parameter(Mandatory)][psobject] $Configuracion,
         [ValidateRange(0, 10000)][int] $Muestra = 10,
         [switch] $RevisarDisco,
-        [string[]] $Recientes
+        [string[]] $Recientes,
+        [switch] $OmitirEstructura
     )
 
     $unc = $Configuracion.destinos.nodo.unc
@@ -465,7 +489,9 @@ function Get-EstadoDeRespaldo {
                 -PercentComplete ([int](100 * ($n - 1) / [Math]::Max(1, $total)))
             Write-Information ("   [{0}/{1}] {2}" -f $n, $total, $r.Ruta) -InformationAction Continue
 
-            $coincidencias += Test-CoincidenciaDeRaiz -Raiz $r -Destino $destino
+            if (-not $OmitirEstructura) {
+                $coincidencias += Test-CoincidenciaDeRaiz -Raiz $r -Destino $destino
+            }
             $argsHuella = @{ Raiz = $r; Destino = $destino; Cuantos = $Muestra }
             $deDonde = 'al azar de toda la raiz'
             if ($PSBoundParameters.ContainsKey('Recientes')) {
@@ -540,27 +566,44 @@ try {
     $alcance = Get-AlcanceDelMuestreo -UltimoMuestreo ('' + $previo['muestreo_momento']) `
         -HayRecientes:($PSBoundParameters.ContainsKey('Recientes'))
     $argsEstado = @{ Configuracion = $configuracion; Muestra = $TamanoMuestra; RevisarDisco = $RevisarDisco }
-    if ($alcance -eq 'recientes') { $argsEstado['Recientes'] = $Recientes }
+    if ($alcance -eq 'recientes') {
+        $argsEstado['Recientes'] = $Recientes
+        if ($SoloHuellas) { $argsEstado['OmitirEstructura'] = $true }
+    }
     $informe = Get-EstadoDeRespaldo @argsEstado
 
-    # LA COMPROBACION SE GUARDA, NO SOLO SE IMPRIME. Hasta ahora este resultado
-    # salia por pantalla y moria al cerrar la ventana: el tablero no podia decir
-    # cuando se comprobo por ultima vez, y "hace tres semanas que nadie comprueba
-    # que lo copiado se lee" es una senal tan util como un fallo rojo.
-    $detalleComprobacion = if ($informe.TodoCoincide) {
-        'sin diferencias en {0} raices' -f @($informe.Coincidencias).Count
-    }
-    else {
-        '{0} de {1} raices con diferencias' -f `
-            @($informe.Coincidencias | Where-Object { -not $_.Coincide }).Count, @($informe.Coincidencias).Count
-    }
-    Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto ([bool]$informe.TodoCoincide) `
-        -Detalle $detalleComprobacion -Carpeta $carpetaEstado -Confirm:$false
-
     # La mitad "lo copiado se lee" la resuelve Test-CotejoLimpio, que vive en
-    # testigo.ps1 para poder probarse: mira el CONTENIDO y no la estructura,
-    # y exige haber leido algo. El porque, entero, esta en su cabecera.
+    # testigo.ps1 para poder probarse: mira el CONTENIDO (Nivel 3, SHA-256) y no
+    # la estructura (Nivel 2, robocopy /L).
     $cotejo = Test-CotejoLimpio -Informe $informe
+
+    # NIVEL 2 (ESTRUCTURA) Y NIVEL 3 (HUELLAS) SE GUARDAN POR SEPARADO.
+    # Hasta ahora `huellas_estado` grababa `$informe.TodoCoincide` (Nivel 2): un
+    # archivo editado despues de la corrida marcaba `huellas_estado=Falla` aun
+    # con 0 diferencias SHA-256 y latido verde. Y correr [9] (-TamanoMuestra 0)
+    # pisaba las huellas sin haber leido un solo byte.
+    if (@($informe.Coincidencias).Count -gt 0) {
+        $detalleEstructura = if ($informe.TodoCoincide) {
+            'sin diferencias en {0} raices' -f @($informe.Coincidencias).Count
+        }
+        else {
+            '{0} de {1} raices con cambios' -f `
+                @($informe.Coincidencias | Where-Object { -not $_.Coincide }).Count, @($informe.Coincidencias).Count
+        }
+        Write-EstadoDeComprobacion -Tipo 'estructura' -Correcto ([bool]$informe.TodoCoincide) `
+            -Detalle $detalleEstructura -Carpeta $carpetaEstado -Confirm:$false
+    }
+
+    if ($TamanoMuestra -gt 0) {
+        $detalleHuellas = if ($cotejo.Leidos -gt 0) {
+            '{0} leidos, {1} distintos' -f $cotejo.Leidos, $cotejo.Distintos
+        }
+        else {
+            'sin archivos leidos'
+        }
+        Write-EstadoDeComprobacion -Tipo 'huellas' -Correcto ([bool]$cotejo.Limpio) `
+            -Detalle $detalleHuellas -Carpeta $carpetaEstado -Confirm:$false
+    }
 
     # EL MUESTREO SEMANAL SOLO SE DA POR HECHO SI LEYO ALGO de la raiz entera.
     # Con el nodo caido o la muestra a cero -opcion [9]- no se anota, y el

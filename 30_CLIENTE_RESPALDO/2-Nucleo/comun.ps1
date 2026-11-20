@@ -242,6 +242,84 @@ function Write-LineaDeRegistro {
     return $false
 }
 
+function Get-CarpetaDeRegistro {
+    <#
+        .SYNOPSIS
+            Donde se escriben los registros diarios respaldo-AAAA-MM-DD.log.
+        .DESCRIPTION
+            Permite aislar las pruebas del registro de produccion mediante la
+            variable de entorno NASRESPALDO_REGISTRO o la configuracion, sin
+            cambiar la ruta por omision bajo LOCALAPPDATA.
+        .PARAMETER Configuracion
+            Opcional: objeto de configuracion del cliente.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [psobject] $Configuracion
+    )
+
+    if ($Configuracion -and
+        ($Configuracion.PSObject.Properties.Name -contains 'carpetaRegistro') -and
+        $Configuracion.carpetaRegistro) {
+        return $Configuracion.carpetaRegistro
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:NASRESPALDO_REGISTRO)) {
+        return $env:NASRESPALDO_REGISTRO
+    }
+    if ($Configuracion -and
+        ($Configuracion.PSObject.Properties.Name -contains 'carpetaEstado') -and
+        $Configuracion.carpetaEstado) {
+        return (Join-Path (Split-Path $Configuracion.carpetaEstado -Parent) 'registro')
+    }
+    return (Join-Path $env:LOCALAPPDATA 'NasRespaldo\registro')
+}
+
+function Remove-RegistrosAntiguos {
+    <#
+        .SYNOPSIS
+            Retira registros diarios mas viejos que el plazo de retencion.
+        .DESCRIPTION
+            Mantiene acotado el crecimiento de LOCALAPPDATA\NasRespaldo\registro
+            sin tocar nunca el registro de hoy ni tumbar una corrida si un
+            archivo esta abierto por otra herramienta.
+        .PARAMETER CarpetaRegistro
+            Carpeta donde viven respaldo-AAAA-MM-DD.log.
+        .PARAMETER DiasRetencion
+            Cuantos dias conservar. Por omision 90.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([int])]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string] $CarpetaRegistro = (Get-CarpetaDeRegistro),
+
+        [ValidateRange(1, 3650)]
+        [int] $DiasRetencion = 90
+    )
+
+    $borrados = 0
+    if (-not (Test-Path -LiteralPath $CarpetaRegistro -PathType Container)) { return 0 }
+    $corte = (Get-Date).Date.AddDays(-$DiasRetencion)
+    foreach ($f in @(Get-ChildItem -LiteralPath $CarpetaRegistro -Filter 'respaldo-*.log' -File -ErrorAction SilentlyContinue)) {
+        if ($f.Name -notmatch '^respaldo-(\d{4}-\d{2}-\d{2})\.log$') { continue }
+        [datetime] $fecha = [datetime]::MinValue
+        if (-not [datetime]::TryParseExact($Matches[1], 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$fecha)) {
+            continue
+        }
+        if ($fecha -ge $corte) { continue }
+        if (-not $PSCmdlet.ShouldProcess($f.FullName, 'Retirar registro antiguo')) { continue }
+        try {
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
+            $borrados++
+        }
+        catch {
+            Write-Verbose "No se pudo retirar registro antiguo '$($f.Name)': $($_.Exception.Message)"
+        }
+    }
+    return $borrados
+}
+
 function Write-RegistroRespaldo {
     <#
         .SYNOPSIS
@@ -258,7 +336,7 @@ function Write-RegistroRespaldo {
         .PARAMETER Etapa
             Que parte del motor lo emite.
         .PARAMETER CarpetaRegistro
-            Donde se anexa. Por omision, bajo LOCALAPPDATA.
+            Donde se anexa. Por omision, lo que resuelve Get-CarpetaDeRegistro.
     #>
     [CmdletBinding()]
     [OutputType([void])]
@@ -274,7 +352,7 @@ function Write-RegistroRespaldo {
         [string] $Etapa = 'general',
 
         [ValidateNotNullOrEmpty()]
-        [string] $CarpetaRegistro = (Join-Path $env:LOCALAPPDATA 'NasRespaldo\registro'),
+        [string] $CarpetaRegistro = (Get-CarpetaDeRegistro),
 
         # SE ESCRIBE AL ARCHIVO Y NO SE ECOA A LA CONSOLA.
         #
@@ -1196,6 +1274,7 @@ function Write-EstadoRespaldo {
         # el coste que 51161fd habia quitado. Se vio el 2026-10-09 porque
         # muestreo_momento y huellas_momento eran el mismo segundo.
         if ($clave -like 'disco_*' -or $clave -like 'huellas_*' -or
+            $clave -like 'estructura_*' -or
             $clave -like 'semilla_*' -or $clave -like 'restauracion_*' -or
             $clave -like 'copia_*' -or $clave -like 'laboratorio_*' -or
             $clave -like 'muestreo_*') {
@@ -1871,7 +1950,12 @@ function Get-ProximaVentanaDeCorrida {
         [ValidateNotNullOrEmpty()]
         [string] $NombreTarea = 'NasRespaldo-Diario',
 
-        [datetime] $Momento = (Get-Date)
+        [datetime] $Momento = (Get-Date),
+
+        # Cuando la corrida programada de la ventana en curso acaba de
+        # terminar, la "proxima" ventana que debe anotar ESTADO.txt es la
+        # siguiente, no la que acaba de completarse.
+        [switch] $ExcluirActual
     )
 
     $existe = $false
@@ -1891,9 +1975,10 @@ function Get-ProximaVentanaDeCorrida {
 
     $min = $Momento.Hour * 60 + $Momento.Minute
 
-    # Dentro de una ventana: le toca AHORA, y lo que importa es cuando se cierra.
+    # Dentro de una ventana: le toca AHORA, salvo que se pida la siguiente tras
+    # cerrar la actual.
     $dentro = @($Cadencia.Ventanas | Where-Object { $min -ge $_.InicioMinutos -and $min -lt $_.FinMinutos })
-    if ($dentro.Count -gt 0) {
+    if (-not $ExcluirActual -and $dentro.Count -gt 0) {
         $v = $dentro[0]
         return [pscustomobject]@{
             Existe       = $existe
@@ -1956,30 +2041,270 @@ function Test-Centinela {
 
             Un centinela que FALTA cuenta como fallo igual que uno alterado:
             borrarlo es la forma mas barata de desarmar esta capa.
+
+            TOLERANCIA A RENOMBRE LEGITIMO (NIST SP 1800-26 + ADR-0077):
+            si se pasa -Contenedores y una ruta declarada dentro de un
+            contenedor ya no existe, se busca en las hijas de primer nivel de
+            ese MISMO contenedor un archivo con el mismo nombre cuya huella
+            SHA-256 coincida EXACTAMENTE con la esperada:
+              - Hallado en una sola carpeta NN_* -> Renombrado (no es ataque).
+              - Hallado en una sola carpeta sin numero -> Desactivado por
+                renombre (se avisa en vez de fingir ransomware).
+              - Hallado en mas de una carpeta, ausente o con huella alterada ->
+                FALLO duro (aborto antirransomware intacto).
         .PARAMETER Centinelas
             Lista de la configuracion, con ruta y huella esperada.
+        .PARAMETER Contenedores
+            Opcional: contenedores declarados para reconocer renombres legitimos
+            de carpetas NN_* dentro del mismo contenedor.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
     param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Centinelas
+        [Parameter(Mandatory)][AllowEmptyCollection()][psobject[]] $Centinelas,
+        [AllowEmptyCollection()][psobject[]] $Contenedores = @()
     )
 
-    $fallos = New-Object System.Collections.Generic.List[psobject]
+    $rutasContenedores = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($cont in @($Contenedores)) {
+        if ($null -eq $cont) { continue }
+        $rc = if ($cont -is [string]) { $cont } elseif ($cont.PSObject.Properties.Name -contains 'ruta') { '' + $cont.ruta } else { '' }
+        $rc = $rc.Trim().TrimEnd('\')
+        if ($rc) { [void]$rutasContenedores.Add($rc) }
+    }
+
+    # Rutas de centinelas que siguen presentes en su lugar original: nunca
+    # pueden ser reclamadas como destino de un renombre de otra entrada.
+    $ocupadas = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($c in $Centinelas) {
-        if (-not (Test-Path -LiteralPath $c.ruta -PathType Leaf)) {
-            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'FALTA' })
-            continue
-        }
-        $actual = Get-HuellaDeArchivo -Ruta $c.ruta
-        if ($actual -ne $c.huella.ToLowerInvariant()) {
-            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'HUELLA DISTINTA' })
+        if ($c -and $c.ruta -and (Test-Path -LiteralPath $c.ruta -PathType Leaf)) {
+            [void]$ocupadas.Add($c.ruta)
         }
     }
+
+    $fallos       = New-Object System.Collections.Generic.List[psobject]
+    $renombrados  = New-Object System.Collections.Generic.List[psobject]
+    $desactivados = New-Object System.Collections.Generic.List[psobject]
+
+    foreach ($c in $Centinelas) {
+        $huellaEsperada = ('' + $c.huella).ToLowerInvariant()
+        if (Test-Path -LiteralPath $c.ruta -PathType Leaf) {
+            $actual = Get-HuellaDeArchivo -Ruta $c.ruta
+            if ($actual -ne $huellaEsperada) {
+                $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'HUELLA DISTINTA' })
+            }
+            continue
+        }
+
+        # Ruta ausente: solo se busca renombre dentro del mismo contenedor
+        # declarado. Una raiz declarada (como C:\dev) o una llamada sin
+        # -Contenedores falla en seco como siempre.
+        $raizAnterior   = Split-Path -Path $c.ruta -Parent
+        $padreAnterior  = if ($raizAnterior) { (Split-Path -Path $raizAnterior -Parent).TrimEnd('\') } else { '' }
+        $nombreArchivo  = Split-Path -Path $c.ruta -Leaf
+
+        $resuelto = $false
+        if ($padreAnterior -and $rutasContenedores.Contains($padreAnterior) -and
+            (Test-Path -LiteralPath $padreAnterior -PathType Container)) {
+
+            $coincidencias = New-Object System.Collections.Generic.List[psobject]
+            foreach ($dir in @(Get-ChildItem -LiteralPath $padreAnterior -Directory -Force -ErrorAction SilentlyContinue)) {
+                if (($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                $candidato = Join-Path $dir.FullName $nombreArchivo
+                if ($ocupadas.Contains($candidato)) { continue }
+                if (-not (Test-Path -LiteralPath $candidato -PathType Leaf)) { continue }
+                try {
+                    $hCand = Get-HuellaDeArchivo -Ruta $candidato
+                }
+                catch { continue }
+                if ($hCand -eq $huellaEsperada) {
+                    $coincidencias.Add([pscustomobject]@{
+                        Dir       = $dir
+                        Candidato = $candidato
+                    })
+                }
+            }
+
+            if ($coincidencias.Count -eq 1) {
+                $match = $coincidencias[0]
+                [void]$ocupadas.Add($match.Candidato)
+                $ficha = [pscustomobject]@{
+                    RutaAnterior = $c.ruta
+                    RutaNueva    = $match.Candidato
+                    RaizAnterior = $raizAnterior
+                    RaizNueva    = $match.Dir.FullName
+                    Huella       = $huellaEsperada
+                    Contenedor   = $padreAnterior
+                }
+                if ($match.Dir.Name -match '^\d{2}_.') {
+                    $renombrados.Add($ficha)
+                }
+                else {
+                    $desactivados.Add($ficha)
+                }
+                $resuelto = $true
+            }
+            elseif ($coincidencias.Count -gt 1) {
+                $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'CENTINELA DUPLICADO' })
+                $resuelto = $true
+            }
+        }
+
+        if (-not $resuelto) {
+            $fallos.Add([pscustomobject]@{ Ruta = $c.ruta; Motivo = 'FALTA' })
+        }
+    }
+
     return [pscustomobject]@{
-        Revisados = @($Centinelas).Count
-        Fallos    = $fallos.ToArray()
-        Correcto  = ($fallos.Count -eq 0)
+        Revisados    = @($Centinelas).Count
+        Fallos       = $fallos.ToArray()
+        Renombrados  = $renombrados.ToArray()
+        Desactivados = $desactivados.ToArray()
+        Correcto     = ($fallos.Count -eq 0)
+    }
+}
+
+function Set-RutaDeCentinelaEnConfig {
+    <#
+        .SYNOPSIS
+            Actualiza la ruta de UN centinela renombrado dentro de respaldo.jsonc
+            conservando comentarios, sangria y finales de linea.
+        .DESCRIPTION
+            Sigue las mismas tres guardas que Set-HorarioDeRespaldo: edita solo
+            el literal exacto asociado a la huella criptografica verificada,
+            escribe de forma atomica y relee el archivo del disco con
+            restauracion automatica si algo no cuadra.
+        .PARAMETER RutaAnterior
+            Ruta literal que estaba declarada antes del renombre.
+        .PARAMETER RutaNueva
+            Ruta nueva donde se confirmo la misma huella SHA-256.
+        .PARAMETER Huella
+            Huella SHA-256 esperada (candado para no tocar otra entrada).
+        .PARAMETER Ruta
+            Archivo .jsonc a actualizar.
+    #>
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RutaAnterior,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RutaNueva,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Huella,
+        [ValidateNotNullOrEmpty()]
+        [string] $Ruta = (Join-Path (Split-Path $PSScriptRoot -Parent) '3-Config\respaldo.jsonc')
+    )
+
+    if (-not (Test-Path -LiteralPath $Ruta -PathType Leaf)) {
+        throw "No existe la configuracion para actualizar centinela: $Ruta"
+    }
+
+    $texto = Get-Content -LiteralPath $Ruta -Raw -Encoding UTF8
+    $jsonAntes = $RutaAnterior.Replace('\', '\\').Replace('"', '\"')
+    $jsonNueva = $RutaNueva.Replace('\', '\\').Replace('"', '\"')
+    $huellaLow = $Huella.ToLowerInvariant()
+
+    # Solo coincide con la entrada de objeto que contiene EXACTAMENTE esta ruta
+    # y esta huella SHA-256, evitando tocar comentarios u otras secciones.
+    $patron = '(\{\s*"ruta"\s*:\s*")' + [regex]::Escape($jsonAntes) + '("\s*,\s*"huella"\s*:\s*"' + [regex]::Escape($huellaLow) + '"\s*\})'
+    $m = [regex]::Match($texto, $patron, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $m.Success) {
+        throw "No se encontro el centinela '$RutaAnterior' con huella '$huellaLow' en $Ruta."
+    }
+
+    $reemplazo = $m.Groups[1].Value + $jsonNueva + $m.Groups[2].Value
+    $nuevoTexto = $texto.Remove($m.Index, $m.Length).Insert($m.Index, $reemplazo)
+
+    if (-not $PSCmdlet.ShouldProcess($Ruta, "Actualizar centinela renombrado: $RutaAnterior -> $RutaNueva")) {
+        return [pscustomobject]@{ Escrito = $false; RutaAnterior = $RutaAnterior; RutaNueva = $RutaNueva }
+    }
+
+    Set-ContenidoAtomico -Ruta $Ruta -Contenido $nuevoTexto -Confirm:$false
+
+    # Relectura obligatoria: si el archivo no analiza o no contiene el nuevo par
+    # ruta/huella, se restaura byte a byte el original.
+    try {
+        $releida = Get-ConfiguracionRespaldo -Ruta $Ruta
+        $confirmado = @($releida.centinelas | Where-Object {
+                ('' + $_.ruta).Equals($RutaNueva, [System.StringComparison]::OrdinalIgnoreCase) -and
+                ('' + $_.huella).ToLowerInvariant() -eq $huellaLow
+            }).Count -eq 1
+        if (-not $confirmado) {
+            throw 'El centinela actualizado no aparecio al releer el archivo.'
+        }
+    }
+    catch {
+        Set-ContenidoAtomico -Ruta $Ruta -Contenido $texto -Confirm:$false
+        throw "No se pudo verificar el centinela actualizado y se restauro el archivo original: $($_.Exception.Message)"
+    }
+
+    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'centinela' -SoloArchivo `
+        -Mensaje ("CENTINELA ACTUALIZADO por renombre: {0} -> {1}" -f $RutaAnterior, $RutaNueva)
+    return [pscustomobject]@{ Escrito = $true; RutaAnterior = $RutaAnterior; RutaNueva = $RutaNueva }
+}
+
+function Move-RaizRenombradaEnDestino {
+    <#
+        .SYNOPSIS
+            Migra atomicamente en el destino una raiz NN_* renombrada en local.
+        .DESCRIPTION
+            Cuando Test-Centinela confirma que una raiz NN_* cambio de nombre
+            dentro del mismo contenedor, renombrar la carpeta equivalente en el
+            NAS (mismo volumen ext4 via SMB) evita re-subir decenas de GB y
+            evita dejar la carpeta vieja huerfana en el destino.
+
+            Solo actua si:
+              - origen anterior y origen nuevo traducen al MISMO padre destino,
+              - el destino anterior existe,
+              - el destino nuevo NO existe todavia (nunca pisa ni fusiona).
+        .PARAMETER RaizAnterior
+            Ruta local anterior de la raiz.
+        .PARAMETER RaizNueva
+            Ruta local nueva de la raiz.
+        .PARAMETER RaizDestino
+            Raiz del equipo en el destino (p. ej. \\nas\datos\01_BACKUP\PC).
+        .PARAMETER Traducciones
+            Tabla destinos.nodo.traduccionDeRutas.
+        .PARAMETER Simular
+            No renombra; informa si migraria.
+    #>
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RaizAnterior,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RaizNueva,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $RaizDestino,
+        [Parameter(Mandatory)][psobject[]] $Traducciones,
+        [switch] $Simular
+    )
+
+    $destAnterior = Get-RutaEnDestino -RutaOrigen $RaizAnterior -RaizDestino $RaizDestino -Traducciones $Traducciones
+    $destNuevo    = Get-RutaEnDestino -RutaOrigen $RaizNueva    -RaizDestino $RaizDestino -Traducciones $Traducciones
+
+    $padreAnt = (Split-Path -Path $destAnterior -Parent).TrimEnd('\')
+    $padreNvo = (Split-Path -Path $destNuevo    -Parent).TrimEnd('\')
+    if (-not $padreAnt.Equals($padreNvo, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{ Migrada = $false; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = 'distinto contenedor destino' }
+    }
+    if (-not (Test-Path -LiteralPath $destAnterior -PathType Container)) {
+        return [pscustomobject]@{ Migrada = $false; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = 'destino anterior no existe' }
+    }
+    if (Test-Path -LiteralPath $destNuevo -PathType Container) {
+        return [pscustomobject]@{ Migrada = $false; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = 'destino nuevo ya existe' }
+    }
+
+    $nombreNuevo = Split-Path -Path $destNuevo -Leaf
+    if ($Simular) {
+        return [pscustomobject]@{ Migrada = $false; Simulada = $true; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = 'simulacion: migraria atomicamente en destino' }
+    }
+    if (-not $PSCmdlet.ShouldProcess($destAnterior, "Renombrar destino a $nombreNuevo")) {
+        return [pscustomobject]@{ Migrada = $false; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = 'WhatIf' }
+    }
+
+    try {
+        Rename-Item -LiteralPath $destAnterior -NewName $nombreNuevo -ErrorAction Stop
+        return [pscustomobject]@{ Migrada = $true; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = 'renombrada atomicamente en destino' }
+    }
+    catch {
+        return [pscustomobject]@{ Migrada = $false; DestinoAnterior = $destAnterior; DestinoNuevo = $destNuevo; Motivo = "no se pudo renombrar: $($_.Exception.Message)" }
     }
 }
 
@@ -2071,7 +2396,20 @@ function Get-HuellaDeArchivo {
         [string] $Algoritmo = 'SHA256'
     )
     process {
-        return (Get-FileHash -LiteralPath $Ruta -Algorithm $Algoritmo).Hash.ToLowerInvariant()
+        # .NET directo en vez de Get-FileHash: evita el fallo de cmdlet cuando
+        # PowerShell 5.1 hereda el PSModulePath de PowerShell 7, es mas rapido
+        # y lanza IOException exacta si otro proceso bloquea el archivo.
+        $alg = [System.Security.Cryptography.HashAlgorithm]::Create($Algoritmo)
+        if ($null -eq $alg) { throw "Algoritmo de huella no disponible: $Algoritmo" }
+        try {
+            $flujo = [System.IO.File]::OpenRead($Ruta)
+            try {
+                $hashBytes = $alg.ComputeHash($flujo)
+                return ([System.BitConverter]::ToString($hashBytes).Replace('-', '').ToLowerInvariant())
+            }
+            finally { $flujo.Dispose() }
+        }
+        finally { $alg.Dispose() }
     }
 }
 
@@ -2936,7 +3274,7 @@ function Write-EstadoDeComprobacion {
         # fecha depende cuando toca el siguiente (seccion 9), y si el cotejo de
         # lo recien copiado la pisara, el pase semanal no llegaria nunca.
         [Parameter(Mandatory)]
-        [ValidateSet('huellas', 'muestreo', 'semilla')]
+        [ValidateSet('huellas', 'estructura', 'muestreo', 'semilla')]
         [string] $Tipo,
 
         [Parameter(Mandatory)]
@@ -3425,4 +3763,110 @@ function Get-ResumenDelLaboratorio {
         Write-Verbose "Sin resumen del laboratorio: $($_.Exception.Message)"
         return $null
     }
+}
+
+function Write-ProgresoDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Publica el avance en vivo de [G] en LABORATORIO.progreso.
+        .DESCRIPTION
+            Archivo atomico ligero que leen otra instancia del tablero y el
+            indicador de bandeja mientras [G] envia bloques durante horas.
+            Nunca lanza si no puede escribir: el avance es telemetria, no guarda.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string] $Vm,
+        [ValidateNotNull()][string] $Archivo = '',
+        [ValidateSet('hasheando', 'escribiendo', 'verificando', 'copiando')][string] $Fase = 'escribiendo',
+        [long] $Hechos = 0,
+        [long] $Totales = 0,
+        [double] $MbPorSegundo = 0,
+        [int] $EtaMinutos = -1,
+        [ValidateNotNullOrEmpty()][string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+
+    $ruta = Join-Path $Carpeta 'LABORATORIO.progreso'
+    if (-not $PSCmdlet.ShouldProcess($ruta, 'Actualizar progreso del laboratorio')) { return }
+
+    $pct = if ($Totales -gt 0) { [int][math]::Min(100, [math]::Floor(100.0 * $Hechos / $Totales)) } else { 0 }
+    $vel = [string]::Format([System.Globalization.CultureInfo]::InvariantCulture, '{0:0.0}', $MbPorSegundo)
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine(('vm={0}' -f ($Vm -replace '[\r\n]+', ' ')))
+    [void]$sb.AppendLine(('archivo={0}' -f ($Archivo -replace '[\r\n]+', ' ')))
+    [void]$sb.AppendLine(('fase={0}' -f $Fase))
+    [void]$sb.AppendLine(('hechos={0}' -f $Hechos))
+    [void]$sb.AppendLine(('totales={0}' -f $Totales))
+    [void]$sb.AppendLine(('porcentaje={0}' -f $pct))
+    [void]$sb.AppendLine(('mb_s={0}' -f $vel))
+    [void]$sb.AppendLine(('eta_min={0}' -f $EtaMinutos))
+    [void]$sb.AppendLine(('momento={0}' -f (Get-Date -Format 's')))
+    try { Set-ContenidoAtomico -Ruta $ruta -Contenido $sb.ToString() -Confirm:$false }
+    catch { Write-Verbose "No se pudo actualizar progreso del laboratorio: $($_.Exception.Message)" }
+}
+
+function Read-ProgresoDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Lee LABORATORIO.progreso si existe y es legible. Nunca lanza.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [ValidateNotNullOrEmpty()][string] $Carpeta = (Get-CarpetaDeEstado),
+        [ValidateRange(1, 120)][int] $MaximoMinutos = 15
+    )
+
+    $ruta = Join-Path $Carpeta 'LABORATORIO.progreso'
+    try {
+        if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return $null }
+        $m = @{}
+        foreach ($linea in (Get-Content -LiteralPath $ruta -Encoding UTF8 -ErrorAction Stop)) {
+            if ($linea -match '^\s*#' -or $linea -notmatch '=') { continue }
+            $par = $linea -split '=', 2
+            $m[$par[0].Trim()] = $par[1].Trim()
+        }
+        if (-not $m.ContainsKey('vm') -or [string]::IsNullOrWhiteSpace($m['vm'])) { return $null }
+        [datetime] $t = [datetime]::MinValue
+        $reciente = $false
+        if ($m.ContainsKey('momento') -and [datetime]::TryParse($m['momento'], [ref]$t)) {
+            $reciente = (((Get-Date) - $t).TotalMinutes -le $MaximoMinutos)
+        }
+        [int] $pct = 0; [void][int]::TryParse(('' + $m['porcentaje']), [ref]$pct)
+        [long] $hechos = 0; [void][long]::TryParse(('' + $m['hechos']), [ref]$hechos)
+        [long] $totales = 0; [void][long]::TryParse(('' + $m['totales']), [ref]$totales)
+        [int] $eta = -1; [void][int]::TryParse(('' + $m['eta_min']), [ref]$eta)
+        return [pscustomobject]@{
+            Vm           = '' + $m['vm']
+            Archivo      = '' + $m['archivo']
+            Fase         = '' + $m['fase']
+            Hechos       = $hechos
+            Totales      = $totales
+            Porcentaje   = $pct
+            MbPorSegundo = '' + $m['mb_s']
+            EtaMinutos   = $eta
+            Momento      = '' + $m['momento']
+            Reciente     = $reciente
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+function Remove-ProgresoDelLaboratorio {
+    <#
+        .SYNOPSIS
+            Retira LABORATORIO.progreso al terminar [G]. Nunca lanza.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [ValidateNotNullOrEmpty()][string] $Carpeta = (Get-CarpetaDeEstado)
+    )
+    $ruta = Join-Path $Carpeta 'LABORATORIO.progreso'
+    if (-not (Test-Path -LiteralPath $ruta -PathType Leaf)) { return }
+    if (-not $PSCmdlet.ShouldProcess($ruta, 'Retirar progreso del laboratorio')) { return }
+    Remove-Item -LiteralPath $ruta -Force -ErrorAction SilentlyContinue
 }

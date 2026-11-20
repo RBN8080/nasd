@@ -158,6 +158,9 @@ function Get-RaicesDeRespaldo {
         }
         $hijas = @(Get-ChildItem -LiteralPath $contenedor.ruta -Directory -Force -ErrorAction SilentlyContinue)
         foreach ($h in $hijas) {
+            # Coherente con /XJ de robocopy: junctions y enlaces simbolicos de
+            # Windows no son raices reales y generan bucles o acceso denegado.
+            if (($h.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
             if (-not (Test-CarpetaNumerada -Nombre $h.Name)) { continue }
             if (Test-RutaExcluida -Ruta $h.FullName -Exclusiones $exclusiones) { continue }
 
@@ -229,18 +232,37 @@ function Get-HuerfanosDeRespaldo {
     )
 
     $exclusiones = [string[]]$Configuracion.exclusiones
+    $conocidos = @()
+    if ($Configuracion.PSObject.Properties.Name -contains 'huerfanosConocidos' -and $null -ne $Configuracion.huerfanosConocidos) {
+        $conocidos = @($Configuracion.huerfanosConocidos | ForEach-Object { ('' + $_).Trim().TrimEnd('\') } | Where-Object { $_ -ne '' })
+    }
     $huerfanos = New-Object System.Collections.Generic.List[psobject]
 
     foreach ($contenedor in $Configuracion.contenedores) {
         if (-not (Test-Path -LiteralPath $contenedor.ruta -PathType Container)) { continue }
         $hijas = @(Get-ChildItem -LiteralPath $contenedor.ruta -Directory -Force -ErrorAction SilentlyContinue)
         foreach ($h in $hijas) {
+            # Las junctions de compatibilidad de Windows (Mi musica, Mis imagenes,
+            # Mis videos) son ReparsePoint que robocopy ignora con /XJ: no son
+            # carpetas de usuario sin clasificar.
+            if (($h.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
             if (Test-CarpetaNumerada -Nombre $h.Name) { continue }
             if (Test-RutaExcluida -Ruta $h.FullName -Exclusiones $exclusiones) { continue }
+
+            $esConocido = $false
+            foreach ($c in $conocidos) {
+                if ($h.Name.Equals($c, [System.StringComparison]::OrdinalIgnoreCase) -or
+                    $h.FullName.TrimEnd('\').Equals($c, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $esConocido = $true
+                    break
+                }
+            }
+            $motivo = if ($esConocido) { 'sin numerar (conocida) - no se copia' } else { 'sin numerar - no se copia' }
             $huerfanos.Add([pscustomobject]@{
-                Ruta   = $h.FullName
-                Motivo = 'sin numerar - no se copia'
-                Tipo   = 'sinNumerar'
+                Ruta     = $h.FullName
+                Motivo   = $motivo
+                Tipo     = 'sinNumerar'
+                Conocido = $esConocido
             })
         }
     }

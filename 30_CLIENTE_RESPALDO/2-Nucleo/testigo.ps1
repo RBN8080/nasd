@@ -221,7 +221,13 @@ function Send-LatidoDelCliente {
         # Ahora ese camino se pide nombrando una credencial que no existe, que es
         # la condicion real y no un sustituto.
         [ValidateNotNullOrEmpty()]
-        [string] $NombreEnElAlmacen = $script:NombreCredencialTestigo
+        [string] $NombreEnElAlmacen = $script:NombreCredencialTestigo,
+
+        [ValidateRange(0, 5)]
+        [int] $Reintentos = 2,
+
+        [ValidateRange(0, 60)]
+        [int] $EsperaBaseSegundos = 5
     )
 
     if (-not $PSBoundParameters.ContainsKey('Url') -or [string]::IsNullOrWhiteSpace($Url)) {
@@ -251,23 +257,36 @@ function Send-LatidoDelCliente {
         return [pscustomobject]@{ Enviado = $false; Senal = $Senal; Motivo = 'WhatIf' }
     }
 
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $parametros = @{
-            Uri             = $destino
-            Method          = 'Post'
-            TimeoutSec      = 15
-            UseBasicParsing = $true
-            ErrorAction     = 'Stop'
+    # Reintento breve ante cortes transitorios de red o DNS (medido el
+    # 2026-10-28: un unico timeout de 15 s dejo el latido sin enviar). Si todos
+    # fallan, nunca tumba la corrida: el respaldo es lo importante y el aviso
+    # es lo secundario.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $parametros = @{
+        Uri             = $destino
+        Method          = 'Post'
+        TimeoutSec      = 15
+        UseBasicParsing = $true
+        ErrorAction     = 'Stop'
+    }
+    if ($Detalle) { $parametros['Body'] = $Detalle }
+
+    $ultimoError = $null
+    $maxIntentos = 1 + $Reintentos
+    for ($intento = 1; $intento -le $maxIntentos; $intento++) {
+        try {
+            Invoke-WebRequest @parametros | Out-Null
+            return [pscustomobject]@{ Enviado = $true; Senal = $Senal; Motivo = $null; Intentos = $intento }
         }
-        if ($Detalle) { $parametros['Body'] = $Detalle }
-        Invoke-WebRequest @parametros | Out-Null
-        return [pscustomobject]@{ Enviado = $true; Senal = $Senal; Motivo = $null }
+        catch {
+            $ultimoError = $_.Exception.Message
+            if ($intento -lt $maxIntentos -and $EsperaBaseSegundos -gt 0) {
+                $espera = $EsperaBaseSegundos * [int][math]::Pow(3, $intento - 1)
+                Start-Sleep -Seconds $espera
+            }
+        }
     }
-    catch {
-        # Que el testigo no responda NO tumba la corrida. El respaldo es lo
-        # importante; el aviso es lo secundario, y ese orden esta escrito.
-        Write-Warning "El testigo no respondio: $($_.Exception.Message)"
-        return [pscustomobject]@{ Enviado = $false; Senal = $Senal; Motivo = $_.Exception.Message }
-    }
+
+    Write-Warning "El testigo no respondio tras $maxIntentos intento(s): $ultimoError"
+    return [pscustomobject]@{ Enviado = $false; Senal = $Senal; Motivo = $ultimoError; Intentos = $maxIntentos }
 }

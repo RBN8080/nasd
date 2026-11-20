@@ -237,12 +237,22 @@ function Invoke-CorridaAlDiscoFrio {
 
     # --- Guarda 2: los centinelas del equipo --------------------------------
     # Si algo esta tocando archivos que nadie usa, tampoco se escribe al disco.
-    $cent = Test-Centinela -Centinelas @($Configuracion.centinelas)
+    # Un renombre legitimo de carpeta NN_* con centinela SHA-256 intacto se
+    # reconoce y se anota en vez de bloquear la copia fria como ransomware.
+    $cent = Test-Centinela -Centinelas @($Configuracion.centinelas) -Contenedores @($Configuracion.contenedores)
     if (-not $cent.Correcto) {
         $resultado.Abortada = $true
         $resultado.Motivo = "CENTINELA ALTERADO: $($cent.Fallos.Count) de $($cent.Revisados). No se escribe en el disco frio."
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'disco' -Mensaje $resultado.Motivo
         return [pscustomobject]$resultado
+    }
+    foreach ($ren in @($cent.Renombrados)) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' `
+            -Mensaje ("Renombre reconocido por centinela intacto: {0} -> {1}. Ejecuta [1] para actualizar el nodo y la configuracion." -f $ren.RaizAnterior, $ren.RaizNueva)
+    }
+    foreach ($des in @($cent.Desactivados)) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' `
+            -Mensaje ("Raiz desactivada por renombre (centinela intacto sin NN_): {0} -> {1}." -f $des.RaizAnterior, $des.RaizNueva)
     }
 
     $ficha = $Configuracion.destinos.discoFrio

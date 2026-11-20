@@ -425,7 +425,8 @@ function Invoke-CorridaDeRespaldo {
     param(
         [Parameter(Mandatory)][psobject] $Configuracion,
         [switch] $Simular,
-        [switch] $SaltarDeuda
+        [switch] $SaltarDeuda,
+        [AllowEmptyString()][string] $RutaConfiguracion = ''
     )
 
     $inicio = Get-Date
@@ -450,6 +451,7 @@ function Invoke-CorridaDeRespaldo {
         Secretos     = @()
         Cambios      = @()
         Copias       = @()
+        Renombres    = @()
         Deuda        = $null
         Centinelas   = $null
         Espacio      = $null
@@ -481,14 +483,15 @@ $resultado.Causa = 'sinRaices'
     # repetir lo que el tablero ya pinta en una sola linea. El detalle no se
     # pierde: sigue en el registro del dia, con su nivel, que es donde se mira
     # cuando hace falta la lista.
-    $resultado.Huerfanos = Get-HuerfanosDeRespaldo -Configuracion $Configuracion
-    foreach ($h in $resultado.Huerfanos) {
+    $resultado.Huerfanos = @(Get-HuerfanosDeRespaldo -Configuracion $Configuracion)
+    $huerfanosNuevos = @($resultado.Huerfanos | Where-Object { -not (($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido) })
+    foreach ($h in $huerfanosNuevos) {
         Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'huerfano' -SoloArchivo `
             -Mensaje "$($h.Ruta) -- $($h.Motivo)"
     }
-    if (@($resultado.Huerfanos).Count -gt 0) {
+    if ($huerfanosNuevos.Count -gt 0) {
         Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'huerfano' -Mensaje (
-            '{0} carpetas sin numerar, no se copian. La lista, en el registro de hoy.' -f @($resultado.Huerfanos).Count)
+            '{0} carpetas sin numerar, no se copian. La lista, en el registro de hoy o en [H] del tablero.' -f $huerfanosNuevos.Count)
     }
 
     # --- Etapa 0: la deuda de la seccion 8 ---------------------------------
@@ -527,22 +530,74 @@ $resultado.Causa = 'destinoInalcanzable'
     $raizNodo = '{0}\{1}\{2}' -f $unc.TrimEnd('\'), $Configuracion.destinos.nodo.raiz, $Configuracion.destinos.nodo.prefijoEquipo
 
     # --- Etapa 2: centinelas -----------------------------------------------
-    $cent = Test-Centinela -Centinelas @($Configuracion.centinelas)
+    $cent = Test-Centinela -Centinelas @($Configuracion.centinelas) -Contenedores @($Configuracion.contenedores)
     $resultado.Centinelas = $cent
     if (-not $cent.Correcto) {
         $resultado.Abortada = $true
         $resultado.Motivo = "CENTINELA ALTERADO. $($cent.Fallos.Count) de $($cent.Revisados) no cuadran. No se escribe nada, y esto no se puede autorizar."
-$resultado.Causa = 'centinelaAlterado'
+        $resultado.Causa = 'centinelaAlterado'
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'centinela' -Mensaje $resultado.Motivo
         foreach ($f in $cent.Fallos) {
             Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'centinela' -Mensaje "$($f.Ruta) -- $($f.Motivo)"
         }
         return [pscustomobject]$resultado
     }
+
+    foreach ($des in @($cent.Desactivados)) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'centinela' `
+            -Mensaje ("RAIZ DESACTIVADA POR RENOMBRE: {0} -> {1}. Centinela intacto; perdio el prefijo NN_ y deja de copiarse." -f $des.RaizAnterior, $des.RaizNueva)
+    }
+
+    $traducciones = @($Configuracion.destinos.nodo.traduccionDeRutas)
+    $renombresHechos = New-Object System.Collections.Generic.List[psobject]
+    foreach ($ren in @($cent.Renombrados)) {
+        Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'centinela' `
+            -Mensaje ("RENOMBRE RECONOCIDO (centinela SHA-256 intacto): {0} -> {1}" -f $ren.RaizAnterior, $ren.RaizNueva)
+
+        $migracion = Move-RaizRenombradaEnDestino `
+            -RaizAnterior $ren.RaizAnterior -RaizNueva $ren.RaizNueva `
+            -RaizDestino $raizNodo -Traducciones $traducciones `
+            -Simular:$Simular -Confirm:$false
+
+        if ($migracion.Migrada) {
+            Write-RegistroRespaldo -Nivel 'OK' -Etapa 'renombre' `
+                -Mensaje ("Destino migrado atomicamente en el nodo: {0} -> {1}" -f $migracion.DestinoAnterior, $migracion.DestinoNuevo)
+        }
+        else {
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'renombre' `
+                -Mensaje ("Migracion de destino ({0} -> {1}): {2}" -f $migracion.DestinoAnterior, $migracion.DestinoNuevo, $migracion.Motivo)
+        }
+
+        $configActualizada = $false
+        if (-not $Simular -and $RutaConfiguracion -and (Test-Path -LiteralPath $RutaConfiguracion -PathType Leaf)) {
+            try {
+                $act = Set-RutaDeCentinelaEnConfig -RutaAnterior $ren.RutaAnterior -RutaNueva $ren.RutaNueva `
+                    -Huella $ren.Huella -Ruta $RutaConfiguracion -Confirm:$false
+                $configActualizada = [bool]$act.Escrito
+                foreach ($ce in @($Configuracion.centinelas)) {
+                    if (('' + $ce.ruta).Equals($ren.RutaAnterior, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $ce.ruta = $ren.RutaNueva
+                    }
+                }
+            }
+            catch {
+                Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'centinela' `
+                    -Mensaje ("No se pudo actualizar la ruta del centinela en configuracion: {0}" -f $_.Exception.Message)
+            }
+        }
+
+        $renombresHechos.Add([pscustomobject]@{
+            RaizAnterior      = $ren.RaizAnterior
+            RaizNueva         = $ren.RaizNueva
+            DestinoMigrado    = [bool]$migracion.Migrada
+            ConfigActualizada = $configActualizada
+            Motivo            = $migracion.Motivo
+        })
+    }
+    $resultado.Renombres = $renombresHechos.ToArray()
     Write-RegistroRespaldo -Etapa 'centinela' -Mensaje "Centinelas correctos: $($cent.Revisados)."
 
     # --- Etapa 3: medir el cambio de TODAS las raices antes de copiar -------
-    $traducciones = @($Configuracion.destinos.nodo.traduccionDeRutas)
     $cambios = New-Object System.Collections.Generic.List[psobject]
 
     foreach ($r in $raices) {
@@ -606,11 +661,45 @@ $resultado.Causa = 'centinelaAlterado'
         return [pscustomobject]$resultado
     }
 
+    $cambiosPorRaiz = @{}
+    foreach ($c in @($resultado.Cambios)) {
+        if ($c -and $c.Raiz) { $cambiosPorRaiz[$c.Raiz.ToLowerInvariant()] = $c }
+    }
+
     $copias = New-Object System.Collections.Generic.List[psobject]
     foreach ($r in $raices) {
         $destino = Get-RutaEnDestino -RutaOrigen $r.Ruta -RaizDestino $raizNodo -Traducciones $traducciones
         $accion = 'Copiar clase {0} a {1}' -f $r.Clase, $destino
         if (-not $PSCmdlet.ShouldProcess($r.Ruta, $accion)) { continue }
+
+        # Si la pasada en seco de Etapa 3 ya confirmo 0 archivos a copiar, 0 a
+        # borrar, destino existente y salida limpia de robocopy (0, o 2 en clase
+        # A por sobrantes conservados a proposito), omitir la segunda pasada SMB
+        # ahorra recorridos redundantes sin perder fidelidad en RAICES.tsv.
+        $med = $null
+        $claveRaiz = $r.Ruta.ToLowerInvariant()
+        if ($cambiosPorRaiz.ContainsKey($claveRaiz)) { $med = $cambiosPorRaiz[$claveRaiz] }
+        $codigoLimpioSinCambios = ($med -and ($med.CodigoRobocopy -eq 0 -or ($r.Clase -eq 'A' -and $med.CodigoRobocopy -eq 2)))
+        if ($codigoLimpioSinCambios -and -not $med.PrimeraSiembra -and
+            $med.ACopiar -eq 0 -and $med.Borraria -eq 0 -and @($med.SinClasificar).Count -eq 0) {
+            $res = [pscustomobject]@{
+                Origen            = $r.Ruta
+                Destino           = $destino
+                Clase             = $r.Clase
+                Codigo            = 0
+                Correcto          = $true
+                SoloListar        = $false
+                ACopiar           = @()
+                ABorrar           = @()
+                SinClasificar     = @()
+                NumACopiar        = 0
+                NumABorrar        = 0
+                OmitidaSinCambios = $true
+            }
+            $copias.Add($res)
+            Write-RegistroRespaldo -Etapa 'copia' -Mensaje "OK $($r.Ruta) -> $destino (sin cambios en etapa 3, robocopy omitido)"
+            continue
+        }
 
         $res = Invoke-Robocopy -Origen $r.Ruta -Destino $destino -Clase $r.Clase
         $copias.Add($res)
@@ -750,7 +839,8 @@ function Invoke-CorridaConEstado {
         }
 
         $resultado = Invoke-CorridaDeRespaldo -Configuracion $Configuracion `
-            -Simular:$Simular -SaltarDeuda:$SaltarDeuda -Confirm:$false
+            -Simular:$Simular -SaltarDeuda:$SaltarDeuda `
+            -RutaConfiguracion $RutaConfiguracion -Confirm:$false
     }
     catch {
         # LO QUE FALTABA, Y DEJABA EL ICONO EN VERDE.
@@ -848,11 +938,16 @@ function Invoke-CorridaConEstado {
         $detalle = "{0} raices al dia, {1} archivos copiados" -f $resultado.Copias.Count, $copiados
     }
 
+    $huerfanosNuevosEstado = @($resultado.Huerfanos | Where-Object { -not (($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido) })
+    $huerfanosConocidosEstado = @($resultado.Huerfanos | Where-Object { ($_.PSObject.Properties.Name -contains 'Conocido') -and $_.Conocido })
     $datos = @{
         raices    = @($resultado.Raices).Count
-        huerfanos = @($resultado.Huerfanos).Count
+        huerfanos = $huerfanosNuevosEstado.Count
         copias    = @($resultado.Copias).Count
         fallos    = $fallos.Count
+    }
+    if ($huerfanosConocidosEstado.Count -gt 0) {
+        $datos['huerfanos_conocidos'] = $huerfanosConocidosEstado.Count
     }
 
     # UN ABORTO NO ES UNA COPIA, Y EL TABLERO NECESITA PODER DISTINGUIRLO.
@@ -903,7 +998,8 @@ function Invoke-CorridaConEstado {
         $datos['ventana'] = 'a mano'
     }
     if ($cadencia) {
-        $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia
+        $excluirVentanaActual = [bool]($ventana -and $ventana.ATiempo)
+        $siguiente = Get-ProximaVentanaDeCorrida -Cadencia $cadencia -ExcluirActual:$excluirVentanaActual
         $datos['proxima_ventana'] = $siguiente.Ventana
         $datos['proxima_inicio']  = $siguiente.Inicio.ToString('s')
 
@@ -983,7 +1079,7 @@ function Invoke-CorridaConEstado {
             # fue lo que el 2026-09-02 convirtio una "simulacion" en una copia
             # de verdad al disco frio.
             try {
-                $argsCotejo = @{ EmitirLatido = $true }
+                $argsCotejo = @{ EmitirLatido = $true; SoloHuellas = $true }
                 if ($RutaConfiguracion) { $argsCotejo['RutaConfiguracion'] = $RutaConfiguracion }
                 # LO QUE ESTA CORRIDA COPIO VIAJA AL COTEJO, y es lo que se lee
                 # entero: releer lo que ya estaba lo deja al muestreo semanal
@@ -1006,6 +1102,9 @@ function Invoke-CorridaConEstado {
             }
         }
     }
+
+    # Limpieza ligera de registros >90 dias. Nunca tumba una corrida.
+    Remove-RegistrosAntiguos -CarpetaRegistro (Get-CarpetaDeRegistro -Configuracion $Configuracion) -DiasRetencion 90 -Confirm:$false | Out-Null
 
     return $resultado
 }
@@ -1035,7 +1134,12 @@ $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
 # -WhatIf es la forma estandar de pedir "ensename que harias"; la envoltura lo
 # traduce a simulacion, asi que no hay dos caminos que mantener sincronizados.
-$rutaCfg = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) { $RutaConfiguracion } else { '' }
+$rutaCfg = if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) {
+    $RutaConfiguracion
+}
+else {
+    Join-Path (Split-Path $PSScriptRoot -Parent) '3-Config\respaldo.jsonc'
+}
 
 Invoke-CorridaConEstado -Configuracion $configuracion `
     -Simular:$SoloSimular -SaltarDeuda:$OmitirDeuda `
