@@ -3797,6 +3797,16 @@ Test-Afirmacion -Nombre 'Menu consolidado numerico [1]-[6] es secuencial, simetr
     -Esperado '123456|False|False|True|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
         $teclasMenu, $hayVaciaMenu, $haySangriaRota, $m1Menu.PropiaVista, $m6Menu.PropiaVista)
 
+$progLinea = [pscustomobject]@{
+    Activo = $true; Porcentaje = 42; TasaMBs = 12.5; EtaSegundos = 900
+    Objetivo = 'Security_Onion'; Elemento = 'Security_Onion.vmdk'; Fase = 'escribiendo'
+}
+$linAct72 = Format-LineaVivaDeConsola -Ancho 72 -Progreso $progLinea -Unicode $false
+$linRep72 = Format-LineaVivaDeConsola -Ancho 72 -Progreso $null -Unicode $false
+Test-Afirmacion -Nombre 'Format-LineaVivaDeConsola acota la linea viva in-place por debajo del ancho (cero envoltura ni parpadeo)' `
+    -Esperado 'True|True|True' -Obtenido ('{0}|{1}|{2}' -f
+        ($linAct72.Length -le 69), ($linRep72.Length -le 69), ($linAct72 -match 'EN CURSO.*42%'))
+
 # ===========================================================================
 Write-Titulo 'Modulo NasRespaldo con manifiesto y contexto explicito del tablero'
 # ===========================================================================

@@ -3272,21 +3272,73 @@ function Invoke-VistaLecturaPi {
     }
 }
 
+function Format-LineaVivaDeConsola {
+    <#
+        .SYNOPSIS
+            Construye la linea inferior viva sin exceder el ancho visible (cero envoltura).
+        .DESCRIPTION
+            Permite actualizar el progreso activo in-place con retorno de carro
+            (\r) sin redibujar toda la consola ni provocar parpadeo. Garantiza
+            una longitud estrictamente menor al ancho de terminal. Funcion pura.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [ValidateRange(30, 500)][int] $Ancho = 96,
+        [AllowNull()][psobject] $Progreso = $null,
+        [string] $Etiqueta = '[1-6] abrir  [Enter] refrescar  [0] salir >',
+        [bool] $Unicode = $false
+    )
+
+    $maxVis = [Math]::Max(20, $Ancho - 3)
+    if ($Progreso -and ($Progreso.PSObject.Properties.Name -contains 'Activo') -and $Progreso.Activo) {
+        $anchoBarra = if ($Ancho -ge 104) { 12 } else { 8 }
+        $barra = Format-BarraDeProgreso -Porcentaje $Progreso.Porcentaje -Ancho $anchoBarra -Unicode $Unicode
+        $partes = New-Object System.Collections.Generic.List[string]
+        [void]$partes.Add(('{0}%' -f [int]$Progreso.Porcentaje))
+        if (($Progreso.PSObject.Properties.Name -contains 'TasaMBs') -and [double]$Progreso.TasaMBs -gt 0.05) {
+            [void]$partes.Add(('{0:N1} MB/s' -f [double]$Progreso.TasaMBs))
+        }
+        if (($Progreso.PSObject.Properties.Name -contains 'EtaSegundos') -and [int]$Progreso.EtaSegundos -gt 0) {
+            $etaS = [int]$Progreso.EtaSegundos
+            $etaTxt = if ($etaS -lt 90) { '{0}s' -f $etaS } elseif ($etaS -lt 5400) { '{0}m' -f [int][Math]::Ceiling($etaS / 60.0) } else { '{0:N1}h' -f ($etaS / 3600.0) }
+            [void]$partes.Add(('ETA ' + $etaTxt))
+        }
+        if (($Progreso.PSObject.Properties.Name -contains 'Objetivo') -and -not [string]::IsNullOrWhiteSpace('' + $Progreso.Objetivo)) {
+            [void]$partes.Add(('' + $Progreso.Objetivo))
+        }
+        elseif (($Progreso.PSObject.Properties.Name -contains 'Elemento') -and -not [string]::IsNullOrWhiteSpace('' + $Progreso.Elemento)) {
+            [void]$partes.Add(('' + $Progreso.Elemento))
+        }
+        $sufijo = ' | [1-6] [Enter] [0] >'
+        $prefijo = 'EN CURSO {0} ' -f $barra
+        $hueco = [Math]::Max(10, $maxVis - $prefijo.Length - $sufijo.Length)
+        $resumen = Limit-Texto -Texto ($partes -join ' ') -Maximo $hueco
+        return (Limit-Texto -Texto ($prefijo + $resumen + $sufijo) -Maximo $maxVis)
+    }
+    return (Limit-Texto -Texto $Etiqueta -Maximo $maxVis)
+}
+
 function Read-AccionEnVivo {
     <#
         .SYNOPSIS
-            Espera pulsacion directa de una tecla o refresco automatico / cambio de ancho.
+            Espera pulsacion directa con respuesta de 50 ms, barra viva in-place sin
+            parpadeo y deteccion amortiguada de cambio de ancho.
         .DESCRIPTION
-            Mantiene la consola viva sin bloquear el redibujo: refresca cada
-            IntervaloSegundos y detecta al instante redimensionamientos de la
-            ventana de terminal. Si la entrada esta redirigida cae a Read-Host.
+            No redibuja la pantalla completa cada 2 s. Cuando existe una operacion
+            activa en PROGRESO.json actualiza UNICAMENTE la linea inferior en el
+            sitio (\r + borrado de linea), manteniendo la consola completamente
+            estable y el teclado reactivo al instante. Al finalizar o iniciar una
+            operacion dispara un unico refresco limpio del tablero.
     #>
     [CmdletBinding()]
     [OutputType([psobject])]
     param(
-        [ValidateRange(1, 300)][int] $IntervaloSegundos = 15,
+        [ValidateRange(1, 600)][int] $IntervaloSegundos = 60,
         [int] $AnchoInicial = 0,
-        [string] $Etiqueta = 'Seleccione opcion [1-6], [Enter] refrescar, [0] salir'
+        [string] $Etiqueta = '[1-6] abrir  [Enter] refrescar  [0] salir >',
+        [AllowEmptyString()][string] $CarpetaEstado = '',
+        [bool] $OperacionActivaInicial = $false
     )
 
     if (-not (Test-ConsolaInteractiva)) {
@@ -3297,14 +3349,46 @@ function Read-AccionEnVivo {
     }
 
     $p = $script:Paleta
-    Write-Host ('  {0}{1}{2} ' -f $p.Tenue, $Etiqueta, $p.Fin) -NoNewline
-
+    $u = [bool]$script:Capacidades.Unicode
+    $conVt = [bool]$script:Capacidades.Color
+    $esc = [char]27
     $anchoBase = if ($AnchoInicial -gt 0) { $AnchoInicial } else { Get-AnchoDeConsola }
-    $pasos = [Math]::Max(1, [int]($IntervaloSegundos * 1000 / 150))
-    for ($i = 0; $i -lt $pasos; $i++) {
+    $estabaActiva = [bool]$OperacionActivaInicial
+    $ultimaLinea = ''
+
+    $pintarLinea = {
+        param($Prog)
+        $txt = Format-LineaVivaDeConsola -Ancho $anchoBase -Progreso $Prog -Etiqueta $Etiqueta -Unicode $u
+        if ($txt -eq $ultimaLinea) { return }
+        $ultimaLinea = $txt
+        $colorLinea = if ($Prog -and $Prog.Activo) { $p.Verde } else { $p.Tenue }
+        if ($conVt) {
+            [Console]::Write(("`r  {0}{1}{2}{3}[K" -f $colorLinea, $txt, $p.Fin, $esc))
+        }
+        else {
+            $relleno = $txt.PadRight([Math]::Max(1, $anchoBase - 3))
+            [Console]::Write(("`r  {0}" -f $relleno))
+        }
+    }
+
+    $progIni = $null
+    if ($CarpetaEstado) { $progIni = Read-ProgresoDeOperacion -Carpeta $CarpetaEstado }
+    & $pintarLinea $progIni
+
+    $cronoTotal = [System.Diagnostics.Stopwatch]::StartNew()
+    $cronoProg  = [System.Diagnostics.Stopwatch]::StartNew()
+    $limiteMs   = $IntervaloSegundos * 1000
+
+    while ($cronoTotal.ElapsedMilliseconds -lt $limiteMs) {
         try {
             $wAct = Get-AnchoDeConsola
             if ($wAct -ne $anchoBase) {
+                # Amortiguacion (250 ms) para no parpadear mientras se arrastra el borde.
+                Start-Sleep -Milliseconds 250
+                while ((Get-AnchoDeConsola) -ne $wAct) {
+                    $wAct = Get-AnchoDeConsola
+                    Start-Sleep -Milliseconds 150
+                }
                 return [pscustomobject]@{ Tipo = 'Redimension'; Tecla = '' }
             }
             if ([Console]::KeyAvailable) {
@@ -3322,11 +3406,21 @@ function Read-AccionEnVivo {
                 }
                 return [pscustomobject]@{ Tipo = 'Opcion'; Tecla = $ch }
             }
+            if ($CarpetaEstado -and $cronoProg.ElapsedMilliseconds -ge 2000) {
+                $cronoProg.Restart()
+                $progAct = Read-ProgresoDeOperacion -Carpeta $CarpetaEstado
+                $ahoraActiva = [bool]($progAct -and $progAct.Activo)
+                if ($ahoraActiva -ne $estabaActiva) {
+                    # Cambio de estado (arranco o termino una copia): un unico refresco completo.
+                    return [pscustomobject]@{ Tipo = 'Refrescar'; Tecla = '' }
+                }
+                if ($ahoraActiva) { & $pintarLinea $progAct }
+            }
         }
         catch {
             break
         }
-        Start-Sleep -Milliseconds 150
+        Start-Sleep -Milliseconds 50
     }
     return [pscustomobject]@{ Tipo = 'Refrescar'; Tecla = '' }
 }
@@ -4124,42 +4218,100 @@ $enCore = ($PSVersionTable.PSVersion.Major -ge 6)
 $powershell51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
 $seguir = $true
+$requiereLimpiezaTotal = $true
+$primeraCarga = $true
+$caboEnVentana = $false
+$escVt = [char]27
+
 while ($seguir) {
-    Clear-PantallaInteractiva
+    $esInteractiva = Test-ConsolaInteractiva
+    if ($primeraCarga -and $esInteractiva) {
+        Clear-PantallaInteractiva
+        Write-Linea ('  {0}Cargando consola de respaldo...{1}' -f $script:Paleta.Tenue, $script:Paleta.Fin)
+        $primeraCarga = $false
+    }
+    elseif (-not $requiereLimpiezaTotal -and $esInteractiva -and $script:Capacidades.Color) {
+        # Indicador sutil en el mismo sitio mientras se refresca sin borrar la pantalla.
+        [Console]::Write(("`r  {0}Actualizando estado...{1}{2}[K" -f $script:Paleta.Tenue, $script:Paleta.Fin, $escVt))
+    }
+
+    # CALCULAR PRIMERO, PINTAR DESPUES: nunca se deja la terminal en negro
+    # mientras SMB/WMI responden.
     $anchoDibujo = Get-AnchoDeConsola
     $datosPantalla = Get-DatosDeVentana -Configuracion $configuracion
+    $carpetaEstadoVivo = Get-CarpetaDeEstado -Configuracion $configuracion
 
-    # SI EL PANEL RICO FALLA, SE VUELVE A LA VENTANA DE SIEMPRE Y SE QUEDA ASI
-    # (ADR-0097): una version nueva del modulo no puede dejar al tablero sin
-    # ventana el dia que hace falta.
-    $pintada = $false
-    if ($script:PanelRico) {
-        try {
-            Show-VentanaRica -Datos $datosPantalla
-            $pintada = $true
+    $ocultoCursor = $false
+    if ($esInteractiva -and $script:Capacidades.Color) {
+        try { [Console]::Write(("{0}[?25l" -f $escVt)); $ocultoCursor = $true }
+        catch { $ocultoCursor = $false }
+    }
+    try {
+        if ($requiereLimpiezaTotal -or -not $caboEnVentana -or -not $script:Capacidades.Color) {
+            Clear-PantallaInteractiva
         }
-        catch {
-            Write-Warning ('El panel con Spectre fallo y se vuelve a la ventana de siempre: {0}' -f $_.Exception.Message)
-            $script:PanelRico = $false
+        elseif ($esInteractiva) {
+            # Redibujo in-place desde esquina superior izquierda (cero Clear-Host, cero parpadeo).
+            [Console]::Write(("{0}[H" -f $escVt))
+        }
+
+        # SI EL PANEL RICO FALLA, SE VUELVE A LA VENTANA DE SIEMPRE Y SE QUEDA ASI
+        # (ADR-0097): una version nueva del modulo no puede dejar al tablero sin
+        # ventana el dia que hace falta.
+        $pintada = $false
+        if ($script:PanelRico) {
+            try {
+                Show-VentanaRica -Datos $datosPantalla
+                $pintada = $true
+            }
+            catch {
+                Write-Warning ('El panel con Spectre fallo y se vuelve a la ventana de siempre: {0}' -f $_.Exception.Message)
+                $script:PanelRico = $false
+            }
+        }
+        if (-not $pintada) { Show-Ventana -Configuracion $configuracion -Datos $datosPantalla }
+
+        if ($script:Ctx.AvisoMenu) {
+            $pAviso = $script:Paleta
+            Write-Linea ('  {0}! {1}{2}' -f $pAviso.Ambar, $script:Ctx.AvisoMenu, $pAviso.Fin)
+            Write-Linea ' '
+            $script:Ctx.AvisoMenu = ''
+        }
+
+        if ($esInteractiva -and $script:Capacidades.Color) {
+            [Console]::Write(("{0}[J" -f $escVt))
+        }
+
+        $caboEnVentana = $false
+        if ($esInteractiva) {
+            try {
+                $caboEnVentana = ([Console]::WindowTop -eq 0) -and ([Console]::CursorTop -lt ([Console]::WindowHeight - 2))
+            }
+            catch { $caboEnVentana = $false }
+        }
+        $requiereLimpiezaTotal = $false
+    }
+    finally {
+        if ($ocultoCursor) {
+            try { [Console]::Write(("{0}[?25h" -f $escVt)) } catch { Write-Verbose 'Restore cursor omitido.' }
         }
     }
-    if (-not $pintada) { Show-Ventana -Configuracion $configuracion -Datos $datosPantalla }
 
-    if ($script:Ctx.AvisoMenu) {
-        $pAviso = $script:Paleta
-        Write-Linea ('  {0}! {1}{2}' -f $pAviso.Ambar, $script:Ctx.AvisoMenu, $pAviso.Fin)
-        Write-Linea ' '
-        $script:Ctx.AvisoMenu = ''
+    $operacionActiva = [bool]($datosPantalla.ProgresoActivo -and $datosPantalla.ProgresoActivo.Activo)
+    $accion = Read-AccionEnVivo -IntervaloSegundos 60 -AnchoInicial $anchoDibujo `
+        -Etiqueta '[1-6] abrir  [Enter] refrescar  [0] salir >' `
+        -CarpetaEstado $carpetaEstadoVivo -OperacionActivaInicial $operacionActiva
+
+    if ($accion.Tipo -eq 'Salir') {
+        if ($esInteractiva) { Write-Host '' }
+        $seguir = $false
+        continue
     }
-
-    $operacionActiva = ($datosPantalla.ProgresoActivo -and $datosPantalla.ProgresoActivo.Activo) -or
-        $datosPantalla.LecturaActiva -or ($datosPantalla.Estado -eq 'Copiando')
-    $intervaloVivo = if ($operacionActiva) { 2 } else { 15 }
-    $accion = Read-AccionEnVivo -IntervaloSegundos $intervaloVivo -AnchoInicial $anchoDibujo `
-        -Etiqueta ('[1-6] abrir  [Enter] refrescar ({0}s)  [0] salir >' -f $intervaloVivo)
-
-    if ($accion.Tipo -eq 'Salir') { $seguir = $false; continue }
-    if ($accion.Tipo -eq 'Refrescar' -or $accion.Tipo -eq 'Redimension') {
+    if ($accion.Tipo -eq 'Redimension') {
+        $requiereLimpiezaTotal = $true
+        continue
+    }
+    if ($accion.Tipo -eq 'Refrescar') {
         try { $configuracion = Get-ConfiguracionRespaldo @parametros }
         catch { $script:Ctx.AvisoMenu = 'No se pudo releer la configuracion: {0}' -f $_.Exception.Message }
         continue
@@ -4172,6 +4324,7 @@ while ($seguir) {
         continue
     }
 
+    $requiereLimpiezaTotal = $true
     if ($enCore) {
         # Respuesta visual inmediata (<1 ms) mientras arranca el proceso hijo 5.1.
         Clear-PantallaInteractiva
