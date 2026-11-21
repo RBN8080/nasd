@@ -1960,11 +1960,11 @@ function Show-RevisionDelDisco {
     }
 
     if ($rotos.Count -eq 0 -and $saltadas.Count -eq 0) {
-        Write-Veredicto -Nivel 'OK' -Frase ('{0} raices revisadas en el disco frio: 0 archivos a medias. El disco esta cuadrado.' -f $revisadas)
+        Write-Veredicto -Nivel 'OK' -Frase ('{0} raices revisadas en el disco frio: 0 archivos con indicios de copia interrumpida.' -f $revisadas)
         return
     }
     if ($rotos.Count -eq 0) {
-        Write-Veredicto -Nivel 'ATENCION' -Frase ('{0} raices revisadas sin archivos a medias, pero {1} no se pudieron mirar.' -f $revisadas, $saltadas.Count) `
+        Write-Veredicto -Nivel 'ATENCION' -Frase ('{0} raices revisadas sin indicios de archivos a medias, pero {1} no se pudieron mirar.' -f $revisadas, $saltadas.Count) `
             -Accion 'No equivale a "limpio": revisa los avisos de arriba (por ejemplo si el nodo no respondio) y repite [2] -> [3].'
         return
     }
@@ -1972,8 +1972,8 @@ function Show-RevisionDelDisco {
     Write-Linea ''
     Show-Texto -Objeto ($rotos | Select-Object Motivo, TamanoOrigen, TamanoDestino, Relativa)
     Write-Linea ''
-    Write-Veredicto -Nivel 'FALLO' -Frase ('{0} archivo(s) a medias de una copia cortada en el disco frio ({1} raices revisadas).' -f $rotos.Count, $revisadas) `
-        -Accion 'Reparalos con Repair-ArchivosEnVuelo (2-Nucleo/comun.ps1): sobrescribe solo esos archivos y nunca borra.'
+    Write-Veredicto -Nivel 'FALLO' -Frase ('{0} archivo(s) con indicios de copia interrumpida en el disco frio ({1} raices revisadas).' -f $rotos.Count, $revisadas) `
+        -Accion 'Carga 2-Nucleo/comun.ps1 y comprueba con Test-HuellaEnVuelo. Repair-ArchivosEnVuelo sobrescribe solo la lista indicada y nunca borra.'
 }
 
 function Show-PruebaDeRestauracion {

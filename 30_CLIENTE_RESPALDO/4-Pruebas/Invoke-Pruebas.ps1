@@ -953,9 +953,16 @@ Set-Content -LiteralPath "$destinoV\roto.txt"  -Value 'BBBBBBBBBBBBBBB' -Encodin
 # 3. Truncado: tamano distinto.
 Set-Content -LiteralPath "$origenV\corto.txt"  -Value 'esto es largo de verdad' -Encoding UTF8
 Set-Content -LiteralPath "$destinoV\corto.txt" -Value 'esto' -Encoding UTF8
+(Get-Item "$destinoV\corto.txt").LastWriteTimeUtc = (Get-Item "$origenV\corto.txt").LastWriteTimeUtc.AddSeconds(-2)
 
 # 4. Solo en el destino: en clase A eso es LEGITIMO y NO es hallazgo.
 Set-Content -LiteralPath "$destinoV\viejo.txt" -Value 'el origen ya lo borro' -Encoding UTF8
+
+# 5. Version nueva en el origen: /XO la admite aunque cambie de tamano.
+Set-Content -LiteralPath "$origenV\pendiente.txt" -Value 'version nueva y mas larga' -Encoding UTF8
+Set-Content -LiteralPath "$destinoV\pendiente.txt" -Value 'version anterior' -Encoding UTF8
+(Get-Item "$destinoV\pendiente.txt").LastWriteTimeUtc = (Get-Item "$origenV\pendiente.txt").LastWriteTimeUtc.AddHours(-3)
+$huellaPendiente = Get-HuellaDeArchivo -Ruta "$destinoV\pendiente.txt"
 
 $vuelo = @(Get-ArchivosEnVuelo -Origen $origenV -Destino $destinoV)
 $nombresVuelo = @($vuelo | ForEach-Object { $_.Relativa } | Sort-Object)
@@ -966,6 +973,8 @@ Test-Afirmacion -Nombre 'El sano NO se reporta' `
     -Esperado $false -Obtenido ($nombresVuelo -contains 'sano.txt')
 Test-Afirmacion -Nombre 'Lo que solo esta en el destino NO es hallazgo (clase A no borra)' `
     -Esperado $false -Obtenido ($nombresVuelo -contains 'viejo.txt')
+Test-Afirmacion -Nombre 'Un origen mas nuevo y de otro tamano se actualiza en la copia normal' `
+    -Esperado $false -Obtenido ($nombresVuelo -contains 'pendiente.txt')
 
 $motivoRoto = @($vuelo | Where-Object { $_.Relativa -eq 'roto.txt' }).Motivo
 Test-Afirmacion -Nombre 'El de mismo tamano se marca por FECHA, que es lo que /XO esconde' `
@@ -996,6 +1005,8 @@ Test-Afirmacion -Nombre 'Reparar no borra nada: el mismo numero de archivos ante
     -Esperado $antesReparar -Obtenido $despuesReparar
 Test-Afirmacion -Nombre 'Y lo que solo vivia en el destino sigue vivo' `
     -Esperado $true -Obtenido (Test-Path -LiteralPath "$destinoV\viejo.txt")
+Test-Afirmacion -Nombre 'Reparar conserva la version que espera la copia normal' `
+    -Esperado $huellaPendiente -Obtenido (Get-HuellaDeArchivo -Ruta "$destinoV\pendiente.txt")
 Test-Afirmacion -Nombre 'Despues de reparar no queda ni uno a medias' `
     -Esperado 0 -Obtenido @(Get-ArchivosEnVuelo -Origen $origenV -Destino $destinoV).Count
 

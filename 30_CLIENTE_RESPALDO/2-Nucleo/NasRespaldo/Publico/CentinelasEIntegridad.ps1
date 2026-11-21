@@ -388,7 +388,7 @@ function Get-HuellaDeArchivo {
 function Get-ArchivosEnVuelo {
     <#
         .SYNOPSIS
-            Los archivos que una copia interrumpida deja rotos Y ESCONDIDOS.
+            Busca archivos con indicios de una copia interrumpida.
 
         .DESCRIPTION
             EL PUNTO CIEGO DE /XO, Y ES EL MOTIVO DE QUE ESTA FUNCION EXISTA.
@@ -412,6 +412,10 @@ function Get-ArchivosEnVuelo {
             esta funcion solo SELECCIONA candidatos por metadatos; quien afirma
             que el contenido es identico es la huella, y eso lo hace
             Test-HuellaEnVuelo.
+
+            Si el origen es mas nuevo que el destino fuera de la tolerancia,
+            /XO permite actualizarlo en la copia normal, tambien si cambio de
+            tamano. Esa diferencia queda fuera de la lista de reparacion.
 
             NO BORRA NADA. Detecta y reporta, el mismo trato que da la seccion
             3.3 punto 4 al huerfano y ADR-0080 al secreto. La reparacion es un
@@ -464,11 +468,14 @@ function Get-ArchivosEnVuelo {
         # el destino conserva a proposito lo que el origen ya borro (seccion 4).
         if (-not $o) { continue }
 
+        $desfase = ($d.LastWriteTimeUtc - $o.LastWriteTimeUtc).TotalSeconds
+        if ($desfase -lt -$ToleranciaSegundos) { continue }
+
         $motivo = $null
         if ($o.Length -ne $d.Length) {
             $motivo = 'TamanoDistinto'
         }
-        elseif (($d.LastWriteTime - $o.LastWriteTime).TotalSeconds -gt $ToleranciaSegundos) {
+        elseif ($desfase -gt $ToleranciaSegundos) {
             # El destino es MAS NUEVO que el origen: /XO no lo volvera a tocar.
             $motivo = 'DestinoMasNuevo'
         }
