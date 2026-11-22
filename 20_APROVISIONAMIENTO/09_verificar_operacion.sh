@@ -451,9 +451,9 @@ else
   # El extremo de los perfiles: IP fija es deuda conocida, no un fallo.
   EXTREMO_PERFIL=$(grep -h '^Endpoint' /etc/wireguard/clientes/*.conf 2>/dev/null | head -1 | sed 's/.*= *//')
   case "$EXTREMO_PERFIL" in
-    *duckdns.org*|*[a-z].[a-z]*) si "los perfiles usan un NOMBRE: sobreviven a un cambio de IP" ;;
+    *[a-z].[a-z]*)               si "los perfiles usan un NOMBRE: sobreviven a un cambio de IP" ;;
     "")                          dato "no se pudieron leer los perfiles de cliente" ;;
-    *)                           dato "DEUDA: los perfiles apuntan a la IP $EXTREMO_PERFIL, no a un nombre. Cuando el proveedor la cambie, el acceso remoto morirá EN SILENCIO. Se salda con 11_ddns.sh" ;;
+    *)                           dato "DEUDA: los perfiles apuntan a la IP $EXTREMO_PERFIL, no a un nombre. Cuando el proveedor la cambie, el acceso remoto morirá EN SILENCIO. Se salda con un nombre en /etc/nas/dominios.conf (23_dominio_njalla.sh)" ;;
   esac
 
   # D-21 — SAMBA POR EL TÚNEL. Esta comprobación existe porque su ausencia
@@ -663,7 +663,7 @@ elif ! tar tzf "$RESPALDO" 2>/dev/null | grep -q 'etc/wireguard/wg0.conf'; then
 else
   # Comparar contra lo que dice proteger, no contra el calendario: un respaldo
   # de hace tres meses vale si la identidad no ha cambiado desde entonces.
-  MAS_NUEVO=$(find /etc/wireguard /etc/nasd/credencial /etc/nas/ddns.conf \
+  MAS_NUEVO=$(find /etc/wireguard /etc/nasd/credencial \
                 /etc/nas/njalla/ddns.token /etc/nas/njalla/acme.token \
                 /etc/nas/njalla/vpn.token /etc/nas/njalla/dominio.toml \
                 /etc/nas/dominios.conf /etc/nas/tls-lineage \

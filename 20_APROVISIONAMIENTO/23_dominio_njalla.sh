@@ -74,7 +74,7 @@ EOF
     # La copia raiz privada contiene tambien la clave para revertir la ventana;
     # no se incluye en el respaldo rutinario de identidad ni en el repositorio.
     if [ ! -f /etc/nas/tls-lineage ]; then
-      printf '%s\n' /etc/letsencrypt/live/nas-ejemplo.duckdns.org > /etc/nas/tls-lineage
+      printf '%s\n' /etc/letsencrypt/live/nas.example.org > /etc/nas/tls-lineage
       chmod 0600 /etc/nas/tls-lineage
     fi
     cat > /etc/letsencrypt/renewal-hooks/deploy/nas-copiar.sh <<'EOF'

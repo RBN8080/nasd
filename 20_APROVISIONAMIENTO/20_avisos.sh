@@ -116,7 +116,7 @@ chown root:root "$CONF"
 # lee config.LeerPares en el propio binario (10_CODIGO/internal/config/toml.go)
 # — «clave = "valor"», con espacios alrededor del signo igual. Sourcearlo como
 # bash rompía con «command not found» en la primera línea, porque los espacios
-# no son asignación válida de shell. Es distinto del formato de 11_ddns.sh
+# no son asignación válida de shell. Es distinto del formato de un .env de shell
 # (DOMINIO=valor, sin espacios, ese sí pensado para sourcearse) y no deben
 # confundirse: aquí se extrae con la misma regla que aplica el lector real.
 valor_de() {
@@ -178,8 +178,7 @@ echo "== Comprobación =="
 #
 # La Bot API obliga a llevarlo en la RUTA de la URL, así que un «curl "https://
 # api.telegram.org/bot$TOKEN/..."» lo dejaría en el argv, visible con «ps» para
-# cualquier usuario del nodo. Es el defecto que 11_ddns.sh tiene con el testigo
-# de DuckDNS, y el que el commit del 24/08 corrigió en el verificador de la web.
+# cualquier usuario del nodo. Es el defecto que el commit del 24/08 corrigió en el verificador de la web.
 #
 # «curl -K -» lee su configuración de la entrada estándar: la URL entra por una
 # tubería y no por un argumento.

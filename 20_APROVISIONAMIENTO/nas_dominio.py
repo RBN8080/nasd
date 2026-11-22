@@ -16,7 +16,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlencode
 
 from njalla_registros import (
     INACTIVO,
@@ -242,56 +241,6 @@ def limpiar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -> N
     estado.unlink()
 
 
-def duckdns(limpiar_txt: bool, valor: str) -> None:
-    # Convivencia temporal: conservar DNS-01 antiguo sin token en argv del curl.
-    datos = dict(
-        linea.split("=", 1)
-        for linea in privado(Path("/etc/nas/ddns.conf")).splitlines()
-        if "=" in linea and not linea.startswith("#")
-    )
-    dominio, token = datos.get("DOMINIO"), datos.get("TESTIGO")
-    if dominio != ANTIGUO.removesuffix(".duckdns.org") or not token:
-        raise ErrorDNS("Configuracion DuckDNS de convivencia no coincide")
-    parametros = {
-        "domains": dominio,
-        "token": token,
-        "txt": "removed" if limpiar_txt else normalizar("TXT", valor),
-    }
-    if limpiar_txt:
-        parametros["clear"] = "true"
-    url = "https://www.duckdns.org/update?" + urlencode(parametros)
-    respuesta = subprocess.run(
-        [
-            "curl",
-            "--disable",
-            "--config",
-            "-",
-            "--silent",
-            "--show-error",
-            "--fail",
-            "--noproxy",
-            "*",
-            "--proto",
-            "=https",
-            "--connect-timeout",
-            "5",
-            "--max-time",
-            "20",
-        ],
-        input="url = " + json.dumps(url) + "\n",
-        text=True,
-        capture_output=True,
-        timeout=25,
-        check=False,
-    )
-    if respuesta.returncode or respuesta.stdout.strip() != "OK":
-        raise ErrorDNS("Validacion DuckDNS temporal fallo")
-    if not limpiar_txt:
-        # La espera heredada solo se conserva para el nombre antiguo. Njalla
-        # requiere comprobacion de sus tres NS, no una espera fija.
-        time.sleep(30)
-
-
 def ipv4_publica() -> str:
     for url in ECO_IPV4:
         try:
@@ -401,9 +350,7 @@ def ejecutar(accion: str, conf: Config) -> None:
         return
     dominio = os.environ.get("CERTBOT_DOMAIN", "")
     validacion = os.environ.get("CERTBOT_VALIDATION", "")
-    if dominio == ANTIGUO and conf.convivencia:
-        duckdns(accion == "limpiar", validacion)
-    elif dominio == NUEVO:
+    if dominio == NUEVO:
         funcion = autenticar if accion == "auth" else limpiar
         funcion(cliente(conf, "acme"), conf, validacion)
     else:

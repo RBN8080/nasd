@@ -15,7 +15,7 @@
 #   identity.
 #
 # THE TLS PRIVATE KEY IS NOT BACKED UP, AND THAT IS DELIBERATE: it is reissued
-# with 15_tls.sh over DNS-01 in minutes, and it is the ONLY element whose theft
+# with Certbot over DNS-01 in minutes, and it is the ONLY element whose theft
 # allows impersonating the site. Excluding it costs nothing in recovery and
 # reduces the damage if the copy is lost.
 #
@@ -55,12 +55,12 @@ hacer_copia() {
 
   install -d -m 0700 -o root -g root "$DESTINO"
 
-  # Lo que se guarda. Ausente = se omite sin fallar: 15_tls.sh puede no haber
+  # Lo que se guarda. Ausente = se omite sin fallar: el certificado puede no haber
   # corrido todavía, y eso no debe impedir respaldar WireGuard.
   local piezas=()
   # Enumerar archivos de Njalla, no el directorio: reversion.* contiene una
   # copia temporal del par TLS que NO pertenece al respaldo rutinario.
-  for p in /etc/wireguard /etc/nasd/credencial /etc/nasd/nasd.toml /etc/nas/ddns.conf \
+  for p in /etc/wireguard /etc/nasd/credencial /etc/nasd/nasd.toml \
     /etc/nas/njalla/ddns.token /etc/nas/njalla/acme.token /etc/nas/njalla/vpn.token \
     /etc/nas/njalla/dominio.toml /etc/nas/dominios.conf /etc/nas/tls-lineage; do
     [ -e "$p" ] && piezas+=("$p")

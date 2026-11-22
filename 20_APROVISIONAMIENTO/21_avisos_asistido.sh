@@ -22,8 +22,8 @@
 #   3. The PROCESS LIST   "curl -K -" reads the URL from standard input. The Bot
 #                         API requires the token in the URL PATH, so a plain
 #                         curl would leave it visible to any user on the node
-#                         with "ps". It is the defect 11_ddns.sh still has with
-#                         the DuckDNS token.
+#                         with "ps". It is a defect already fixed in the web
+#                         verifier (commit of 08/24).
 #   4. The JOURNAL        nothing this script prints carries the token, not even
 #                         in error messages.
 #
