@@ -3,10 +3,9 @@
 Producción desde el 2026-11-22. HTTPS en `nas.example.org` y WireGuard en
 `vpn-nas.example.org:61820`, ambos con Njalla. El túnel del iPhone está
 confirmado. [Migración](../MIGRACION_DOMINIO.md) · [ADR-0109](../ADR/0109_wireguard_udp_61820.md)
-`11_ddns.sh`, `15_tls.sh` e `instalar.sh --remoto` se conservan solo como histórico
-DuckDNS; en producción rige `23_dominio_njalla.sh` + `/etc/nas/dominios.conf`.
+Nombres y certificado: `23_dominio_njalla.sh` + `/etc/nas/dominios.conf`.
 Los scripts `09`/`12`/`16` requieren `dominios.sh` junto a ellos.
-Pruebas sin red: `bash pruebas_dominios.sh`, `python3 pruebas_tls.py` y 38 pruebas Python.
+Pruebas sin red: `bash pruebas_dominios.sh` y las pruebas Python (`pruebas_*.py`, en Linux).
 
 Custodia Njalla: desde una terminal local interactiva,
 `python token_njalla.py --tipo ddns` (o `acme`) pide el token con entrada oculta,
@@ -50,8 +49,8 @@ sudo ./instalar.sh
 
 Al terminar, el NAS responde en `http://SU_IP` y comparte `\\SU_IP\datos` por SMB.
 
-Para el acceso desde fuera de la red local —opcional, y exige una cuenta gratuita
-de DuckDNS— hay una segunda pasada:
+Para el acceso desde fuera de la red local —opcional, y exige un dominio propio
+(`dominios.conf`) con su certificado— hay una segunda pasada:
 
 ```sh
 sudo ./instalar.sh --remoto
@@ -80,9 +79,8 @@ dirección definitiva producen una detección *plausible y equivocada*, y ese es
 el peor modo de fallo posible aquí: el nodo arranca, no falla nada, y clasifica
 todo el tráfico local como si viniera de Internet.
 
-**El nombre DDNS no está en este archivo.** Vive en `/etc/nas/ddns.conf`, junto
-al testigo de la cuenta, porque es una credencial y porque es opcional. Lo crea
-usted a mano la primera vez que ejecute `11_ddns.sh`, que le dice cómo.
+**Los nombres de dominio no están en este archivo.** Viven en
+`/etc/nas/dominios.conf` (ver `dominio.toml.ejemplo`), porque son opcionales.
 
 ---
 
@@ -176,7 +174,7 @@ ser el «paso 8» de su fase.
 
 | Guion | Qué añade | Qué exige antes |
 |---|---|---|
-| `--remoto` (11, 12, 14, 15) | Nombre estable, túnel WireGuard, NAT y certificado TLS | un dominio propio con DNS gestionable (`dominios.conf`; ver `23_dominio_njalla.sh`) |
+| `--remoto` (12, 14) | Túnel WireGuard y NAT | `dominios.conf` y el certificado de `23_dominio_njalla.sh` |
 | `16_ipv6_estable.sh` | Dirección IPv6 fija | termina pidiendo un campo en la pantalla de su router |
 | `18_geoip.sh` | País y operador en el panel de seguridad | nada. Es solo presentación |
 | `19_sensor.sh` | Sensor de paquetes | su binario se compila en el PC |

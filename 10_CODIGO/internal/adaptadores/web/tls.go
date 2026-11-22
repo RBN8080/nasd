@@ -14,7 +14,7 @@ import (
 // cambia, sin reiniciar el servicio.
 //
 // POR QUÉ RECARGA EN CALIENTE Y NO SE LEE UNA VEZ AL ARRANCAR:
-// el certificado de Let's Encrypt dura 90 días y 15_tls.sh lo renueva por
+// el certificado de Let's Encrypt dura 90 días y Certbot lo renueva por
 // temporizador. Si nasd solo lo leyera al arrancar, la renovación no surtiría
 // efecto hasta el siguiente reinicio, y el reinicio corta subidas en curso.
 // Con esto, la renovación es invisible.
@@ -112,7 +112,7 @@ func (c *CargadorCert) Config() *tls.Config {
 // exige ese target=_blank) hacia una URL http://, intenta una vez una sonda
 // HTTPS al mismo host antes de navegar. Contra la IP de la LAN
 // (192.168.1.38) esa sonda SÍ encontraba algo escuchando en el 443 —el
-// propio nasd, con el certificado de nas-ejemplo.duckdns.org, que no vale
+// propio nasd, con el certificado de el nombre antiguo, que no vale
 // para esa IP— y Safari, en vez de caer de vuelta a HTTP en silencio,
 // abandona la navegación con «se solicitó una URL HTTP aunque solo admite
 // HTTPS» — el mismo fallo que produce curl con schannel (SEC_E_WRONG_

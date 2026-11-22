@@ -21,7 +21,7 @@ verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 # Los seis valores de esta red — ADR-0095. Se leen de un archivo en vez de
 # estar escritos aquí: el mismo valor hacía falta en varios scripts y mantener
 # copias sincronizadas a mano es un acoplamiento que nadie declara. Mismo
-# mecanismo que /etc/nas/ddns.conf ya usaba.
+# mecanismo que /etc/nas/dominios.conf ya usa.
 AJUSTES=/etc/nas/ajustes.conf
 [ -f "$AJUSTES" ] || { rojo "Falta $AJUSTES. Cópielo de ajustes.conf.ejemplo y edítelo (ver LEEME.md)."; exit 1; }
 # shellcheck disable=SC1090  # ruta fija conocida, no una variable arbitraria

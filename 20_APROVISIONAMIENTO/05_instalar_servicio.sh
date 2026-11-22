@@ -201,7 +201,7 @@ puerto_tls = 443" "$CONFIG"
     cat >> "$CONFIG" <<EOF
 
 [tls]
-# Emitidos por 15_tls.sh mediante DNS-01, sin abrir ningun puerto.
+# Emitidos por Certbot mediante DNS-01 (23_dominio_njalla.sh), sin abrir ningun puerto.
 # nasd los relee cuando cambian de fecha: la renovacion no exige reiniciar.
 certificado = "$CERT_TLS"
 clave = "$CLAVE_TLS"
@@ -209,7 +209,7 @@ EOF
     verde "Bloque TLS añadido a $CONFIG (ADR-0046)."
   fi
 else
-  aviso "Sin certificado en $CERT_TLS: nasd servirá solo HTTP. Ejecute ./15_tls.sh"
+  aviso "Sin certificado en $CERT_TLS: nasd servirá solo HTTP. Instale el certificado (23_dominio_njalla.sh)"
 fi
 
 echo

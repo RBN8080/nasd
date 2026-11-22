@@ -61,7 +61,7 @@ if [ -f "$CERT_TLS" ]; then
   echo "Certificado presente: se abre el $PUERTO_TLS (ADR-0048)."
 else
   BLOQUE_TLS=""
-  echo "Sin $CERT_TLS: NO se abre el $PUERTO_TLS. Ejecute antes ./15_tls.sh (ADR-0042)."
+  echo "Sin $CERT_TLS: NO se abre el $PUERTO_TLS. Instale antes el certificado (23_dominio_njalla.sh, ADR-0042)."
 fi
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }

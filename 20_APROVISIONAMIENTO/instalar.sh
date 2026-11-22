@@ -23,8 +23,9 @@
 # Usage:
 #   sudo ./instalar.sh                the home NAS: disk, Samba, firewall,
 #                                     service, credential, journal, resilience
-#   sudo ./instalar.sh --remoto       access from outside: DDNS, WireGuard, NAT
-#                                     and TLS. Requires an existing DuckDNS account
+#   sudo ./instalar.sh --remoto       access from outside: WireGuard and NAT.
+#                                     Requires /etc/nas/dominios.conf and the
+#                                     certificate from 23_dominio_njalla.sh
 #   sudo ./instalar.sh --desde 08     resume at that step, without repeating the
 #                                     previous ones
 #
@@ -96,14 +97,13 @@ BASE=(
 )
 
 REMOTO=(
-  "11|instalar|./11_ddns.sh"
   "12|instalar|./12_wireguard.sh"
   "14|instalar|./14_mantener_nat.sh"
-  "15|instalar|./15_tls.sh"
-  # 05 Y 03 OTRA VEZ, y no es un error de copiar y pegar: 15_tls.sh termina
-  # pidiendo exactamente esto. Antes del certificado, 05 escribe un TOML sin
-  # rutas de TLS y 03 no abre el 443 —los dos lo dicen en sus avisos—; despues
-  # del certificado hay que volver a pasar para que lo recojan.
+  # 05 Y 03 OTRA VEZ, y no es un error de copiar y pegar: el certificado
+  # (23_dominio_njalla.sh, aparte) pide exactamente esto. Antes del
+  # certificado, 05 escribe un TOML sin rutas de TLS y 03 no abre el 443 —los
+  # dos lo dicen en sus avisos—; despues del certificado hay que volver a pasar
+  # para que lo recojan.
   #
   # Se repiten en vez de detectarse porque los dos son idempotentes por
   # construccion: 03 reescribe las reglas enteras y 05 solo reinstala el
@@ -276,7 +276,7 @@ if [ -n "${DISCO:-}" ] && [ -n "${INTERFAZ:-}" ] && [ -n "${NODO_IP:-}" ]; then
   # --- la interfaz ---
   if [ ! -d "/sys/class/net/$INTERFAZ" ]; then
     mal "no existe la interfaz de red «$INTERFAZ»." \
-        "11_ddns.sh y 16_ipv6_estable.sh la leen por su nombre y, si no esta, NO" \
+        "16_ipv6_estable.sh la lee por su nombre y, si no esta, NO" \
         "fallan: devuelven vacio, y el acceso remoto muere en silencio." \
         "Las que hay en este nodo son: $(find /sys/class/net -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null)" \
         "Corrija INTERFAZ en $AJUSTES.  (En Pi OS Bookworm suele ser end0.)"
@@ -486,7 +486,7 @@ if [ "$LISTA_NOMBRE" = "BASE" ]; then
   echo
   echo "  LO QUE ESTA INSTALACION NO HACE, y se pide aparte:"
   printf '    %s\n' \
-    "sudo ./instalar.sh --remoto   DDNS, WireGuard, NAT y TLS (exige cuenta DuckDNS)" \
+    "sudo ./instalar.sh --remoto   WireGuard y NAT (exige dominios.conf y certificado)" \
     "sudo ./16_ipv6_estable.sh     IPv6 fija: termina pidiendo un campo en el router" \
     "sudo ./18_geoip.sh            pais y operador en el panel de seguridad" \
     "sudo ./19_sensor.sh           sensor de toques: su binario llega del PC" \

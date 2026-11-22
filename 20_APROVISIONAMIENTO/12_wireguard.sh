@@ -36,7 +36,6 @@ set -euo pipefail
 PUERTO=61820
 DIR=/etc/wireguard
 CLIENTES="$DIR/clientes"
-DDNS_CONF=/etc/nas/ddns.conf
 
 # A-4, decidido por el responsable: los tres dispositivos.
 DISPOSITIVOS=(pc iphone tableta)
@@ -85,15 +84,14 @@ echo
 # ---------------------------------------------------------------------------
 # 0. Requisitos
 # ---------------------------------------------------------------------------
-# EL EXTREMO PÚBLICO: nombre DDNS si existe, IP directa si no.
+# EL EXTREMO PÚBLICO: nombre de /etc/nas/dominios.conf si existe, IP directa si no.
 #
-# Darse de alta en DuckDNS exige un formulario de navegador con OAuth, así que
-# no es automatizable: lo hace el responsable. Para no bloquear el resto de la
-# fase por eso, se admite arrancar con la IP pública directa —el túnel funciona
-# igual— y sustituirla después. Es PROVISIONAL y el script lo grita: con IP
+# El nombre lo da el DNS del dominio propio (23_dominio_njalla.sh). Para no
+# bloquear el resto de la fase, se admite arrancar con la IP pública directa
+# —el túnel funciona igual— y sustituirla después. Es PROVISIONAL y el script lo grita: con IP
 # dinámica, el día que el proveedor la cambie el acceso remoto muere en silencio.
 PROVISIONAL=0
-if [ -f /etc/nas/dominios.conf ] || [ -f "$DDNS_CONF" ]; then
+if [ -f /etc/nas/dominios.conf ]; then
   # shellcheck source=dominios.sh
   . "$(dirname -- "$0")/dominios.sh"
   NOMBRE_VPN=$(nas_fqdn vpn) || exit 1
@@ -101,10 +99,10 @@ if [ -f /etc/nas/dominios.conf ] || [ -f "$DDNS_CONF" ]; then
   verde "Extremo público del túnel: $EXTREMO"
 else
   IP_PUBLICA=$(curl -4 -fsS --max-time 15 https://ifconfig.me 2>/dev/null || echo "")
-  [ -n "$IP_PUBLICA" ] || { rojo "Sin $DDNS_CONF y no se pudo averiguar la IP pública. Ejecute ./11_ddns.sh"; exit 1; }
+  [ -n "$IP_PUBLICA" ] || { rojo "Sin /etc/nas/dominios.conf y no se pudo averiguar la IP pública. Configure el dominio (23_dominio_njalla.sh)."; exit 1; }
   EXTREMO="$IP_PUBLICA:$PUERTO"
   PROVISIONAL=1
-  aviso "Sin $DDNS_CONF: se usa la IP directa $IP_PUBLICA (PROVISIONAL)."
+  aviso "Sin /etc/nas/dominios.conf: se usa la IP directa $IP_PUBLICA (PROVISIONAL)."
 fi
 
 if ! command -v wg >/dev/null 2>&1; then
@@ -327,7 +325,7 @@ if [ "$PROVISIONAL" -eq 1 ]; then
   rojo "  La IP es DINÁMICA: el día que el proveedor la cambie, el acceso"
   rojo "  remoto dejará de funcionar SIN NINGÚN AVISO y los perfiles habrá"
   rojo "  que regenerarlos uno a uno."
-  rojo "  Se arregla con ./11_ddns.sh y volviendo a ejecutar este script."
+  rojo "  Se arregla configurando el dominio (23_dominio_njalla.sh) y volviendo a ejecutar este script."
 fi
 
 echo

@@ -122,7 +122,7 @@ func TestNuevoCargadorCertFallaSiNoExiste(t *testing.T) {
 // EL DEFECTO REAL, convertido en prueba: hasta el 2026-08-06 el listener TLS
 // se abría con la red "tcp" sobre "::", que en Go es doble pila y acepta
 // también IPv4. Contra la IP de la LAN eso respondía TLS con un certificado
-// que no la nombra —el de nas-ejemplo.duckdns.org—, y Safari en iOS, al abrir
+// que no la nombra —el de el nombre antiguo—, y Safari en iOS, al abrir
 // una imagen en pestaña nueva (RF-25) hacia una URL http://, encontraba esa
 // respuesta al sondear HTTPS y abandonaba la navegación en vez de caer a
 // HTTP. Brave no hace esa sonda, por eso solo fallaba en Safari.

@@ -81,7 +81,7 @@ type Config struct {
 
 	// Rutas del certificado. Si CUALQUIERA de las dos está vacía, TLS queda
 	// apagado y nasd sirve solo HTTP — que es el estado válido antes de que
-	// 15_tls.sh haya emitido nada.
+	// Certbot haya emitido nada.
 	Certificado string
 	ClaveTLS    string
 
@@ -585,7 +585,7 @@ func (c Config) validar() error {
 }
 
 // TLSActivo indica si hay certificado configurado. Sin él, nasd sirve solo
-// HTTP, que es el estado correcto antes de que 15_tls.sh haya emitido nada.
+// HTTP, que es el estado correcto antes de que Certbot haya emitido nada.
 func (c Config) TLSActivo() bool {
 	return c.Certificado != "" && c.ClaveTLS != ""
 }

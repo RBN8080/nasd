@@ -52,7 +52,7 @@ direccion_tls = "::"
 puerto_tls = 443
 
 [tls]
-# Rutas del par que emite 15_tls.sh por DNS-01. Si se dejan VACÍAS o se borra
+# Rutas del par que emite Certbot por DNS-01. Si se dejan VACÍAS o se borra
 # esta sección, nasd sirve solo HTTP — que es el estado correcto antes de
 # tener certificado. Media configuración hace que NO arranque (P5).
 #
