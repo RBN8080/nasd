@@ -61,8 +61,8 @@ hacer_copia() {
   # Enumerar archivos de Njalla, no el directorio: reversion.* contiene una
   # copia temporal del par TLS que NO pertenece al respaldo rutinario.
   for p in /etc/wireguard /etc/nasd/credencial /etc/nasd/nasd.toml /etc/nas/ddns.conf \
-    /etc/nas/njalla/ddns.token /etc/nas/njalla/acme.token /etc/nas/njalla/dominio.toml \
-    /etc/nas/dominios.conf /etc/nas/tls-lineage; do
+    /etc/nas/njalla/ddns.token /etc/nas/njalla/acme.token /etc/nas/njalla/vpn.token \
+    /etc/nas/njalla/dominio.toml /etc/nas/dominios.conf /etc/nas/tls-lineage; do
     [ -e "$p" ] && piezas+=("$p")
   done
   [ ${#piezas[@]} -gt 0 ] || { rojo "No hay nada que respaldar."; return 1; }

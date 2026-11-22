@@ -29,7 +29,7 @@ EOF
     chmod 0755 /usr/local/sbin/nas-njalla /usr/local/sbin/nas-tls-njalla
     cat > /etc/systemd/system/nas-njalla.service <<'EOF'
 [Unit]
-Description=Verificar y actualizar AAAA especifico del NAS en Njalla
+Description=Verificar y actualizar registros DNS especificos del NAS en Njalla
 After=network-online.target
 Wants=network-online.target
 [Service]

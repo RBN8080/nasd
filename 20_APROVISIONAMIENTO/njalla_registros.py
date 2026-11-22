@@ -18,7 +18,12 @@ from typing import Any
 from token_njalla import validar_token
 
 ZONA = "example.org"
-PERMITIDOS = {("nas", "AAAA"), ("_acme-challenge.nas", "TXT")}
+PERMITIDOS = {
+    ("nas", "AAAA"),
+    ("_acme-challenge.nas", "TXT"),
+    ("vpn-nas", "A"),
+    ("vpn-nas", "AAAA"),
+}
 INACTIVO = "nas-acme-inactivo"
 
 
@@ -185,6 +190,14 @@ def seleccionar(
 
 
 def normalizar(tipo: str, valor: str) -> str:
+    if tipo == "A":
+        try:
+            direccion_v4 = ipaddress.IPv4Address(valor)
+        except ipaddress.AddressValueError:
+            raise ErrorDNS("A invalido") from None
+        if not direccion_v4.is_global:
+            raise ErrorDNS("A no global")
+        return str(direccion_v4)
     if tipo == "AAAA":
         try:
             direccion = ipaddress.IPv6Address(valor)

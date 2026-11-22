@@ -5,5 +5,8 @@ interfaz = "eth0"
 # Obtener IDs del list-records despues de crear registros en consola.
 aaaa_id = ""
 txt_id = ""
+# Opcionales para Fase 4 (requieren token acotado /etc/nas/njalla/vpn.token):
+vpn_a_id = ""
+vpn_aaaa_id = ""
 # Ambos SAN durante transicion; false al retirar dependencias antiguas.
 convivencia = true

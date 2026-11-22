@@ -655,6 +655,9 @@ else
   # Comparar contra lo que dice proteger, no contra el calendario: un respaldo
   # de hace tres meses vale si la identidad no ha cambiado desde entonces.
   MAS_NUEVO=$(find /etc/wireguard /etc/nasd/credencial /etc/nas/ddns.conf \
+                /etc/nas/njalla/ddns.token /etc/nas/njalla/acme.token \
+                /etc/nas/njalla/vpn.token /etc/nas/njalla/dominio.toml \
+                /etc/nas/dominios.conf /etc/nas/tls-lineage \
                 -newer "$RESPALDO" 2>/dev/null | head -1)
   if [ -n "$MAS_NUEVO" ]; then
     no "la identidad cambió DESPUÉS del último respaldo ($MAS_NUEVO): ejecute 17_respaldar_identidad.sh"

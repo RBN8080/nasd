@@ -14,7 +14,7 @@ from unittest.mock import patch
 import nas_dominio as dominio
 import nas_tls as tls
 from njalla_registros import INACTIVO, ErrorDNS
-from pruebas_njalla_registros import IP_ANTES, Simulado
+from pruebas_njalla_registros import IP_ANTES, IP_NUEVA, Simulado
 
 CONF = dominio.Config(IP_ANTES, "eth0", "un-id", "un-id", True)
 
@@ -382,6 +382,83 @@ class Integracion(unittest.TestCase):
             self.assertEqual((base / "actual").stat().st_mode & 0o777, 0o750)
             self.assertEqual((base / "fullchain.pem").stat().st_mode & 0o777, 0o644)
             self.assertEqual((base / "privkey.pem").stat().st_mode & 0o777, 0o640)
+
+    def test_ipv4_publica_respaldo_y_rechazo_privada(self) -> None:
+        with patch.object(
+            dominio.subprocess,
+            "run",
+            side_effect=[
+                subprocess.CompletedProcess([], 0, "192.168.1.38\n", ""),
+                subprocess.CompletedProcess([], 0, "9.9.9.9\n", ""),
+            ],
+        ):
+            self.assertEqual(dominio.ipv4_publica(), "9.9.9.9")
+        with (
+            patch.object(
+                dominio.subprocess,
+                "run",
+                side_effect=[
+                    subprocess.TimeoutExpired(["curl"], 20),
+                    subprocess.CompletedProcess([], 22, "", "502"),
+                ],
+            ),
+            self.assertRaises(ErrorDNS),
+        ):
+            dominio.ipv4_publica()
+
+    def test_config_opcional_vpn_retrocompatible(self) -> None:
+        with tempfile.TemporaryDirectory() as temporal:
+            archivo = Path(temporal) / "dominio.toml"
+            archivo.write_text(
+                f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id="1"\ntxt_id="2"\n'
+                'vpn_a_id="3"\nvpn_aaaa_id="4"\nconvivencia=false\n'
+            )
+            archivo.chmod(0o600)
+            conf = dominio.Config.cargar(archivo)
+            self.assertEqual((conf.vpn_a_id, conf.vpn_aaaa_id), ("3", "4"))
+
+    @patch.object(dominio, "origen_presente")
+    @patch.object(dominio, "propagado")
+    @patch.object(dominio, "ipv4_publica", return_value="9.9.9.9")
+    def test_ddns_actualiza_web_y_vpn(self, _ipv4, propagado, _origen) -> None:
+        api_web = Simulado()
+        api_web.registros = [
+            {
+                "id": "w1",
+                "name": "nas",
+                "type": "AAAA",
+                "content": IP_ANTES,
+                "ttl": 300,
+            }
+        ]
+        api_vpn = Simulado()
+        api_vpn.registros = [
+            {
+                "id": "v1",
+                "name": "vpn-nas",
+                "type": "A",
+                "content": "1.1.1.1",
+                "ttl": 300,
+            },
+            {
+                "id": "v2",
+                "name": "vpn-nas",
+                "type": "AAAA",
+                "content": IP_ANTES,
+                "ttl": 300,
+            },
+        ]
+        conf = dominio.Config(IP_NUEVA, "eth0", "w1", "t1", True, "v1", "v2")
+
+        def obtener_cliente(_c: dominio.Config, uso: str) -> Simulado:
+            return api_web if uso == "ddns" else api_vpn
+
+        with patch.object(dominio, "cliente", side_effect=obtener_cliente):
+            dominio.ejecutar("ddns", conf)
+        self.assertEqual(api_web.registros[0]["content"], IP_NUEVA)
+        self.assertEqual(api_vpn.registros[0]["content"], "9.9.9.9")
+        self.assertEqual(api_vpn.registros[1]["content"], IP_NUEVA)
+        self.assertEqual(propagado.call_count, 3)
 
 
 if __name__ == "__main__":

@@ -31,8 +31,10 @@ from token_njalla import leer
 CONFIG = Path("/etc/nas/njalla/dominio.toml")
 ESTADO = Path("/run/nas-njalla")
 NUEVO = "nas.example.org"
+VPN = "vpn-nas.example.org"
 ANTIGUO = "nas-ejemplo.duckdns.org"
 AUTORITATIVOS = ("1-you.njalla.no", "2-can.njalla.in", "3-get.njalla.fo")
+ECO_IPV4 = ("https://api.ipify.org", "https://ifconfig.me")
 
 
 def privado(ruta: Path) -> str:
@@ -55,6 +57,8 @@ class Config:
     aaaa_id: str
     txt_id: str
     convivencia: bool
+    vpn_a_id: str = ""
+    vpn_aaaa_id: str = ""
 
     @classmethod
     def cargar(cls, ruta: Path = CONFIG) -> "Config":
@@ -64,6 +68,9 @@ class Config:
                 clave in ("origen", "interfaz") and not datos[clave]
             ):
                 raise ErrorDNS("Falta un campo de configuracion del dominio")
+        for opcional in ("vpn_a_id", "vpn_aaaa_id"):
+            if opcional in datos and not isinstance(datos[opcional], str):
+                raise ErrorDNS("Campo opcional de configuracion VPN invalido")
         origen = normalizar("AAAA", datos["origen"])
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", datos["interfaz"]):
             raise ErrorDNS("Interfaz invalida")
@@ -75,6 +82,8 @@ class Config:
             datos["aaaa_id"],
             datos["txt_id"],
             datos["convivencia"],
+            datos.get("vpn_a_id", ""),
+            datos.get("vpn_aaaa_id", ""),
         )
 
 
@@ -283,13 +292,54 @@ def duckdns(limpiar_txt: bool, valor: str) -> None:
         time.sleep(30)
 
 
+def ipv4_publica() -> str:
+    for url in ECO_IPV4:
+        try:
+            respuesta = subprocess.run(
+                [
+                    "curl",
+                    "--disable",
+                    "--ipv4",
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--noproxy",
+                    "*",
+                    "--proto",
+                    "=https",
+                    "--connect-timeout",
+                    "5",
+                    "--max-time",
+                    "15",
+                    "--max-filesize",
+                    "64",
+                    url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        if respuesta.returncode == 0:
+            try:
+                return normalizar("A", respuesta.stdout.strip())
+            except ErrorDNS:
+                continue
+    raise ErrorDNS("No se pudo medir una IPv4 publica valida")
+
+
 def ejecutar(accion: str, conf: Config) -> None:
     origen_presente(conf)
     if accion == "descubrir":
-        for uso, nombre, tipo in (
+        objetivos: list[tuple[str, str, str]] = [
             ("ddns", "nas", "AAAA"),
             ("acme", "_acme-challenge.nas", "TXT"),
-        ):
+        ]
+        if (CONFIG.parent / "vpn.token").exists():
+            objetivos.extend([("vpn", "vpn-nas", "A"), ("vpn", "vpn-nas", "AAAA")])
+        for uso, nombre, tipo in objetivos:
             registros = cliente(conf, uso).listar()
             candidatos = [
                 r
@@ -312,13 +362,26 @@ def ejecutar(accion: str, conf: Config) -> None:
         for uso, identificador, nombre, tipo in (
             ("ddns", conf.aaaa_id, "nas", "AAAA"),
             ("acme", conf.txt_id, "_acme-challenge.nas", "TXT"),
+            ("vpn", conf.vpn_a_id, "vpn-nas", "A"),
+            ("vpn", conf.vpn_aaaa_id, "vpn-nas", "AAAA"),
         ):
             if not identificador:
                 if uso == "acme":
                     raise ErrorDNS(
                         "Falta registrar el ID del TXT antes de preparar ganchos"
                     )
-                print("PENDIENTE: crear AAAA y registrar su ID antes de habilitar DDNS")
+                if uso == "ddns":
+                    print(
+                        "PENDIENTE: crear AAAA y registrar su ID antes de habilitar DDNS"
+                    )
+                else:
+                    print(
+                        "PENDIENTE: registro VPN opcional sin ID ("
+                        + nombre
+                        + "/"
+                        + tipo
+                        + ")"
+                    )
                 continue
             seleccionar(cliente(conf, uso).listar(), identificador, nombre, tipo)
         print("OK: registros con ID y origen comprobados; no se escribio DNS")
@@ -326,6 +389,15 @@ def ejecutar(accion: str, conf: Config) -> None:
     if accion == "ddns":
         editar(cliente(conf, "ddns"), conf.aaaa_id, "nas", "AAAA", conf.origen)
         propagado(NUEVO, "AAAA", conf.origen, segundos=45)
+        if conf.vpn_aaaa_id:
+            editar(
+                cliente(conf, "vpn"), conf.vpn_aaaa_id, "vpn-nas", "AAAA", conf.origen
+            )
+            propagado(VPN, "AAAA", conf.origen, segundos=45)
+        if conf.vpn_a_id:
+            ip_v4 = ipv4_publica()
+            editar(cliente(conf, "vpn"), conf.vpn_a_id, "vpn-nas", "A", ip_v4)
+            propagado(VPN, "A", ip_v4, segundos=45)
         return
     dominio = os.environ.get("CERTBOT_DOMAIN", "")
     validacion = os.environ.get("CERTBOT_VALIDATION", "")

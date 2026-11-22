@@ -45,7 +45,10 @@ class Simulado(dns.Cliente):
             raise dns.Transitorio("timeout")
         if self.modo == "sin-efecto":
             return {}
-        self.registros[0]["content"] = parametros["content"]
+        for registro in self.registros:
+            if str(registro.get("id")) == parametros["id"]:
+                registro["content"] = parametros["content"]
+                break
         if self.modo == "timeout-despues":
             raise dns.Transitorio("timeout")
         return {}
@@ -129,10 +132,36 @@ class Registros(unittest.TestCase):
             )
         )
 
+    def test_vpn_nas_a_y_aaaa(self) -> None:
+        cliente = Simulado()
+        cliente.registros = [
+            {
+                "id": "id-vpn-a",
+                "name": "vpn-nas",
+                "type": "A",
+                "content": "1.1.1.1",
+                "ttl": 300,
+            },
+            {
+                "id": "id-vpn-aaaa",
+                "name": "vpn-nas",
+                "type": "AAAA",
+                "content": IP_ANTES,
+                "ttl": 300,
+            },
+        ]
+        self.assertTrue(dns.editar(cliente, "id-vpn-a", "vpn-nas", "A", "9.9.9.9"))
+        self.assertEqual(cliente.registros[0]["content"], "9.9.9.9")
+        self.assertTrue(dns.editar(cliente, "id-vpn-aaaa", "vpn-nas", "AAAA", IP_NUEVA))
+        self.assertEqual(cliente.registros[1]["content"], IP_NUEVA)
+        for invalido in ("192.168.1.38", "100.64.0.1", "127.0.0.1", "no-es-ip"):
+            with self.subTest(invalido=invalido), self.assertRaises(dns.ErrorDNS):
+                dns.editar(cliente, "id-vpn-a", "vpn-nas", "A", invalido)
+
     def test_fuera_de_alcance(self) -> None:
         for nombre, tipo, valor in (
             ("@", "AAAA", IP_NUEVA),
-            ("nas", "A", "192.0.2.1"),
+            ("nas", "A", "1.1.1.1"),
             ("nas", "AAAA", "::1"),
             ("nas", "AAAA", "fd00::38"),
             ("_acme-challenge.nas", "TXT", ""),

@@ -121,7 +121,11 @@ def comprobar(token: str) -> int:
     ):
         print("FALLO: formato de registros inesperado; token conservado")
         return 2
-    propios = sum(r.get("name") in ("nas", "nas.example.org") for r in registros)
+    propios = sum(
+        r.get("name")
+        in ("nas", "nas.example.org", "vpn-nas", "vpn-nas.example.org")
+        for r in registros
+    )
     print(
         f"OK: list-records por IPv6 autorizada; {len(registros)} registros visibles, {propios} de nas"
     )
@@ -188,7 +192,7 @@ def local(tipo: str, solo_comprobar: bool) -> int:
 
 def main() -> int:
     opciones = argparse.ArgumentParser(description=__doc__)
-    opciones.add_argument("--tipo", choices=("ddns", "acme"), required=True)
+    opciones.add_argument("--tipo", choices=("ddns", "acme", "vpn"), required=True)
     opciones.add_argument("--comprobar", action="store_true")
     opciones.add_argument("--remoto", action="store_true", help=argparse.SUPPRESS)
     args = opciones.parse_args()
