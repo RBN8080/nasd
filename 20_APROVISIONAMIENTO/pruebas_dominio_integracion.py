@@ -4,6 +4,8 @@
 import os
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
@@ -309,6 +311,77 @@ class Integracion(unittest.TestCase):
             )
             with self.assertRaises(ErrorDNS):
                 tls.validar_par(base, nombres, confianza)
+
+    def test_respuesta_dns_rechaza_valor_inesperado_sin_abortar(self) -> None:
+        cabecera = (
+            ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1\n;; flags: qr aa;"
+        )
+        fqdn = "_acme-challenge.nas.example.org"
+        for fila in (
+            f'{fqdn}. 300 IN TXT "otro-valor-no-acme"',
+            f'{fqdn}. 300 IN TXT "sin-comilla-de-cierre',
+        ):
+            self.assertFalse(
+                dominio.respuesta_dns(cabecera + "\n" + fila, fqdn, "TXT", "A" * 43)
+            )
+
+    @patch.object(dominio.time, "sleep")
+    def test_propagado_reintenta_tras_timeout_de_dig(self, _sleep) -> None:
+        fqdn = "_acme-challenge.nas.example.org"
+        ok = subprocess.CompletedProcess(
+            [],
+            0,
+            ";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1\n"
+            ";; flags: qr aa;\n"
+            f'{fqdn}. 300 IN TXT "{"A" * 43}"\n',
+            "",
+        )
+        with patch.object(
+            dominio.subprocess,
+            "run",
+            side_effect=[subprocess.TimeoutExpired(["dig"], 5), ok, ok, ok],
+        ) as ejecutar:
+            dominio.propagado(fqdn, "TXT", "A" * 43, segundos=30)
+        self.assertEqual(ejecutar.call_count, 4)
+
+    def test_bloqueo_espera_acotada_y_libera(self) -> None:
+        with tempfile.TemporaryDirectory() as temporal:
+            carpeta = Path(temporal)
+            listo = threading.Event()
+
+            def retener() -> None:
+                with dominio.bloquear(carpeta):
+                    listo.set()
+                    time.sleep(0.25)
+
+            hilo = threading.Thread(target=retener)
+            hilo.start()
+            listo.wait(timeout=2)
+            with self.assertRaises(BlockingIOError), dominio.bloquear(carpeta, 0.05):
+                self.fail("Entro antes de vencer el bloqueo")
+            with dominio.bloquear(carpeta, 2.0):
+                pass
+            hilo.join(timeout=2)
+
+    @patch.object(tls, "validar_par")
+    def test_pares_conserva_permisos_con_umask_estricto(self, _validar) -> None:
+        with tempfile.TemporaryDirectory() as temporal:
+            base = Path(temporal) / "tls"
+            origen = Path(temporal) / "emitido"
+            base.mkdir()
+            origen.mkdir()
+            for nombre in ("fullchain.pem", "privkey.pem"):
+                (base / nombre).write_text("anterior")
+                (origen / nombre).write_text("nuevo")
+            previo = os.umask(0o077)
+            try:
+                tls.activar(origen, {dominio.NUEVO}, base, os.getegid())
+            finally:
+                os.umask(previo)
+            self.assertEqual((base / "pares").stat().st_mode & 0o777, 0o755)
+            self.assertEqual((base / "actual").stat().st_mode & 0o777, 0o750)
+            self.assertEqual((base / "fullchain.pem").stat().st_mode & 0o777, 0o644)
+            self.assertEqual((base / "privkey.pem").stat().st_mode & 0o777, 0o640)
 
 
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ class Config:
 
 
 @contextmanager
-def bloquear(carpeta: Path = ESTADO) -> Iterator[None]:
+def bloquear(carpeta: Path = ESTADO, espera: float = 0.0) -> Iterator[None]:
     carpeta.mkdir(mode=0o700, exist_ok=True)
     info = carpeta.lstat()
     if (
@@ -92,7 +92,16 @@ def bloquear(carpeta: Path = ESTADO) -> Iterator[None]:
         carpeta / "operacion.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
     )
     with os.fdopen(fd, "r+") as archivo:
-        fcntl.flock(archivo, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        limite = time.monotonic() + max(0.0, espera)
+        while True:
+            try:
+                fcntl.flock(archivo, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                restante = limite - time.monotonic()
+                if restante <= 0:
+                    raise
+                time.sleep(min(0.2, restante))
         yield
 
 
@@ -128,14 +137,20 @@ def respuesta_dns(texto: str, fqdn: str, tipo: str, esperado: str) -> bool:
     for linea in texto.splitlines():
         if not linea or linea.startswith(";"):
             continue
-        campos = shlex.split(linea)
+        try:
+            campos = shlex.split(linea)
+        except ValueError:
+            return False
         if (
             len(campos) >= 5
             and campos[0].rstrip(".").lower() == fqdn
             and campos[3] == tipo
         ):
             valor = "".join(campos[4:]) if tipo == "TXT" else campos[4]
-            valores.append(normalizar(tipo, valor))
+            try:
+                valores.append(normalizar(tipo, valor))
+            except ErrorDNS:
+                return False
     return valores == [normalizar(tipo, esperado)]
 
 
@@ -144,30 +159,36 @@ def propagado(fqdn: str, tipo: str, esperado: str, segundos: float = 180) -> Non
     while True:
         correcto = True
         for servidor in AUTORITATIVOS:
-            resultado = subprocess.run(
-                [
-                    "dig",
-                    "@" + servidor,
-                    fqdn,
-                    tipo,
-                    "+norecurse",
-                    "+tcp",
-                    "+time=3",
-                    "+tries=1",
-                    "+noall",
-                    "+comments",
-                    "+answer",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
+            try:
+                resultado = subprocess.run(
+                    [
+                        "dig",
+                        "@" + servidor,
+                        fqdn,
+                        tipo,
+                        "+norecurse",
+                        "+tcp",
+                        "+time=3",
+                        "+tries=1",
+                        "+noall",
+                        "+comments",
+                        "+answer",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                correcto = False
+                break
             correcto = (
                 correcto
                 and resultado.returncode == 0
                 and respuesta_dns(resultado.stdout, fqdn, tipo, esperado)
             )
+            if not correcto:
+                break
         if correcto:
             return
         if time.monotonic() >= limite:
@@ -327,7 +348,8 @@ def main() -> int:
         if os.geteuid() != 0:
             raise ErrorDNS("Ejecute como root")
         conf = Config.cargar()
-        with bloquear():
+        espera = 60.0 if args.accion in ("auth", "limpiar") else 0.0
+        with bloquear(espera=espera):
             ejecutar(args.accion, conf)
         return 0
     except (OSError, ValueError, ErrorDNS, subprocess.SubprocessError) as error:

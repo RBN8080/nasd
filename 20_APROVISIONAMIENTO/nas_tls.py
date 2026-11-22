@@ -77,7 +77,12 @@ def enlace_atomico(base: Path, nombre: str, destino: str) -> None:
 
 def copiar_par(origen: Path, base: Path, grupo: int) -> str:
     pares = base / "pares"
+    if pares.is_symlink():
+        raise ErrorDNS("Directorio de pares TLS inesperado")
     pares.mkdir(mode=0o755, exist_ok=True)
+    # Aplicar 0755 explicitamente para que un umask restrictivo no impida al
+    # usuario nas atravesar /etc/nas/tls/pares/.
+    pares.chmod(0o755)
     carpeta = Path(tempfile.mkdtemp(prefix="par-", dir=pares))
     os.chown(carpeta, -1, grupo)
     carpeta.chmod(0o750)
@@ -148,7 +153,7 @@ def main() -> int:
     try:
         if os.geteuid() != 0:
             raise ErrorDNS("Ejecute como root")
-        with bloquear():
+        with bloquear(espera=60.0):
             if sys.argv[1:] == ["volver"]:
                 # Restaurar tambien el selector y DNS segun MIGRACION_DOMINIO.md.
                 volver()
