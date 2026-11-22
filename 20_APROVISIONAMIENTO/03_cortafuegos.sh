@@ -10,7 +10,7 @@
 set -euo pipefail
 
 PUERTO_WEB=80   # ADR-0032
-PUERTO_WG=443   # ADR-0057 (supersede ADR-0043). UDP: no choca con PUERTO_TLS, que es TCP
+PUERTO_WG=61820   # WireGuard directo, puerto del primer acceso móvil documentado
 PUERTO_TLS=443  # ADR-0048
 WG_CONF=/etc/wireguard/wg0.conf
 CERT_TLS=/etc/nas/tls/fullchain.pem
@@ -21,7 +21,7 @@ CERT_TLS=/etc/nas/tls/fullchain.pem
 # igual antes y después de la Fase 5 sin tener dos versiones.
 if [ -f "$WG_CONF" ]; then
   BLOQUE_WG="
-    # --- Fase 5, tunel WireGuard (ADR-0057) ---
+    # --- Fase 5, tunel WireGuard ---
     #
     # DESDE CUALQUIER ORIGEN, y no es un descuido: el responsable se conecta
     # desde redes que no se pueden enumerar de antemano. WireGuard no responde

@@ -2,7 +2,7 @@
 # Phase 5, step 8 - keep the tunnel's inbound path alive.
 #
 #   06_ACCESO_REMOTO §10   why it is needed, with the measurement behind it
-#   ADR-0057               port 443/udp (supersedes ADR-0043)
+#   06_ACCESO_REMOTO.md §8  acceso móvil documentado por UDP/61820
 #   Charter §7.1.3         it opens no port: it only emits outbound traffic
 #
 # Installs 14_mantener_nat.py as a systemd service. Idempotent.

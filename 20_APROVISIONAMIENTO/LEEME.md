@@ -1,8 +1,8 @@
 # 20_APROVISIONAMIENTO — aprovisionamiento del nodo
 
-Actualización 2026-11-22 02:23 CST · Antigravity (Gemini): migración a
-`nas.example.org` (Njalla, HTTPS + WireGuard por IPv6) **desplegada en el nodo y
-DuckDNS retirado por completo** ([MIGRACION_DOMINIO.md](../MIGRACION_DOMINIO.md)).
+Producción desde el 2026-11-22. HTTPS en `nas.example.org` y WireGuard en
+`vpn-nas.example.org:61820`, ambos con Njalla. El túnel del iPhone está
+confirmado. [Migración](../MIGRACION_DOMINIO.md) · [ADR-0109](../ADR/0109_wireguard_udp_61820.md)
 `11_ddns.sh`, `15_tls.sh` e `instalar.sh --remoto` se conservan solo como histórico
 DuckDNS; en producción rige `23_dominio_njalla.sh` + `/etc/nas/dominios.conf`.
 Los scripts `09`/`12`/`16` requieren `dominios.sh` junto a ellos.

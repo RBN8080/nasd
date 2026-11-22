@@ -4,7 +4,7 @@
 #   06_ACCESO_REMOTO.md §3   the design, and why the tunnel reaches the NAS and
 #                            not the network
 #   ADR-0042                 phase 5 grants full access: web AND SMB
-#   ADR-0057                 port 443/udp (supersedes ADR-0043), with its reasoning
+#   06_ACCESO_REMOTO.md §8  acceso móvil documentado por UDP/61820
 #   P4                       the keys NEVER enter the repository
 #
 # THE DECISION THAT HOLDS ALL OF THIS UP, worth understanding before touching
@@ -32,11 +32,8 @@
 
 set -euo pipefail
 
-# ADR-0057: 443/udp, porque es el que atraviesa las redes que filtran la salida
-# por puerto —el caso medido el 10/08 desde un local—. NO choca con el 443/tcp
-# de nasd: son sockets distintos. NO es una decisión de seguridad: WireGuard es
-# mudo sin clave en cualquier puerto, igual que ya decía ADR-0043.
-PUERTO=443
+# Puerto del acceso móvil documentado en 06_ACCESO_REMOTO.md §8.
+PUERTO=61820
 DIR=/etc/wireguard
 CLIENTES="$DIR/clientes"
 DDNS_CONF=/etc/nas/ddns.conf
@@ -223,7 +220,7 @@ umask 077
 cat > "$DIR/wg0.conf" <<EOF
 # Generado por 20_APROVISIONAMIENTO/12_wireguard.sh — proyecto NAS.
 # P1: si un cambio no está en el script, no existe. NO editar a mano.
-# ADR-0057 (puerto, supersede ADR-0043) · ADR-0042 (alcance) · 06_ACCESO_REMOTO.md §3
+# ADR-0042 (alcance) · 06_ACCESO_REMOTO.md §3 y §8
 #
 # Sin PostUp ni NAT a propósito: el túnel NO encamina nada. El cliente habla
 # con $NAS_IP, que es una dirección LOCAL de este nodo, así que el kernel la
@@ -289,7 +286,7 @@ fi
 
 N_ESCUCHA=$(ss -ulnp 2>/dev/null | grep -c ":$PUERTO ")
 if [ "${N_ESCUCHA:-0}" -gt 0 ]; then
-  si "escuchando en $PUERTO/udp (ADR-0057)"
+  si "escuchando en $PUERTO/udp"
 else
   no "nada escucha en $PUERTO/udp"
 fi
@@ -336,12 +333,8 @@ fi
 echo
 aviso "FALTA CONFIGURAR CADA DISPOSITIVO; ESO NO ES AUTOMATIZABLE:"
 aviso ""
-aviso "  EN EL ROUTER HAY DOS REGLAS, Y LAS DOS LLEVAN ESTE PUERTO ($PUERTO)."
-aviso "  Corregido el 2026-08-12: este aviso decía que en el router no hacía"
-aviso "  falta nada, y era FALSO — hay una redirección encendida desde el 31/07."
-aviso ""
-aviso "     Port Forwarding · NAS-WireGuard  · UDP · WAN y LAN → $PUERTO"
-aviso "     Filter Criteria · NASWGV6       · UDP · IPv6, destino ::${NODO_IP##*.} → $PUERTO"
+aviso "  ZTE → Internet → Security → Port Forwarding:"
+aviso "     NAS-WireGuard-$PUERTO · UDP · WAN y LAN $PUERTO → $NAS_IP"
 aviso ""
 aviso "  Si cambia el puerto aquí y no allí, el acceso remoto muere EN SILENCIO."
 aviso "  NO toque NASHTTPSV6: es la web, es TCP, y no tiene que ver con esto."

@@ -8,7 +8,7 @@ EL PROBLEMA QUE RESUELVE, medido el 2026-08-01 y no supuesto:
   Medido con STUN desde este mismo puerto contra tres servidores distintos,
   el mapeo del operador es INDEPENDIENTE DEL DESTINO y PRESERVA EL PUERTO:
   el puerto sale igual que entra. Es decir, la entrada desde fuera SÍ es posible.
-  Vuelto a medir el 2026-08-12 con el 443, que es el puerto vigente (ADR-0057):
+  Vuelto a medir el 2026-08-12 con el puerto 443 (ADR-0057):
   198.51.100.0:443 contra los tres servidores, con control positivo.
 
   Lo que no es posible es que sobreviva al silencio. Sin tráfico saliente
@@ -50,7 +50,7 @@ import struct
 import sys
 import time
 
-PUERTO = 443  # ADR-0057, supersede ADR-0043
+PUERTO = 61820  # Puerto del acceso móvil documentado en 06_ACCESO_REMOTO.md §8
 # 20 s: por debajo del mínimo de 2 min que RFC 4787 exige a un NAT para UDP, y
 # por debajo del PersistentKeepalive de 25 s de los clientes, que es el valor
 # que ya demostró sostener el túnel de 13:51 a 14:10.

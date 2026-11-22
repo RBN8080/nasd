@@ -408,7 +408,7 @@ else
   # 443 el 12/08, el puerto estaba escrito CUATRO veces en este bloque y el
   # verificador habría reportado fallos falsos sin que nada estuviera roto.
   # Es UDP: no tiene nada que ver con el 443/tcp de nasd que se comprueba arriba.
-  PUERTO_WG5=443
+  PUERTO_WG5=61820
 
   N_PUERTO=$(ss -ulnp 2>/dev/null | grep -c ":$PUERTO_WG5 ")
   if [ "${N_PUERTO:-0}" -gt 0 ]; then
@@ -500,25 +500,18 @@ else
       IPV6_FIJA=""
     fi
     if [ -n "$DOM" ]; then
-      if [ "$DOM" = "$DOM_WEB" ] &&
-         ! systemctl is-active --quiet nas-ddns.timer 2>/dev/null &&
-         systemctl is-active --quiet nas-njalla.timer 2>/dev/null; then
-        # Nombre unico solo-IPv6 (sin registro A): WireGuard usa NASWGV6 por AAAA.
-        IPV6_VPN=$(getent ahostsv6 "$DOM" 2>/dev/null | awk 'NR==1{print $1}')
-        if [ -n "$IPV6_FIJA" ] && [ "$IPV6_FIJA" = "$IPV6_VPN" ]; then
-          si "$DOM publica la IPv6 fija ($IPV6_VPN) para WireGuard (solo IPv6)"
-        else
-          no "$DOM no publica la IPv6 fija ${IPV6_FIJA:-desconocida} para WireGuard (${IPV6_VPN:-ningun AAAA})"
-        fi
+      # La VPN debe alcanzar el NAS también desde una red que solo tiene IPv4.
+      IP_DEL_NOMBRE=$(getent ahostsv4 "$DOM" 2>/dev/null | awk 'NR==1{print $1}')
+      if [ -z "$IP_DEL_NOMBRE" ]; then
+        no "$DOM no publica un registro A para clientes WireGuard por IPv4"
       else
         IP_VE_INTERNET=$(curl -4 -fsS --max-time 10 https://ifconfig.me 2>/dev/null || echo "")
-        IP_DEL_NOMBRE=$(getent ahostsv4 "$DOM" 2>/dev/null | awk 'NR==1{print $1}')
         if [ -n "$IP_VE_INTERNET" ] && [ "$IP_VE_INTERNET" = "$IP_DEL_NOMBRE" ]; then
           si "$DOM resuelve a la IP pública real ($IP_DEL_NOMBRE)"
         elif [ -z "$IP_VE_INTERNET" ]; then
           dato "no se pudo medir la IP pública; el nombre resuelve a ${IP_DEL_NOMBRE:-nada}"
         else
-          no "$DOM apunta a ${IP_DEL_NOMBRE:-nada} y la IP real es $IP_VE_INTERNET: el acceso remoto está roto"
+          no "$DOM apunta a $IP_DEL_NOMBRE y la IPv4 pública del NAS es $IP_VE_INTERNET"
         fi
       fi
 
