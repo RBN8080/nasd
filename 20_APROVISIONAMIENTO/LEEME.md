@@ -1,13 +1,13 @@
 # 20_APROVISIONAMIENTO — aprovisionamiento del nodo
 
-Actualización 2026-11-21 23:52 CST · Codex: preparación de migración en
+Actualización 2026-11-22 00:45 CST · Codex: migración preparada en
 [MIGRACION_DOMINIO.md](../MIGRACION_DOMINIO.md). `--remoto`, 11 y 15 aún instalan
 DuckDNS; no ejecutarlos como migración Njalla. Los scripts 09/12/16 requieren
 `dominios.sh` junto a ellos. `dominios.conf.ejemplo` separa web/VPN; copiarlo solo
 durante la activación autorizada. Pruebas sin red: `bash pruebas_dominios.sh` y
 `python3 pruebas_tls.py`; análisis desde esta carpeta con `shellcheck`.
 
-Custodia Njalla (2026-11-22 00:07 CST · Codex): desde una terminal local interactiva,
+Custodia Njalla: desde una terminal local interactiva,
 `python token_njalla.py --tipo ddns` (o `acme`) pide el token con entrada oculta,
 lo guarda por SSH en `/etc/nas/njalla/<tipo>.token` root 0600 sin reemplazar otro
 y prueba solo `list-records`. `--comprobar` usa el ya guardado, sin pedirlo otra vez.
@@ -15,12 +15,18 @@ Requiere alias `rpi`, clave SSH y sudo sin entrada de contraseña. No pasar el t
 como argumento ni por chat. Salida/cabecera de API protegidas ante reflejos de error;
 prueba local sin red en WSL: `python3 -m unittest -v pruebas_token_njalla.py`.
 
-Preparación local, 2026-11-22 00:15 CST · Codex: `njalla_registros.py` contiene el
-núcleo de edición por ID y reconciliación, sin instalador ni ejecución automática.
-Ensayo sin red: `python3 -m unittest -v pruebas_njalla_registros.py`. No activarlo
-en producción hasta completar integración, propagación, TLS y autorización del plan.
+Integración: `njalla_registros.py` edita por ID y reconcilia respuestas ambiguas;
+`23_dominio_njalla.sh --instalar`
+instala módulos y timer sin habilitarlo; requiere `dig` (`bind9-dnsutils`) y Certbot.
+`dominio.toml.ejemplo` separa configuración de tokens. `nas_dominio.py` implementa
+descubrimiento de IDs, verificación sin escrituras, DDNS y auth/limpieza con
+bloqueo y propagación autoritativa. `nas_tls.py` selecciona linaje y cambia el par
+conjuntamente, con reversión. 23 `--ganchos` respalda el estado antes de sustituir
+el hook global; no emite ni activa el nombre nuevo. Todo requiere la ventana
+de [MIGRACION_DOMINIO.md](../MIGRACION_DOMINIO.md), con sus ensayos y reversión.
+Prueba local: `python3 -m unittest -v pruebas_token_njalla.py pruebas_njalla_registros.py pruebas_dominio_integracion.py`.
 
-Esta carpeta son 22 guiones de shell que configuran el nodo, uno por tema, y un
+Esta carpeta contiene guiones de shell que configuran el nodo, uno por tema, y un
 orquestador que los llama en orden.
 
 **Cada guion ES la configuración.** No hay plantillas de Ansible ni imágenes de

@@ -488,7 +488,8 @@ else
   # porque aquí la pregunta es «qué IP ve Internet», que es justo para lo que
   # sirve; NO se usa para deducir si hay CGNAT, que es el error registrado en
   # el rector §11 v1.28.0.
-  if systemctl is-active --quiet nas-ddns.timer 2>/dev/null; then
+  if systemctl is-active --quiet nas-ddns.timer 2>/dev/null ||
+     systemctl is-active --quiet nas-njalla.timer 2>/dev/null; then
     si "el temporizador de DDNS está activo"
     DOM=$(nas_fqdn vpn) || no "No se pudo obtener el FQDN de VPN"
     if [ -n "$DOM" ]; then

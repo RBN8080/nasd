@@ -6,13 +6,13 @@ Pendiente probar escrituras con Njalla en ventana autorizada. No ejecutar
 pruebas de escritura contra DNS real como parte de la preparacion local.
 """
 
-from dataclasses import dataclass
 import ipaddress
 import json
 import random
 import re
 import subprocess
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from token_njalla import validar_token
@@ -49,26 +49,58 @@ class Cliente:
         self.origen = str(direccion)
 
     def llamar(self, metodo: str, parametros: dict[str, Any]) -> Any:
-        if metodo not in ("list-records", "edit-record") or parametros.get("domain") != ZONA:
+        if (
+            metodo not in ("list-records", "edit-record")
+            or parametros.get("domain") != ZONA
+        ):
             raise ErrorDNS("Metodo o zona fuera del alcance NAS")
         if metodo == "edit-record":
             if (parametros.get("name"), parametros.get("type")) not in PERMITIDOS:
                 raise ErrorDNS("Registro fuera del alcance NAS")
-            if (set(parametros) != {"domain", "id", "name", "type", "content", "ttl"}
-                    or not isinstance(parametros["id"], str) or not parametros["id"]
-                    or type(parametros["ttl"]) is not int or not 1 <= parametros["ttl"] <= 604800):
+            if (
+                set(parametros) != {"domain", "id", "name", "type", "content", "ttl"}
+                or not isinstance(parametros["id"], str)
+                or not parametros["id"]
+                or type(parametros["ttl"]) is not int
+                or not 1 <= parametros["ttl"] <= 604800
+            ):
                 raise ErrorDNS("Parametros de edicion inesperados")
             normalizar(parametros["type"], parametros["content"])
         try:
             respuesta = subprocess.run(
-                ["curl", "--disable", "--silent", "--show-error", "--ipv6",
-                 "--interface", self.origen, "--noproxy", "*", "--proto", "=https",
-                 "--connect-timeout", "5", "--max-time", "20", "--max-filesize", "1048576",
-                 "--header", "@-", "--header", "Content-Type: application/json",
-                 "--data", json.dumps({"method": metodo, "params": parametros}),
-                 "--write-out", "\n%{http_code}", "https://njal.la/api/1/"],
-                input="Authorization: Njalla " + self._token + "\n", text=True,
-                capture_output=True, timeout=25, check=False,
+                [
+                    "curl",
+                    "--disable",
+                    "--silent",
+                    "--show-error",
+                    "--ipv6",
+                    "--interface",
+                    self.origen,
+                    "--noproxy",
+                    "*",
+                    "--proto",
+                    "=https",
+                    "--connect-timeout",
+                    "5",
+                    "--max-time",
+                    "20",
+                    "--max-filesize",
+                    "1048576",
+                    "--header",
+                    "@-",
+                    "--header",
+                    "Content-Type: application/json",
+                    "--data",
+                    json.dumps({"method": metodo, "params": parametros}),
+                    "--write-out",
+                    "\n%{http_code}",
+                    "https://njal.la/api/1/",
+                ],
+                input="Authorization: Njalla " + self._token + "\n",
+                text=True,
+                capture_output=True,
+                timeout=25,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             raise Transitorio("Tiempo de transporte agotado") from None
@@ -94,7 +126,9 @@ class Cliente:
         if datos.get("error") is not None:
             error = datos["error"]
             codigo_api = error.get("code") if isinstance(error, dict) else None
-            if type(codigo_api) is int and (codigo_api == 429 or 500 <= codigo_api <= 599):
+            if type(codigo_api) is int and (
+                codigo_api == 429 or 500 <= codigo_api <= 599
+            ):
                 raise Transitorio("API reporto un fallo temporal")
             raise ErrorDNS("API rechazo la operacion")
         if "result" not in datos:
@@ -106,7 +140,9 @@ class Cliente:
             try:
                 datos = self.llamar("list-records", {"domain": ZONA})
                 registros = datos.get("records") if isinstance(datos, dict) else None
-                if not isinstance(registros, list) or not all(isinstance(r, dict) for r in registros):
+                if not isinstance(registros, list) or not all(
+                    isinstance(r, dict) for r in registros
+                ):
                     raise ErrorDNS("Formato de registros inesperado")
                 return registros
             except Transitorio:
@@ -117,11 +153,12 @@ class Cliente:
 
 
 def esperar(intento: int) -> None:
-    time.sleep(2 ** intento + random.uniform(0, 0.5))
+    time.sleep(2**intento + random.uniform(0, 0.5))
 
 
-def seleccionar(registros: list[dict[str, Any]], identificador: str,
-                nombre: str, tipo: str) -> Registro:
+def seleccionar(
+    registros: list[dict[str, Any]], identificador: str, nombre: str, tipo: str
+) -> Registro:
     if (nombre, tipo) not in PERMITIDOS or not identificador:
         raise ErrorDNS("Registro fuera del alcance NAS o sin ID")
     encontrados = []
@@ -129,9 +166,10 @@ def seleccionar(registros: list[dict[str, Any]], identificador: str,
         n = dato.get("name")
         if n == nombre + "." + ZONA:
             n = nombre
-        if str(dato.get("id")) == identificador:
-            if n != nombre or dato.get("type") != tipo:
-                raise ErrorDNS("ID pertenece a otro nombre o tipo")
+        if str(dato.get("id")) == identificador and (
+            n != nombre or dato.get("type") != tipo
+        ):
+            raise ErrorDNS("ID pertenece a otro nombre o tipo")
         if n == nombre and dato.get("type") == tipo:
             encontrados.append(dato)
         if n == nombre and dato.get("type") == "CNAME":
@@ -155,13 +193,21 @@ def normalizar(tipo: str, valor: str) -> str:
         if not direccion.is_global:
             raise ErrorDNS("AAAA no global")
         return str(direccion)
-    if tipo == "TXT" and (valor == INACTIVO or re.fullmatch(r"[A-Za-z0-9_-]{43}", valor)):
+    if tipo == "TXT" and (
+        valor == INACTIVO or re.fullmatch(r"[A-Za-z0-9_-]{43}", valor)
+    ):
         return valor
     raise ErrorDNS("Valor DNS fuera del alcance NAS")
 
 
-def editar(cliente: Cliente, identificador: str, nombre: str, tipo: str,
-           nuevo: str, esperado: str | None = None) -> bool:
+def editar(
+    cliente: Cliente,
+    identificador: str,
+    nombre: str,
+    tipo: str,
+    nuevo: str,
+    esperado: str | None = None,
+) -> bool:
     """Editar por ID sin crear/borrar; reconciliar respuesta ambigua antes de repetir.
 
     El llamador debe serializar operaciones y exigir la autorizacion de activacion.
@@ -178,10 +224,17 @@ def editar(cliente: Cliente, identificador: str, nombre: str, tipo: str,
     for intento in range(3):
         ambiguo = False
         try:
-            cliente.llamar("edit-record", {
-                "domain": ZONA, "id": identificador, "name": nombre,
-                "type": tipo, "content": nuevo, "ttl": previo.ttl,
-            })
+            cliente.llamar(
+                "edit-record",
+                {
+                    "domain": ZONA,
+                    "id": identificador,
+                    "name": nombre,
+                    "type": tipo,
+                    "content": nuevo,
+                    "ttl": previo.ttl,
+                },
+            )
         except Transitorio:
             ambiguo = True
         actual = seleccionar(cliente.listar(), identificador, nombre, tipo)

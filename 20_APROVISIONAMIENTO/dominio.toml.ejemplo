@@ -1,0 +1,9 @@
+# Solo instalar durante la ventana autorizada; sin credenciales.
+# Copiar como /etc/nas/njalla/dominio.toml, root:root 0600.
+origen = "3fff:2a0:101e:3d82::38"
+interfaz = "eth0"
+# Obtener IDs del list-records despues de crear registros en consola.
+aaaa_id = ""
+txt_id = ""
+# Ambos SAN durante transicion; false al retirar dependencias antiguas.
+convivencia = true

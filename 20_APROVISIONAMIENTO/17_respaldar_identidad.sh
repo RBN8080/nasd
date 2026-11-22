@@ -58,7 +58,11 @@ hacer_copia() {
   # Lo que se guarda. Ausente = se omite sin fallar: 15_tls.sh puede no haber
   # corrido todavía, y eso no debe impedir respaldar WireGuard.
   local piezas=()
-  for p in /etc/wireguard /etc/nasd/credencial /etc/nasd/nasd.toml /etc/nas/ddns.conf; do
+  # Enumerar archivos de Njalla, no el directorio: reversion.* contiene una
+  # copia temporal del par TLS que NO pertenece al respaldo rutinario.
+  for p in /etc/wireguard /etc/nasd/credencial /etc/nasd/nasd.toml /etc/nas/ddns.conf \
+    /etc/nas/njalla/ddns.token /etc/nas/njalla/acme.token /etc/nas/njalla/dominio.toml \
+    /etc/nas/dominios.conf /etc/nas/tls-lineage; do
     [ -e "$p" ] && piezas+=("$p")
   done
   [ ${#piezas[@]} -gt 0 ] || { rojo "No hay nada que respaldar."; return 1; }
@@ -149,10 +153,12 @@ cat <<'AYUDA'
 
       sudo tar xzf /srv/nas/identidad/identidad.tar.gz -C /
       sudo systemctl restart nasd wg-quick@wg0 nas-ddns.timer
-      sudo ./15_tls.sh          # el certificado SÍ se reemite, no se respalda
+      # Si existe /etc/nas/njalla/dominio.toml, reponer integracion con 23 y
+      # reemitir el linaje seleccionado segun MIGRACION_DOMINIO.md.
+      # En la instalacion antigua: sudo ./15_tls.sh
 
   Los tres dispositivos siguen conectando sin tocarlos: sus perfiles apuntan
-  al NOMBRE de DuckDNS, no a una IP, y la clave del servidor es la de antes.
+  al nombre configurado, no a una IP, y la clave del servidor es la de antes.
 
 AYUDA
 aviso "LO QUE ESTO NO CUBRE, y conviene saberlo:"

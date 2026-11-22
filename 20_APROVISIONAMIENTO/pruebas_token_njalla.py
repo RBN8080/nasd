@@ -4,10 +4,10 @@
 import contextlib
 import io
 import json
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import token_njalla as token
@@ -44,7 +44,9 @@ class Custodia(unittest.TestCase):
                 token.validar_token(valor)
 
     def test_curl_solo_lectura_sin_token_en_argumentos(self) -> None:
-        resultado = subprocess.CompletedProcess([], 0, json.dumps({"result": {"records": []}}), "")
+        resultado = subprocess.CompletedProcess(
+            [], 0, json.dumps({"result": {"records": []}}), ""
+        )
         with patch.object(token.subprocess, "run", return_value=resultado) as ejecutar:
             with contextlib.redirect_stdout(io.StringIO()) as salida:
                 self.assertEqual(token.comprobar(FICTICIO), 0)
@@ -58,8 +60,13 @@ class Custodia(unittest.TestCase):
             self.assertNotIn(FICTICIO, salida.getvalue())
 
     def test_error_api_no_refleja_secreto(self) -> None:
-        for codigo, cuerpo in ((22, FICTICIO), (0, FICTICIO), (0, json.dumps({"error": FICTICIO})),
-                               (0, "[]"), (0, '{"result": {"records": [null]}}')):
+        for codigo, cuerpo in (
+            (22, FICTICIO),
+            (0, FICTICIO),
+            (0, json.dumps({"error": FICTICIO})),
+            (0, "[]"),
+            (0, '{"result": {"records": [null]}}'),
+        ):
             with self.subTest(codigo=codigo, cuerpo=bool(cuerpo)):
                 resultado = subprocess.CompletedProcess([], codigo, cuerpo, FICTICIO)
                 with patch.object(token.subprocess, "run", return_value=resultado):

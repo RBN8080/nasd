@@ -8,15 +8,24 @@ from unittest.mock import patch
 
 import njalla_registros as dns
 
-IP_ANTES = "3fff:2a0:101e:3d82::38"
-IP_NUEVA = "3fff:2a0:101e:3d83::38"
+# Direcciones de control globales para validacion sintactica; todas las llamadas
+# estan simuladas. No usar el prefijo domestico en fixtures publicables.
+IP_ANTES = "2606:4700:4700::1111"
+IP_NUEVA = "2606:4700:4700::1001"
 
 
 class Simulado(dns.Cliente):
     def __init__(self, modo: str = "normal") -> None:
         super().__init__("token-ficticio-sin-acceso-0000", IP_ANTES)
-        self.registros = [{"id": "un-id", "name": "nas", "type": "AAAA",
-                           "content": IP_ANTES, "ttl": 300}]
+        self.registros = [
+            {
+                "id": "un-id",
+                "name": "nas",
+                "type": "AAAA",
+                "content": IP_ANTES,
+                "ttl": 300,
+            }
+        ]
         self.modo = modo
         self.escrituras = 0
 
@@ -32,7 +41,7 @@ class Simulado(dns.Cliente):
         if self.modo == "timeout-siempre":
             raise dns.Transitorio("timeout")
         if self.modo == "conflicto":
-            self.registros[0]["content"] = "3fff:2a0:101e:3d84::38"
+            self.registros[0]["content"] = "2001:4860:4860::8888"
             raise dns.Transitorio("timeout")
         if self.modo == "sin-efecto":
             return {}
@@ -53,13 +62,6 @@ class Registros(unittest.TestCase):
         cliente = Simulado("timeout-despues")
         self.assertTrue(dns.editar(cliente, "un-id", "nas", "AAAA", IP_NUEVA))
         self.assertEqual(cliente.escrituras, 1)
-
-    def test_reversion_con_valor_esperado(self) -> None:
-        cliente = Simulado()
-        dns.editar(cliente, "un-id", "nas", "AAAA", IP_NUEVA, IP_ANTES)
-        self.assertTrue(dns.editar(cliente, "un-id", "nas", "AAAA", IP_ANTES, IP_NUEVA))
-        self.assertEqual(cliente.registros[0]["content"], IP_ANTES)
-        self.assertEqual(cliente.escrituras, 2)
 
     def test_reversion_con_valor_esperado(self) -> None:
         cliente = Simulado()
@@ -108,36 +110,65 @@ class Registros(unittest.TestCase):
 
     def test_txt_solo_limpia_valor_propio(self) -> None:
         cliente = Simulado()
-        cliente.registros[0].update(name="_acme-challenge.nas", type="TXT", content="A" * 43)
+        cliente.registros[0].update(
+            name="_acme-challenge.nas", type="TXT", content="A" * 43
+        )
         with self.assertRaises(dns.ErrorDNS):
-            dns.editar(cliente, "un-id", "_acme-challenge.nas", "TXT", dns.INACTIVO, "B" * 43)
+            dns.editar(
+                cliente, "un-id", "_acme-challenge.nas", "TXT", dns.INACTIVO, "B" * 43
+            )
         self.assertEqual(cliente.escrituras, 0)
-        self.assertTrue(dns.editar(cliente, "un-id", "_acme-challenge.nas", "TXT", dns.INACTIVO, "A" * 43))
-        self.assertFalse(dns.editar(cliente, "un-id", "_acme-challenge.nas", "TXT", dns.INACTIVO, "A" * 43))
+        self.assertTrue(
+            dns.editar(
+                cliente, "un-id", "_acme-challenge.nas", "TXT", dns.INACTIVO, "A" * 43
+            )
+        )
+        self.assertFalse(
+            dns.editar(
+                cliente, "un-id", "_acme-challenge.nas", "TXT", dns.INACTIVO, "A" * 43
+            )
+        )
 
     def test_fuera_de_alcance(self) -> None:
-        for nombre, tipo, valor in (("@", "AAAA", IP_NUEVA), ("nas", "A", "192.0.2.1"),
-                                    ("nas", "AAAA", "::1"), ("nas", "AAAA", "fd00::38"),
-                                    ("_acme-challenge.nas", "TXT", "")):
+        for nombre, tipo, valor in (
+            ("@", "AAAA", IP_NUEVA),
+            ("nas", "A", "192.0.2.1"),
+            ("nas", "AAAA", "::1"),
+            ("nas", "AAAA", "fd00::38"),
+            ("_acme-challenge.nas", "TXT", ""),
+        ):
             cliente = Simulado()
-            with self.subTest(nombre=nombre, tipo=tipo), self.assertRaises(dns.ErrorDNS):
+            with (
+                self.subTest(nombre=nombre, tipo=tipo),
+                self.assertRaises(dns.ErrorDNS),
+            ):
                 dns.editar(cliente, "un-id", nombre, tipo, valor)
             self.assertEqual(cliente.escrituras, 0)
 
     def test_transporte_no_refleja_secreto(self) -> None:
         cliente = dns.Cliente("token-ficticio-sin-acceso-0000", IP_ANTES)
         for codigo in (401, 403, 429, 503):
-            respuesta = subprocess.CompletedProcess([], 0, cliente._token + "\n" + str(codigo), "")
-            with patch.object(dns.subprocess, "run", return_value=respuesta) as ejecutar:
-                with self.subTest(codigo=codigo), self.assertRaises(dns.ErrorDNS) as error:
+            respuesta = subprocess.CompletedProcess(
+                [], 0, cliente._token + "\n" + str(codigo), ""
+            )
+            with patch.object(
+                dns.subprocess, "run", return_value=respuesta
+            ) as ejecutar:
+                with (
+                    self.subTest(codigo=codigo),
+                    self.assertRaises(dns.ErrorDNS) as error,
+                ):
                     cliente.llamar("list-records", {"domain": dns.ZONA})
                 self.assertNotIn(cliente._token, str(error.exception))
                 self.assertNotIn(cliente._token, str(ejecutar.call_args.args))
 
     def test_rechaza_metodos_extra_y_otras_zonas(self) -> None:
         cliente = Simulado()
-        for metodo, zona in (("add-record", dns.ZONA), ("remove-record", dns.ZONA),
-                             ("list-records", "otro.org")):
+        for metodo, zona in (
+            ("add-record", dns.ZONA),
+            ("remove-record", dns.ZONA),
+            ("list-records", "otro.org"),
+        ):
             with self.subTest(metodo=metodo), self.assertRaises(dns.ErrorDNS):
                 dns.Cliente.llamar(cliente, metodo, {"domain": zona})
 
