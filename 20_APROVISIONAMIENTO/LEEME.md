@@ -7,6 +7,14 @@ DuckDNS; no ejecutarlos como migración Njalla. Los scripts 09/12/16 requieren
 durante la activación autorizada. Pruebas sin red: `bash pruebas_dominios.sh` y
 `python3 pruebas_tls.py`; análisis desde esta carpeta con `shellcheck`.
 
+Custodia Njalla (2026-11-22 00:07 CST · Codex): desde una terminal local interactiva,
+`python token_njalla.py --tipo ddns` (o `acme`) pide el token con entrada oculta,
+lo guarda por SSH en `/etc/nas/njalla/<tipo>.token` root 0600 sin reemplazar otro
+y prueba solo `list-records`. `--comprobar` usa el ya guardado, sin pedirlo otra vez.
+Requiere alias `rpi`, clave SSH y sudo sin entrada de contraseña. No pasar el token
+como argumento ni por chat. Salida/cabecera de API protegidas ante reflejos de error;
+prueba local sin red en WSL: `python3 -m unittest -v pruebas_token_njalla.py`.
+
 Esta carpeta son 22 guiones de shell que configuran el nodo, uno por tema, y un
 orquestador que los llama en orden.
 
