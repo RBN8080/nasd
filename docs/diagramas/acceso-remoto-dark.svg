@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 512" width="900" height="512" role="img" aria-label="Reaching the node from outside: dynamic DNS, a certificate issued over DNS-01, and two ways in">
+<title>nasd - reaching the node from outside</title>
+<!-- Generated drawing. This is the DARK variant; the other one is the same geometry with a different palette. Edit the generator, not this file. -->
+<defs><marker id="punta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7681"/></marker></defs>
+<rect width="900" height="512" fill="#0d1117"/>
+<text x="30" y="36" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="600" text-anchor="start" letter-spacing="0">Reaching the node from outside</text>
+<text x="30" y="57" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" text-anchor="start" letter-spacing="0">Optional. A node that serves only the local network needs none of it.</text>
+<text x="30" y="92" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" text-anchor="start" letter-spacing="1.2">NAME AND CERTIFICATE</text>
+<rect x="30" y="104" width="410" height="104" rx="10" fill="#0d1117" stroke="#484f58" stroke-width="1"/>
+<text x="52" y="132" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">nas-ddns.timer</text>
+<text x="52" y="158" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">Publishes the current A and AAAA records every five</text>
+<text x="52" y="176" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">minutes. Without it the address changes and remote</text>
+<text x="52" y="194" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">access dies silently.</text>
+<rect x="460" y="104" width="410" height="104" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="1"/>
+<rect x="470" y="104" width="390" height="3" rx="1.5" fill="#bc8cff"/>
+<text x="482" y="132" fill="#e6edf3" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="13" font-weight="600" text-anchor="start" letter-spacing="0">certbot  -  DNS-01</text>
+<text x="482" y="158" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">Validates with a TXT record, so the certificate is</text>
+<text x="482" y="176" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">issued with every port still closed. HTTP-01 would</text>
+<text x="482" y="194" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">require opening :80 before having TLS.</text>
+<text x="30" y="248" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="10.5" font-weight="600" text-anchor="start" letter-spacing="1.2">TWO WAYS IN</text>
+<rect x="30" y="260" width="410" height="172" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="1"/>
+<rect x="40" y="260" width="390" height="3" rx="1.5" fill="#58a6ff"/>
+<text x="52" y="288" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" text-anchor="start" letter-spacing="0">WireGuard  -  :443/UDP</text>
+<text x="52" y="314" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">No clash with TLS: that one is TCP.</text>
+<text x="52" y="340" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">The peer routes the node address alone, a single</text>
+<text x="52" y="358" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">/32, through the tunnel, so traffic arrives where</text>
+<text x="52" y="376" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">the service already listens.</text>
+<text x="52" y="406" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0">Web and SMB. Nothing else on the network.</text>
+<rect x="460" y="260" width="410" height="172" rx="10" fill="#0d1117" stroke="#484f58" stroke-width="1"/>
+<rect x="470" y="260" width="390" height="3" rx="1.5" fill="#ff7b72"/>
+<text x="482" y="288" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13.5" font-weight="600" text-anchor="start" letter-spacing="0">HTTPS  -  :443/TCP</text>
+<text x="482" y="314" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">The published web. Authenticated, HSTS, and every</text>
+<text x="482" y="332" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">request classified as Internet.</text>
+<text x="482" y="360" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">Opened only once the certificate exists: the</text>
+<text x="482" y="378" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" text-anchor="start" letter-spacing="0">firewall emits that rule conditionally.</text>
+<text x="482" y="406" fill="#e6edf3" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="500" text-anchor="start" letter-spacing="0">Read and write. Not delete.</text>
+<text x="30" y="470" fill="#9198a1" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start" letter-spacing="0">Both paths reach the same classifier, so being outside means the same thing either way.</text>
+</svg>
