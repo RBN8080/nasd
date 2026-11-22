@@ -176,7 +176,7 @@ ser el «paso 8» de su fase.
 
 | Guion | Qué añade | Qué exige antes |
 |---|---|---|
-| `--remoto` (11, 12, 14, 15) | Nombre estable, túnel WireGuard, NAT y certificado TLS | una cuenta gratuita de DuckDNS |
+| `--remoto` (11, 12, 14, 15) | Nombre estable, túnel WireGuard, NAT y certificado TLS | un dominio propio con DNS gestionable (`dominios.conf`; ver `23_dominio_njalla.sh`) |
 | `16_ipv6_estable.sh` | Dirección IPv6 fija | termina pidiendo un campo en la pantalla de su router |
 | `18_geoip.sh` | País y operador en el panel de seguridad | nada. Es solo presentación |
 | `19_sensor.sh` | Sensor de paquetes | su binario se compila en el PC |
