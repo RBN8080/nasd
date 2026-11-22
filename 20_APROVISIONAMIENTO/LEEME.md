@@ -15,6 +15,11 @@ Requiere alias `rpi`, clave SSH y sudo sin entrada de contraseña. No pasar el t
 como argumento ni por chat. Salida/cabecera de API protegidas ante reflejos de error;
 prueba local sin red en WSL: `python3 -m unittest -v pruebas_token_njalla.py`.
 
+Preparación local, 2026-11-22 00:15 CST · Codex: `njalla_registros.py` contiene el
+núcleo de edición por ID y reconciliación, sin instalador ni ejecución automática.
+Ensayo sin red: `python3 -m unittest -v pruebas_njalla_registros.py`. No activarlo
+en producción hasta completar integración, propagación, TLS y autorización del plan.
+
 Esta carpeta son 22 guiones de shell que configuran el nodo, uno por tema, y un
 orquestador que los llama en orden.
 
