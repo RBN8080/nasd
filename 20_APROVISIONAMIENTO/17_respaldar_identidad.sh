@@ -152,10 +152,9 @@ cat <<'AYUDA'
   Con la placa nueva y el disco viejo montado en /srv/nas:
 
       sudo tar xzf /srv/nas/identidad/identidad.tar.gz -C /
-      sudo systemctl restart nasd wg-quick@wg0 nas-ddns.timer
+      sudo systemctl restart nasd wg-quick@wg0 nas-njalla.timer
       # Si existe /etc/nas/njalla/dominio.toml, reponer integracion con 23 y
       # reemitir el linaje seleccionado segun MIGRACION_DOMINIO.md.
-      # En la instalacion antigua: sudo ./15_tls.sh
 
   Los tres dispositivos siguen conectando sin tocarlos: sus perfiles apuntan
   al nombre configurado, no a una IP, y la clave del servidor es la de antes.

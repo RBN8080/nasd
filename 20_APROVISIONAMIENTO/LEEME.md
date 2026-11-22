@@ -1,11 +1,12 @@
 # 20_APROVISIONAMIENTO — aprovisionamiento del nodo
 
-Actualización 2026-11-22 00:45 CST · Codex: migración preparada en
-[MIGRACION_DOMINIO.md](../MIGRACION_DOMINIO.md). `--remoto`, 11 y 15 aún instalan
-DuckDNS; no ejecutarlos como migración Njalla. Los scripts 09/12/16 requieren
-`dominios.sh` junto a ellos. `dominios.conf.ejemplo` separa web/VPN; copiarlo solo
-durante la activación autorizada. Pruebas sin red: `bash pruebas_dominios.sh` y
-`python3 pruebas_tls.py`; análisis desde esta carpeta con `shellcheck`.
+Actualización 2026-11-22 02:23 CST · Antigravity (Gemini): migración a
+`nas.example.org` (Njalla, HTTPS + WireGuard por IPv6) **desplegada en el nodo y
+DuckDNS retirado por completo** ([MIGRACION_DOMINIO.md](../MIGRACION_DOMINIO.md)).
+`11_ddns.sh`, `15_tls.sh` e `instalar.sh --remoto` se conservan solo como histórico
+DuckDNS; en producción rige `23_dominio_njalla.sh` + `/etc/nas/dominios.conf`.
+Los scripts `09`/`12`/`16` requieren `dominios.sh` junto a ellos.
+Pruebas sin red: `bash pruebas_dominios.sh`, `python3 pruebas_tls.py` y 38 pruebas Python.
 
 Custodia Njalla: desde una terminal local interactiva,
 `python token_njalla.py --tipo ddns` (o `acme`) pide el token con entrada oculta,
