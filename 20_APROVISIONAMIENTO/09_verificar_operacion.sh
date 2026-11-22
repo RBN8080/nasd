@@ -16,6 +16,9 @@
 
 set -uo pipefail
 
+# shellcheck source=dominios.sh
+. "$(dirname -- "$0")/dominios.sh" || exit 1
+
 # ADR-0032: puerto 80. La IP de la LAN, porque ADR-0018 enlaza ahí y NO a
 # 127.0.0.1 — apuntar a localhost hacía que todos los curl dieran 000.
 IP=$(hostname -I | awk '{print $1}')
@@ -487,16 +490,16 @@ else
   # el rector §11 v1.28.0.
   if systemctl is-active --quiet nas-ddns.timer 2>/dev/null; then
     si "el temporizador de DDNS está activo"
-    DOM=$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null)
+    DOM=$(nas_fqdn vpn) || no "No se pudo obtener el FQDN de VPN"
     if [ -n "$DOM" ]; then
       IP_VE_INTERNET=$(curl -4 -fsS --max-time 10 https://ifconfig.me 2>/dev/null || echo "")
-      IP_DEL_NOMBRE=$(getent ahostsv4 "$DOM.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
+      IP_DEL_NOMBRE=$(getent ahostsv4 "$DOM" 2>/dev/null | awk 'NR==1{print $1}')
       if [ -n "$IP_VE_INTERNET" ] && [ "$IP_VE_INTERNET" = "$IP_DEL_NOMBRE" ]; then
-        si "$DOM.duckdns.org resuelve a la IP pública real ($IP_DEL_NOMBRE)"
+        si "$DOM resuelve a la IP pública real ($IP_DEL_NOMBRE)"
       elif [ -z "$IP_VE_INTERNET" ]; then
         dato "no se pudo medir la IP pública; el nombre resuelve a ${IP_DEL_NOMBRE:-nada}"
       else
-        no "$DOM.duckdns.org apunta a ${IP_DEL_NOMBRE:-nada} y la IP real es $IP_VE_INTERNET: el acceso remoto está roto"
+        no "$DOM apunta a ${IP_DEL_NOMBRE:-nada} y la IP real es $IP_VE_INTERNET: el acceso remoto está roto"
       fi
 
       # Fase 6: el router autoriza la dirección fija terminada en el mismo
@@ -509,13 +512,14 @@ else
       else
         IPV6_FIJA=$(ip -6 -o addr show dev "$INTERFAZ" scope global 2>/dev/null \
           | awk -v suf="::$SUFIJO/64" 'substr($4, length($4)-length(suf)+1) == suf {sub(/\/.*/, "", $4); print $4; exit}')
-        IPV6_DEL_NOMBRE=$(getent ahostsv6 "$DOM.duckdns.org" 2>/dev/null | awk 'NR==1{print $1}')
+        DOM_WEB=$(nas_fqdn web) || no "No se pudo obtener el FQDN web"
+        IPV6_DEL_NOMBRE=$(getent ahostsv6 "$DOM_WEB" 2>/dev/null | awk 'NR==1{print $1}')
         if [ -n "$IPV6_FIJA" ] && [ "$IPV6_FIJA" = "$IPV6_DEL_NOMBRE" ]; then
-          si "$DOM.duckdns.org publica la IPv6 fija autorizada en el router ($IPV6_FIJA)"
+          si "$DOM_WEB publica la IPv6 fija autorizada en el router ($IPV6_FIJA)"
         elif [ -z "$IPV6_FIJA" ]; then
           no "el nodo no tiene la IPv6 fija ::$SUFIJO que debe autorizar el router"
         else
-          no "$DOM.duckdns.org publica ${IPV6_DEL_NOMBRE:-ningún AAAA}, pero el router autoriza $IPV6_FIJA"
+          no "$DOM_WEB publica ${IPV6_DEL_NOMBRE:-ningún AAAA}, pero el router autoriza $IPV6_FIJA"
         fi
       fi
     fi
@@ -585,11 +589,11 @@ else
   # cuánto dando FALLO sobre un servicio sano —medido el mismo día: por [::1]
   # responde 401 con el certificado validando (404 desde ADR-0072)—. Un verificador que miente en
   # rojo es peor que no tenerlo: enseña a ignorar sus fallos.
-  DOM_TLS=$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null)
+  DOM_TLS=$(nas_fqdn web) || no "No se pudo obtener el FQDN TLS"
   if [ -n "$DOM_TLS" ]; then
     COD=$(curl -sS -o /dev/null -w '%{http_code}:%{ssl_verify_result}' \
-      --resolve "$DOM_TLS.duckdns.org:443:[::1]" \
-      "https://$DOM_TLS.duckdns.org/" 2>/dev/null || echo "fallo:x")
+      --resolve "$DOM_TLS:443:[::1]" \
+      "https://$DOM_TLS/" 2>/dev/null || echo "fallo:x")
     case "$COD" in
       # 404 desde ADR-0072 —la respuesta opaca de «/» sin sesión—, 401 en un
       # nodo anterior, 200 si la petición llevara sesión. Las tres significan
@@ -608,8 +612,8 @@ else
     # Misma petición y mismo --resolve que arriba: si el TLS de dos líneas más
     # arriba negoció, aquí no puede fallar por otra causa que la cabecera.
     if curl -sS -o /dev/null -D - \
-         --resolve "$DOM_TLS.duckdns.org:443:[::1]" \
-         "https://$DOM_TLS.duckdns.org/" 2>/dev/null |
+         --resolve "$DOM_TLS:443:[::1]" \
+         "https://$DOM_TLS/" 2>/dev/null |
          grep -qi '^strict-transport-security:.*max-age=31536000'; then
       si "el 443 declara HSTS a un año (ADR-0086)"
     else

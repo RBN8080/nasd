@@ -1,5 +1,12 @@
 # 20_APROVISIONAMIENTO — aprovisionamiento del nodo
 
+Actualización 2026-11-21 23:52 CST · Codex: preparación de migración en
+[MIGRACION_DOMINIO.md](../MIGRACION_DOMINIO.md). `--remoto`, 11 y 15 aún instalan
+DuckDNS; no ejecutarlos como migración Njalla. Los scripts 09/12/16 requieren
+`dominios.sh` junto a ellos. `dominios.conf.ejemplo` separa web/VPN; copiarlo solo
+durante la activación autorizada. Pruebas sin red: `bash pruebas_dominios.sh` y
+`python3 pruebas_tls.py`; análisis desde esta carpeta con `shellcheck`.
+
 Esta carpeta son 22 guiones de shell que configuran el nodo, uno por tema, y un
 orquestador que los llama en orden.
 

@@ -96,11 +96,11 @@ echo
 # igual— y sustituirla después. Es PROVISIONAL y el script lo grita: con IP
 # dinámica, el día que el proveedor la cambie el acceso remoto muere en silencio.
 PROVISIONAL=0
-if [ -f "$DDNS_CONF" ]; then
-  # shellcheck disable=SC1090
-  . "$DDNS_CONF"
-  : "${DOMINIO:?falta DOMINIO en $DDNS_CONF}"
-  EXTREMO="$DOMINIO.duckdns.org:$PUERTO"
+if [ -f /etc/nas/dominios.conf ] || [ -f "$DDNS_CONF" ]; then
+  # shellcheck source=dominios.sh
+  . "$(dirname -- "$0")/dominios.sh"
+  NOMBRE_VPN=$(nas_fqdn vpn) || exit 1
+  EXTREMO="$NOMBRE_VPN:$PUERTO"
   verde "Extremo público del túnel: $EXTREMO"
 else
   IP_PUBLICA=$(curl -4 -fsS --max-time 15 https://ifconfig.me 2>/dev/null || echo "")

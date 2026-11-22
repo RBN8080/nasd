@@ -107,14 +107,14 @@ echo
 verde "Paso completado."
 echo
 aviso "AHORA, EN EL ROUTER — es lo unico que no puede hacer un script:"
-echo "  Security -> DMZ -> DMZ-IPv6"
-echo "    DMZ:      On"
-echo "    LAN Host: $DIRECCION"
-echo "    Apply"
+echo "  Crear o comprobar NASHTTPSV6: TCP/443 hacia $DIRECCION."
+echo "  Mantener DMZ-IPv4 y DMZ-IPv6 apagadas (NAS_OPERACION.txt, apartado 11)."
 echo
-echo "Eso NO redirige nada: en IPv6 no hay NAT. Lo que hace es abrir el"
-echo "cortafuegos IPv6 del router para ese host. ZTE lo llama DMZ por analogia."
+echo "En IPv6 no hay NAT: se permite un puerto hacia una direccion concreta."
 echo
 echo "Despues, la prueba que decide (08_WEB_EXPUESTA.md §4):"
 echo "  iPhone -> Ajustes -> Wi-Fi -> DESACTIVAR, con datos moviles"
-echo "  abrir  -> https://$(sed -n 's/^DOMINIO=//p' /etc/nas/ddns.conf 2>/dev/null).duckdns.org"
+# shellcheck source=dominios.sh
+. "$(dirname -- "$0")/dominios.sh"
+NOMBRE_WEB=$(nas_fqdn web) || exit 1
+echo "  abrir  -> https://$NOMBRE_WEB"

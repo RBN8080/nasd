@@ -48,6 +48,13 @@ fi
 : "${DOMINIO:?falta DOMINIO en $CONF_DDNS}"
 : "${TESTIGO:?falta TESTIGO en $CONF_DDNS}"
 NOMBRE="$DOMINIO.duckdns.org"
+# Durante la migracion este instalador antiguo no debe reactivar su par TLS.
+# tls-lineage contiene una sola ruta absoluta elegida en el cambio autorizado.
+if [ -f /etc/nas/tls-lineage ] &&
+   [ "$(cat /etc/nas/tls-lineage)" != "/etc/letsencrypt/live/$NOMBRE" ]; then
+  rojo "Hay otro certificado seleccionado en /etc/nas/tls-lineage. No se modifica TLS."
+  exit 1
+fi
 verde "Dominio: $NOMBRE"
 
 # El nombre tiene que resolver ANTES de pedir nada: si no, Let's Encrypt
@@ -155,6 +162,13 @@ cat > /etc/letsencrypt/renewal-hooks/deploy/nas-copiar.sh <<EOF
 # servicio: el CargadorCert de ADR-0046 detecta el cambio de fecha y recarga
 # en caliente, así que las subidas en curso no se cortan.
 set -eu
+# Un gancho global tambien corre al renovar otros certificados. Solo el linaje
+# seleccionado puede escribir el par que lee nasd. El archivo de seleccion se
+# instala ANTES de activar el certificado nuevo, con certbot sin ejecuciones.
+[ "\${RENEWED_LINEAGE:-}" = "/etc/letsencrypt/live/$NOMBRE" ] || exit 0
+if [ -f /etc/nas/tls-lineage ]; then
+  [ "\$(cat /etc/nas/tls-lineage)" = "/etc/letsencrypt/live/$NOMBRE" ] || exit 0
+fi
 install -m 0644 "/etc/letsencrypt/live/$NOMBRE/fullchain.pem" "$DIR_TLS/fullchain.pem"
 install -m 0640 -g nas "/etc/letsencrypt/live/$NOMBRE/privkey.pem" "$DIR_TLS/privkey.pem"
 EOF

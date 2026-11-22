@@ -1,0 +1,5 @@
+# Copiar a /etc/nas/dominios.conf SOLO durante el despliegue autorizado.
+# Sin comillas ni espacios. No contiene credenciales.
+FQDN_WEB=nas.example.org
+# Asignacion propuesta: requiere aceptar DNS y probar la VPN desde IPv4.
+FQDN_VPN=vpn-nas.example.org
