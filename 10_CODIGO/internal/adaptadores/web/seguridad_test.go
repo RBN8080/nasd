@@ -315,7 +315,7 @@ func TestUnRechazoSinClasificarApareceComoDesconocido(t *testing.T) {
 func TestElOrigenSeGuardaYSeClasificaPorRed(t *testing.T) {
 	s := servidorConAuth(t)
 
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/estado", nil)
 	r.RemoteAddr = "10.77.0.3:51820" // el iPhone por el túnel
 	// Una cabecera de proxy que NO debe creerse: no hay proxy delante.
 	r.Header.Set("X-Forwarded-For", "203.0.113.99")
@@ -420,7 +420,7 @@ func TestLosFiltrosDelPanelAcotanDeVerdad(t *testing.T) {
 	desdeFuera.RemoteAddr = "203.0.113.7:44001"
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), desdeFuera)
 
-	delTunel := httptest.NewRequest("GET", "/", nil)
+	delTunel := httptest.NewRequest("GET", "/estado", nil)
 	delTunel.RemoteAddr = "10.77.0.3:51820"
 	s.Rutas().ServeHTTP(httptest.NewRecorder(), delTunel)
 

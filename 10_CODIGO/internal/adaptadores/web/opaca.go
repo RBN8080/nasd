@@ -161,8 +161,51 @@ func (s *Servidor) negarOpaco(w http.ResponseWriter, r *http.Request, protegido 
 	if existe {
 		motivo = siExistiera
 	}
+	// Antes de marcar: llevar al formulario a quien está en casa no es un
+	// rechazo, y el panel solo anota respuestas 4xx.
+	if portadaDesdeCasa(r) {
+		llevarAlAcceso(w, r)
+		return
+	}
 	marcarRechazo(r, motivo)
 	s.responderOpaco(w)
+}
+
+// portadaDesdeCasa dice si la petición es la portada pedida desde la red de
+// casa o por el túnel. Es la ÚNICA excepción a la respuesta opaca (ADR-0110).
+//
+// # EL FALLO QUE LA ORIGINÓ — 2026-11-23
+//
+// El responsable abrió http://192.168.1.38 en el iPhone, por el túnel y con
+// datos móviles, con la sesión ya caducada. La portada contestó el 404 vacío
+// de ADR-0088 y Safari mostró una página en blanco: parecía que el túnel no
+// funcionaba, y funcionaba. Había que acordarse de escribir /acceso.
+//
+// # POR QUÉ NO ROMPE LO QUE ADR-0072 Y ADR-0088 PROTEGEN
+//
+// La opacidad existe contra quien sondea desde Internet. Desde casa y desde el
+// túnel no hay nadie a quien esconderle el mapa: el cortafuegos ya filtró al
+// que llega. Y solo es la portada, «/»: cualquier otra ruta sigue dando el
+// 404 opaco también desde casa, así que la redirección no distingue rutas
+// protegidas de inexistentes. La dirección desconocida o sin clasificar cae
+// en Internet (ClasificarRed falla cerrado).
+func portadaDesdeCasa(r *http.Request) bool {
+	if r.URL.Path != "/" || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		return false
+	}
+	switch seguridad.ClasificarRed(ipDe(r)) {
+	case seguridad.RedLocal, seguridad.RedTunel, seguridad.RedNodo:
+		return true
+	}
+	return false
+}
+
+// llevarAlAcceso manda al formulario. 303 y no 302: tras él siempre va un GET.
+// no-store por lo mismo que en responderOpaco: una redirección cacheada
+// seguiría mandando al formulario después de entrar.
+func llevarAlAcceso(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/acceso", http.StatusSeeOther)
 }
 
 // resolverRuta pregunta al ROUTER qué es esta petición, sin ejecutar nada suyo.
