@@ -10,3 +10,9 @@ vpn_a_id = ""
 vpn_aaaa_id = ""
 # Ambos SAN durante transicion; false al retirar dependencias antiguas.
 convivencia = true
+# Autoridad propia (proyecto 05, VPS de 06_VPS), opcional: sin primario solo Njalla.
+# Claves TSIG en /etc/nas/dns05/nas-ddns.key y nas-acme.key (root:root 0600).
+# "autoridad" dice cual manda: "njalla" hasta el cambio de NS, despues "propia".
+# primario = "192.0.2.53"
+# propios = ["192.0.2.53"]
+# autoridad = "njalla"

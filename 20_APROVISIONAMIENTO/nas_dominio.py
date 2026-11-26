@@ -30,10 +30,14 @@ from token_njalla import leer
 CONFIG = Path("/etc/nas/njalla/dominio.toml")
 ESTADO = Path("/run/nas-njalla")
 NUEVO = "nas.example.org"
-VPN = "vpn-nas.example.org"
 ANTIGUO = "nas-ejemplo.duckdns.org"
 AUTORITATIVOS = ("1-you.njalla.no", "2-can.njalla.in", "3-get.njalla.fo")
 ECO_IPV4 = ("https://api.ipify.org", "https://ifconfig.me")
+# Autoridad propia de example.org (proyecto 05, en el VPS de 06_VPS): RFC 2136 con
+# TSIG (RFC 8945). Una clave por uso, limitada en el servidor a sus nombres.
+CLAVES_PROPIAS = Path("/etc/nas/dns05")
+CLAVE_PROPIA = {"ddns": "nas-ddns", "vpn": "nas-ddns", "acme": "nas-acme"}
+SERVIDOR_DNS = re.compile(r"[A-Za-z0-9.:-]{1,253}")
 
 
 def privado(ruta: Path) -> str:
@@ -58,6 +62,11 @@ class Config:
     convivencia: bool
     vpn_a_id: str = ""
     vpn_aaaa_id: str = ""
+    # Sin primario, solo Njalla (como antes). «autoridad» dice cuál manda: la que los
+    # resolvers consultan; la otra se mantiene al día solo para poder volver.
+    primario: str = ""
+    propios: tuple[str, ...] = ()
+    autoridad: str = "njalla"
 
     @classmethod
     def cargar(cls, ruta: Path = CONFIG) -> "Config":
@@ -75,6 +84,21 @@ class Config:
             raise ErrorDNS("Interfaz invalida")
         if type(datos.get("convivencia")) is not bool:
             raise ErrorDNS("Falta declarar convivencia")
+        primario = datos.get("primario", "")
+        propios = datos.get("propios", [])
+        autoridad = datos.get("autoridad", "njalla")
+        if not isinstance(primario, str) or not isinstance(propios, list):
+            raise ErrorDNS("Autoridad propia mal declarada")
+        if any(
+            not isinstance(s, str) or not SERVIDOR_DNS.fullmatch(s)
+            for s in [primario, *propios]
+            if s != ""
+        ):
+            raise ErrorDNS("Servidor de la autoridad propia invalido")
+        if autoridad not in ("njalla", "propia") or (
+            primario and not propios
+        ) or (autoridad == "propia" and not primario):
+            raise ErrorDNS("Autoridad propia incompleta")
         return cls(
             origen,
             datos["interfaz"],
@@ -83,6 +107,9 @@ class Config:
             datos["convivencia"],
             datos.get("vpn_a_id", ""),
             datos.get("vpn_aaaa_id", ""),
+            primario,
+            tuple(propios),
+            autoridad,
         )
 
 
@@ -162,11 +189,17 @@ def respuesta_dns(texto: str, fqdn: str, tipo: str, esperado: str) -> bool:
     return valores == [normalizar(tipo, esperado)]
 
 
-def propagado(fqdn: str, tipo: str, esperado: str, segundos: float = 180) -> None:
+def propagado(
+    fqdn: str,
+    tipo: str,
+    esperado: str,
+    segundos: float = 180,
+    servidores: tuple[str, ...] = AUTORITATIVOS,
+) -> None:
     limite = time.monotonic() + segundos
     while True:
         correcto = True
-        for servidor in AUTORITATIVOS:
+        for servidor in servidores:
             try:
                 resultado = subprocess.run(
                     [
@@ -208,6 +241,79 @@ def cliente(conf: Config, tipo: str) -> Cliente:
     return Cliente(leer(CONFIG.parent / (tipo + ".token")), conf.origen)
 
 
+def propio(conf: Config, uso: str, fqdn: str, tipo: str, valor: str) -> None:
+    """Escribe en la autoridad propia solo si el primario no tiene ya el valor.
+
+    Sin escrituras repetidas el serial no sube cada 5 min y los secundarios no reciben
+    avisos sin cambio. normalizar() limita el valor a IP global o token ACME.
+    """
+    valor = normalizar(tipo, valor)
+    try:
+        propagado(fqdn, tipo, valor, segundos=0, servidores=(conf.primario,))
+        return
+    except ErrorDNS:
+        pass
+    clave = CLAVES_PROPIAS / (CLAVE_PROPIA[uso] + ".key")
+    privado(clave)
+    dato = '"' + valor + '"' if tipo == "TXT" else valor
+    guion = (
+        f"server {conf.primario}\nzone example.org\n"
+        f"update delete {fqdn}. {tipo}\nupdate add {fqdn}. 300 {tipo} {dato}\nsend\n"
+    )
+    resultado = subprocess.run(
+        ["nsupdate", "-k", str(clave), "-t", "10"],
+        input=guion,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if resultado.returncode:
+        raise ErrorDNS("Actualizacion firmada rechazada por la autoridad propia")
+    propagado(fqdn, tipo, valor, servidores=conf.propios)
+
+
+def escribir(
+    api: Cliente,
+    conf: Config,
+    uso: str,
+    identificador: str,
+    nombre: str,
+    tipo: str,
+    valor: str,
+    esperado: str | None = None,
+    segundos: float = 180,
+) -> None:
+    """Njalla y, si hay primario, la autoridad propia; primero la que manda.
+
+    Un fallo en la que manda corta; en la otra queda como aviso, porque esa copia solo
+    sirve para volver atrás.
+    """
+    fqdn = nombre + ".example.org"
+
+    def njalla() -> None:
+        editar(api, identificador, nombre, tipo, valor, esperado)
+        propagado(fqdn, tipo, valor, segundos=segundos)
+
+    pasos = {"njalla": njalla}
+    if conf.primario:
+        pasos["propia"] = lambda: propio(conf, uso, fqdn, tipo, valor)
+    for quien in sorted(pasos, key=lambda q: q != conf.autoridad):
+        try:
+            pasos[quien]()
+        except (OSError, ValueError, ErrorDNS, subprocess.SubprocessError) as error:
+            if quien == conf.autoridad:
+                raise
+            print(
+                "AVISO dominio NAS: copia "
+                + quien
+                + " sin actualizar ("
+                + type(error).__name__
+                + ")",
+                file=sys.stderr,
+            )
+
+
 def autenticar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -> None:
     valor = normalizar("TXT", valor)
     if valor == INACTIVO:
@@ -220,8 +326,7 @@ def autenticar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -
         fd = os.open(estado, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as archivo:
             archivo.write(valor + "\n")
-    editar(api, conf.txt_id, "_acme-challenge.nas", "TXT", valor, INACTIVO)
-    propagado("_acme-challenge." + NUEVO, "TXT", valor)
+    escribir(api, conf, "acme", conf.txt_id, "_acme-challenge.nas", "TXT", valor, INACTIVO)
 
 
 def limpiar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -> None:
@@ -236,8 +341,7 @@ def limpiar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -> N
         raise ErrorDNS("Sin estado propio: revisar TXT pendiente sin sobrescribirlo")
     if privado(estado).strip() != valor:
         raise ErrorDNS("Limpieza de otra validacion rechazada")
-    editar(api, conf.txt_id, "_acme-challenge.nas", "TXT", INACTIVO, valor)
-    propagado("_acme-challenge." + NUEVO, "TXT", INACTIVO)
+    escribir(api, conf, "acme", conf.txt_id, "_acme-challenge.nas", "TXT", INACTIVO, valor)
     estado.unlink()
 
 
@@ -336,17 +440,20 @@ def ejecutar(accion: str, conf: Config) -> None:
         print("OK: registros con ID y origen comprobados; no se escribio DNS")
         return
     if accion == "ddns":
-        editar(cliente(conf, "ddns"), conf.aaaa_id, "nas", "AAAA", conf.origen)
-        propagado(NUEVO, "AAAA", conf.origen, segundos=45)
+        escribir(
+            cliente(conf, "ddns"), conf, "ddns", conf.aaaa_id, "nas", "AAAA",
+            conf.origen, segundos=45,
+        )
         if conf.vpn_aaaa_id:
-            editar(
-                cliente(conf, "vpn"), conf.vpn_aaaa_id, "vpn-nas", "AAAA", conf.origen
+            escribir(
+                cliente(conf, "vpn"), conf, "vpn", conf.vpn_aaaa_id, "vpn-nas", "AAAA",
+                conf.origen, segundos=45,
             )
-            propagado(VPN, "AAAA", conf.origen, segundos=45)
         if conf.vpn_a_id:
-            ip_v4 = ipv4_publica()
-            editar(cliente(conf, "vpn"), conf.vpn_a_id, "vpn-nas", "A", ip_v4)
-            propagado(VPN, "A", ip_v4, segundos=45)
+            escribir(
+                cliente(conf, "vpn"), conf, "vpn", conf.vpn_a_id, "vpn-nas", "A",
+                ipv4_publica(), segundos=45,
+            )
         return
     dominio = os.environ.get("CERTBOT_DOMAIN", "")
     validacion = os.environ.get("CERTBOT_VALIDATION", "")

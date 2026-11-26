@@ -460,6 +460,134 @@ class Integracion(unittest.TestCase):
         self.assertEqual(api_vpn.registros[1]["content"], IP_NUEVA)
         self.assertEqual(propagado.call_count, 3)
 
+    def test_config_autoridad_propia(self) -> None:
+        base = (
+            f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id="1"\ntxt_id="2"\n'
+            "convivencia=false\n"
+        )
+        validos = {
+            "": ("", (), "njalla"),
+            'primario="198.51.100.7"\npropios=["198.51.100.7","ns2.he.net"]\n': (
+                "198.51.100.7",
+                ("198.51.100.7", "ns2.he.net"),
+                "njalla",
+            ),
+            'primario="198.51.100.7"\npropios=["198.51.100.7"]\nautoridad="propia"\n': (
+                "198.51.100.7",
+                ("198.51.100.7",),
+                "propia",
+            ),
+        }
+        invalidos = (
+            'autoridad="propia"\n',
+            'primario="198.51.100.7"\n',
+            'primario="198.51.100.7"\npropios=["a b"]\n',
+            'primario="198.51.100.7"\npropios=["198.51.100.7"]\nautoridad="otra"\n',
+        )
+        with tempfile.TemporaryDirectory() as temporal:
+            archivo = Path(temporal) / "dominio.toml"
+            for extra, esperado in validos.items():
+                archivo.write_text(base + extra)
+                archivo.chmod(0o600)
+                conf = dominio.Config.cargar(archivo)
+                self.assertEqual(
+                    (conf.primario, conf.propios, conf.autoridad), esperado
+                )
+            for extra in invalidos:
+                archivo.write_text(base + extra)
+                archivo.chmod(0o600)
+                with self.assertRaises(ErrorDNS):
+                    dominio.Config.cargar(archivo)
+
+    @patch.object(dominio, "origen_presente")
+    @patch.object(dominio, "propagado")
+    @patch.object(dominio, "propio", side_effect=ErrorDNS("VPS caido"))
+    def test_copia_propia_no_frena_a_njalla(self, propio, propagado, _origen) -> None:
+        api = Simulado()
+        conf = dominio.Config(
+            IP_NUEVA, "eth0", "un-id", "t1", True,
+            primario="198.51.100.7", propios=("198.51.100.7",),
+        )
+        with patch.object(dominio, "cliente", return_value=api):
+            dominio.ejecutar("ddns", conf)
+        self.assertEqual(api.registros[0]["content"], IP_NUEVA)
+        propio.assert_called_once_with(
+            conf, "ddns", "nas.example.org", "AAAA", IP_NUEVA
+        )
+        self.assertEqual(propagado.call_count, 1)
+
+    @patch.object(dominio, "propagado")
+    def test_la_que_manda_corta_la_otra_avisa(self, _propagado) -> None:
+        conf = dominio.Config(
+            IP_ANTES, "eth0", "un-id", "t1", True,
+            primario="198.51.100.7", propios=("198.51.100.7",), autoridad="propia",
+        )
+        orden: list[str] = []
+        with (
+            patch.object(dominio, "propio", side_effect=lambda *a: orden.append("p")),
+            patch.object(dominio, "editar", side_effect=ErrorDNS("Njalla caido")),
+        ):
+            dominio.escribir(Simulado(), conf, "ddns", "un-id", "nas", "AAAA", IP_NUEVA)
+        self.assertEqual(orden, ["p"])
+        with (
+            patch.object(dominio, "propio", side_effect=ErrorDNS("VPS caido")),
+            patch.object(dominio, "editar") as editar,
+        ):
+            with self.assertRaises(ErrorDNS):
+                dominio.escribir(
+                    Simulado(), conf, "ddns", "un-id", "nas", "AAAA", IP_NUEVA
+                )
+            editar.assert_not_called()
+
+    def test_propio_no_reescribe_si_ya_esta(self) -> None:
+        conf = dominio.Config(
+            IP_ANTES, "eth0", "un-id", "t1", True,
+            primario="198.51.100.7", propios=("198.51.100.7",),
+        )
+        with (
+            patch.object(dominio, "propagado") as propagado,
+            patch.object(dominio.subprocess, "run") as ejecutar,
+        ):
+            dominio.propio(conf, "vpn", "vpn-nas.example.org", "A", "9.9.9.9")
+        ejecutar.assert_not_called()
+        propagado.assert_called_once_with(
+            "vpn-nas.example.org", "A", "9.9.9.9",
+            segundos=0, servidores=("198.51.100.7",),
+        )
+
+    def test_propio_firma_con_la_clave_de_su_uso(self) -> None:
+        conf = dominio.Config(
+            IP_ANTES, "eth0", "un-id", "t1", True,
+            primario="198.51.100.7", propios=("198.51.100.7", "ns2.he.net"),
+        )
+        fqdn = "_acme-challenge.nas.example.org"
+        clave = dominio.CLAVES_PROPIAS / "nas-acme.key"
+        hecho = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            patch.object(
+                dominio, "propagado", side_effect=[ErrorDNS("otro"), None]
+            ) as propagado,
+            patch.object(dominio, "privado", return_value="") as privado,
+            patch.object(dominio.subprocess, "run", return_value=hecho) as ejecutar,
+        ):
+            dominio.propio(conf, "acme", fqdn, "TXT", "A" * 43)
+        privado.assert_called_once_with(clave)
+        self.assertEqual(ejecutar.call_args.args[0][:3], ["nsupdate", "-k", str(clave)])
+        guion = ejecutar.call_args.kwargs["input"]
+        self.assertIn("server 198.51.100.7\nzone example.org\n", guion)
+        self.assertIn(f'update add {fqdn}. 300 TXT "{"A" * 43}"\nsend\n', guion)
+        self.assertEqual(propagado.call_args.kwargs["servidores"], conf.propios)
+        rechazo = subprocess.CompletedProcess([], 2, "", "")
+        with (
+            patch.object(dominio, "propagado", side_effect=ErrorDNS("otro")),
+            patch.object(dominio, "privado", return_value=""),
+            patch.object(dominio.subprocess, "run", return_value=rechazo),
+        ):
+            with self.assertRaises(ErrorDNS):
+                dominio.propio(conf, "ddns", "nas.example.org", "AAAA", IP_NUEVA)
+        with self.assertRaises(ErrorDNS):
+            dominio.propio(conf, "ddns", "nas.example.org", "AAAA", "fe80::1")
+
 
 if __name__ == "__main__":
     unittest.main()
