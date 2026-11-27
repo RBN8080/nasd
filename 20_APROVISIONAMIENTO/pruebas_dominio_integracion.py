@@ -525,10 +525,11 @@ class Integracion(unittest.TestCase):
         orden: list[str] = []
         with (
             patch.object(dominio, "propio", side_effect=lambda *a: orden.append("p")),
-            patch.object(dominio, "editar", side_effect=ErrorDNS("Njalla caido")),
+            patch.object(dominio, "editar", side_effect=ErrorDNS("Njalla caido")) as ed,
         ):
             dominio.escribir(Simulado(), conf, "ddns", "un-id", "nas", "AAAA", IP_NUEVA)
         self.assertEqual(orden, ["p"])
+        ed.assert_not_called()  # con la propia mandando, Njalla no se toca
         with (
             patch.object(dominio, "propio", side_effect=ErrorDNS("VPS caido")),
             patch.object(dominio, "editar") as editar,
@@ -587,6 +588,60 @@ class Integracion(unittest.TestCase):
                 dominio.propio(conf, "ddns", "nas.example.org", "AAAA", IP_NUEVA)
         with self.assertRaises(ErrorDNS):
             dominio.propio(conf, "ddns", "nas.example.org", "AAAA", "fe80::1")
+
+    def test_solo_el_desafio_espera_a_las_copias(self) -> None:
+        conf = dominio.Config(
+            IP_ANTES, "eth0", "un-id", "t1", True,
+            primario="198.51.100.7", propios=("198.51.100.7", "ns2.he.net"),
+        )
+        fqdn = "_acme-challenge.nas.example.org"
+        hecho = subprocess.CompletedProcess([], 0, "", "")
+        casos = (
+            ("ddns", "nas.example.org", "AAAA", IP_NUEVA, ("198.51.100.7",), 180),
+            ("acme", fqdn, "TXT", dominio.INACTIVO, ("198.51.100.7",), 180),
+            ("acme", fqdn, "TXT", "A" * 43, conf.propios, dominio.ESPERA_COPIAS),
+        )
+        for uso, nombre, tipo, valor, servidores, segundos in casos:
+            with self.subTest(uso=uso, valor=valor[:10]):
+                with (
+                    patch.object(
+                        dominio, "propagado", side_effect=[ErrorDNS("otro"), None]
+                    ) as propagado,
+                    patch.object(dominio, "privado", return_value=""),
+                    patch.object(dominio.subprocess, "run", return_value=hecho),
+                ):
+                    dominio.propio(conf, uso, nombre, tipo, valor)
+                self.assertEqual(propagado.call_count, 2)
+                ultima = propagado.call_args.kwargs
+                self.assertEqual(ultima["servidores"], servidores)
+                self.assertEqual(ultima.get("segundos", 180), segundos)
+
+    def test_desafio_ya_escrito_espera_a_las_copias_sin_reescribir(self) -> None:
+        conf = dominio.Config(
+            IP_ANTES, "eth0", "un-id", "t1", True,
+            primario="198.51.100.7", propios=("198.51.100.7", "ns2.he.net"),
+        )
+        fqdn = "_acme-challenge.nas.example.org"
+        with (
+            patch.object(dominio, "propagado") as propagado,
+            patch.object(dominio.subprocess, "run") as ejecutar,
+        ):
+            dominio.propio(conf, "acme", fqdn, "TXT", "A" * 43)
+        ejecutar.assert_not_called()
+        self.assertEqual(propagado.call_count, 2)
+        self.assertEqual(
+            propagado.call_args.kwargs,
+            {"segundos": dominio.ESPERA_COPIAS, "servidores": conf.propios},
+        )
+        with (
+            patch.object(
+                dominio, "propagado", side_effect=[None, ErrorDNS("HE tarda")]
+            ),
+            patch.object(dominio.subprocess, "run") as ejecutar,
+        ):
+            with self.assertRaises(ErrorDNS):
+                dominio.propio(conf, "acme", fqdn, "TXT", "A" * 43)
+        ejecutar.assert_not_called()
 
 
 if __name__ == "__main__":

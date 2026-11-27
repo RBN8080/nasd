@@ -37,6 +37,11 @@ ECO_IPV4 = ("https://api.ipify.org", "https://ifconfig.me")
 # TSIG (RFC 8945). Una clave por uso, limitada en el servidor a sus nombres.
 CLAVES_PROPIAS = Path("/etc/nas/dns05")
 CLAVE_PROPIA = {"ddns": "nas-ddns", "vpn": "nas-ddns", "acme": "nas-acme"}
+# Las copias de Hurricane Electric sirven un cambio unos 2 min después del aviso (123 s
+# medidos dos veces el 2026-11-26) y, si el aviso se pierde, al revisar solas cada 900 s.
+# Solo el desafío ACME las espera: Let's Encrypt puede preguntar a cualquiera de los NS.
+# Para DDNS basta el primario (el servicio corta a los 240 s); HE se pone al día solo.
+ESPERA_COPIAS = 960
 SERVIDOR_DNS = re.compile(r"[A-Za-z0-9.:-]{1,253}")
 
 
@@ -246,13 +251,24 @@ def propio(conf: Config, uso: str, fqdn: str, tipo: str, valor: str) -> None:
 
     Sin escrituras repetidas el serial no sube cada 5 min y los secundarios no reciben
     avisos sin cambio. normalizar() limita el valor a IP global o token ACME.
+    Un desafío ACME espera además a todos los «propios» (las copias de HE).
     """
     valor = normalizar(tipo, valor)
+    desafio = uso == "acme" and valor != INACTIVO
     try:
         propagado(fqdn, tipo, valor, segundos=0, servidores=(conf.primario,))
-        return
+        ya_estaba = True
     except ErrorDNS:
-        pass
+        ya_estaba = False
+    if not ya_estaba:
+        escribir_propio(conf, uso, fqdn, tipo, valor)
+    if desafio:
+        propagado(fqdn, tipo, valor, segundos=ESPERA_COPIAS, servidores=conf.propios)
+    elif not ya_estaba:
+        propagado(fqdn, tipo, valor, servidores=(conf.primario,))
+
+
+def escribir_propio(conf: Config, uso: str, fqdn: str, tipo: str, valor: str) -> None:
     clave = CLAVES_PROPIAS / (CLAVE_PROPIA[uso] + ".key")
     privado(clave)
     dato = '"' + valor + '"' if tipo == "TXT" else valor
@@ -270,7 +286,6 @@ def propio(conf: Config, uso: str, fqdn: str, tipo: str, valor: str) -> None:
     )
     if resultado.returncode:
         raise ErrorDNS("Actualizacion firmada rechazada por la autoridad propia")
-    propagado(fqdn, tipo, valor, servidores=conf.propios)
 
 
 def escribir(
@@ -287,7 +302,9 @@ def escribir(
     """Njalla y, si hay primario, la autoridad propia; primero la que manda.
 
     Un fallo en la que manda corta; en la otra queda como aviso, porque esa copia solo
-    sirve para volver atrás.
+    sirve para volver atrás. Con la propia mandando no se toca Njalla: su API rechaza
+    los registros mientras el dominio usa NS externos (visto el 2026-11-26), y al volver
+    a sus NS basta `autoridad = "njalla"` para que la siguiente pasada la ponga al día.
     """
     fqdn = nombre + ".example.org"
 
@@ -295,7 +312,7 @@ def escribir(
         editar(api, identificador, nombre, tipo, valor, esperado)
         propagado(fqdn, tipo, valor, segundos=segundos)
 
-    pasos = {"njalla": njalla}
+    pasos = {} if conf.autoridad == "propia" else {"njalla": njalla}
     if conf.primario:
         pasos["propia"] = lambda: propio(conf, uso, fqdn, tipo, valor)
     for quien in sorted(pasos, key=lambda q: q != conf.autoridad):
