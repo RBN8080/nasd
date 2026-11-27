@@ -10,13 +10,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from nas_dominio import ANTIGUO, NUEVO, Config, bloquear, privado
+from nas_dominio import NUEVO, bloquear, privado
 from njalla_registros import ErrorDNS
 
 BASE = Path("/etc/nas/tls")
 SELECTOR = Path("/etc/nas/tls-lineage")
-LIN_ANTIGUO = Path("/etc/letsencrypt/live") / ANTIGUO
-LIN_TRANSICION = Path("/etc/letsencrypt/live/nas-transicion")
 LIN_FINAL = Path("/etc/letsencrypt/live") / NUEVO
 
 
@@ -37,7 +35,7 @@ def validar_par(
         "x509", "-in", certificado, "-noout", "-ext", "subjectAltName"
     ).decode("ascii")
     if set(re.findall(r"DNS:([^,\s]+)", san)) != nombres:
-        raise ErrorDNS("Los SAN no coinciden exactamente con la fase elegida")
+        raise ErrorDNS("Los SAN no coinciden exactamente con el dominio esperado")
     openssl("x509", "-in", certificado, "-noout", "-checkend", "604800")
     cert_pub = openssl("x509", "-in", certificado, "-pubkey", "-noout")
     key_pub = openssl("pkey", "-in", str(linaje / "privkey.pem"), "-pubout")
@@ -161,20 +159,11 @@ def main() -> int:
             if sys.argv[1:] != ["desplegar"]:
                 raise ErrorDNS("Accion TLS desconocida")
             elegido = Path(privado(SELECTOR).strip())
-            if elegido not in (LIN_ANTIGUO, LIN_TRANSICION, LIN_FINAL):
+            if elegido != LIN_FINAL:
                 raise ErrorDNS("Linaje seleccionado desconocido")
-            if os.environ.get("RENEWED_LINEAGE", "") != str(elegido):
+            if os.environ.get("RENEWED_LINEAGE", "") != str(LIN_FINAL):
                 return 0
-            conf = Config.cargar()
-            if elegido == LIN_ANTIGUO:
-                nombres = {ANTIGUO}
-            elif elegido == LIN_TRANSICION and conf.convivencia:
-                nombres = {NUEVO, ANTIGUO}
-            elif elegido == LIN_FINAL and not conf.convivencia:
-                nombres = {NUEVO}
-            else:
-                raise ErrorDNS("Linaje incompatible con fase de convivencia")
-            activar(elegido, nombres)
+            activar(LIN_FINAL, {NUEVO})
         return 0
     except (OSError, ValueError, ErrorDNS, subprocess.SubprocessError) as error:
         print(

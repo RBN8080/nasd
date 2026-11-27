@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Ensayos de ganchos, propagacion y cambio TLS en directorios efimeros."""
 
+import contextlib
+import io
 import os
 import subprocess
 import tempfile
@@ -16,7 +18,7 @@ import nas_tls as tls
 from njalla_registros import INACTIVO, ErrorDNS
 from pruebas_njalla_registros import IP_ANTES, IP_NUEVA, Simulado
 
-CONF = dominio.Config(IP_ANTES, "eth0", "un-id", "un-id", True)
+CONF = dominio.Config(IP_ANTES, "eth0", "un-id", "un-id")
 
 
 class Integracion(unittest.TestCase):
@@ -102,13 +104,43 @@ class Integracion(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporal:
             archivo = Path(temporal) / "config"
             archivo.write_text(
-                f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id=""\ntxt_id="x"\nconvivencia=true\n'
+                f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id=""\ntxt_id="x"\n'
             )
             archivo.chmod(0o600)
             self.assertEqual(dominio.Config.cargar(archivo).aaaa_id, "")
             archivo.chmod(0o644)
             with self.assertRaises(ErrorDNS):
                 dominio.Config.cargar(archivo)
+
+    def test_config_convivencia_retirada(self) -> None:
+        self.assertFalse(hasattr(dominio, "ANTIGUO"))
+        self.assertFalse(hasattr(tls, "LIN_ANTIGUO"))
+        self.assertFalse(hasattr(tls, "LIN_TRANSICION"))
+        base = f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id="1"\ntxt_id="2"\n'
+        with tempfile.TemporaryDirectory() as temporal:
+            archivo = Path(temporal) / "dominio.toml"
+            archivo.write_text(base)
+            archivo.chmod(0o600)
+            with contextlib.redirect_stderr(io.StringIO()) as aviso:
+                dominio.Config.cargar(archivo)
+            self.assertEqual(aviso.getvalue(), "")
+
+            archivo.write_text(base + "convivencia=false\n")
+            archivo.chmod(0o600)
+            with contextlib.redirect_stderr(io.StringIO()) as aviso:
+                dominio.Config.cargar(archivo)
+            self.assertIn("AVISO", aviso.getvalue())
+
+            for invalido in (
+                "convivencia=true\n",
+                'convivencia="false"\n',
+                "convivencia=0\n",
+            ):
+                with self.subTest(invalido=invalido.strip()):
+                    archivo.write_text(base + invalido)
+                    archivo.chmod(0o600)
+                    with self.assertRaises(ErrorDNS):
+                        dominio.Config.cargar(archivo)
 
     @patch.object(tls, "validar_par")
     def test_activacion_conjunta_y_reversion(self, _validar) -> None:
@@ -176,23 +208,38 @@ class Integracion(unittest.TestCase):
 
     @patch.object(tls.os, "geteuid", return_value=0)
     @patch.object(tls, "bloquear", return_value=nullcontext())
-    @patch.object(tls, "privado", return_value=str(tls.LIN_TRANSICION))
-    @patch.object(tls.Config, "cargar", return_value=CONF)
+    @patch.object(tls, "privado", return_value=str(tls.LIN_FINAL))
     @patch.object(tls, "activar")
     def test_despliegue_solo_linaje_elegido(self, activar, *_mocks) -> None:
         with patch.object(tls.sys, "argv", ["nas_tls", "desplegar"]):
             for linaje in (
-                str(tls.LIN_ANTIGUO),
-                "/etc/nas/njalla/acme-ensayo/live/nas-transicion",
+                "/etc/letsencrypt/live/nas-transicion",
+                "/etc/nas/njalla/acme-ensayo/live/nas.example.org",
             ):
                 with patch.dict(os.environ, {"RENEWED_LINEAGE": linaje}):
                     self.assertEqual(tls.main(), 0)
                 activar.assert_not_called()
-            with patch.dict(os.environ, {"RENEWED_LINEAGE": str(tls.LIN_TRANSICION)}):
+            with patch.dict(os.environ, {"RENEWED_LINEAGE": str(tls.LIN_FINAL)}):
                 self.assertEqual(tls.main(), 0)
-            activar.assert_called_once_with(
-                tls.LIN_TRANSICION, {dominio.NUEVO, dominio.ANTIGUO}
-            )
+            activar.assert_called_once_with(tls.LIN_FINAL, {dominio.NUEVO})
+
+    @patch.object(tls.os, "geteuid", return_value=0)
+    @patch.object(tls, "bloquear", return_value=nullcontext())
+    @patch.object(tls, "activar")
+    def test_selector_linaje_retirado_rechazado(self, activar, *_mocks) -> None:
+        for selector in (
+            "/etc/letsencrypt/live/nas-transicion",
+            "/etc/letsencrypt/live/otro.ejemplo.org",
+        ):
+            with (
+                self.subTest(selector=selector),
+                patch.object(tls, "privado", return_value=selector),
+                patch.object(tls.sys, "argv", ["nas_tls", "desplegar"]),
+                patch.dict(os.environ, {"RENEWED_LINEAGE": selector}),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(tls.main(), 1)
+            activar.assert_not_called()
 
     def test_reversion_no_sigue_destino_externo(self) -> None:
         with tempfile.TemporaryDirectory() as temporal:
@@ -203,7 +250,7 @@ class Integracion(unittest.TestCase):
 
     def test_validacion_openssl_con_ca_efimera(self) -> None:
         # Certificados ficticios generados fuera del repositorio: comprobar la
-        # cadena, ambos SAN, pareja de clave y margen de caducidad de verdad.
+        # cadena, SAN unico exacto, rechazo de SAN extra, pareja de clave y margen.
         with tempfile.TemporaryDirectory() as temporal:
             base = Path(temporal)
             confianza = base / "ca"
@@ -250,7 +297,7 @@ class Integracion(unittest.TestCase):
                 "-subj",
                 "/CN=nas.example.org",
                 "-addext",
-                "subjectAltName=DNS:" + dominio.NUEVO + ",DNS:" + dominio.ANTIGUO,
+                "subjectAltName=DNS:" + dominio.NUEVO,
             )
             (base / "extensiones").write_text(
                 "basicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n"
@@ -279,10 +326,49 @@ class Integracion(unittest.TestCase):
                 (base / "cert.pem").read_bytes() + (base / "chain.pem").read_bytes()
             )
             ejecutar("rehash", "ca")
-            nombres = {dominio.NUEVO, dominio.ANTIGUO}
+            nombres = {dominio.NUEVO}
             tls.validar_par(base, nombres, confianza)
             with self.assertRaises(ErrorDNS):
-                tls.validar_par(base, {dominio.NUEVO}, confianza)
+                tls.validar_par(base, {"otro.example.org"}, confianza)
+            doble = base / "doble"
+            doble.mkdir()
+            ejecutar(
+                "req",
+                "-new",
+                "-key",
+                "privkey.pem",
+                "-out",
+                "doble/peticion.pem",
+                "-subj",
+                "/CN=nas.example.org",
+                "-addext",
+                "subjectAltName=DNS:" + dominio.NUEVO + ",DNS:extra.ejemplo.org",
+            )
+            ejecutar(
+                "x509",
+                "-req",
+                "-in",
+                "doble/peticion.pem",
+                "-CA",
+                "ca/ca.pem",
+                "-CAkey",
+                "ca.key",
+                "-out",
+                "doble/cert.pem",
+                "-days",
+                "30",
+                "-copy_extensions",
+                "copy",
+                "-extfile",
+                "extensiones",
+            )
+            (doble / "privkey.pem").write_bytes((base / "privkey.pem").read_bytes())
+            (doble / "chain.pem").write_bytes((base / "chain.pem").read_bytes())
+            (doble / "fullchain.pem").write_bytes(
+                (doble / "cert.pem").read_bytes() + (doble / "chain.pem").read_bytes()
+            )
+            with self.assertRaises(ErrorDNS):
+                tls.validar_par(doble, nombres, confianza)
             clave = (base / "privkey.pem").read_bytes()
             (base / "privkey.pem").write_bytes((base / "ca.key").read_bytes())
             with self.assertRaises(ErrorDNS):
@@ -411,7 +497,7 @@ class Integracion(unittest.TestCase):
             archivo = Path(temporal) / "dominio.toml"
             archivo.write_text(
                 f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id="1"\ntxt_id="2"\n'
-                'vpn_a_id="3"\nvpn_aaaa_id="4"\nconvivencia=false\n'
+                'vpn_a_id="3"\nvpn_aaaa_id="4"\n'
             )
             archivo.chmod(0o600)
             conf = dominio.Config.cargar(archivo)
@@ -448,7 +534,7 @@ class Integracion(unittest.TestCase):
                 "ttl": 300,
             },
         ]
-        conf = dominio.Config(IP_NUEVA, "eth0", "w1", "t1", True, "v1", "v2")
+        conf = dominio.Config(IP_NUEVA, "eth0", "w1", "t1", "v1", "v2")
 
         def obtener_cliente(_c: dominio.Config, uso: str) -> Simulado:
             return api_web if uso == "ddns" else api_vpn
@@ -461,10 +547,7 @@ class Integracion(unittest.TestCase):
         self.assertEqual(propagado.call_count, 3)
 
     def test_config_autoridad_propia(self) -> None:
-        base = (
-            f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id="1"\ntxt_id="2"\n'
-            "convivencia=false\n"
-        )
+        base = f'origen="{IP_ANTES}"\ninterfaz="eth0"\naaaa_id="1"\ntxt_id="2"\n'
         validos = {
             "": ("", (), "njalla"),
             'primario="198.51.100.7"\npropios=["198.51.100.7","ns2.he.net"]\n': (
@@ -505,8 +588,12 @@ class Integracion(unittest.TestCase):
     def test_copia_propia_no_frena_a_njalla(self, propio, propagado, _origen) -> None:
         api = Simulado()
         conf = dominio.Config(
-            IP_NUEVA, "eth0", "un-id", "t1", True,
-            primario="198.51.100.7", propios=("198.51.100.7",),
+            IP_NUEVA,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7",),
         )
         with patch.object(dominio, "cliente", return_value=api):
             dominio.ejecutar("ddns", conf)
@@ -519,8 +606,13 @@ class Integracion(unittest.TestCase):
     @patch.object(dominio, "propagado")
     def test_la_que_manda_corta_la_otra_avisa(self, _propagado) -> None:
         conf = dominio.Config(
-            IP_ANTES, "eth0", "un-id", "t1", True,
-            primario="198.51.100.7", propios=("198.51.100.7",), autoridad="propia",
+            IP_ANTES,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7",),
+            autoridad="propia",
         )
         orden: list[str] = []
         with (
@@ -542,8 +634,12 @@ class Integracion(unittest.TestCase):
 
     def test_propio_no_reescribe_si_ya_esta(self) -> None:
         conf = dominio.Config(
-            IP_ANTES, "eth0", "un-id", "t1", True,
-            primario="198.51.100.7", propios=("198.51.100.7",),
+            IP_ANTES,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7",),
         )
         with (
             patch.object(dominio, "propagado") as propagado,
@@ -552,14 +648,21 @@ class Integracion(unittest.TestCase):
             dominio.propio(conf, "vpn", "vpn-nas.example.org", "A", "9.9.9.9")
         ejecutar.assert_not_called()
         propagado.assert_called_once_with(
-            "vpn-nas.example.org", "A", "9.9.9.9",
-            segundos=0, servidores=("198.51.100.7",),
+            "vpn-nas.example.org",
+            "A",
+            "9.9.9.9",
+            segundos=0,
+            servidores=("198.51.100.7",),
         )
 
     def test_propio_firma_con_la_clave_de_su_uso(self) -> None:
         conf = dominio.Config(
-            IP_ANTES, "eth0", "un-id", "t1", True,
-            primario="198.51.100.7", propios=("198.51.100.7", "ns2.he.net"),
+            IP_ANTES,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7", "ns2.he.net"),
         )
         fqdn = "_acme-challenge.nas.example.org"
         clave = dominio.CLAVES_PROPIAS / "nas-acme.key"
@@ -591,8 +694,12 @@ class Integracion(unittest.TestCase):
 
     def test_solo_el_desafio_espera_a_las_copias(self) -> None:
         conf = dominio.Config(
-            IP_ANTES, "eth0", "un-id", "t1", True,
-            primario="198.51.100.7", propios=("198.51.100.7", "ns2.he.net"),
+            IP_ANTES,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7", "ns2.he.net"),
         )
         fqdn = "_acme-challenge.nas.example.org"
         hecho = subprocess.CompletedProcess([], 0, "", "")
@@ -618,8 +725,12 @@ class Integracion(unittest.TestCase):
 
     def test_desafio_ya_escrito_espera_a_las_copias_sin_reescribir(self) -> None:
         conf = dominio.Config(
-            IP_ANTES, "eth0", "un-id", "t1", True,
-            primario="198.51.100.7", propios=("198.51.100.7", "ns2.he.net"),
+            IP_ANTES,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7", "ns2.he.net"),
         )
         fqdn = "_acme-challenge.nas.example.org"
         with (
@@ -642,6 +753,62 @@ class Integracion(unittest.TestCase):
             with self.assertRaises(ErrorDNS):
                 dominio.propio(conf, "acme", fqdn, "TXT", "A" * 43)
         ejecutar.assert_not_called()
+
+    def test_limpiar_sin_estado_con_autoridad_propia_no_toca_njalla(self) -> None:
+        conf = dominio.Config(
+            IP_ANTES,
+            "eth0",
+            "un-id",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7", "ns2.he.net"),
+            autoridad="propia",
+        )
+        fqdn = "_acme-challenge.nas.example.org"
+        with tempfile.TemporaryDirectory() as temporal:
+            carpeta = Path(temporal)
+            with patch.object(dominio, "propagado") as propagado:
+                dominio.limpiar(None, conf, "A" * 43, carpeta)
+            propagado.assert_called_once_with(
+                fqdn, "TXT", INACTIVO, segundos=0, servidores=("198.51.100.7",)
+            )
+            with (
+                patch.object(dominio, "propagado", side_effect=ErrorDNS("pendiente")),
+                patch.object(dominio.subprocess, "run") as ejecutar,
+            ):
+                with self.assertRaises(ErrorDNS):
+                    dominio.limpiar(None, conf, "A" * 43, carpeta)
+                ejecutar.assert_not_called()
+
+    @patch.object(dominio, "origen_presente")
+    @patch.object(dominio, "propio")
+    def test_ejecutar_en_autoridad_propia_no_abre_tokens_njalla(
+        self, propio, _origen
+    ) -> None:
+        conf = dominio.Config(
+            IP_NUEVA,
+            "eth0",
+            "w1",
+            "t1",
+            primario="198.51.100.7",
+            propios=("198.51.100.7",),
+            autoridad="propia",
+        )
+        with patch.object(
+            dominio, "cliente", side_effect=AssertionError("No debe leer tokens Njalla")
+        ):
+            dominio.ejecutar("ddns", conf)
+            with (
+                tempfile.TemporaryDirectory() as temporal,
+                patch.object(dominio, "ESTADO", Path(temporal)),
+                patch.dict(
+                    os.environ,
+                    {"CERTBOT_DOMAIN": dominio.NUEVO, "CERTBOT_VALIDATION": "A" * 43},
+                ),
+            ):
+                dominio.ejecutar("auth", conf)
+                dominio.ejecutar("limpiar", conf)
+        self.assertEqual(propio.call_count, 3)
 
 
 if __name__ == "__main__":

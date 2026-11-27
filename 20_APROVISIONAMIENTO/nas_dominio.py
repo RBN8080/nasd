@@ -30,7 +30,6 @@ from token_njalla import leer
 CONFIG = Path("/etc/nas/njalla/dominio.toml")
 ESTADO = Path("/run/nas-njalla")
 NUEVO = "nas.example.org"
-ANTIGUO = "nas-ejemplo.duckdns.org"
 AUTORITATIVOS = ("1-you.njalla.no", "2-can.njalla.in", "3-get.njalla.fo")
 ECO_IPV4 = ("https://api.ipify.org", "https://ifconfig.me")
 # Autoridad propia de example.org (proyecto 05, en el VPS de 06_VPS): RFC 2136 con
@@ -64,7 +63,6 @@ class Config:
     interfaz: str
     aaaa_id: str
     txt_id: str
-    convivencia: bool
     vpn_a_id: str = ""
     vpn_aaaa_id: str = ""
     # Sin primario, solo Njalla (como antes). «autoridad» dice cuál manda: la que los
@@ -87,8 +85,18 @@ class Config:
         origen = normalizar("AAAA", datos["origen"])
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", datos["interfaz"]):
             raise ErrorDNS("Interfaz invalida")
-        if type(datos.get("convivencia")) is not bool:
-            raise ErrorDNS("Falta declarar convivencia")
+        # Fase de convivencia retirada: rechazar fail-closed si pide convivencia=true
+        # o tipo invalido; tolerar convivencia=false con aviso para despliegue sin corte.
+        if "convivencia" in datos:
+            if datos["convivencia"] is not False:
+                raise ErrorDNS(
+                    "Fase de convivencia retirada; quitar convivencia de dominio.toml"
+                )
+            print(
+                "AVISO dominio NAS: campo obsoleto 'convivencia' ignorado; "
+                "retirarlo de dominio.toml",
+                file=sys.stderr,
+            )
         primario = datos.get("primario", "")
         propios = datos.get("propios", [])
         autoridad = datos.get("autoridad", "njalla")
@@ -100,16 +108,17 @@ class Config:
             if s != ""
         ):
             raise ErrorDNS("Servidor de la autoridad propia invalido")
-        if autoridad not in ("njalla", "propia") or (
-            primario and not propios
-        ) or (autoridad == "propia" and not primario):
+        if (
+            autoridad not in ("njalla", "propia")
+            or (primario and not propios)
+            or (autoridad == "propia" and not primario)
+        ):
             raise ErrorDNS("Autoridad propia incompleta")
         return cls(
             origen,
             datos["interfaz"],
             datos["aaaa_id"],
             datos["txt_id"],
-            datos["convivencia"],
             datos.get("vpn_a_id", ""),
             datos.get("vpn_aaaa_id", ""),
             primario,
@@ -289,7 +298,7 @@ def escribir_propio(conf: Config, uso: str, fqdn: str, tipo: str, valor: str) ->
 
 
 def escribir(
-    api: Cliente,
+    api: Cliente | None,
     conf: Config,
     uso: str,
     identificador: str,
@@ -309,6 +318,8 @@ def escribir(
     fqdn = nombre + ".example.org"
 
     def njalla() -> None:
+        if api is None:
+            raise ErrorDNS("Falta cliente Njalla para escribir en esa autoridad")
         editar(api, identificador, nombre, tipo, valor, esperado)
         propagado(fqdn, tipo, valor, segundos=segundos)
 
@@ -331,7 +342,9 @@ def escribir(
             )
 
 
-def autenticar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -> None:
+def autenticar(
+    api: Cliente | None, conf: Config, valor: str, carpeta: Path = ESTADO
+) -> None:
     valor = normalizar("TXT", valor)
     if valor == INACTIVO:
         raise ErrorDNS("Falta validacion ACME")
@@ -346,12 +359,30 @@ def autenticar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -
     escribir(api, conf, "acme", conf.txt_id, "_acme-challenge.nas", "TXT", valor, INACTIVO)
 
 
-def limpiar(api: Cliente, conf: Config, valor: str, carpeta: Path = ESTADO) -> None:
+def limpiar(
+    api: Cliente | None, conf: Config, valor: str, carpeta: Path = ESTADO
+) -> None:
     valor = normalizar("TXT", valor)
     if valor == INACTIVO:
         raise ErrorDNS("Falta validacion ACME")
     estado = carpeta / "validacion"
     if not estado.exists():
+        if conf.autoridad == "propia":
+            try:
+                propagado(
+                    "_acme-challenge.nas.example.org",
+                    "TXT",
+                    INACTIVO,
+                    segundos=0,
+                    servidores=(conf.primario,),
+                )
+                return
+            except ErrorDNS:
+                raise ErrorDNS(
+                    "Sin estado propio: revisar TXT pendiente sin sobrescribirlo"
+                ) from None
+        if api is None:
+            raise ErrorDNS("Falta cliente Njalla para revisar TXT")
         registro = seleccionar(api.listar(), conf.txt_id, "_acme-challenge.nas", "TXT")
         if registro.contenido == INACTIVO:
             return
@@ -456,27 +487,48 @@ def ejecutar(accion: str, conf: Config) -> None:
             seleccionar(cliente(conf, uso).listar(), identificador, nombre, tipo)
         print("OK: registros con ID y origen comprobados; no se escribio DNS")
         return
+    def cliente_si_aplica(uso: str) -> Cliente | None:
+        return None if conf.autoridad == "propia" else cliente(conf, uso)
+
     if accion == "ddns":
         escribir(
-            cliente(conf, "ddns"), conf, "ddns", conf.aaaa_id, "nas", "AAAA",
-            conf.origen, segundos=45,
+            cliente_si_aplica("ddns"),
+            conf,
+            "ddns",
+            conf.aaaa_id,
+            "nas",
+            "AAAA",
+            conf.origen,
+            segundos=45,
         )
         if conf.vpn_aaaa_id:
             escribir(
-                cliente(conf, "vpn"), conf, "vpn", conf.vpn_aaaa_id, "vpn-nas", "AAAA",
-                conf.origen, segundos=45,
+                cliente_si_aplica("vpn"),
+                conf,
+                "vpn",
+                conf.vpn_aaaa_id,
+                "vpn-nas",
+                "AAAA",
+                conf.origen,
+                segundos=45,
             )
         if conf.vpn_a_id:
             escribir(
-                cliente(conf, "vpn"), conf, "vpn", conf.vpn_a_id, "vpn-nas", "A",
-                ipv4_publica(), segundos=45,
+                cliente_si_aplica("vpn"),
+                conf,
+                "vpn",
+                conf.vpn_a_id,
+                "vpn-nas",
+                "A",
+                ipv4_publica(),
+                segundos=45,
             )
         return
     dominio = os.environ.get("CERTBOT_DOMAIN", "")
     validacion = os.environ.get("CERTBOT_VALIDATION", "")
     if dominio == NUEVO:
         funcion = autenticar if accion == "auth" else limpiar
-        funcion(cliente(conf, "acme"), conf, validacion)
+        funcion(cliente_si_aplica("acme"), conf, validacion, ESTADO)
     else:
         raise ErrorDNS("Dominio de validacion fuera del alcance")
 
