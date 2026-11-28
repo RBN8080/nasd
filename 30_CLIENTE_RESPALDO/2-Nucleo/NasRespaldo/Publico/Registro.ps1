@@ -149,7 +149,7 @@ function Get-CarpetaDeRegistro {
     return (Join-Path $env:LOCALAPPDATA 'NasRespaldo\registro')
 }
 
-function Remove-RegistrosAntiguos {
+function Remove-RegistroAntiguo {
     <#
         .SYNOPSIS
             Retira registros diarios mas viejos que el plazo de retencion.

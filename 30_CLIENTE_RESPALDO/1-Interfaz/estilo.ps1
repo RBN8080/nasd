@@ -463,7 +463,7 @@ function Limit-Texto {
     return $Texto.Substring(0, $Maximo - 3) + '...'
 }
 
-function Split-TextoEnLineas {
+function Split-TextoPorLinea {
     <#
         .SYNOPSIS
             Parte un texto en lineas que quepan, sin cortar palabras.

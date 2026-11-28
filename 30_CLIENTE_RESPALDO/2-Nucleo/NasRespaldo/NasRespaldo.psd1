@@ -13,7 +13,7 @@
         'Hide-VentanaDeConsola',
         'Write-LineaDeRegistro',
         'Get-CarpetaDeRegistro',
-        'Remove-RegistrosAntiguos',
+        'Remove-RegistroAntiguo',
         'Write-RegistroRespaldo',
         'Test-RutaUnc',
         'Test-DestinoNodo',

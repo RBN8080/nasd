@@ -162,7 +162,7 @@ function Get-RutaDelManifiesto {
     return (Join-Path (Join-Path $Carpeta ('laboratorio\' + $Juego)) ($Relativa + '.blk'))
 }
 
-function Read-ManifiestoDeBloques {
+function Read-ManifiestoPorBloque {
     <#
         .SYNOPSIS
             Lee un manifiesto. $null si no hay.
@@ -194,7 +194,7 @@ function Read-ManifiestoDeBloques {
     }
 }
 
-function Write-ManifiestoDeBloques {
+function Write-ManifiestoPorBloque {
     <#
         .SYNOPSIS
             Escribe un manifiesto de forma atomica.
@@ -222,7 +222,7 @@ function Write-ManifiestoDeBloques {
     Set-ContenidoAtomico -Ruta $Ruta -Contenido $sb.ToString() -Confirm:$false
 }
 
-function Get-IndicesCambiados {
+function Get-IndiceCambiado {
     <#
         .SYNOPSIS
             Los bloques del origen que no son los del manifiesto.
@@ -277,7 +277,7 @@ function Get-SumaDe {
     return $total
 }
 
-function Get-BytesDeIndices {
+function Get-OcupacionDeBloque {
     <#
         .SYNOPSIS
             Cuantos bytes ocupan esos bloques en un archivo de ese tamano.
@@ -303,7 +303,7 @@ function Get-BytesDeIndices {
     return $total
 }
 
-function Group-IndicesContiguos {
+function Group-IndiceContiguo {
     <#
         .SYNOPSIS
             Agrupa indices consecutivos en tramos contiguos acotados (run coalescing).
@@ -396,8 +396,8 @@ function Write-BloquesEnSuSitio {
     $dir = Split-Path -Path $Destino -Parent
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
-    $totalBytes = Get-BytesDeIndices -Indices $Indices -Bloque $Bloque -Tamano $Tamano
-    $tramos = Group-IndicesContiguos -Indices $Indices -Bloque $Bloque -MaxBytesTramo 4MB
+    $totalBytes = Get-OcupacionDeBloque -Indices $Indices -Bloque $Bloque -Tamano $Tamano
+    $tramos = Group-IndiceContiguo -Indices $Indices -Bloque $Bloque -MaxBytesTramo 4MB
     $maxBuf = [Math]::Max($Bloque, 4MB)
     $bufferStream = [Math]::Min(1048576, [Math]::Max(65536, $Bloque))
     $hoja = Split-Path -Path $Destino -Leaf
@@ -459,7 +459,7 @@ function Write-BloquesEnSuSitio {
     return $escritos
 }
 
-function Compare-HuellasLeidas {
+function Compare-HuellaLeida {
     <#
         .SYNOPSIS
             Lo que el destino dice tener contra lo que se le envio. Funcion pura.
@@ -668,19 +668,19 @@ function Get-HuellasDeOrigen {
 
     $rutaCache = Get-RutaDelManifiesto -Carpeta $Carpeta -Relativa $Archivo.Relativa -Juego 'origen'
     $m = $null
-    try { $m = Read-ManifiestoDeBloques -Ruta $rutaCache } catch { $m = $null }
+    try { $m = Read-ManifiestoPorBloque -Ruta $rutaCache } catch { $m = $null }
     if ($m -and $m.Bloque -eq $Ficha.Bloque -and $m.Tamano -eq $Archivo.Tamano -and
         $m.FechaUtcTicks -eq $Archivo.FechaUtc.Ticks -and
         @($m.Huellas).Count -eq [int][Math]::Ceiling($Archivo.Tamano / [double]$Ficha.Bloque)) {
         return [pscustomobject]@{ Tamano = [long]$m.Tamano; Bloque = [int]$m.Bloque; Huellas = @($m.Huellas) }
     }
     $actual = Get-HuellasPorBloque -Ruta $Archivo.Ruta -Bloque $Ficha.Bloque
-    try { Write-ManifiestoDeBloques -Ruta $rutaCache -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false }
+    try { Write-ManifiestoPorBloque -Ruta $rutaCache -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false }
     catch { Write-Verbose "Sin cache de huellas para $($Archivo.Relativa): $($_.Exception.Message)" }
     return $actual
 }
 
-function Get-HuellasDeIndices {
+function Get-HuellaDeIndice {
     <#
         .SYNOPSIS
             SHA-256 de esos bloques de un archivo LOCAL, leidos del disco y no
@@ -813,7 +813,7 @@ function Invoke-ArchivoGrandeFrio {
     $rel = $Archivo.Relativa
     $enFrio = Join-Path $Frio.Raiz $rel
     $rutaManifiesto = Get-RutaDelManifiesto -Carpeta $Carpeta -Relativa $rel -Juego $Frio.Juego
-    $manifiesto = Read-ManifiestoDeBloques -Ruta $rutaManifiesto
+    $manifiesto = Read-ManifiestoPorBloque -Ruta $rutaManifiesto
     $salida = {
         param($Estado, $Enviado, $Motivo)
         [pscustomobject]@{ Relativa = $rel; Vm = $Archivo.Vm; Estado = $Estado; Enviado = [long]$Enviado; Motivo = $Motivo }
@@ -837,7 +837,7 @@ function Invoke-ArchivoGrandeFrio {
             Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'hasheando' `
                 -Hechos 0 -Totales $enDisco.Length -MbPorSegundo 0 -Carpeta $Carpeta -Operacion 'laboratorio-frio' -Confirm:$false
         }
-        $leido = Get-HuellasDeIndices -Ruta $enFrio -Bloque $Ficha.Bloque
+        $leido = Get-HuellaDeIndice -Ruta $enFrio -Bloque $Ficha.Bloque
         $huellasDisco = New-Object System.Collections.Generic.List[string]
         $nBloques = [int][Math]::Ceiling($leido.Tamano / [double]$Ficha.Bloque)
         for ($i = 0; $i -lt $nBloques; $i++) { $huellasDisco.Add('' + $leido.Mapa[$i]) }
@@ -856,7 +856,7 @@ function Invoke-ArchivoGrandeFrio {
     if (-not $manifiesto -and $Simular) { return (& $salida 'Enviaria' $Archivo.Tamano 'nuevo en el disco') }
     $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
     if ($manifiesto) {
-        $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
+        $indices = Get-IndiceCambiado -Actual $actual -Previo $manifiesto
         # Un '-' o un hueco en las huellas leidas del disco es "no se pudo leer": se reenvia.
         if ($adoptado) {
             $extra = New-Object System.Collections.Generic.List[int]
@@ -868,7 +868,7 @@ function Invoke-ArchivoGrandeFrio {
         $indices = [int[]]@()
         if ($actual.Huellas.Count -gt 0) { $indices = [int[]](0..($actual.Huellas.Count - 1)) }
     }
-    $bytes = Get-BytesDeIndices -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
+    $bytes = Get-OcupacionDeBloque -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
     if ($Simular) {
         $motivo = ''
         if (-not $enDisco) { $motivo = 'nuevo en el disco' }
@@ -882,8 +882,8 @@ function Invoke-ArchivoGrandeFrio {
         Write-ProgresoDelLaboratorio -Vm $Archivo.Vm -Archivo (Split-Path $rel -Leaf) -Fase 'verificando' `
             -Hechos $bytes -Totales $bytes -MbPorSegundo 0 -Carpeta $Carpeta -Operacion 'laboratorio-frio' -Confirm:$false
     }
-    $leidas = Get-HuellasDeIndices -Ruta $enFrio -Bloque $Ficha.Bloque -Indices $indices
-    $cotejo = Compare-HuellasLeidas -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
+    $leidas = Get-HuellaDeIndice -Ruta $enFrio -Bloque $Ficha.Bloque -Indices $indices
+    $cotejo = Compare-HuellaLeida -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
         -Tamano $actual.Tamano -TamanoLeido $leidas.Tamano
     if (-not $cotejo.Correcto) {
         # Sin manifiesto: la proxima vez se relee el disco y se reanuda desde lo que haya.
@@ -891,7 +891,7 @@ function Invoke-ArchivoGrandeFrio {
         Write-RegistroRespaldo -Nivel 'ERROR' -Etapa 'laboratorio-frio' -Mensaje ('{0}: {1} de {2} bloques no cuadran en el disco frio.' -f $rel, $cotejo.Malos, @($indices).Count)
         return (& $salida 'Falla' $bytes ('{0} bloques no cuadran en el disco frio' -f $cotejo.Malos))
     }
-    Write-ManifiestoDeBloques -Ruta $rutaManifiesto -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false
+    Write-ManifiestoPorBloque -Ruta $rutaManifiesto -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false
     Write-RegistroRespaldo -Etapa 'laboratorio-frio' -Mensaje ('{0}: {1} bloques, {2}, confirmados en el disco frio.' -f $rel, @($indices).Count, (Format-BytesDelLaboratorio -Bytes $bytes))
     return (& $salida 'Enviado' $bytes '')
 }
@@ -971,7 +971,7 @@ function Invoke-GuardadoFrioDelLaboratorio {
     $necesario = Get-SumaDe -Objetos $pequenos -Propiedad 'Tamano'
     foreach ($g in $grandes) {
         if ($renombres.ContainsKey($g.Relativa)) { continue }
-        $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa -Juego $frio.Juego)
+        $m = Read-ManifiestoPorBloque -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa -Juego $frio.Juego)
         if ($m) { $necesario += [Math]::Max([long]0, $g.Tamano - $m.Tamano) }
         elseif (-not (Test-Path -LiteralPath (Join-Path $frio.Raiz $g.Relativa))) { $necesario += $g.Tamano }
     }
@@ -1142,7 +1142,7 @@ function Get-ValidacionDelLaboratorio {
         if (-not $otro) { return 'FALTA' }
         if (-not (& $igual $Archivo $otro)) { return 'DISTINTO' }
         if (-not $Archivo.Grande) { return 'OK' }
-        $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $Archivo.Relativa -Juego $Juego)
+        $m = Read-ManifiestoPorBloque -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $Archivo.Relativa -Juego $Juego)
         if ($m -and $m.Tamano -eq $otro.Tamano -and [Math]::Abs($m.FechaUtcTicks - $otro.FechaUtc.Ticks) -le $script:Tolerancia) { return 'OK' }
         return 'OK-fecha'
     }
@@ -1159,8 +1159,8 @@ function Get-ValidacionDelLaboratorio {
                 Write-ProgresoDeOperacion -Operacion 'validacion-profunda' -Fase 'verificando' -Objetivo 'Disco frio' `
                     -Elemento $a.Relativa -Hechos $hechosProf -Totales $totalProf -Unidad 'archivos' `
                     -Carpeta $carpeta -Confirm:$false
-                $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $a.Relativa -Juego $frio.Juego)
-                $leido = Get-HuellasDeIndices -Ruta (Join-Path $frio.Raiz $a.Relativa) -Bloque $ficha.Bloque
+                $m = Read-ManifiestoPorBloque -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $a.Relativa -Juego $frio.Juego)
+                $leido = Get-HuellaDeIndice -Ruta (Join-Path $frio.Raiz $a.Relativa) -Bloque $ficha.Bloque
                 $malos = 0
                 for ($i = 0; $i -lt @($m.Huellas).Count; $i++) { if (-not $leido.Mapa.ContainsKey($i) -or $leido.Mapa[$i] -ne $m.Huellas[$i]) { $malos++ } }
                 if ($malos -gt 0 -or $leido.Tamano -ne $m.Tamano) { $cFrio = 'DEGRADADO' }
@@ -1318,7 +1318,7 @@ function Find-ManifiestoRenombrado {
         $relVieja = $relVieja.Substring(0, $relVieja.Length - 4)
         if ($Vigentes.ContainsKey($relVieja)) { continue }
 
-        $m = Read-ManifiestoDeBloques -Ruta $blk.FullName
+        $m = Read-ManifiestoPorBloque -Ruta $blk.FullName
         if (-not $m -or $m.Bloque -ne $Ficha.Bloque -or $m.Tamano -ne $Archivo.Tamano) { continue }
         $nh = @($m.Huellas).Count
         if ($nh -eq 0) { continue }
@@ -1389,7 +1389,7 @@ function Invoke-ArchivoGrande {
     $rel = $Archivo.Relativa
     $enNodo = Join-Path $Ficha.Destino $rel
     $rutaManifiesto = Get-RutaDelManifiesto -Carpeta $Carpeta -Relativa $rel
-    $manifiesto = Read-ManifiestoDeBloques -Ruta $rutaManifiesto
+    $manifiesto = Read-ManifiestoPorBloque -Ruta $rutaManifiesto
     $salida = {
         param($Estado, $Enviado, $Motivo)
         [pscustomobject]@{ Relativa = $rel; Vm = $Archivo.Vm; Estado = $Estado; Enviado = [long]$Enviado; Motivo = $Motivo }
@@ -1402,8 +1402,8 @@ function Invoke-ArchivoGrande {
             return (& $salida 'AlDia' 0 ('migraria desde {0} sin re-subir' -f $RenombreSimulado.RelativaAnterior))
         }
         $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
-        $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
-        $bytesSim = Get-BytesDeIndices -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
+        $indices = Get-IndiceCambiado -Actual $actual -Previo $manifiesto
+        $bytesSim = Get-OcupacionDeBloque -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
         return (& $salida 'Enviaria' $bytesSim ('migraria desde {0}' -f $RenombreSimulado.RelativaAnterior))
     }
 
@@ -1424,7 +1424,7 @@ function Invoke-ArchivoGrande {
                 -Hechos 0 -Totales $Archivo.Tamano -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
         }
         $actual = Get-HuellasDeOrigen -Ficha $Ficha -Archivo $Archivo -Carpeta $Carpeta
-        $indices = Get-IndicesCambiados -Actual $actual -Previo $manifiesto
+        $indices = Get-IndiceCambiado -Actual $actual -Previo $manifiesto
     }
     else {
         # SIN MANIFIESTO Y YA EN EL NODO: no se sabe que tiene el nodo, y
@@ -1442,7 +1442,7 @@ function Invoke-ArchivoGrande {
         if ($actual.Huellas.Count -gt 0) { $indices = [int[]](0..($actual.Huellas.Count - 1)) }
     }
 
-    $bytes = Get-BytesDeIndices -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
+    $bytes = Get-OcupacionDeBloque -Indices $indices -Bloque $Ficha.Bloque -Tamano $actual.Tamano
     if ($Simular) { return (& $salida 'Enviaria' $bytes '') }
 
     [void](Write-BloquesEnSuSitio -Origen $Archivo.Ruta -Destino $enNodo -Bloque $Ficha.Bloque -Indices $indices `
@@ -1453,7 +1453,7 @@ function Invoke-ArchivoGrande {
             -Hechos $bytes -Totales $bytes -MbPorSegundo 0 -Carpeta $Carpeta -Confirm:$false
     }
     $leidas = Get-HuellasEnDestino -Ficha $Ficha -Relativa $rel -Indices $indices
-    $cotejo = Compare-HuellasLeidas -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
+    $cotejo = Compare-HuellaLeida -Esperadas $actual.Huellas -Indices $indices -Leidas $leidas.Mapa `
         -Tamano $actual.Tamano -TamanoLeido $leidas.Tamano
     if (-not $cotejo.Correcto) {
         # EL MANIFIESTO NO SE TOCA: sigue diciendo lo que habia, y la siguiente
@@ -1462,7 +1462,7 @@ function Invoke-ArchivoGrande {
             $rel, $cotejo.Malos, @($indices).Count, $leidas.Tamano, $actual.Tamano)
         return (& $salida 'Falla' $bytes ('{0} bloques no cuadran en el nodo' -f $cotejo.Malos))
     }
-    Write-ManifiestoDeBloques -Ruta $rutaManifiesto -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false
+    Write-ManifiestoPorBloque -Ruta $rutaManifiesto -Huellas $actual -FechaUtc $Archivo.FechaUtc -Confirm:$false
     Write-RegistroRespaldo -Etapa 'laboratorio' -Mensaje ('{0}: {1} bloques, {2}, confirmados en el nodo.' -f $rel, @($indices).Count, (Format-BytesDelLaboratorio -Bytes $bytes))
     return (& $salida 'Enviado' $bytes '')
 }
@@ -1540,7 +1540,7 @@ function Invoke-GuardadoDelLaboratorio {
     $necesario = Get-SumaDe -Objetos $pequenos -Propiedad 'Tamano'
     foreach ($g in $grandes) {
         if ($renombresLab.ContainsKey($g.Relativa)) { continue }
-        $m = Read-ManifiestoDeBloques -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa)
+        $m = Read-ManifiestoPorBloque -Ruta (Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa)
         if ($m) { $necesario += [Math]::Max([long]0, $g.Tamano - $m.Tamano) }
         elseif (-not (Test-Path -LiteralPath (Join-Path $ficha.Destino $g.Relativa))) { $necesario += $g.Tamano }
     }
@@ -1681,7 +1681,7 @@ function Invoke-GuardadoDelLaboratorio {
                     Remove-Item -LiteralPath $blk.FullName -Force
                     continue
                 }
-                $m = Read-ManifiestoDeBloques -Ruta $blk.FullName
+                $m = Read-ManifiestoPorBloque -Ruta $blk.FullName
                 $n = Get-Item -LiteralPath (Join-Path $ficha.Destino $rel) -Force -ErrorAction SilentlyContinue
                 if ($n -and $n.Length -eq $m.Tamano -and [Math]::Abs($n.LastWriteTimeUtc.Ticks - $m.FechaUtcTicks) -le $script:Tolerancia) {
                     Remove-Item -LiteralPath $n.FullName -Force
@@ -1812,19 +1812,19 @@ function Complete-LecturaDeArchivo {
     )
 
     $ruta = Get-RutaDelManifiesto -Carpeta $Carpeta -Relativa $Relativa
-    $previo = Read-ManifiestoDeBloques -Ruta $ruta
+    $previo = Read-ManifiestoPorBloque -Ruta $ruta
     $distintos = $null
     if ($previo) {
-        # Sin @(): Get-IndicesCambiados devuelve el arreglo como UN objeto, y
+        # Sin @(): Get-IndiceCambiado devuelve el arreglo como UN objeto, y
         # @() lo envolveria en otro de un elemento -- "1 distinto" siempre.
-        $cambiados = Get-IndicesCambiados -Actual $Huellas -Previo $previo
+        $cambiados = Get-IndiceCambiado -Actual $Huellas -Previo $previo
         $distintos = $cambiados.Count
         if ($previo.Tamano -ne $Huellas.Tamano) { $distintos++ }
         if ($distintos -gt 0) {
             Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'laboratorio' -Mensaje ('{0}: el nodo no era su manifiesto en {1} bloques. Se corrige el manifiesto; el siguiente guardado los reenvia.' -f $Relativa, $distintos)
         }
     }
-    Write-ManifiestoDeBloques -Ruta $ruta -Huellas $Huellas -FechaUtc $FechaUtc -Confirm:$false
+    Write-ManifiestoPorBloque -Ruta $ruta -Huellas $Huellas -FechaUtc $FechaUtc -Confirm:$false
     $vm = ''
     if ($Relativa.Contains('\')) { $vm = $Relativa.Split('\')[0] }
     return [pscustomobject]@{ Relativa = $Relativa; Vm = $vm; TeniaManifiesto = [bool]$previo; Distintos = $distintos; Correcto = $true; Motivo = '' }
@@ -1982,7 +1982,7 @@ function Get-PlanDeLecturaDelLaboratorio {
     $pendientes = New-Object System.Collections.Generic.List[psobject]
     foreach ($g in $grandes) {
         $rutaM = Get-RutaDelManifiesto -Carpeta $carpeta -Relativa $g.Relativa
-        $m = Read-ManifiestoDeBloques -Ruta $rutaM
+        $m = Read-ManifiestoPorBloque -Ruta $rutaM
         $estadoVm = if ($g.Vm -and $porVm.ContainsKey($g.Vm)) { '' + $porVm[$g.Vm].Estado } else { '' }
         $necesita = (-not $m) -or
             ($m.Tamano -ne $g.Tamano) -or

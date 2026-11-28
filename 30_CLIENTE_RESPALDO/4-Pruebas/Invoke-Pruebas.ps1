@@ -1771,7 +1771,7 @@ Test-Afirmacion -Nombre 'Y el motor le pasa al cotejo lo que acaba de copiar' `
 #  EL VEREDICTO SE PARTE, NO SE CORTA A MEDIA FRASE (04/09/2026)
 # ---------------------------------------------------------------------------
 $fraseLarga = 'FRENO: 1 de 8 raices rebasan el umbral del 5 %. No se copia NADA hasta que se autorice con -AutorizarFreno.'
-$partida = @(Split-TextoEnLineas -Texto $fraseLarga -Ancho 66)
+$partida = @(Split-TextoPorLinea -Texto $fraseLarga -Ancho 66)
 Test-Afirmacion -Nombre 'Una frase larga se parte en varias lineas, no se recorta' `
     -Esperado $true -Obtenido ($partida.Count -gt 1)
 Test-Afirmacion -Nombre 'Y NINGUNA linea desborda el ancho: el marco aguanta' `
@@ -1780,9 +1780,9 @@ Test-Afirmacion -Nombre 'Y NINGUNA linea desborda el ancho: el marco aguanta' `
 Test-Afirmacion -Nombre 'No se pierde texto por el camino: se lee la frase entera' `
     -Esperado ($fraseLarga -replace '\s+', ' ') -Obtenido (($partida -join ' ').Trim())
 Test-Afirmacion -Nombre 'Una frase que ya cabe se queda en una sola linea' `
-    -Esperado 1 -Obtenido @(Split-TextoEnLineas -Texto 'Corrida terminada.' -Ancho 66).Count
+    -Esperado 1 -Obtenido @(Split-TextoPorLinea -Texto 'Corrida terminada.' -Ancho 66).Count
 # Una ruta sin espacios mas larga que el ancho: se rompe la ruta, no la ventana.
-$rutaLarga = @(Split-TextoEnLineas -Texto ('C:\' + ('x' * 90)) -Ancho 20)
+$rutaLarga = @(Split-TextoPorLinea -Texto ('C:\' + ('x' * 90)) -Ancho 20)
 Test-Afirmacion -Nombre 'Una palabra mas larga que el ancho se trocea en vez de desbordar' `
     -Esperado $true -Obtenido (@($rutaLarga | Where-Object { $_.Length -gt 20 }).Count -eq 0)
 
@@ -3031,27 +3031,27 @@ else {
 $crece = [pscustomobject]@{ Huellas = @('a', 'b', 'X', 'd', 'e') }
 $antes = [pscustomobject]@{ Huellas = @('a', 'b', 'c') }
 Test-Afirmacion -Nombre 'Un archivo que crece envia el bloque cambiado y los nuevos' `
-    -Esperado @(2, 3, 4) -Obtenido (Get-IndicesCambiados -Actual $crece -Previo $antes)
+    -Esperado @(2, 3, 4) -Obtenido (Get-IndiceCambiado -Actual $crece -Previo $antes)
 Test-Afirmacion -Nombre 'Uno que encoge no inventa indices: lo resuelve el tamano' `
-    -Esperado 0 -Obtenido (Get-IndicesCambiados -Actual $antes -Previo ([pscustomobject]@{ Huellas = @('a', 'b', 'c', 'd') })).Count
+    -Esperado 0 -Obtenido (Get-IndiceCambiado -Actual $antes -Previo ([pscustomobject]@{ Huellas = @('a', 'b', 'c', 'd') })).Count
 Test-Afirmacion -Nombre 'El ultimo bloque corto cuenta lo que mide, no un bloque entero' `
-    -Esperado (65536 + 1000) -Obtenido (Get-BytesDeIndices -Indices @(0, 48) -Bloque 65536 -Tamano (48 * 65536 + 1000))
+    -Esperado (65536 + 1000) -Obtenido (Get-OcupacionDeBloque -Indices @(0, 48) -Bloque 65536 -Tamano (48 * 65536 + 1000))
 
 $blkPrueba = Join-Path $labEstado 'prueba.blk'
-Write-ManifiestoDeBloques -Ruta $blkPrueba -Huellas $huellas -FechaUtc ([datetime]::new(2026, 10, 18, 12, 0, 0, [System.DateTimeKind]::Utc)) -Confirm:$false
-$leido = Read-ManifiestoDeBloques -Ruta $blkPrueba
+Write-ManifiestoPorBloque -Ruta $blkPrueba -Huellas $huellas -FechaUtc ([datetime]::new(2026, 10, 18, 12, 0, 0, [System.DateTimeKind]::Utc)) -Confirm:$false
+$leido = Read-ManifiestoPorBloque -Ruta $blkPrueba
 Test-Afirmacion -Nombre 'El manifiesto vuelve igual que se escribio, con la fecha del nodo' `
     -Esperado ('{0}|{1}|{2}' -f $huellas.Tamano, ($huellas.Huellas -join ','), [datetime]::new(2026, 10, 18, 12, 0, 0, [System.DateTimeKind]::Utc).Ticks) `
     -Obtenido ('{0}|{1}|{2}' -f $leido.Tamano, ($leido.Huellas -join ','), $leido.FechaUtcTicks)
 "BS 65536 SIZE 10`nabc`n" | Set-Content -LiteralPath $blkPrueba -NoNewline -Encoding ASCII
 Test-Afirmacion -Nombre 'Un manifiesto del v2, sin fecha, se lee con fecha 0: no se puede dar por bueno' `
-    -Esperado 0 -Obtenido (Read-ManifiestoDeBloques -Ruta $blkPrueba).FechaUtcTicks
+    -Esperado 0 -Obtenido (Read-ManifiestoPorBloque -Ruta $blkPrueba).FechaUtcTicks
 
-$cmpMal = Compare-HuellasLeidas -Esperadas @('a', 'b', 'c') -Indices @(0, 2) -Leidas @{ 0 = 'a'; 2 = 'Z' } -Tamano 3 -TamanoLeido 3
+$cmpMal = Compare-HuellaLeida -Esperadas @('a', 'b', 'c') -Indices @(0, 2) -Leidas @{ 0 = 'a'; 2 = 'Z' } -Tamano 3 -TamanoLeido 3
 Test-Afirmacion -Nombre 'Un bloque que la Pi no confirma tumba el cotejo y se cuenta' `
     -Esperado 'False|1' -Obtenido ('{0}|{1}' -f $cmpMal.Correcto, $cmpMal.Malos)
 Test-Afirmacion -Nombre 'Y un tamano distinto tambien, aunque los bloques cuadren' `
-    -Esperado $false -Obtenido (Compare-HuellasLeidas -Esperadas @('a') -Indices @(0) -Leidas @{ 0 = 'a' } -Tamano 3 -TamanoLeido 4).Correcto
+    -Esperado $false -Obtenido (Compare-HuellaLeida -Esperadas @('a') -Indices @(0) -Leidas @{ 0 = 'a' } -Tamano 3 -TamanoLeido 4).Correcto
 
 $fichaLab = Get-FichaDelLaboratorio -Configuracion $cfgLab
 Test-Afirmacion -Nombre 'Los cerrojos, la memoria y los registros de una VM no se guardan' `
@@ -3351,8 +3351,8 @@ $cajaRot = Join-Path $CarpetaCaja 'rotacion-logs'
 New-Item -ItemType Directory -Path $cajaRot -Force | Out-Null
 'viejo' | Set-Content -LiteralPath (Join-Path $cajaRot 'respaldo-2025-01-01.log') -Encoding UTF8
 'hoy'   | Set-Content -LiteralPath (Join-Path $cajaRot ('respaldo-{0:yyyy-MM-dd}.log' -f (Get-Date))) -Encoding UTF8
-$retirados = Remove-RegistrosAntiguos -CarpetaRegistro $cajaRot -DiasRetencion 90 -Confirm:$false
-Test-Afirmacion -Nombre 'Aislamiento activo y Remove-RegistrosAntiguos retira >90 dias conservando el de hoy' `
+$retirados = Remove-RegistroAntiguo -CarpetaRegistro $cajaRot -DiasRetencion 90 -Confirm:$false
+Test-Afirmacion -Nombre 'Aislamiento activo y Remove-RegistroAntiguo retira >90 dias conservando el de hoy' `
     -Esperado 'True|1|False|True' -Obtenido ('{0}|{1}|{2}|{3}' -f
         ((Get-CarpetaDeRegistro) -eq (Join-Path $caja.Raiz 'registro')),
         $retirados,
@@ -3367,8 +3367,8 @@ Test-Afirmacion -Nombre 'estado.cmd lanza tablero.ps1 en vez del stub de Fase 0'
 Write-Titulo 'Fase 3: laboratorio rapido, agrupacion contigua y renombres de VMs sin re-subir'
 
 # Agrupacion de bloques contiguos (run coalescing).
-$tramosLab = Group-IndicesContiguos -Indices @(0, 1, 2, 3, 4, 10, 11, 20) -Bloque 1048576 -MaxBytesTramo (4 * 1048576)
-Test-Afirmacion -Nombre 'Group-IndicesContiguos agrupa contiguos hasta 4 MiB y separa huecos' `
+$tramosLab = Group-IndiceContiguo -Indices @(0, 1, 2, 3, 4, 10, 11, 20) -Bloque 1048576 -MaxBytesTramo (4 * 1048576)
+Test-Afirmacion -Nombre 'Group-IndiceContiguo agrupa contiguos hasta 4 MiB y separa huecos' `
     -Esperado '0:4|4:1|10:2|20:1' -Obtenido (($tramosLab | ForEach-Object { '{0}:{1}' -f $_.Inicio, $_.Cuenta }) -join '|')
 
 # Renombre de carpeta de VM (y del .vmdk): migra atomicamente en el nodo con 0 bytes re-subidos.
@@ -3580,11 +3580,11 @@ try { [void](Get-FichaDelLaboratorio -Configuracion ([pscustomobject]@{ laborato
 Test-Afirmacion -Nombre 'Un destino del disco frio con letra de unidad no se acepta: la letra cambia sola' -Esperado $true -Obtenido $lanzoAbs
 
 $hTodo = Get-HuellasPorBloque -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536
-$hDir = Get-HuellasDeIndices -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536
+$hDir = Get-HuellaDeIndice -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536
 Test-Afirmacion -Nombre 'La lectura directa del disco da las mismas huellas que la normal, bloque corto final incluido' `
     -Esperado ($hTodo.Huellas -join ',') -Obtenido ((0..($hTodo.Huellas.Count - 1) | ForEach-Object { $hDir.Mapa[$_] }) -join ',')
 Test-Afirmacion -Nombre 'Y un subconjunto de bloques devuelve solo esos' `
-    -Esperado ('{0}|{1}' -f $hTodo.Huellas[2], $hTodo.Huellas[48]) -Obtenido ('{0}|{1}' -f (Get-HuellasDeIndices -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536 -Indices @(2, 48)).Mapa[2], (Get-HuellasDeIndices -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536 -Indices @(2, 48)).Mapa[48])
+    -Esperado ('{0}|{1}' -f $hTodo.Huellas[2], $hTodo.Huellas[48]) -Obtenido ('{0}|{1}' -f (Get-HuellaDeIndice -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536 -Indices @(2, 48)).Mapa[2], (Get-HuellaDeIndice -Ruta "$fOrigen\V1\d.vmdk" -Bloque 65536 -Indices @(2, 48)).Mapa[48])
 
 $c1 = Invoke-ArchivoGrandeFrio -Ficha $fFicha -Archivo (& $fGrande) -Carpeta $fEstado -Frio $fFrio -Confirm:$false
 Test-Afirmacion -Nombre 'Primera vez: el disco grande va entero al disco frio y llega identico' `
@@ -3788,11 +3788,11 @@ Test-Afirmacion -Nombre 'Resolve-VeredictoDeConsola escala a Falla si proteccion
     -Esperado 'Falla' -Obtenido $verEscalado.Estado
 
 # Racionalizacion ISA-18.2 de alertas: Critico primero y disco frio reciente no genera ruido.
-$alPrio = @(Get-AlertasPriorizadas -Estado @{ disco_momento = $hoyIsoInt; huerfanos = '2' } -Disco $null `
+$alPrio = @(Get-AlertaPriorizada -Estado @{ disco_momento = $hoyIsoInt; huerfanos = '2' } -Disco $null `
         -Filas @() -Laboratorio ([pscustomobject]@{ Vms = 5; NoAlDia = 1 }) `
         -CentinelasVivo ([pscustomobject]@{ Revisados = 1; Fallos = @(@{ Ruta = 'x' }); Renombrados = @(); Desactivados = @() }) `
         -Servicio $srvOk -Integridad $intAmbarDr)
-Test-Afirmacion -Nombre 'Get-AlertasPriorizadas ordena Critico primero y omite aviso de disco frio si la copia es reciente' `
+Test-Afirmacion -Nombre 'Get-AlertaPriorizada ordena Critico primero y omite aviso de disco frio si la copia es reciente' `
     -Esperado 'Critico|False' -Obtenido ('{0}|{1}' -f $alPrio[0].Nivel, ([bool](($alPrio | ForEach-Object { $_.Mensaje }) -match 'NAS-COLD-01')))
 
 # Menu consolidado numerico [1]-[6]: ordenado, simetrico y sin sangrias manuales ni celdas vacias.

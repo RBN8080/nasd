@@ -312,7 +312,7 @@ function Write-LineaDeSumario {
     foreach ($parte in $utiles) {
         if ($parte.Length -gt $sitio) {
             if ($actual) { $lineas.Add($actual); $actual = '' }
-            foreach ($trozo in @(Split-TextoEnLineas -Texto $parte -Ancho $sitio)) {
+            foreach ($trozo in @(Split-TextoPorLinea -Texto $parte -Ancho $sitio)) {
                 $lineas.Add($trozo)
             }
             continue
@@ -920,7 +920,7 @@ function Resolve-EstadoDeServicio {
     return [pscustomobject]@{ Tono = 'Verde'; Regla = $false; Partes = $partes.ToArray(); Motivo = '' }
 }
 
-function Get-AlertasPriorizadas {
+function Get-AlertaPriorizada {
     <#
         .SYNOPSIS
             Racionaliza las incidencias activas por severidad (ANSI/ISA-18.2).
@@ -1144,7 +1144,7 @@ function Show-Ventana {
     Write-Linea ('  {0}{1}{2}{3}{4}{5}{6}' -f `
             ($p.Fuerte + $p.Titulo), $izq, $p.Fin, (' ' * $hueco), $colorEs, $der, $p.Fin)
     Write-Linea (Get-Regla -Paleta $p -Unicode $u -Ancho $ancho)
-    foreach ($trozo in @(Split-TextoEnLineas -Texto $d.Detalle -Ancho $ancho)) {
+    foreach ($trozo in @(Split-TextoPorLinea -Texto $d.Detalle -Ancho $ancho)) {
         Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $trozo, $p.Fin)
     }
     Write-Linea ' '
@@ -1227,7 +1227,7 @@ function Show-Ventana {
                 (Format-Celda -Texto $fila[1] -Ancho $c2 -Paleta $p -Color $p.Valor))
         }
     }
-    foreach ($lNota in @(Split-TextoEnLineas -Texto $menu.Nota -Ancho $ancho)) {
+    foreach ($lNota in @(Split-TextoPorLinea -Texto $menu.Nota -Ancho $ancho)) {
         Write-Linea ('  {0}{1}{2}' -f $p.Tenue, $lNota, $p.Fin)
     }
     Write-Linea ' '
@@ -1355,7 +1355,7 @@ function Get-DatosDeVentana {
     }
     if ($scanOk) { $argsPendiente['HuerfanosActuales'] = $huerfanosActuales }
     $pendienteLegado = @(Get-ResumenPendiente @argsPendiente)
-    $alertas = @(Get-AlertasPriorizadas @argsPendiente -Servicio $servicio -Integridad $integridad)
+    $alertas = @(Get-AlertaPriorizada @argsPendiente -Servicio $servicio -Integridad $integridad)
 
     $veredicto = Resolve-VeredictoDeConsola -EstadoIndicador ('' + $v.Estado) -DetalleIndicador ('' + $v.Detalle) `
         -Proteccion $proteccion -Integridad $integridad -Servicio $servicio
@@ -2667,7 +2667,7 @@ function Test-HayCorridaEnCurso {
     }
 }
 
-function Show-Huerfanos {
+function Show-Huerfano {
     <#
         .SYNOPSIS
             [H]: lista las carpetas sin numerar dentro de los contenedores.
@@ -2869,7 +2869,7 @@ function Confirm-AccionDeTablero {
     if (-not (Test-ConsolaInteractiva)) { return $true }
     $p = $script:Paleta
     Write-Linea ' '
-    foreach ($l in @(Split-TextoEnLineas -Texto $Resumen -Ancho ($script:AnchoTablero - 2))) {
+    foreach ($l in @(Split-TextoPorLinea -Texto $Resumen -Ancho ($script:AnchoTablero - 2))) {
         Write-Linea ('   {0}{1}{2}' -f $p.Valor, $l, $p.Fin)
     }
     Write-Linea ' '
@@ -2948,7 +2948,7 @@ function Show-DiscoFrioNoConectado {
         -Accion ('Conecta la unidad USB {0} y pulsa [1] para reintentar aqui mismo, o [0 / Enter] para volver al tablero.' -f $etiquetaDisco)
 }
 
-function Format-DuracionMinutos {
+function Format-EstimacionDeDuracion {
     <#
         .SYNOPSIS
             Formatea una estimacion de minutos como "45 min" o "2.4 h".
@@ -2979,7 +2979,7 @@ function Write-TarjetaDeLecturaPi {
     $lec = $EstadoLectura.Lectura
     $av = $EstadoLectura.Avance
     $inicioTxt = if ($lec -and $lec.Inicio) { $lec.Inicio.Replace('T', ' ') } else { '?' }
-    $minTxt = if ($lec) { Format-DuracionMinutos -Minutos $lec.Minutos } else { '?' }
+    $minTxt = if ($lec) { Format-EstimacionDeDuracion -Minutos $lec.Minutos } else { '?' }
     $alcanceTxt = if ($lec -and $lec.Alcance) { $lec.Alcance } else { 'completo' }
 
     Write-Linea ('   {0}Lanzada    {1}  {2}  (hace {3}, alcance: {4})' -f $p.Etiqueta, $p.Fin, $inicioTxt, $minTxt, $alcanceTxt)
@@ -3083,13 +3083,13 @@ function Invoke-VistaLecturaPi {
             }
 
             $bytesTotalTxt = Format-BytesDelLaboratorio -Bytes $plan.TotalBytes
-            $durTotalTxt = Format-DuracionMinutos -Minutos $plan.TotalMinutos
+            $durTotalTxt = Format-EstimacionDeDuracion -Minutos $plan.TotalMinutos
             Write-Linea ('   {0}Laboratorio completo {1}  {2} archivo(s), {3}  (~{4} en la Pi)' -f
                 $p.Etiqueta, $p.Fin, $plan.TotalArchivos, $bytesTotalTxt, $durTotalTxt)
 
             if ($plan.PendientesArchivos -gt 0) {
                 $bytesPendTxt = Format-BytesDelLaboratorio -Bytes $plan.PendientesBytes
-                $durPendTxt = Format-DuracionMinutos -Minutos $plan.PendientesMinutos
+                $durPendTxt = Format-EstimacionDeDuracion -Minutos $plan.PendientesMinutos
                 Write-Linea ('   {0}Pendientes de leer   {1}  {2}{3} archivo(s), {4}  (~{5} en la Pi){1}' -f
                     $p.Etiqueta, $p.Fin, $p.Ambar, $plan.PendientesArchivos, $bytesPendTxt, $durPendTxt)
                 if (@($plan.PendientesVms).Count -gt 0) {
@@ -3105,7 +3105,7 @@ function Invoke-VistaLecturaPi {
             Write-Linea (Get-Regla -Paleta $p -Unicode $u)
             $hayPendientes = ($plan.PendientesArchivos -gt 0)
             if ($hayPendientes) {
-                Write-Linea ('   {0}[1]{1} Leer solo las pendientes (~{2})' -f ($p.Fuerte + $p.Valor), $p.Fin, (Format-DuracionMinutos -Minutos $plan.PendientesMinutos))
+                Write-Linea ('   {0}[1]{1} Leer solo las pendientes (~{2})' -f ($p.Fuerte + $p.Valor), $p.Fin, (Format-EstimacionDeDuracion -Minutos $plan.PendientesMinutos))
                 Write-Linea ('   {0}[2]{1} Leer laboratorio completo (~{2})' -f ($p.Fuerte + $p.Valor), $p.Fin, $durTotalTxt)
                 Write-Linea ('   {0}[3]{1} Actualizar analisis' -f ($p.Fuerte + $p.Valor), $p.Fin)
                 Write-Linea ('   {0}[0]{1} Volver a la vista anterior' -f ($p.Fuerte + $p.Valor), $p.Fin)
@@ -3123,7 +3123,7 @@ function Invoke-VistaLecturaPi {
                 switch ($el) {
                     '1' {
                         $resP = 'Se lanzara en la Pi la lectura de {0} archivo(s) pendientes ({1}, ~{2}). Mientras corre, el guardado al nodo esperara.' -f
-                            $plan.PendientesArchivos, (Format-BytesDelLaboratorio -Bytes $plan.PendientesBytes), (Format-DuracionMinutos -Minutos $plan.PendientesMinutos)
+                            $plan.PendientesArchivos, (Format-BytesDelLaboratorio -Bytes $plan.PendientesBytes), (Format-EstimacionDeDuracion -Minutos $plan.PendientesMinutos)
                         if (Confirm-AccionDeTablero -Resumen $resP -EtiquetaSi 'Lanzar lectura de pendientes') {
                             $rLanz = & "$nucleo\laboratorio.ps1" @comunes -Accion Leer -SoloPendientes -Confirm:$false
                             Show-LecturaDelLaboratorio -Resultado $rLanz
@@ -4078,7 +4078,7 @@ function Invoke-OpcionDelTablero {
             { $_ -in @('HUERFANOSVER', 'H') } {
                 Write-Anuncio -Que 'Carpetas sin clasificar en contenedores' `
                     -Detalle 'Solo lee en local (milisegundos). Excluye junctions de Windows.'
-                Show-Huerfanos -Configuracion $Configuracion
+                Show-Huerfano -Configuracion $Configuracion
             }
             'DISCOAUDITAR' {
                 # Busca lo que una copia cortada dejo a medias.

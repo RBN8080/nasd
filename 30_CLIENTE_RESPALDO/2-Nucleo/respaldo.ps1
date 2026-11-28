@@ -1128,7 +1128,7 @@ function Invoke-CorridaConEstado {
     }
 
     # Limpieza ligera de registros >90 dias. Nunca tumba una corrida.
-    Remove-RegistrosAntiguos -CarpetaRegistro (Get-CarpetaDeRegistro -Configuracion $Configuracion) -DiasRetencion 90 -Confirm:$false | Out-Null
+    Remove-RegistroAntiguo -CarpetaRegistro (Get-CarpetaDeRegistro -Configuracion $Configuracion) -DiasRetencion 90 -Confirm:$false | Out-Null
 
     # --- Automatismo post-corrida (Lab al nodo + disco frio si esta conectado) -
     # VA SIEMPRE AL FINAL, despues de retirar EN_CURSO.lock, publicar ESTADO.txt
