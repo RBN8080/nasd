@@ -530,8 +530,6 @@ func (s *Servidor) Rutas() http.Handler {
 	for _, a := range assetsPublicos {
 		publico.HandleFunc("GET "+a, servirEstatico)
 	}
-	// Temporal: prueba IPv6 de Hurricane Electric (prueba_he.go).
-	publico.HandleFunc("GET "+rutaPruebaHE, servirPruebaHE)
 
 	// EL RESTO DE /estatico/ VA DENTRO, y no es celo: quien tiene sesión pide
 	// estas cosas en cada página. Lo que cambia es que un desconocido ya no.
