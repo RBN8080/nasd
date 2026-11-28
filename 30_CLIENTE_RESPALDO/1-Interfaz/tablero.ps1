@@ -138,6 +138,9 @@ function Reset-EstadoDeVista {
         .SYNOPSIS
             Restablece las banderas transitorias al abrir una subvista.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Restablece banderas de un objeto de estado en memoria; no modifica disco ni sistema. Mismo caso que New-ContextoDeTablero.')]
     [CmdletBinding()]
     [OutputType([void])]
     param(
@@ -1682,14 +1685,11 @@ function Show-VeredictoDeSimulacion {
             medida, y un 4.8 % es un aviso que ningun umbral da por si solo.
         .PARAMETER Resultado
             Lo que devuelve respaldo.ps1 en simulacion.
-        .PARAMETER Configuracion
-            Para poder decir contra que umbral se comparo.
     #>
     [CmdletBinding()]
     [OutputType([void])]
     param(
-        [Parameter(Mandatory)][AllowNull()] $Resultado,
-        [Parameter(Mandatory)][psobject] $Configuracion
+        [Parameter(Mandatory)][AllowNull()] $Resultado
     )
 
     if ($null -eq $Resultado) {
@@ -3350,6 +3350,9 @@ function Read-AccionEnVivo {
             estable y el teclado reactivo al instante. Al finalizar o iniciar una
             operacion dispara un unico refresco limpio del tablero.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSReviewUnusedParameter', 'Etiqueta',
+        Justification = 'Se usa dentro del scriptblock $pintarLinea, que el analizador no sigue.')]
     [CmdletBinding()]
     [OutputType([psobject])]
     param(
@@ -3952,7 +3955,7 @@ function Invoke-OpcionDelTablero {
                 Write-Anuncio -Que 'Simulacion de la copia al NODO' `
                     -Detalle 'NO escribe nada. Mide que cambiaria en las raices actuales. ~1 min.'
                 $r2 = & "$nucleo\respaldo.ps1" @comunes -SoloSimular -Confirm:$false
-                Show-VeredictoDeSimulacion -Resultado $r2 -Configuracion $Configuracion
+                Show-VeredictoDeSimulacion -Resultado $r2
             }
             'NODOVERIFICAR' {
                 Write-Anuncio -Que 'Cotejar lo guardado en el NODO contra el original de este equipo' `

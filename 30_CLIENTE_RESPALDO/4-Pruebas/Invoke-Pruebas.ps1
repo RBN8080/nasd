@@ -160,7 +160,6 @@ function Write-ConfiguracionDeCaja {
     param(
         [Parameter(Mandatory)][psobject] $Caja,
         [AllowEmptyCollection()][psobject[]] $Centinelas = @(),
-        [double] $Umbral = 5,
         [switch] $DeudaRota,
         [switch] $Saldada
     )
@@ -3373,7 +3372,7 @@ Test-Afirmacion -Nombre 'Group-IndicesContiguos agrupa contiguos hasta 4 MiB y s
     -Esperado '0:4|4:1|10:2|20:1' -Obtenido (($tramosLab | ForEach-Object { '{0}:{1}' -f $_.Inicio, $_.Cuenta }) -join '|')
 
 # Renombre de carpeta de VM (y del .vmdk): migra atomicamente en el nodo con 0 bytes re-subidos.
-$renLabPrev = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
+$null = Invoke-GuardadoDelLaboratorio -Configuracion $cfgLab -Confirm:$false
 Rename-Item -LiteralPath "$labOrigen\VM1" -NewName 'VM1_RENOMBRADA'
 Rename-Item -LiteralPath "$labOrigen\VM1_RENOMBRADA\disco.vmdk" -NewName 'disco_nuevo.vmdk'
 $vmdkRenLocal = "$labOrigen\VM1_RENOMBRADA\disco_nuevo.vmdk"
