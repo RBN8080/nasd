@@ -57,6 +57,15 @@
     .PARAMETER OmitirNodo
         Corre solo la pasada equipo -> disco. La copia queda declarada INCOMPLETA.
 
+    .PARAMETER DesdeAutomatismo
+        La lanzo la tarea NasRespaldo-DiscoFrio (al enchufar el disco o tras una
+        corrida programada). Si el disco no esta conectado, si ya hay otra
+        corrida viva o si el antirebote esta vigente, sale limpio sin ruido ni
+        tocar ESTADO.txt.
+
+    .PARAMETER OmitirLaboratorio
+        Omite la pasada del laboratorio (Pasada C) aunque este declarada.
+
     .EXAMPLE
         .\disco.ps1 -SoloSimular
         .\disco.ps1
@@ -69,7 +78,11 @@ param(
 
     [switch] $SoloSimular,
 
-    [switch] $OmitirNodo
+    [switch] $OmitirNodo,
+
+    [switch] $DesdeAutomatismo,
+
+    [switch] $OmitirLaboratorio
 )
 
 Set-StrictMode -Version Latest
@@ -221,23 +234,66 @@ function Invoke-CorridaAlDiscoFrio {
     param(
         [Parameter(Mandatory)][psobject] $Configuracion,
         [switch] $Simular,
-        [switch] $SinNodo
+        [switch] $SinNodo,
+        [switch] $DesdeAutomatismo,
+        [switch] $OmitirLaboratorio,
+        [ValidateRange(0, 1440)][int] $MinutosAntirebote = 2
     )
 
     $resultado = [ordered]@{
-        Inicio        = Get-Date
-        Simulada      = [bool]$Simular
-        Abortada      = $false
-        Motivo        = $null
-        Disco         = $null
-        PasadaEquipo  = @()
-        PasadaNodo    = @()
+        Inicio            = Get-Date
+        Simulada          = [bool]$Simular
+        Abortada          = $false
+        Omitida           = $false
+        Motivo            = $null
+        Disco             = $null
+        PasadaEquipo      = @()
+        PasadaNodo        = @()
         PasadaLaboratorio = $null
         MotivoIncompleta  = $null
-        NodoAlcanzable= $false
-        Completa      = $false
-        Fallidas      = @()
-        ArchivosCopiados = 0
+        NodoAlcanzable    = $false
+        Completa          = $false
+        Fallidas          = @()
+        ArchivosCopiados  = 0
+    }
+
+    $carpetaEstado = Get-CarpetaDeEstado -Configuracion $Configuracion
+    $auto = Get-AutomatismoDeDiscoFrio -Configuracion $Configuracion
+
+    # --- Guardas de automatismo (silenciosas, antes de tocar disco o marcas) -
+    if ($DesdeAutomatismo) {
+        if (-not $auto.Habilitado) {
+            $resultado.Omitida = $true
+            $resultado.Motivo = 'Automatismo del disco frio deshabilitado en configuracion.'
+            Write-Verbose $resultado.Motivo
+            return [pscustomobject]$resultado
+        }
+
+        $mMotor = Get-MarcaDeCorrida -Carpeta $carpetaEstado
+        $mLab = Get-MarcaDeCorrida -Carpeta $carpetaEstado -Archivo 'LABORATORIO.lock'
+        $marcaAjena = ($mMotor.Existe -and -not $mMotor.Vieja -and $mMotor.Pid -ne $PID) -or
+            ($mLab.Existe -and -not $mLab.Vieja -and $mLab.Pid -ne $PID)
+        if ($marcaAjena) {
+            $resultado.Omitida = $true
+            $resultado.Motivo = 'Corrida automatica al disco frio omitida: ya hay otra corrida en curso.'
+            Write-RegistroRespaldo -Etapa 'disco' -Mensaje $resultado.Motivo
+            return [pscustomobject]$resultado
+        }
+
+        if (-not $Simular -and $MinutosAntirebote -gt 0) {
+            $estPrev = Read-EstadoRespaldo -Carpeta $carpetaEstado
+            [datetime] $dtPrev = [datetime]::MinValue
+            if ($estPrev.ContainsKey('disco_momento') -and
+                [datetime]::TryParse(('' + $estPrev['disco_momento']), [ref]$dtPrev)) {
+                $minPrev = ((Get-Date) - $dtPrev).TotalMinutes
+                if ($minPrev -ge 0 -and $minPrev -lt $MinutosAntirebote) {
+                    $resultado.Omitida = $true
+                    $resultado.Motivo = ('Corrida automatica al disco frio omitida por antirebote ({0:N0} min < {1} min).' -f $minPrev, $MinutosAntirebote)
+                    Write-RegistroRespaldo -Etapa 'disco' -Mensaje $resultado.Motivo
+                    return [pscustomobject]$resultado
+                }
+            }
+        }
     }
 
     # --- Guarda 1: el disco, por FIRMA y por CENTINELA -----------------------
@@ -247,6 +303,12 @@ function Invoke-CorridaAlDiscoFrio {
     # no se usa para identificar.
     $disco = Get-DiscoFrio -Configuracion $Configuracion
     if (-not $disco) {
+        if ($DesdeAutomatismo) {
+            $resultado.Omitida = $true
+            $resultado.Motivo = 'El disco frio no esta conectado: corrida automatica omitida.'
+            Write-Verbose $resultado.Motivo
+            return [pscustomobject]$resultado
+        }
         $resultado.Abortada = $true
         $resultado.Motivo = 'El disco frio no esta conectado, o no supera la prueba de firma y centinela. No se escribe nada.'
         Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'disco' -Mensaje $resultado.Motivo
@@ -283,7 +345,6 @@ function Invoke-CorridaAlDiscoFrio {
     # "protegido, nada en curso", mientras el disco escribia. Lo noto el
     # responsable mirando la barra el 2026-09-02. Un indicador que no se entera
     # de la mitad del trabajo no es un indicador.
-    $carpetaEstado = Get-CarpetaDeEstado -Configuracion $Configuracion
     # SOLO LA MARCA, NO EL ESTADO. El icono resuelve "copiando" mirando
     # EN_CURSO.lock, asi que la marca basta para que la barra lo ensene. Escribir
     # ademas estado=Copiando pisaria el veredicto del NODO, que es de otro
@@ -340,7 +401,8 @@ function Invoke-CorridaAlDiscoFrio {
         $lab = $null
         $declaraLab = ($Configuracion.PSObject.Properties.Name -contains 'laboratorio') -and
             ($Configuracion.laboratorio.PSObject.Properties.Name -contains 'discoFrio')
-        if ($declaraLab) {
+        $saltarLab = [bool]$OmitirLaboratorio -or ($DesdeAutomatismo -and $auto.LaboratorioAlDisco -eq 'nunca')
+        if ($declaraLab -and -not $saltarLab) {
             if (-not $Simular) {
                 Write-ProgresoDeOperacion -Operacion 'disco' -Fase 'pasada-laboratorio' -Objetivo 'Disco frio' `
                     -Elemento 'Laboratorio VM' -Hechos 0 -Totales 1 -Unidad 'pasos' `
@@ -382,8 +444,9 @@ function Invoke-CorridaAlDiscoFrio {
         # copia fria fuera bien no dice nada sobre el respaldo diario al nodo, y
         # el 2026-09-02 escribir aqui "Protegido" borro un fallo real del nodo
         # que nadie habia arreglado.
+        $origenDisco = if ($DesdeAutomatismo) { 'automatico' } else { 'manual' }
         Write-EstadoDelDisco -Estado $veredicto.Estado -Detalle $veredicto.Detalle `
-            -Carpeta $carpetaEstado -Confirm:$false
+            -Origen $origenDisco -Carpeta $carpetaEstado -Confirm:$false
 
         # La mitad "disco" de la tabla del tablero. Las dos pasadas juntas: para
         # quien mira la tabla, una raiz esta en el disco o no esta, y de que
@@ -418,4 +481,6 @@ if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) {
 $configuracion = Get-ConfiguracionRespaldo @parametrosConfig
 
 Invoke-CorridaAlDiscoFrio -Configuracion $configuracion `
-    -Simular:$SoloSimular -SinNodo:$OmitirNodo -WhatIf:$WhatIfPreference -Confirm:$false
+    -Simular:$SoloSimular -SinNodo:$OmitirNodo `
+    -DesdeAutomatismo:$DesdeAutomatismo -OmitirLaboratorio:$OmitirLaboratorio `
+    -WhatIf:$WhatIfPreference -Confirm:$false

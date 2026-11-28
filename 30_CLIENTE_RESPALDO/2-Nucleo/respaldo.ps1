@@ -1130,7 +1130,165 @@ function Invoke-CorridaConEstado {
     # Limpieza ligera de registros >90 dias. Nunca tumba una corrida.
     Remove-RegistrosAntiguos -CarpetaRegistro (Get-CarpetaDeRegistro -Configuracion $Configuracion) -DiasRetencion 90 -Confirm:$false | Out-Null
 
+    # --- Automatismo post-corrida (Lab al nodo + disco frio si esta conectado) -
+    # VA SIEMPRE AL FINAL, despues de retirar EN_CURSO.lock, publicar ESTADO.txt
+    # y cerrar el testigo externo: un problema en el laboratorio o en el USB
+    # nunca puede degradar el veredicto del nodo ni el latido a Healthchecks.
+    if ($Programada -and $estado -eq 'Protegido') {
+        try {
+            $null = Invoke-AutomatismoPostCorrida -Configuracion $Configuracion `
+                -RutaConfiguracion $RutaConfiguracion -CarpetaEstado $carpetaEstado -Confirm:$false
+        }
+        catch {
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'automatismo' `
+                -Mensaje "El automatismo post-corrida devolvio un error (el respaldo al nodo quedo sano): $($_.Exception.Message)"
+        }
+    }
+
     return $resultado
+}
+
+function Invoke-AutomatismoPostCorrida {
+    <#
+        .SYNOPSIS
+            Al cerrar en verde una corrida programada, sincroniza deltas del
+            laboratorio al nodo (si VMs apagadas) y dispara el disco frio si
+            sigue conectado.
+        .DESCRIPTION
+            Corre secuencialmente: primero el laboratorio al nodo (solo si hay
+            cambios y cero VMs abiertas) y despues dispara la tarea desacoplada
+            NasRespaldo-DiscoFrio para no colisionar en LABORATORIO.lock.
+        .PARAMETER Configuracion
+            Objeto de configuracion completo.
+        .PARAMETER RutaConfiguracion
+            Ruta opcional del archivo .jsonc para pasarlo a laboratorio.ps1.
+        .PARAMETER CarpetaEstado
+            Carpeta de estado del cliente.
+        .PARAMETER SoloEvaluar
+            No ejecuta laboratorio.ps1 ni Start-ScheduledTask; devuelve la
+            decision tomada (para pruebas deterministas).
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Configuracion,
+        [AllowEmptyString()][string] $RutaConfiguracion = '',
+        [AllowEmptyString()][string] $CarpetaEstado = '',
+        [switch] $SoloEvaluar
+    )
+
+    $carpeta = if ($CarpetaEstado) { $CarpetaEstado } else { Get-CarpetaDeEstado -Configuracion $Configuracion }
+    $auto = Get-AutomatismoDeDiscoFrio -Configuracion $Configuracion
+    $salida = [ordered]@{
+        Habilitado     = [bool]$auto.Habilitado
+        LabElegible    = $false
+        LabEjecutado   = $false
+        MotivoLab      = 'no aplica'
+        DiscoElegible  = $false
+        DiscoDisparado = $false
+        MotivoDisco    = 'no aplica'
+    }
+
+    if (-not $auto.Habilitado) {
+        $salida.MotivoLab   = 'automatismo deshabilitado'
+        $salida.MotivoDisco = 'automatismo deshabilitado'
+        return [pscustomobject]$salida
+    }
+
+    # --- 1. Laboratorio VM -> Nodo (solo deltas, solo con VMs apagadas) ------
+    if ($auto.LaboratorioAlNodo -eq 'siApagadas') {
+        try {
+            $fichaLab = Get-FichaDelLaboratorio -Configuracion $Configuracion
+            if (-not $fichaLab) {
+                $salida.MotivoLab = 'sin bloque laboratorio en configuracion'
+            }
+            elseif (-not (Test-Path -LiteralPath $fichaLab.Origen -PathType Container)) {
+                $salida.MotivoLab = "origen del laboratorio ausente ($($fichaLab.Origen))"
+            }
+            elseif ($null -ne (Read-LecturaDelLaboratorio -Carpeta $carpeta)) {
+                $salida.MotivoLab = 'lectura [T] en la Pi en curso'
+            }
+            else {
+                $marcaLab = Get-MarcaDeCorrida -Carpeta $carpeta -Archivo 'LABORATORIO.lock'
+                if ($marcaLab.Existe -and -not $marcaLab.Vieja) {
+                    $salida.MotivoLab = 'ya hay un guardado del laboratorio en curso'
+                }
+                else {
+                    $abiertas = @(Get-VmAbiertaDelLaboratorio -Ficha $fichaLab)
+                    if ($abiertas.Count -gt 0 -or (Test-VmxEnMarcha)) {
+                        $quienes = if ($abiertas.Count -gt 0) { $abiertas -join ', ' } else { 'vmware-vmx activo' }
+                        $salida.MotivoLab = "VMs encendidas o suspendidas ($quienes)"
+                    }
+                    else {
+                        $estLab = Read-EstadoRespaldo -Carpeta $carpeta
+                        $resLab = Get-ResumenDelLaboratorio -Configuracion $Configuracion -Estado $estLab
+                        if ($resLab -and $resLab.NoAlDia -gt 0) {
+                            $salida.LabElegible = $true
+                            $salida.MotivoLab = ('{0} de {1} carpetas del laboratorio con cambios' -f $resLab.NoAlDia, $resLab.Vms)
+                            if (-not $SoloEvaluar -and $PSCmdlet.ShouldProcess($fichaLab.Destino, 'Guardar deltas del laboratorio al nodo')) {
+                                Write-RegistroRespaldo -Etapa 'automatismo' `
+                                    -Mensaje ("Laboratorio VM con VMs apagadas ({0}): iniciando guardado delta al nodo." -f $salida.MotivoLab)
+                                $argsLab = @{ Accion = 'Guardar' }
+                                if ($RutaConfiguracion) { $argsLab['RutaConfiguracion'] = $RutaConfiguracion }
+                                & "$PSScriptRoot\laboratorio.ps1" @argsLab -Confirm:$false | Out-Null
+                                $salida.LabEjecutado = $true
+                            }
+                        }
+                        else {
+                            $salida.MotivoLab = 'laboratorio al dia en el nodo'
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            $salida.MotivoLab = "error evaluando/guardando laboratorio: $($_.Exception.Message)"
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'automatismo' -Mensaje $salida.MotivoLab
+        }
+    }
+    else {
+        $salida.MotivoLab = 'laboratorioAlNodo configurado en nunca'
+    }
+
+    # --- 2. Disco frio (si esta conectado y paso el cooldown) ----------------
+    if ($auto.TrasCorridaProgramada) {
+        try {
+            $disco = Get-DiscoFrio -Configuracion $Configuracion 2>$null
+            $estActual = Read-EstadoRespaldo -Carpeta $carpeta
+            $mMotor = Get-MarcaDeCorrida -Carpeta $carpeta
+            $mLab = Get-MarcaDeCorrida -Carpeta $carpeta -Archivo 'LABORATORIO.lock'
+            $marcaActiva = ($mMotor.Existe -and -not $mMotor.Vieja) -or ($mLab.Existe -and -not $mLab.Vieja)
+
+            $dec = Test-DebeDispararDiscoFrio -Automatismo $auto -Origen 'programada' `
+                -DiscoConectado ($null -ne $disco) -Estado $estActual -MarcaActiva $marcaActiva
+            $salida.DiscoElegible = [bool]$dec.Disparar
+            $salida.MotivoDisco   = '' + $dec.Motivo
+
+            if ($dec.Disparar -and -not $SoloEvaluar -and $PSCmdlet.ShouldProcess($auto.NombreTarea, 'Disparar tarea de disco frio')) {
+                $tarea = Get-ScheduledTask -TaskName $auto.NombreTarea -ErrorAction SilentlyContinue
+                if ($tarea -and $tarea.State -ne 'Disabled') {
+                    Start-ScheduledTask -TaskName $auto.NombreTarea -ErrorAction Stop
+                    $salida.DiscoDisparado = $true
+                    Write-RegistroRespaldo -Etapa 'automatismo' `
+                        -Mensaje ("Disco frio conectado en {0}; disparada tarea '{1}'." -f $disco.Raiz, $auto.NombreTarea)
+                }
+                else {
+                    $salida.MotivoDisco = "la tarea '$($auto.NombreTarea)' no existe o esta deshabilitada"
+                    Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'automatismo' `
+                        -Mensaje ("Disco frio conectado en {0}, pero {1}. Registrala con Registrar-Tarea.ps1 -Pieza DiscoFrio -Accion Registrar." -f $disco.Raiz, $salida.MotivoDisco)
+                }
+            }
+        }
+        catch {
+            $salida.MotivoDisco = "error disparando disco frio: $($_.Exception.Message)"
+            Write-RegistroRespaldo -Nivel 'ATENCION' -Etapa 'automatismo' -Mensaje $salida.MotivoDisco
+        }
+    }
+    else {
+        $salida.MotivoDisco = 'trasCorridaProgramada deshabilitado'
+    }
+
+    return [pscustomobject]$salida
 }
 
 # ---------------------------------------------------------------------------

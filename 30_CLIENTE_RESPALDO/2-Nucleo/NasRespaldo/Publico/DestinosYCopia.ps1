@@ -184,6 +184,191 @@ function Get-DiscoFrio {
     }
 }
 
+function Get-AutomatismoDeDiscoFrio {
+    <#
+        .SYNOPSIS
+            Lee y valida destinos.discoFrio.automatismo con valores por omision seguros.
+        .DESCRIPTION
+            Si el bloque no existe en la configuracion (configuraciones previas o
+            areneros de prueba), devuelve Habilitado=$false para no alterar el
+            comportamiento historico ni disparar tareas inesperadas.
+        .PARAMETER Configuracion
+            El objeto de configuracion completo.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)]
+        [psobject] $Configuracion
+    )
+
+    $porOmision = [pscustomobject]@{
+        Habilitado            = $false
+        AlConectar            = $false
+        TrasCorridaProgramada = $false
+        LaboratorioAlDisco    = 'siApagadas'
+        LaboratorioAlNodo     = 'nunca'
+        CooldownMinutos       = 60
+        MaxHorasConectado     = 0
+        NotificarAlTerminar   = $true
+        NombreTarea           = 'NasRespaldo-DiscoFrio'
+    }
+
+    if ($Configuracion.PSObject.Properties.Name -notcontains 'destinos' -or
+        $null -eq $Configuracion.destinos -or
+        $Configuracion.destinos.PSObject.Properties.Name -notcontains 'discoFrio' -or
+        $null -eq $Configuracion.destinos.discoFrio) {
+        return $porOmision
+    }
+
+    $df = $Configuracion.destinos.discoFrio
+    if ($df.PSObject.Properties.Name -notcontains 'automatismo' -or $null -eq $df.automatismo) {
+        return $porOmision
+    }
+
+    $a = $df.automatismo
+    $props = @($a.PSObject.Properties.Name)
+    $leer = {
+        param([string] $Clave, $ValorPorOmision)
+        if ($props -contains $Clave -and $null -ne $a.$Clave) { return $a.$Clave }
+        return $ValorPorOmision
+    }
+
+    $habilitado = [bool](& $leer 'habilitado' $false)
+    $labDisco   = ('' + (& $leer 'laboratorioAlDisco' 'siApagadas')).Trim()
+    $labNodo    = ('' + (& $leer 'laboratorioAlNodo' 'nunca')).Trim()
+    if ($labDisco -notin @('siApagadas', 'nunca')) {
+        throw "destinos.discoFrio.automatismo.laboratorioAlDisco invalido: '$labDisco' (esperado 'siApagadas' o 'nunca')."
+    }
+    if ($labNodo -notin @('siApagadas', 'nunca')) {
+        throw "destinos.discoFrio.automatismo.laboratorioAlNodo invalido: '$labNodo' (esperado 'siApagadas' o 'nunca')."
+    }
+
+    $cooldown = [int](& $leer 'cooldownMinutos' 60)
+    if ($cooldown -lt 0) { $cooldown = 0 }
+    $maxHoras = [int](& $leer 'maxHorasConectado' 0)
+    if ($maxHoras -lt 0) { $maxHoras = 0 }
+    $nombreTarea = ('' + (& $leer 'nombreTarea' 'NasRespaldo-DiscoFrio')).Trim()
+    if (-not $nombreTarea) { $nombreTarea = 'NasRespaldo-DiscoFrio' }
+
+    return [pscustomobject]@{
+        Habilitado            = $habilitado
+        AlConectar            = [bool](& $leer 'alConectar' $true)
+        TrasCorridaProgramada = [bool](& $leer 'trasCorridaProgramada' $true)
+        LaboratorioAlDisco    = $labDisco
+        LaboratorioAlNodo     = $labNodo
+        CooldownMinutos       = $cooldown
+        MaxHorasConectado     = $maxHoras
+        NotificarAlTerminar   = [bool](& $leer 'notificarAlTerminar' $true)
+        NombreTarea           = $nombreTarea
+    }
+}
+
+function Test-DebeDispararDiscoFrio {
+    <#
+        .SYNOPSIS
+            Decide de forma pura si procede lanzar una corrida automatica al disco frio.
+        .DESCRIPTION
+            Funcion pura para poder probarse sin disco USB, sin marcas reales y
+            sin el Programador de tareas. Evalua habilitacion, origen del disparo,
+            presencia del disco, marcas activas y ventana de cooldown / antirebote.
+        .PARAMETER Automatismo
+            Lo que devuelve Get-AutomatismoDeDiscoFrio.
+        .PARAMETER Origen
+            'conexion' (al enchufar USB) o 'programada' (tras corrida diaria).
+        .PARAMETER DiscoConectado
+            Si Get-DiscoFrio reconocio el disco por firma y centinela.
+        .PARAMETER Estado
+            Contenido actual de ESTADO.txt (hashtable).
+        .PARAMETER MarcaActiva
+            Si existe EN_CURSO.lock o LABORATORIO.lock viva de otro proceso.
+        .PARAMETER Ahora
+            Reloj de referencia (inyectable para pruebas).
+        .PARAMETER MinutosAntireboteConexion
+            Ventana minima en minutos para filtrar rebotes de conexion USB.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory)][psobject] $Automatismo,
+        [Parameter(Mandatory)][ValidateSet('conexion', 'programada')][string] $Origen,
+        [Parameter(Mandatory)][bool] $DiscoConectado,
+        [hashtable] $Estado = @{},
+        [bool] $MarcaActiva = $false,
+        [datetime] $Ahora = (Get-Date),
+        [ValidateRange(0, 1440)][int] $MinutosAntireboteConexion = 2
+    )
+
+    if (-not $Automatismo.Habilitado) {
+        return [pscustomobject]@{ Disparar = $false; Motivo = 'automatismo del disco frio deshabilitado' }
+    }
+    if ($Origen -eq 'conexion' -and -not $Automatismo.AlConectar) {
+        return [pscustomobject]@{ Disparar = $false; Motivo = 'disparo al conectar deshabilitado' }
+    }
+    if ($Origen -eq 'programada' -and -not $Automatismo.TrasCorridaProgramada) {
+        return [pscustomobject]@{ Disparar = $false; Motivo = 'disparo tras corrida programada deshabilitado' }
+    }
+    if (-not $DiscoConectado) {
+        return [pscustomobject]@{ Disparar = $false; Motivo = 'el disco frio no esta conectado' }
+    }
+    if ($MarcaActiva) {
+        return [pscustomobject]@{ Disparar = $false; Motivo = 'hay otra corrida en curso' }
+    }
+
+    $umbralMin = if ($Origen -eq 'conexion') { $MinutosAntireboteConexion } else { [int]$Automatismo.CooldownMinutos }
+    if ($umbralMin -gt 0 -and $Estado -and $Estado.ContainsKey('disco_momento') -and $Estado['disco_momento']) {
+        [datetime] $ultimo = [datetime]::MinValue
+        if ([datetime]::TryParse(('' + $Estado['disco_momento']), [ref]$ultimo)) {
+            $transcurrido = ($Ahora - $ultimo).TotalMinutes
+            if ($transcurrido -ge 0 -and $transcurrido -lt $umbralMin) {
+                return [pscustomobject]@{
+                    Disparar = $false
+                    Motivo   = ('cooldown vigente ({0:N0} min < {1} min)' -f $transcurrido, $umbralMin)
+                }
+            }
+        }
+    }
+
+    return [pscustomobject]@{ Disparar = $true; Motivo = 'listo para copiar al disco frio' }
+}
+
+function Format-NotificacionDeDiscoFrio {
+    <#
+        .SYNOPSIS
+            Construye titulo, mensaje e icono para el globo de bandeja al terminar el disco frio.
+        .DESCRIPTION
+            Funcion pura para validar la redaccion sin depender de WinForms.
+            Devuelve $null si el estado no amerita globo.
+        .PARAMETER Estado
+            Valor de disco_estado (Protegido, Atencion, Falla).
+        .PARAMETER Detalle
+            Valor de disco_detalle.
+    #>
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [AllowEmptyString()][AllowNull()][string] $Estado,
+        [AllowEmptyString()][AllowNull()][string] $Detalle = ''
+    )
+
+    $limpio = ('' + $Detalle).Trim()
+    switch ('' + $Estado) {
+        'Protegido' {
+            $msg = if ($limpio) { '{0}. Ya puedes expulsar el disco.' -f $limpio } else { 'Copia fria completa. Ya puedes expulsar el disco.' }
+            return [pscustomobject]@{ Titulo = 'NAS-COLD-01 al dia'; Mensaje = $msg; Icono = 'Info' }
+        }
+        'Atencion' {
+            $msg = if ($limpio) { $limpio } else { 'Copia fria incompleta. Revisa el tablero.' }
+            return [pscustomobject]@{ Titulo = 'NAS-COLD-01 incompleta'; Mensaje = $msg; Icono = 'Warning' }
+        }
+        'Falla' {
+            $msg = if ($limpio) { '{0}. Abre el tablero para revisar.' -f $limpio } else { 'La copia fria fallo. Abre el tablero para revisar.' }
+            return [pscustomobject]@{ Titulo = 'NAS-COLD-01 con fallo'; Mensaje = $msg; Icono = 'Error' }
+        }
+        default { return $null }
+    }
+}
+
 function Invoke-Robocopy {
     <#
         .SYNOPSIS

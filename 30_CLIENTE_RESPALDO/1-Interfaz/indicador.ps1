@@ -487,6 +487,44 @@ $script:v               = $null
 $script:ultimoDibujo    = ''
 $script:asaActual       = [System.IntPtr]::Zero
 
+function Get-EstadoDeMontaje {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    try {
+        $listas = @([System.IO.DriveInfo]::GetDrives() |
+                Where-Object { $_.IsReady -and $_.DriveType -in @([System.IO.DriveType]::Fixed, [System.IO.DriveType]::Removable) } |
+                ForEach-Object { $_.Name } | Sort-Object)
+        return ($listas -join '|')
+    }
+    catch {
+        return ''
+    }
+}
+
+# Linea base al arrancar: evita disparar copias ni globos viejos al iniciar sesion.
+$script:autoDisco = $null
+$script:discoEstabaConectado = $false
+$script:letrasPrevias = Get-EstadoDeMontaje
+$script:ultimoDiscoMomentoNotificado = ''
+try {
+    $cfgInicio = Get-ConfiguracionRespaldo
+    $script:autoDisco = Get-AutomatismoDeDiscoFrio -Configuracion $cfgInicio
+    $script:discoEstabaConectado = ($null -ne (Get-DiscoFrio -Configuracion $cfgInicio 2>$null))
+}
+catch {
+    Write-Verbose "Sin configuracion inicial de disco frio en indicador: $($_.Exception.Message)"
+}
+try {
+    $estInicio = Read-EstadoRespaldo -Carpeta $script:CarpetaEstado
+    if ($estInicio.ContainsKey('disco_momento')) {
+        $script:ultimoDiscoMomentoNotificado = '' + $estInicio['disco_momento']
+    }
+}
+catch {
+    Write-Verbose "Sin disco_momento inicial en indicador: $($_.Exception.Message)"
+}
+
 $refrescar = {
     # 1. El estado se relee a su ritmo, no al de la animacion.
     if ($null -eq $script:v -or ($script:tick % $script:ticksPorLectura) -eq 0) {
@@ -494,6 +532,66 @@ $refrescar = {
         $texto = '{0} - {1}' -f $script:v.Estado, $script:v.Detalle
         if ($texto.Length -gt 63) { $texto = $texto.Substring(0, 60) + '...' }
         $icono.Text = $texto
+
+        # 1b. Deteccion ligera de llegada del disco frio (solo si cambiaron las
+        #     letras montadas; no consulta Get-Disk en cada latido). Nunca ejecuta
+        #     la copia aqui dentro: dispara la tarea desacoplada NasRespaldo-DiscoFrio.
+        try {
+            $letrasAhora = Get-EstadoDeMontaje
+            if ($letrasAhora -ne $script:letrasPrevias) {
+                $script:letrasPrevias = $letrasAhora
+                $cfgAhora = Get-ConfiguracionRespaldo
+                $script:autoDisco = Get-AutomatismoDeDiscoFrio -Configuracion $cfgAhora
+                $discoAhora = Get-DiscoFrio -Configuracion $cfgAhora 2>$null
+                $conectadoAhora = ($null -ne $discoAhora)
+                if ($conectadoAhora -and -not $script:discoEstabaConectado) {
+                    $estAhora = Read-EstadoRespaldo -Carpeta $script:CarpetaEstado
+                    $mMotor = Get-MarcaDeCorrida -Carpeta $script:CarpetaEstado
+                    $mLab = Get-MarcaDeCorrida -Carpeta $script:CarpetaEstado -Archivo 'LABORATORIO.lock'
+                    $marcaActiva = ($mMotor.Existe -and -not $mMotor.Vieja) -or ($mLab.Existe -and -not $mLab.Vieja)
+                    $dec = Test-DebeDispararDiscoFrio -Automatismo $script:autoDisco -Origen 'conexion' `
+                        -DiscoConectado $true -Estado $estAhora -MarcaActiva $marcaActiva
+                    if ($dec.Disparar) {
+                        $tDisco = Get-ScheduledTask -TaskName $script:autoDisco.NombreTarea -ErrorAction SilentlyContinue
+                        if ($tDisco -and $tDisco.State -ne 'Disabled') {
+                            Start-ScheduledTask -TaskName $script:autoDisco.NombreTarea -ErrorAction Stop
+                            Write-RegistroRespaldo -Etapa 'disco' `
+                                -Mensaje ("Disco frio conectado en {0}; disparada tarea '{1}'." -f $discoAhora.Raiz, $script:autoDisco.NombreTarea)
+                        }
+                    }
+                }
+                $script:discoEstabaConectado = $conectadoAhora
+            }
+        }
+        catch {
+            Write-Verbose "Vigilancia de conexion de disco frio omitida: $($_.Exception.Message)"
+        }
+
+        # 1c. Globo unico al terminar cada copia fria (sin avisos por tiempo).
+        try {
+            if ($script:autoDisco -and $script:autoDisco.NotificarAlTerminar) {
+                $estNotif = Read-EstadoRespaldo -Carpeta $script:CarpetaEstado
+                $momDisco = ''
+                if ($estNotif.ContainsKey('disco_momento')) { $momDisco = '' + $estNotif['disco_momento'] }
+                if ($momDisco -and $momDisco -ne $script:ultimoDiscoMomentoNotificado) {
+                    $script:ultimoDiscoMomentoNotificado = $momDisco
+                    $estDisco = if ($estNotif.ContainsKey('disco_estado')) { '' + $estNotif['disco_estado'] } else { '' }
+                    $detDisco = if ($estNotif.ContainsKey('disco_detalle')) { '' + $estNotif['disco_detalle'] } else { '' }
+                    $aviso = Format-NotificacionDeDiscoFrio -Estado $estDisco -Detalle $detDisco
+                    if ($aviso) {
+                        $tipIcon = switch ($aviso.Icono) {
+                            'Error'   { [System.Windows.Forms.ToolTipIcon]::Error }
+                            'Warning' { [System.Windows.Forms.ToolTipIcon]::Warning }
+                            default   { [System.Windows.Forms.ToolTipIcon]::Info }
+                        }
+                        $icono.ShowBalloonTip(8000, $aviso.Titulo, $aviso.Mensaje, $tipIcon)
+                    }
+                }
+            }
+        }
+        catch {
+            Write-Verbose "Globo de disco frio omitido: $($_.Exception.Message)"
+        }
     }
 
     # 2. La animacion va en cada tick, pero SOLO SE REDIBUJA SI CAMBIA ALGO: los

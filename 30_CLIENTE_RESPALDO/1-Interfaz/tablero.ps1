@@ -121,6 +121,7 @@ function New-ContextoDeTablero {
     return [pscustomobject]@{
         NombreTarea              = 'NasRespaldo-Diario'
         NombreIndicador          = 'NasRespaldo-Indicador'
+        NombreDiscoFrio          = 'NasRespaldo-DiscoFrio'
         Capacidades              = $Capacidades
         Paleta                   = (Get-Paleta -Capacidades $Capacidades)
         Regla                    = (Get-ReglaDeAviso -Unicode $Capacidades.Unicode)
@@ -594,10 +595,14 @@ function Get-EstadoDeTarea {
 
     $partes = New-Object System.Collections.Generic.List[string]
     foreach ($par in @(
-            @{ Eti = 'motor'; Tarea = $script:Ctx.NombreTarea },
-            @{ Eti = 'icono'; Tarea = $script:Ctx.NombreIndicador })) {
+            @{ Eti = 'motor'; Tarea = $script:Ctx.NombreTarea; Opcional = $false },
+            @{ Eti = 'icono'; Tarea = $script:Ctx.NombreIndicador; Opcional = $false },
+            @{ Eti = 'disco frio'; Tarea = $script:Ctx.NombreDiscoFrio; Opcional = $true })) {
         $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
-        if (-not $t) { $partes.Add(('{0} NO EXISTE' -f $par.Eti)); continue }
+        if (-not $t) {
+            if (-not $par.Opcional) { $partes.Add(('{0} NO EXISTE' -f $par.Eti)) }
+            continue
+        }
         if ($t.State -eq 'Disabled') { $partes.Add(('{0} DESHABILITADO' -f $par.Eti)); continue }
 
         $hora = ''
@@ -1869,7 +1874,8 @@ function Show-VeredictoDelAutomatismo {
     $filas = New-Object System.Collections.Generic.List[psobject]
     foreach ($par in @(
             @{ Eti = 'motor'; Tarea = $script:Ctx.NombreTarea },
-            @{ Eti = 'icono'; Tarea = $script:Ctx.NombreIndicador })) {
+            @{ Eti = 'icono'; Tarea = $script:Ctx.NombreIndicador },
+            @{ Eti = 'disco'; Tarea = $script:Ctx.NombreDiscoFrio })) {
         $t = Get-ScheduledTask -TaskName $par.Tarea -ErrorAction SilentlyContinue
         if (-not $t) {
             $filas.Add([pscustomobject]@{ Pieza = $par.Eti; Estado = 'NO EXISTE'; Ventanas = ''; Ultima = ''; Resultado = '' })
@@ -1891,7 +1897,11 @@ function Show-VeredictoDelAutomatismo {
                 default { ('codigo {0}' -f $info.LastTaskResult) }
             }
         }
-        $ventanas = if ($par.Eti -eq 'motor') { '' + @($t.Triggers).Count } else { '-' }
+        $ventanas = switch ($par.Eti) {
+            'motor' { '' + @($t.Triggers).Count }
+            'disco' { 'auto' }
+            default { '-' }
+        }
         $filas.Add([pscustomobject]@{
                 Pieza     = $par.Eti
                 Estado    = '' + $t.State
@@ -2413,11 +2423,20 @@ function Show-Reparto {
                 $resultado = Set-HorarioConVistaPrevia -Ventanas $lista -RutaConfiguracion $RutaConfiguracion
             }
             '6' {
-                Write-Anuncio -Que 'Re-registrar la tarea programada' `
-                    -Detalle 'Vuelve a sortear las horas del dia dentro de las ventanas de arriba.'
+                Write-Anuncio -Que 'Re-registrar las tareas programadas' `
+                    -Detalle 'Vuelve a sortear las horas del dia y asegura la tarea del disco frio si esta habilitada.'
                 $reg = @{ Pieza = 'Motor'; Accion = 'Registrar' }
                 if ($RutaConfiguracion) { $reg['RutaConfiguracion'] = $RutaConfiguracion }
                 & "$PSScriptRoot\Registrar-Tarea.ps1" @reg -Confirm:$false 6> $null | Out-Null
+                try {
+                    $autoReg = Get-AutomatismoDeDiscoFrio -Configuracion $vigente
+                    if ($autoReg.Habilitado) {
+                        $regDisco = @{ Pieza = 'DiscoFrio'; Accion = 'Registrar' }
+                        if ($RutaConfiguracion) { $regDisco['RutaConfiguracion'] = $RutaConfiguracion }
+                        & "$PSScriptRoot\Registrar-Tarea.ps1" @regDisco -Confirm:$false 6> $null | Out-Null
+                    }
+                }
+                catch { Write-Verbose "No se pudo re-registrar DiscoFrio: $($_.Exception.Message)" }
                 $t = Get-ScheduledTask -TaskName $script:Ctx.NombreTarea -ErrorAction SilentlyContinue
                 $cuantos = 0
                 if ($t) { $cuantos = @($t.Triggers).Count }

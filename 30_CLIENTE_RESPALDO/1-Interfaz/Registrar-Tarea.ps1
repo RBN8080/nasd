@@ -104,7 +104,8 @@
            criterio no pide.
 
     .PARAMETER Pieza
-        Motor (las corridas del dia) o Indicador (el icono de la barra).
+        Motor (las corridas del dia), Indicador (el icono de la barra) o
+        DiscoFrio (copia fria automatica bajo demanda).
 
     .PARAMETER Accion
         Registrar, Consultar, Deshabilitar, Habilitar o Retirar.
@@ -124,7 +125,7 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'Medium')]
 [OutputType([psobject])]
 param(
-    [ValidateSet('Motor', 'Indicador')]
+    [ValidateSet('Motor', 'Indicador', 'DiscoFrio')]
     [string] $Pieza = 'Motor',
 
     [ValidateSet('Registrar', 'Consultar', 'Deshabilitar', 'Habilitar', 'Retirar')]
@@ -151,14 +152,17 @@ $ErrorActionPreference = 'Stop'
 # icono ENCIMA del motor -Register-ScheduledTask va con -Force- y dejaria al
 # equipo sin respaldo automatico sin decir nada.
 if (-not $PSBoundParameters.ContainsKey('NombreTarea')) {
-    $NombreTarea = if ($Pieza -eq 'Indicador') { 'NasRespaldo-Indicador' } else { 'NasRespaldo-Diario' }
+    $NombreTarea = switch ($Pieza) {
+        'Indicador' { 'NasRespaldo-Indicador' }
+        'DiscoFrio' { 'NasRespaldo-DiscoFrio' }
+        default     { 'NasRespaldo-Diario' }
+    }
 }
 
-$guion = if ($Pieza -eq 'Indicador') {
-    Join-Path $PSScriptRoot 'indicador.ps1'
-}
-else {
-    Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\respaldo.ps1'
+$guion = switch ($Pieza) {
+    'Indicador' { Join-Path $PSScriptRoot 'indicador.ps1' }
+    'DiscoFrio' { Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\disco.ps1' }
+    default     { Join-Path (Split-Path $PSScriptRoot -Parent) '2-Nucleo\respaldo.ps1' }
 }
 if (-not (Test-Path -LiteralPath $guion -PathType Leaf)) {
     throw "No se encuentra la pieza '$Pieza' en $guion"
@@ -224,6 +228,36 @@ switch ($Accion) {
             $descripcion = 'Indicador del respaldo del NAS. SOLO LEE ESTADO.txt Y PINTA: no ejecuta el respaldo, y cerrarlo no detiene nada (30_CLIENTE_RESPALDO seccion 10.2). Se relanza al entrar a la sesion porque un icono ausente se parece a "todo bien".'
             $queHace     = 'Registrar el indicador al iniciar sesion'
             $confirmado  = "Tarea '$NombreTarea' registrada: el icono arranca al entrar a la sesion."
+        }
+        elseif ($Pieza -eq 'DiscoFrio') {
+            $argumentos = @(
+                '--headless'
+                'powershell.exe'
+                '-NoProfile'
+                '-NonInteractive'
+                '-ExecutionPolicy', 'Bypass'
+                '-WindowStyle', 'Hidden'
+                '-File', ('"{0}"' -f $guion)
+                '-DesdeAutomatismo'
+            )
+            if ($PSBoundParameters.ContainsKey('RutaConfiguracion')) {
+                $argumentos += @('-RutaConfiguracion', ('"{0}"' -f $RutaConfiguracion))
+            }
+            $argumentos = $argumentos -join ' '
+
+            # SIN DISPARADOR PROPIO: corre bajo demanda cuando el indicador
+            # detecta la conexion del USB o cuando el motor cierra en verde con
+            # el disco aun montado. MultipleInstances IgnoreNew evita solapes.
+            $disparador = $null
+            $ajustes = New-ScheduledTaskSettingsSet `
+                -AllowStartIfOnBatteries `
+                -DontStopIfGoingOnBatteries `
+                -MultipleInstances IgnoreNew `
+                -ExecutionTimeLimit (New-TimeSpan -Hours 8)
+
+            $descripcion = 'Copia fria automatica del cliente NAS (PC, nodo y laboratorio VM al disco USB por firma y centinela). Se dispara bajo demanda al conectar el disco o tras una corrida programada limpia.'
+            $queHace     = 'Registrar la tarea bajo demanda del disco frio'
+            $confirmado  = "Tarea '$NombreTarea' registrada: corre disco.ps1 -DesdeAutomatismo bajo demanda."
         }
         else {
             # -DesdeTarea ES LO QUE DISTINGUE UNA CORRIDA PROGRAMADA DE UNA A
@@ -354,10 +388,16 @@ switch ($Accion) {
         }
 
         if ($PSCmdlet.ShouldProcess($NombreTarea, $queHace)) {
-            Register-ScheduledTask -TaskName $NombreTarea `
-                -Action $accionTarea -Trigger $disparador -Principal $principal -Settings $ajustes `
-                -Description $descripcion `
-                -Force | Out-Null
+            $paramsRegistro = @{
+                TaskName    = $NombreTarea
+                Action      = $accionTarea
+                Principal   = $principal
+                Settings    = $ajustes
+                Description = $descripcion
+                Force       = $true
+            }
+            if ($null -ne $disparador) { $paramsRegistro['Trigger'] = $disparador }
+            Register-ScheduledTask @paramsRegistro | Out-Null
             Write-Information $confirmado -InformationAction Continue
         }
         return (Get-TareaDeRespaldo -Nombre $NombreTarea)
@@ -380,11 +420,10 @@ switch ($Accion) {
     'Retirar' {
         if ($PSCmdlet.ShouldProcess($NombreTarea, 'Retirar la tarea programada')) {
             Unregister-ScheduledTask -TaskName $NombreTarea -Confirm:$false -ErrorAction Stop
-            $aviso = if ($Pieza -eq 'Indicador') {
-                "Tarea '$NombreTarea' retirada. El icono ya NO arranca solo, y un icono ausente se parece a todo bien."
-            }
-            else {
-                "Tarea '$NombreTarea' retirada. El respaldo YA NO CORRE SOLO."
+            $aviso = switch ($Pieza) {
+                'Indicador' { "Tarea '$NombreTarea' retirada. El icono ya NO arranca solo, y un icono ausente se parece a todo bien." }
+                'DiscoFrio' { "Tarea '$NombreTarea' retirada. La copia fria ya NO se dispara automaticamente." }
+                default     { "Tarea '$NombreTarea' retirada. El respaldo YA NO CORRE SOLO." }
             }
             Write-Warning $aviso
         }
@@ -402,10 +441,17 @@ switch ($Accion) {
         # que poder comprobar de un vistazo que SIGUEN SIENDO TRES. Un
         # disparador que desaparece de la lista es un tercio del respaldo que
         # deja de correr, y ninguna otra pantalla lo diria.
-        $ventanas = @($t.Triggers | ForEach-Object {
+        $ventanas = @($t.Triggers | Where-Object { $null -ne $_ } | ForEach-Object {
+                $propsT = @($_.PSObject.Properties.Name)
                 $base = $null
-                if ($_.StartBoundary) { $base = ([datetime]$_.StartBoundary).ToString('HH:mm') }
-                '{0} +{1}' -f $base, $(if ($_.RandomDelay) { $_.RandomDelay } else { 'sin sorteo' })
+                if (($propsT -contains 'StartBoundary') -and $_.StartBoundary) {
+                    $base = ([datetime]$_.StartBoundary).ToString('HH:mm')
+                }
+                $sorteo = 'sin sorteo'
+                if (($propsT -contains 'RandomDelay') -and $_.RandomDelay) {
+                    $sorteo = '' + $_.RandomDelay
+                }
+                '{0} +{1}' -f $(if ($base) { $base } else { 'evento' }), $sorteo
             })
         return [pscustomobject]@{
             Nombre       = $t.TaskName

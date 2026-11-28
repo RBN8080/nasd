@@ -20,7 +20,7 @@ Describe 'Modulo NasRespaldo' {
     It 'valida su manifiesto sin comodines en FunctionsToExport' {
         $m = Test-ModuleManifest -Path $script:RutaManifiesto -ErrorAction Stop
         $m.Version.ToString() | Should -Be '1.0.0'
-        $m.ExportedFunctions.Count | Should -Be 63
+        $m.ExportedFunctions.Count | Should -Be 66
         ($m.ExportedFunctions.Keys -contains '*') | Should -BeFalse
     }
 

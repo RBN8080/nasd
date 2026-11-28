@@ -226,7 +226,7 @@ try {
 
 Paso 'Registrando las tareas del Programador'
 
-foreach ($pieza in @('Motor', 'Indicador')) {
+foreach ($pieza in @('Motor', 'Indicador', 'DiscoFrio')) {
     try {
         & $registrar -Pieza $pieza -Accion Registrar -RutaConfiguracion $config -Confirm:$false
         Bien "tarea de $pieza registrada"

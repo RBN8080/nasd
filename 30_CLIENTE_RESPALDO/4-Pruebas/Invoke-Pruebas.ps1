@@ -3819,14 +3819,139 @@ Test-Afirmacion -Nombre 'Format-LineaVivaDeConsola acota la linea viva in-place 
         ($linAct72.Length -le 69), ($linRep72.Length -le 69), ($linAct72 -match 'EN CURSO.*42%'))
 
 # ===========================================================================
+Write-Titulo 'Automatismo integrado (3 caminos): disco frio y laboratorio'
+# ===========================================================================
+
+$cfgSinAuto = [pscustomobject]@{ destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{ firma = '00000000' } } }
+$autoVacio = Get-AutomatismoDeDiscoFrio -Configuracion $cfgSinAuto
+Test-Afirmacion -Nombre 'Get-AutomatismoDeDiscoFrio sin bloque devuelve Habilitado=False por seguridad' `
+    -Esperado 'False|nunca|siApagadas|60|0' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
+        $autoVacio.Habilitado, $autoVacio.LaboratorioAlNodo, $autoVacio.LaboratorioAlDisco,
+        $autoVacio.CooldownMinutos, $autoVacio.MaxHorasConectado)
+
+$cfgProdAuto = Get-ConfiguracionRespaldo
+$autoProd = Get-AutomatismoDeDiscoFrio -Configuracion $cfgProdAuto
+Test-Afirmacion -Nombre 'respaldo.jsonc declara el automatismo integrado (al conectar, post-corrida, lab si apagadas, sin aviso por tiempo)' `
+    -Esperado 'True|True|True|siApagadas|siApagadas|60|0|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f
+        $autoProd.Habilitado, $autoProd.AlConectar, $autoProd.TrasCorridaProgramada,
+        $autoProd.LaboratorioAlDisco, $autoProd.LaboratorioAlNodo,
+        $autoProd.CooldownMinutos, $autoProd.MaxHorasConectado, $autoProd.NotificarAlTerminar)
+
+$lanzoAutoInvalido = $false
+try {
+    $null = Get-AutomatismoDeDiscoFrio -Configuracion ([pscustomobject]@{
+            destinos = [pscustomobject]@{ discoFrio = [pscustomobject]@{ automatismo = [pscustomobject]@{ habilitado = $true; laboratorioAlNodo = 'siempre' } } }
+        })
+}
+catch { $lanzoAutoInvalido = $true }
+Test-Afirmacion -Nombre 'Get-AutomatismoDeDiscoFrio rechaza valor invalido de laboratorioAlNodo' `
+    -Esperado $true -Obtenido $lanzoAutoInvalido
+
+$ahoraAuto = [datetime]'2026-11-27T13:00:00'
+$estHace30 = @{ disco_momento = '2026-11-27T12:30:00'; disco_estado = 'Protegido' }
+$estHace90 = @{ disco_momento = '2026-11-27T11:30:00'; disco_estado = 'Protegido' }
+$estHace1  = @{ disco_momento = '2026-11-27T12:59:00'; disco_estado = 'Protegido' }
+
+Test-Afirmacion -Nombre 'Test-DebeDispararDiscoFrio bloquea si esta deshabilitado' `
+    -Esperado $false -Obtenido (Test-DebeDispararDiscoFrio -Automatismo $autoVacio -Origen 'conexion' -DiscoConectado $true -Ahora $ahoraAuto).Disparar
+
+Test-Afirmacion -Nombre 'Test-DebeDispararDiscoFrio bloquea si el disco no esta conectado' `
+    -Esperado $false -Obtenido (Test-DebeDispararDiscoFrio -Automatismo $autoProd -Origen 'programada' -DiscoConectado $false -Ahora $ahoraAuto).Disparar
+
+Test-Afirmacion -Nombre 'Test-DebeDispararDiscoFrio bloquea si hay otra corrida activa' `
+    -Esperado $false -Obtenido (Test-DebeDispararDiscoFrio -Automatismo $autoProd -Origen 'conexion' -DiscoConectado $true -MarcaActiva $true -Ahora $ahoraAuto).Disparar
+
+Test-Afirmacion -Nombre 'Test-DebeDispararDiscoFrio respeta cooldown de 60 min en origen programada' `
+    -Esperado 'False|True' -Obtenido ('{0}|{1}' -f
+        (Test-DebeDispararDiscoFrio -Automatismo $autoProd -Origen 'programada' -DiscoConectado $true -Estado $estHace30 -Ahora $ahoraAuto).Disparar,
+        (Test-DebeDispararDiscoFrio -Automatismo $autoProd -Origen 'programada' -DiscoConectado $true -Estado $estHace90 -Ahora $ahoraAuto).Disparar)
+
+Test-Afirmacion -Nombre 'Test-DebeDispararDiscoFrio aplica antirebote corto en conexion USB y permite reconexion intencional' `
+    -Esperado 'False|True' -Obtenido ('{0}|{1}' -f
+        (Test-DebeDispararDiscoFrio -Automatismo $autoProd -Origen 'conexion' -DiscoConectado $true -Estado $estHace1 -Ahora $ahoraAuto).Disparar,
+        (Test-DebeDispararDiscoFrio -Automatismo $autoProd -Origen 'conexion' -DiscoConectado $true -Estado $estHace30 -Ahora $ahoraAuto).Disparar)
+
+$nOk = Format-NotificacionDeDiscoFrio -Estado 'Protegido' -Detalle 'COMPLETA: 5 archivos'
+$nAt = Format-NotificacionDeDiscoFrio -Estado 'Atencion' -Detalle 'INCOMPLETA: VMs encendidas'
+$nFa = Format-NotificacionDeDiscoFrio -Estado 'Falla' -Detalle 'CON FALLOS: 1 raiz'
+$nNu = Format-NotificacionDeDiscoFrio -Estado 'SinDatos' -Detalle ''
+Test-Afirmacion -Nombre 'Format-NotificacionDeDiscoFrio redacta globos por severidad y avisa expulsar en verde' `
+    -Esperado 'Info|True|Warning|Error|True' -Obtenido ('{0}|{1}|{2}|{3}|{4}' -f
+        $nOk.Icono, ($nOk.Mensaje -match 'expulsar'), $nAt.Icono, $nFa.Icono, ($null -eq $nNu))
+
+$carpetaAuto = Join-Path $CarpetaCaja 'auto_disco'
+New-Item -ItemType Directory -Path $carpetaAuto -Force | Out-Null
+Write-EstadoDelDisco -Estado 'Protegido' -Detalle 'prueba origen' -Origen 'automatico' -Carpeta $carpetaAuto -Confirm:$false
+$estLeidoAuto = Read-EstadoRespaldo -Carpeta $carpetaAuto
+Test-Afirmacion -Nombre 'Write-EstadoDelDisco guarda disco_origen=automatico sin alterar estado principal' `
+    -Esperado 'automatico|SinDatos' -Obtenido ('{0}|{1}' -f $estLeidoAuto['disco_origen'], $estLeidoAuto['estado'])
+
+$cfgAutoSinDisco = [pscustomobject]@{
+    carpetaEstado = $carpetaAuto
+    destinos = [pscustomobject]@{
+        nodo      = [pscustomobject]@{ unc = '\\127.0.0.1\inexistente'; raiz = '01_BACKUP'; prefijoEquipo = 'TEST'; traduccionDeRutas = @() }
+        discoFrio = [pscustomobject]@{
+            firma = 'DEADBEEF'; centinela = '_NO_EXISTE_.txt'; prefijoEquipo = 'TEST'; prefijoNodo = 'NODO'
+            traduccionDeRutas = @(); traduccionDelNodo = @()
+            automatismo = [pscustomobject]@{ habilitado = $true; alConectar = $true; trasCorridaProgramada = $true; laboratorioAlDisco = 'siApagadas'; laboratorioAlNodo = 'nunca'; cooldownMinutos = 60 }
+        }
+    }
+    contenedores = @(); raicesDeclaradas = @(); raicesDelNodo = @(); exclusiones = @(); centinelas = @()
+}
+$rAutoSinDisco = Invoke-CorridaAlDiscoFrio -Configuracion $cfgAutoSinDisco -DesdeAutomatismo -MinutosAntirebote 0 -Confirm:$false
+Test-Afirmacion -Nombre 'disco.ps1 -DesdeAutomatismo sale omitido (sin aborto) cuando el disco no esta conectado' `
+    -Esperado 'True|False' -Obtenido ('{0}|{1}' -f $rAutoSinDisco.Omitida, $rAutoSinDisco.Abortada)
+
+$rAutoRebote = Invoke-CorridaAlDiscoFrio -Configuracion $cfgAutoSinDisco -DesdeAutomatismo -MinutosAntirebote 10 -Confirm:$false
+Test-Afirmacion -Nombre 'disco.ps1 -DesdeAutomatismo omite por antirebote si acaba de correr' `
+    -Esperado 'True|True' -Obtenido ('{0}|{1}' -f $rAutoRebote.Omitida, ($rAutoRebote.Motivo -match 'antirebote'))
+
+$cfgAutoLabCaja = Join-Path $CarpetaCaja 'auto_lab_origen'
+New-Item -ItemType Directory -Path (Join-Path $cfgAutoLabCaja 'VM_Prueba') -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $cfgAutoLabCaja 'VM_Prueba\config.vmx') -Value 'displayName = "VM_Prueba"' -Encoding ASCII
+$carpetaAutoLabEst = Join-Path $CarpetaCaja 'auto_lab_estado'
+New-Item -ItemType Directory -Path $carpetaAutoLabEst -Force | Out-Null
+$cfgPostLab = [pscustomobject]@{
+    carpetaEstado = $carpetaAutoLabEst
+    destinos = [pscustomobject]@{
+        nodo      = [pscustomobject]@{ unc = '\\127.0.0.1\inexistente'; raiz = '01_BACKUP'; prefijoEquipo = 'TEST'; traduccionDeRutas = @() }
+        discoFrio = [pscustomobject]@{
+            firma = 'DEADBEEF'; centinela = '_NO_EXISTE_.txt'; prefijoEquipo = 'TEST'; prefijoNodo = 'NODO'
+            traduccionDeRutas = @(); traduccionDelNodo = @()
+            automatismo = [pscustomobject]@{ habilitado = $true; alConectar = $true; trasCorridaProgramada = $true; laboratorioAlDisco = 'siApagadas'; laboratorioAlNodo = 'siApagadas'; cooldownMinutos = 60 }
+        }
+    }
+    laboratorio = [pscustomobject]@{
+        origen = $cfgAutoLabCaja; destino = '\\127.0.0.1\datos\lab'; destinoEnLaPi = '/tmp/lab'
+        umbralDeltaBytes = 1073741824; bloqueBytes = 1048576; verificador = 'local'
+    }
+}
+Set-VmxSimulado -Valor $false -Confirm:$false
+try {
+    $evApagadas = Invoke-AutomatismoPostCorrida -Configuracion $cfgPostLab -CarpetaEstado $carpetaAutoLabEst -SoloEvaluar -Confirm:$false
+    Set-VmxSimulado -Valor $true -Confirm:$false
+    $evEncendidas = Invoke-AutomatismoPostCorrida -Configuracion $cfgPostLab -CarpetaEstado $carpetaAutoLabEst -SoloEvaluar -Confirm:$false
+}
+finally {
+    Set-VmxSimulado -Valor $null -Confirm:$false
+}
+Test-Afirmacion -Nombre 'Invoke-AutomatismoPostCorrida habilita Lab->Nodo solo con VMs apagadas y omite con VM activa' `
+    -Esperado 'True|False|False' -Obtenido ('{0}|{1}|{2}' -f $evApagadas.LabElegible, $evEncendidas.LabElegible, $evApagadas.DiscoElegible)
+
+& (Join-Path (Split-Path $PSScriptRoot -Parent) '1-Interfaz\Registrar-Tarea.ps1') `
+    -Pieza DiscoFrio -Accion Registrar -NombreTarea 'NasRespaldo-DiscoFrio-WhatIf' -WhatIf 2>$null | Out-Null
+Test-Afirmacion -Nombre 'Registrar-Tarea -Pieza DiscoFrio -WhatIf no crea tarea' `
+    -Esperado $false -Obtenido ($null -ne (Get-ScheduledTask -TaskName 'NasRespaldo-DiscoFrio-WhatIf' -ErrorAction SilentlyContinue))
+
+# ===========================================================================
 Write-Titulo 'Modulo NasRespaldo con manifiesto y contexto explicito del tablero'
 # ===========================================================================
 
 $rutaManifiesto = Join-Path $nucleo 'NasRespaldo\NasRespaldo.psd1'
 $infoMod = Test-ModuleManifest -Path $rutaManifiesto -ErrorAction Stop
 $modCargado = Get-Module -Name 'NasRespaldo'
-Test-Afirmacion -Nombre 'NasRespaldo.psd1 pasa Test-ModuleManifest y exporta explicitamente sus 63 funciones' `
-    -Esperado '1.0.0|63|63|False' -Obtenido ('{0}|{1}|{2}|{3}' -f
+Test-Afirmacion -Nombre 'NasRespaldo.psd1 pasa Test-ModuleManifest y exporta explicitamente sus 66 funciones' `
+    -Esperado '1.0.0|66|66|False' -Obtenido ('{0}|{1}|{2}|{3}' -f
         $infoMod.Version.ToString(),
         $infoMod.ExportedFunctions.Count,
         $modCargado.ExportedFunctions.Count,

@@ -617,6 +617,9 @@ function Write-EstadoDelDisco {
         [ValidateNotNull()]
         [string] $Detalle = '',
 
+        [ValidateSet('', 'manual', 'automatico')]
+        [string] $Origen = '',
+
         [ValidateNotNullOrEmpty()]
         [string] $Carpeta = (Get-CarpetaDeEstado)
     )
@@ -632,6 +635,7 @@ function Write-EstadoDelDisco {
     $datos['disco_estado']  = $Estado
     $datos['disco_detalle'] = $Detalle
     $datos['disco_momento'] = (Get-Date -Format 's')
+    if ($Origen) { $datos['disco_origen'] = $Origen }
 
     # El veredicto principal se conserva TAL CUAL. Si no habia ninguno todavia,
     # SinDatos: decir "protegido" porque el disco fue bien seria justo la
